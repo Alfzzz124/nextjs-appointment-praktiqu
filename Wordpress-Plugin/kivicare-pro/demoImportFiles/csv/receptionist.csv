@@ -1,0 +1,4 @@
+first_name,last_name,email,country_calling_code,country_code,contact,gender,password,address,city,country,postal code,clinic_id,profile_image,dob,status
+Receptionist,demo,receptionistdemokivicare@gmail.com,44,GB,1234567890,male,123456789,"2948/2,
+ Hamilton Road,
+Kashmere Gate",delhi,india,110006,1,https://demo.kivicare.io/wp-content/plugins/kivicare-clinic-management-system/assets/images/patient-profile-1.png,11/22/2022,0

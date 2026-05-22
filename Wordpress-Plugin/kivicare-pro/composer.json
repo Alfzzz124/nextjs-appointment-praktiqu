@@ -1,0 +1,22 @@
+{
+    "name": "iqonic/kivicare-clinic-management-system-pro",
+    "authors": [{
+        "name": "Iqonic.design",
+        "email": "hello@iqonic.design"
+    }],
+    "autoload": {
+        "psr-4": {
+            "KCProApp\\": "./app"
+        },
+        "files": [
+            "utils/functions.php"
+        ]
+    },
+    "require": {
+        "phpoffice/phpspreadsheet": "^5.1.0"
+    },
+    "config": {
+        "autoloader-suffix": "KiviCarePro",
+        "platform-check": false
+    }
+}

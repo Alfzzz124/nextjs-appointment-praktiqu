@@ -1,0 +1,5 @@
+module,label,input_type,placeholder,options,required,status,doctor_id
+patient_module,sample 1,radio,"","yes,no",1,1,0
+doctor_module,sample 2,text,"please enter value","",1,1,0
+appointment_module,sample 3,select,"","option1,option2",0,1,2
+patient_encounter_module,sample 4,calendar,"please select date","",0,1,0

@@ -1,0 +1,74 @@
+{
+  "name": "Patient Profile Update",
+  "moduleType": "patient_module",
+  "status": "active",
+  "fields": [
+    {
+      "id": "blood_type",
+      "type": "radio",
+      "label": "Blood Type",
+      "placeholder": "",
+      "required": true,
+      "columnClass": "col-12",
+      "options": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+    },
+    {
+      "id": "allergies",
+      "type": "textarea",
+      "label": "Allergies",
+      "placeholder": "List any allergies",
+      "required": false,
+      "columnClass": "col-12"
+    },
+    {
+      "id": "medical_history",
+      "type": "file",
+      "label": "Medical History Document",
+      "placeholder": "",
+      "required": false,
+      "columnClass": "col-12"
+    }
+  ],
+  "conditions": {
+    "clinics": [],
+    "roles": ["kiviCare_patient", "kiviCare_doctor"],
+    "form_conditions": [
+      {
+        "conditions": [
+          {
+            "field": "blood_type",
+            "operator": "!=",
+            "value": "O+"
+          }
+        ],
+        "logic": "OR",
+        "actions": [
+          {
+            "type": "optional",
+            "target": "allergies"
+          },
+          {
+            "type": "show",
+            "target": "medical_history"
+          }
+        ]
+      },
+      {
+        "conditions": [
+          {
+            "field": "allergies",
+            "operator": "is_empty",
+            "value": null
+          }
+        ],
+        "logic": "AND",
+        "actions": [
+          {
+            "type": "show",
+            "target": "medical_history"
+          }
+        ]
+      }
+    ]
+  }
+}

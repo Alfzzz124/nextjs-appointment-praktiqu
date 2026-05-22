@@ -1,0 +1,5 @@
+clinic_name,email,country_calling_code,country_code,contact,specialization,address,city,country,postal_code,clinic_admin_first_name,clinic_admin_last_name,clinic_admin_email,clinic_admin_country_calling_code,clinic_admin_country_code,clinic_admin_contact,clinic_admin_gender,clinic_admin_password,clinic_admin_profile_image,clinic_profile_image,status
+clinic one,clinic1@gmail.com,44,GB,1234567890,"Allergy And Immunology,
+Family Medicine","2948/2,
+ Hamilton Road,
+Kashmere Gate",Delhi,India,110006,clinic admin ,one,clinicadmin@gmail.com,44,GB,1234567890,male,123456789,https://demo.kivicare.io/wp-content/uploads/2022/09/pexels-wendy-wei-2959588.jpg,https://demo.kivicare.io/wp-content/uploads/2022/09/pexels-wendy-wei-2959588.jpg,1

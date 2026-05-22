@@ -1,0 +1,2 @@
+category,name,charges,doctor_id,clinic_id,multi_selection,telemed_service,duration,status,service_image
+General Dentistry,tooth clean up ,100,3,1,yes,no,'',1,https://demo.kivicare.io/wp-content/uploads/2022/09/pexels-anna-shvets-3845682.jpg

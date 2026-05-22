@@ -1,0 +1,8 @@
+first_name,last_name,email,country_calling_code,country_code,contact,gender,specialization,password,address,city,country,postal_code,clinic_id,experience,description,profile_image,degree_name,degree_university,degree_year,status,dob
+doctor,one,doctor1@gmail.com,44,GB,1234567890,male,"Dermatology,Family Medicine",test123,"2948/2,
+ Hamilton Road,
+Kashmere Gate",Delhi,India,110006,"1,2,3",2,"A competent ENT Surgeon practising for the past 2 years
+ and having a wide range of experience in treating patients 
+with all kinds of ENT issues. Listens to and addresses all of 
+The patients' concerns and clearly explains the course of treatment.",https://demo.kivicare.io/wp-content/uploads/2022/09/brendon-webber.png,"MBBS,MD","Delhi university,
+Delhi university","2018, 2020",0,10/05/96

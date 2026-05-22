@@ -1,0 +1,94 @@
+{
+  "name": "Doctor Availability",
+  "moduleType": "doctor_module",
+  "status": "active",
+  "fields": [
+    {
+      "id": "available_days",
+      "type": "select",
+      "label": "Available Days",
+      "placeholder": "Select days",
+      "required": true,
+      "columnClass": "col-12",
+      "options": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    },
+    {
+      "id": "start_time",
+      "type": "text",
+      "label": "Start Time",
+      "placeholder": "09:00",
+      "required": true,
+      "columnClass": "col-md-6 col-12"
+    },
+    {
+      "id": "end_time",
+      "type": "text",
+      "label": "End Time",
+      "placeholder": "17:00",
+      "required": true,
+      "columnClass": "col-md-6 col-12"
+    },
+    {
+      "id": "max_patients",
+      "type": "number",
+      "label": "Max Patients per Day",
+      "placeholder": "20",
+      "required": false,
+      "columnClass": "col-md-6 col-12"
+    }
+  ],
+  "conditions": {
+    "clinics": [],
+    "roles": ["kiviCare_clinic_admin", "kiviCare_doctor"],
+    "form_conditions": [
+      {
+        "conditions": [
+          {
+            "field": "max_patients",
+            "operator": ">=",
+            "value": "10"
+          }
+        ],
+        "logic": "AND",
+        "actions": [
+          {
+            "type": "disable",
+            "target": "available_days"
+          }
+        ]
+      },
+      {
+        "conditions": [
+          {
+            "field": "max_patients",
+            "operator": "<=",
+            "value": "100"
+          }
+        ],
+        "logic": "AND",
+        "actions": [
+          {
+            "type": "required",
+            "target": "available_days"
+          }
+        ]
+      },
+      {
+        "conditions": [
+          {
+            "field": "start_time",
+            "operator": "is_not_empty",
+            "value": null
+          }
+        ],
+        "logic": "AND",
+        "actions": [
+          {
+            "type": "show",
+            "target": "start_time"
+          }
+        ]
+      }
+    ]
+  }
+}

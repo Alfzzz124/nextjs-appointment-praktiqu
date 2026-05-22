@@ -1,0 +1,15 @@
+{
+    "name": "iqonic/kivicare-clinic-management-system-googlemeet-addon",
+    "authors": [{
+        "name": "Iqonic.design",
+        "email": "hello@iqonic.design"
+    }],
+    "autoload": {
+        "psr-4": {
+            "KCGMApp\\": "./app"
+        }
+    },
+    "config": {
+        "autoloader-suffix": "KiviCareGoogleMeetAddon"
+    }
+}

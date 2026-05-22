@@ -1,0 +1,4 @@
+first_name,last_name,email,country_calling_code,country_code,contact,gender,password,dob,blood_group,address,city,country,postal_code,clinic_id,status,profile_image
+demo,patient,demokivicarepatient@gmail.com,44,GB,1234567890,male,123456789,11/18/2002,B+,"2948/2,
+ Hamilton Road,
+Kashmere Gate",delhi,india,110006,1,0,https://demo.kivicare.io/wp-content/plugins/kivicare-clinic-management-system/assets/images/patient-profile-1.png

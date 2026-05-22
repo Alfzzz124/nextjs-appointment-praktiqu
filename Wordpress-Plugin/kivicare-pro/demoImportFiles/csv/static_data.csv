@@ -1,0 +1,6 @@
+name,type,status
+General Dentistry,specialization,0
+Psychology Services,service_type,1
+crocin,prescription_medicine,1
+Headache sydrome,clinical_problems,1
+level of consciousness OR level of sedation.,clinical_observations,0

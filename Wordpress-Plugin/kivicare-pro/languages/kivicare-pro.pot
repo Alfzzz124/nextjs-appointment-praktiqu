@@ -1,0 +1,2064 @@
+# Copyright (C) 2026 iqonic design
+# This file is distributed under the same license as the KiviCare - Clinic & Patient Management System (EHR) Pro plugin.
+msgid ""
+msgstr ""
+"Project-Id-Version: KiviCare - Clinic & Patient Management System (EHR) Pro 4.4.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/kivicare-pro\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-05-06T12:46:05+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: kivicare-pro\n"
+
+#. Plugin Name of the plugin
+#: kivicare-clinic-management-system-pro.php
+msgid "KiviCare - Clinic & Patient Management System (EHR) Pro"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: kivicare-clinic-management-system-pro.php
+msgid "https://kivicare.io"
+msgstr ""
+
+#. Description of the plugin
+#: kivicare-clinic-management-system-pro.php
+msgid "KiviCare Pro is an impressive clinic and patient management plugin (EHR)."
+msgstr ""
+
+#. Author of the plugin
+#: kivicare-clinic-management-system-pro.php
+msgid "iqonic design"
+msgstr ""
+
+#. Author URI of the plugin
+#: kivicare-clinic-management-system-pro.php
+msgid "https://iqonic.design"
+msgstr ""
+
+#: app/baseClasses/KCProAvailableChannels.php:53
+msgid "Email"
+msgstr ""
+
+#: app/baseClasses/KCProAvailableChannels.php:58
+msgid "Push Notification"
+msgstr ""
+
+#: app/baseClasses/KCProAvailableChannels.php:63
+msgid "SMS (Twilio)"
+msgstr ""
+
+#: app/baseClasses/KCProAvailableChannels.php:68
+msgid "WhatsApp (Twilio)"
+msgstr ""
+
+#: app/baseClasses/KCProAvailableChannels.php:73
+msgid "Custom Notification"
+msgstr ""
+
+#: app/controllers/api/GoogleCalendarIntegration.php:219
+msgid "Disconnected successfully"
+msgstr ""
+
+#: app/controllers/api/GoogleCalendarIntegration.php:743
+#: app/controllers/api/GoogleCalendarIntegration.php:904
+msgid "Services: "
+msgstr ""
+
+#: app/controllers/api/GoogleCalendarIntegration.php:749
+#: app/controllers/api/GoogleCalendarIntegration.php:910
+msgid "Appointment with "
+msgstr ""
+
+#: app/controllers/api/GoogleCalendarIntegration.php:750
+#: app/controllers/api/GoogleCalendarIntegration.php:911
+msgid "'s appointment with "
+msgstr ""
+
+#: app/controllers/api/GoogleCalendarIntegration.php:769
+#: app/controllers/api/GoogleCalendarIntegration.php:939
+msgid "Meeting Link: "
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:168
+msgid "Invalid import context"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:185
+msgid "Invalid file format. Only CSV and XLSX are supported"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:208
+#, php-format
+msgid "File format invalid. Expected %s file for %s format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:229
+msgid "No file uploaded"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:235
+msgid "File too large (server limit)"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:236
+msgid "File too large (form limit)"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:237
+msgid "File upload was incomplete"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:238
+msgid "No file was uploaded"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:239
+msgid "Missing temporary folder"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:240
+msgid "Failed to write file to disk"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:241
+msgid "File upload stopped by extension"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:244
+msgid "Unknown upload error"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:248
+#, php-format
+msgid "File upload error: %s"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:280
+msgid "Invalid file type. Please upload CSV or XLSX file"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:338
+#: app/controllers/api/KCImportController.php:410
+#: app/controllers/api/KCImportController.php:482
+#: app/controllers/api/KCImportController.php:554
+#: app/controllers/api/KCImportController.php:626
+#: app/controllers/api/KCImportController.php:3051
+#: app/controllers/api/KCImportController.php:3396
+#: app/controllers/api/KCImportController.php:3455
+#: app/controllers/api/KCImportController.php:4206
+msgid "No data found in the uploaded file"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:351
+#: app/controllers/api/KCImportController.php:423
+#: app/controllers/api/KCImportController.php:495
+#: app/controllers/api/KCImportController.php:567
+#: app/controllers/api/KCImportController.php:639
+#: app/controllers/api/KCImportController.php:3061
+#: app/controllers/api/KCImportController.php:3407
+#: app/controllers/api/KCImportController.php:3464
+#: app/controllers/api/KCImportController.php:4219
+msgid "Import completed successfully"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:362
+#: app/controllers/api/KCImportController.php:434
+#: app/controllers/api/KCImportController.php:506
+#: app/controllers/api/KCImportController.php:578
+#: app/controllers/api/KCImportController.php:650
+#: app/controllers/api/KCImportController.php:3072
+#: app/controllers/api/KCImportController.php:3418
+#: app/controllers/api/KCImportController.php:3475
+#: app/controllers/api/KCImportController.php:4230
+#: app/controllers/api/KCImportController.php:4231
+msgid "Import failed"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:667
+msgid "Error parsing file"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:679
+msgid "Could not open CSV file"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:685
+msgid "Could not read CSV headers"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:708
+msgid "PhpSpreadsheet library is not available. Please install it to import Excel files."
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:762
+msgid "Error reading Excel file"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:810
+#, php-format
+msgid "Row %d: Doctor with email %s already exists"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:820
+#: app/controllers/api/KCImportController.php:824
+#: app/controllers/api/KCImportController.php:1666
+#: app/controllers/api/KCImportController.php:1670
+#: app/controllers/api/KCImportController.php:1778
+#: app/controllers/api/KCImportController.php:1788
+#: app/controllers/api/KCImportController.php:1792
+#: app/controllers/api/KCImportController.php:2214
+#: app/controllers/api/KCImportController.php:2218
+#: app/controllers/api/KCImportController.php:2670
+#: app/controllers/api/KCImportController.php:2674
+#: app/controllers/api/KCImportController.php:3127
+#: app/controllers/api/KCImportController.php:3517
+#: app/controllers/api/KCImportController.php:3527
+#, php-format
+msgid "Row %d: %s"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:834
+#: app/controllers/api/KCImportController.php:1680
+#: app/controllers/api/KCImportController.php:1802
+#: app/controllers/api/KCImportController.php:2228
+#: app/controllers/api/KCImportController.php:2684
+#, php-format
+msgid "Import failed: %s"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:862
+#: app/controllers/api/KCImportController.php:1708
+#: app/controllers/api/KCImportController.php:1827
+#: app/controllers/api/KCImportController.php:2256
+msgid "Email already exists"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:865
+#: app/controllers/api/KCImportController.php:1711
+#: app/controllers/api/KCImportController.php:1830
+#: app/controllers/api/KCImportController.php:2259
+#: app/controllers/api/KCImportController.php:2713
+msgid "Required fields missing"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:868
+#: app/controllers/api/KCImportController.php:1714
+#: app/controllers/api/KCImportController.php:1833
+#: app/controllers/api/KCImportController.php:2262
+msgid "Invalid field format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:871
+#: app/controllers/api/KCImportController.php:1717
+#: app/controllers/api/KCImportController.php:2265
+msgid "Clinic not found"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:874
+#: app/controllers/api/KCImportController.php:876
+#: app/controllers/api/KCImportController.php:1720
+#: app/controllers/api/KCImportController.php:1722
+#: app/controllers/api/KCImportController.php:1836
+#: app/controllers/api/KCImportController.php:1838
+#: app/controllers/api/KCImportController.php:2268
+#: app/controllers/api/KCImportController.php:2270
+#: app/controllers/api/KCImportController.php:2722
+#: app/controllers/api/KCImportController.php:2724
+#: app/controllers/api/KCImportController.php:3144
+#: app/controllers/api/KCImportController.php:3146
+#: app/controllers/api/KCImportController.php:3543
+#: app/controllers/api/KCImportController.php:3633
+#: app/controllers/api/KCImportController.php:4056
+#: app/controllers/api/KCImportController.php:4321
+msgid "Data not imported"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:898
+#: app/controllers/api/KCImportController.php:1415
+#: app/controllers/api/KCImportController.php:1860
+#: app/controllers/api/KCImportController.php:2292
+#, php-format
+msgid "Row %d: %s is required"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:908
+#: app/controllers/api/KCImportController.php:1425
+#: app/controllers/api/KCImportController.php:2302
+#, php-format
+msgid "Row %d: Invalid email format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:917
+#: app/controllers/api/KCImportController.php:1434
+#: app/controllers/api/KCImportController.php:2311
+#, php-format
+msgid "Row %d: Gender must be male, female, or other"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:926
+#: app/controllers/api/KCImportController.php:1443
+#: app/controllers/api/KCImportController.php:2320
+#, php-format
+msgid "Row %d: Invalid contact number format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:949
+#, php-format
+msgid "Row %d: Clinic with ID \"%s\" does not exist. Please use a valid clinic ID."
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1211
+msgid "Failed to save doctor"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1656
+#, php-format
+msgid "Row %d: Receptionist with email %s already exists"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1771
+#, php-format
+msgid "Row %d: Clinic with email %s already exists"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1870
+#, php-format
+msgid "Row %d: Invalid clinic email format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1879
+#, php-format
+msgid "Row %d: Invalid admin email format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1888
+#, php-format
+msgid "Row %d: Admin gender must be male, female, or other"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1897
+#, php-format
+msgid "Row %d: Invalid phone number format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:1906
+#, php-format
+msgid "Row %d: Invalid admin contact format"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2204
+#, php-format
+msgid "Row %d: Patient with email %s already exists"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2335
+#, php-format
+msgid "Row %d: Invalid date of birth format. Use MM/DD/YYYY or YYYY-MM-DD"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2410
+msgid "A patient with this email already exists. Please use a different email."
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2419
+msgid "Patient unique ID is already used. Please use a different unique ID."
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2475
+msgid "Failed to create patient"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2660
+#, php-format
+msgid "Row %d: Service \"%s\" already exists for this doctor"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2710
+msgid "Service already exists"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2716
+msgid "Invalid category"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2719
+msgid "Doctor not found"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2747
+#, php-format
+msgid "Row %d: %s is required (Available fields: %s)"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2756
+#, php-format
+msgid "Row %d: Charges must be a positive number"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2773
+#, php-format
+msgid "Row %d: Category is required"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2820
+#, php-format
+msgid "Row %d: Failed to create category \"%s\""
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2841
+#, php-format
+msgid "Row %d: Doctor with ID \"%s\" does not exist"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2858
+#, php-format
+msgid "Row %d: Clinic with ID \"%s\" does not exist"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2926
+msgid "Category not found"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2946
+msgid "Failed to create service"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2960
+msgid "Same Service Already Exists, Please select Different category or service name"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:2972
+msgid "Doctor is not assigned to this clinic"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3116
+#, php-format
+msgid "Row %d: Custom field already exists for this module"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3172
+#: app/controllers/api/KCImportController.php:3568
+#, php-format
+msgid "Row %d: Required field \"%s\" is missing or empty"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3183
+#, php-format
+msgid "Row %d: Invalid module type \"%s\""
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3193
+#, php-format
+msgid "Row %d: Invalid field type \"%s\""
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3202
+#, php-format
+msgid "Row %d: Options are required for field type \"%s\""
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3213
+#, php-format
+msgid "Row %d: Invalid status value \"%s\""
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3224
+#, php-format
+msgid "Row %d: Invalid required value \"%s\""
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3347
+msgid "Failed to create custom field"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3579
+#, php-format
+msgid "Row %d: Invalid date format \"%s\". Expected formats: MM/DD/YY, DD/MM/YYYY, YYYY-MM-DD"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3588
+#, php-format
+msgid "Row %d: Invalid start time format \"%s\". Expected format: HH:MM:SS"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3596
+#, php-format
+msgid "Row %d: Invalid end time format \"%s\". Expected format: HH:MM:SS"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:3606
+#, php-format
+msgid "Row %d: Invalid status \"%s\". Valid values: 0-4"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:4072
+#, php-format
+msgid "Required field \"%s\" is missing or empty"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:4207
+msgid "No data found"
+msgstr ""
+
+#: app/controllers/api/KCImportController.php:4225
+msgid "Import completed"
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:149
+#: app/controllers/api/KCPRatingController.php:216
+msgid "Rating must be a number between 1 and 5."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:167
+msgid "Failed to save review. Please try again."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:176
+msgid "Review added successfully."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:184
+msgid "Failed to add review."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:207
+#: app/controllers/api/KCPRatingController.php:491
+msgid "Review ID is required."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:228
+#: app/controllers/api/KCPRatingController.php:503
+msgid "Review not found."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:261
+msgid "Failed to update review. Please try again."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:269
+msgid "Review updated successfully."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:275
+msgid "Failed to update review."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:467
+msgid "Reviews retrieved successfully."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:472
+msgid "Failed to retrieve reviews."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:526
+msgid "Failed to delete review. Please try again."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:534
+msgid "Review deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:540
+msgid "Failed to delete review."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:575
+msgid "Appointment not found."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:584
+msgid "You can only submit reviews for your own appointments."
+msgstr ""
+
+#: app/controllers/api/KCPRatingController.php:594
+msgid "A review already exists for this patient-doctor combination."
+msgstr ""
+
+#: app/controllers/api/KCPReportsController.php:61
+msgid "Initial report data retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCPReportsController.php:64
+msgid "Failed to get initial report data"
+msgstr ""
+
+#: app/controllers/api/KCPReportsController.php:100
+msgid "Overall clinic revenue retrieved"
+msgstr ""
+
+#: app/controllers/api/KCPReportsController.php:102
+msgid "Failed to retrieve overall clinic revenue"
+msgstr ""
+
+#: app/controllers/api/KCPReportsController.php:235
+msgid "Report data retrieved"
+msgstr ""
+
+#: app/controllers/api/KCPReportsController.php:238
+msgid "Failed to retrieve report data"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:257
+#: app/controllers/api/KCProTaxController.php:177
+msgid "Format must be csv, xls, or pdf"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:529
+msgid "Encounters without bill retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:540
+msgid "Tax calculated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:849
+msgid "Bills retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:866
+#: app/controllers/api/KCProBillController.php:889
+msgid "Bill item not found"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:875
+msgid "Bill item updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:877
+msgid "Failed to update bill item"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:894
+msgid "Bill item deleted successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:896
+msgid "Failed to delete bill item"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1092
+msgid "Bills data retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1100
+#: app/controllers/api/KCProPrintBillController.php:56
+msgid "Bill ID is required"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1105
+#: app/controllers/api/KCProPrintBillController.php:67
+msgid "Bill not found"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1115
+#: app/controllers/api/KCProPatientMedicalReportController.php:768
+msgid "Patient email not found"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1204
+#, php-format
+msgid "Bill #%s"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1205
+msgid "Please find attached your bill."
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1213
+msgid "Bill sent successfully"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1215
+msgid "Failed to send email"
+msgstr ""
+
+#: app/controllers/api/KCProBillController.php:1230
+msgid "Bill template not found"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:62
+msgid "Clinic name is required"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:66
+msgid "Clinic name must be at least 2 characters long"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:70
+msgid "Clinic name cannot exceed 100 characters"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:83
+msgid "Email is required"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:87
+msgid "Please enter a valid email address"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:100
+msgid "Contact number is required"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:104
+msgid "Please enter a valid contact number"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:118
+msgid "Address is required"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:165
+msgid "Specialties are required and must be an array"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:173
+msgid "Each specialty must have id and label"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:184
+msgid "Status must be 0 (inactive) or 1 (active)"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:195
+msgid "Invalid image ID"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:206
+msgid "Invalid admin user ID"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:248
+msgid "A clinic with this email already exists"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:259
+msgid "A user with this admin email already exists"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:303
+msgid "Failed to create clinic"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:397
+msgid "Clinic created successfully"
+msgstr ""
+
+#: app/controllers/api/KCProClinicController.php:407
+msgid "An error occurred: "
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:506
+#: app/controllers/api/KCProCustomFormController.php:611
+#: app/controllers/api/KCProCustomFormController.php:700
+#: app/controllers/api/KCProCustomFormController.php:753
+#: app/controllers/api/KCProCustomFormController.php:915
+msgid "Custom form not found"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:509
+msgid "Custom form retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:511
+msgid "Failed to retrieve custom form"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:588
+#: app/controllers/api/KCProCustomFormController.php:593
+msgid "Failed to create custom form"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:591
+msgid "Custom form created successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:678
+#: app/controllers/api/KCProCustomFormController.php:683
+msgid "Failed to update custom form"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:681
+msgid "Custom form updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:704
+#: app/controllers/api/KCProCustomFormController.php:709
+msgid "Failed to delete custom form"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:707
+msgid "Custom form deleted successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:725
+msgid "Invalid IDs provided"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:733
+msgid "Custom forms deleted successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:735
+msgid "Failed to delete custom forms"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:760
+#: app/controllers/api/KCProCustomFormController.php:765
+msgid "Failed to update form status"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:763
+msgid "Form status updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:784
+msgid "Appointment Module"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:785
+msgid "Encounter Module"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:786
+msgid "Patient Module"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:787
+msgid "Doctor Module"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:793
+msgid "Active"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:793
+msgid "Inactive"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:919
+msgid "Custom form is inactive"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:950
+#: app/controllers/api/KCProPrintEncounterController.php:70
+#: app/controllers/api/KCProPrintPrescriptionController.php:51
+msgid "Encounter not found"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:972
+msgid "Access denied: Form not available for this clinic"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:978
+msgid "Access denied: Insufficient role permissions"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:998
+msgid "Access denied: Form not available for this module type"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:1003
+msgid "Form is not compatible with encounter module"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:1033
+msgid "Custom form data saved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:1036
+msgid "Failed to save custom form data"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:1102
+#: app/controllers/api/KCProCustomFormController.php:1196
+msgid "Custom forms retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProCustomFormController.php:1104
+#: app/controllers/api/KCProCustomFormController.php:1198
+msgid "Failed to retrieve custom forms"
+msgstr ""
+
+#: app/controllers/api/KCProEncounterController.php:268
+msgid "Encounters exported successfully"
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:498
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:535
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:717
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1002
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1210
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1304
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1370
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1446
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1511
+msgid "Encounter template not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:545
+msgid "Encounter not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:663
+msgid "Failed to create encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:674
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1168
+msgid "Created template not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:688
+msgid "Encounter template created successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:692
+msgid "An error occurred while creating the encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:730
+msgid "You can only update templates that you created."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:751
+msgid "No data provided for update."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:765
+msgid "Failed to update encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:776
+msgid "Updated template not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:790
+msgid "Encounter template updated successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:794
+msgid "An error occurred while updating the encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:937
+msgid "Templates fetched successfully"
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:941
+msgid "An error occurred while fetching templates."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:957
+msgid "Template not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:962
+msgid "You do not have permission to view this template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:982
+msgid "Template fetched successfully"
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1013
+msgid "Failed to delete encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1021
+msgid "Encounter template deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1025
+msgid "An error occurred while deleting the encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1050
+msgid "Invalid template IDs provided."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1064
+msgid "No valid template IDs provided."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1077
+msgid "Some encounter templates were not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1106
+msgid "All encounter templates deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1110
+#, php-format
+msgid "%d out of %d encounter templates deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1118
+msgid "Failed to delete any encounter templates."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1125
+msgid "An error occurred while deleting encounter templates."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1157
+msgid "Failed to save encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1183
+msgid "Encounter template saved successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1187
+msgid "An error occurred while saving encounter template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1253
+msgid "Medical history items for type fetched successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1276
+msgid "Medical history items fetched successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1281
+msgid "An error occurred while fetching medical history items."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1315
+msgid "Medical history item not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1324
+msgid "Medical history item does not belong to this template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1335
+msgid "Failed to delete medical history item."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1343
+msgid "Medical history item deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1347
+msgid "An error occurred while deleting medical history item."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1392
+msgid "Failed to save encounter template prescription."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1403
+msgid "Created template prescription not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1420
+msgid "Encounter template prescription saved successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1424
+msgid "An error occurred while saving encounter template prescription."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1484
+msgid "Prescription items fetched successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1488
+msgid "An error occurred while fetching prescription items."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1522
+msgid "Prescription item not found."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1531
+msgid "Prescription item does not belong to this template."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1542
+msgid "Failed to delete prescription item."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1550
+msgid "Prescription item deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1554
+msgid "An error occurred while deleting prescription item."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1661
+msgid "Template applied to encounter successfully."
+msgstr ""
+
+#: app/controllers/api/KCProExtendedEncounterTemplateController.php:1666
+msgid "An error occurred while applying template to encounter."
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:390
+msgid "Follow-up created successfully"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:531
+msgid "Not set"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:555
+msgid "Treatment Chains are disabled in system configuration."
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:681
+#: app/controllers/api/KCProFollowupController.php:978
+msgid "Chain status updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:702
+#: app/controllers/api/KCProFollowupController.php:753
+#: app/controllers/api/KCProFollowupController.php:811
+#: app/controllers/api/KCProFollowupController.php:855
+msgid "Follow-up not found"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:768
+msgid "Follow-up status updated"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:791
+msgid "Follow-up scheduled successfully"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:819
+#: app/controllers/api/KCProFollowupController.php:865
+msgid "Only cancelled follow-ups can be deleted"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:828
+msgid "Follow-up deleted successfully"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:891
+#, php-format
+msgid "%d follow-ups deleted, %d failed"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:930
+#, php-format
+msgid "%d follow-ups updated, %d failed"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:1080
+msgid "Reminder added successfully"
+msgstr ""
+
+#: app/controllers/api/KCProFollowupController.php:1097
+msgid "Reminder removed successfully"
+msgstr ""
+
+#: app/controllers/api/KCProGdprAuditController.php:151
+msgid "Order must be asc or desc"
+msgstr ""
+
+#: app/controllers/api/KCProGdprAuditController.php:166
+msgid "Invalid sort field"
+msgstr ""
+
+#: app/controllers/api/KCProGdprAuditController.php:183
+msgid "Invalid per page value"
+msgstr ""
+
+#: app/controllers/api/KCProGdprAuditController.php:251
+msgid "Audit logs retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProGdprAuditController.php:255
+msgid "Error retrieving audit logs: "
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:68
+msgid "You do not have permission to view all consents."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:169
+msgid "Consents exported successfully"
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:212
+#: app/controllers/api/KCProGdprConsentController.php:516
+msgid "Consents retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:231
+#: app/controllers/api/KCProGdprConsentController.php:262
+msgid "User not authenticated."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:240
+msgid "Your data has been deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:245
+msgid "Failed to delete user data."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:271
+msgid "User not found."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:299
+msgid "Your data export request has been submitted. Please check your email to confirm the request."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:421
+msgid "user_id, consent_type, and consent_version_id are required."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:430
+msgid "You do not have permission to store consent for this user."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:489
+msgid "Consent stored successfully"
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:494
+msgid "Failed to store consent."
+msgstr ""
+
+#: app/controllers/api/KCProGdprConsentController.php:521
+msgid "Failed to fetch consents."
+msgstr ""
+
+#: app/controllers/api/KCProGdprSettingsController.php:56
+msgid "GDPR settings retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProGdprSettingsController.php:85
+msgid "GDPR settings updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:332
+msgid "Reports retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:334
+msgid "Failed to retrieve reports"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:355
+#: app/controllers/api/KCProPatientMedicalReportController.php:468
+#: app/controllers/api/KCProPatientMedicalReportController.php:560
+#: app/controllers/api/KCProPatientMedicalReportController.php:686
+#: app/controllers/api/KCProPatientMedicalReportController.php:722
+msgid "Report not found"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:358
+msgid "Report retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:360
+msgid "Failed to retrieve report"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:411
+#: app/controllers/api/KCProPatientMedicalReportController.php:505
+msgid "Invalid file type. Only PDF, images, DOC, DOCX, and TXT files are allowed."
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:430
+#: app/controllers/api/KCProPatientMedicalReportController.php:524
+msgid "Failed to create attachment"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:440
+#: app/controllers/api/KCProPatientMedicalReportController.php:445
+msgid "Failed to create report"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:443
+msgid "Report created successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:534
+#: app/controllers/api/KCProPatientMedicalReportController.php:539
+msgid "Failed to update report"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:537
+msgid "Report updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:564
+#: app/controllers/api/KCProPatientMedicalReportController.php:569
+msgid "Failed to delete report"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:567
+msgid "Report deleted successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:653
+msgid "Encrypted report URL generated"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:669
+msgid "Missing key"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:681
+msgid "Invalid key"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:693
+#: app/controllers/api/KCProPatientMedicalReportController.php:728
+msgid "File not found"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:763
+msgid "No reports selected"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:794
+msgid "Reports"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:795
+msgid "Please find attached your reports."
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:801
+msgid "Reports sent successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPatientMedicalReportController.php:803
+msgid "Failed to send reports"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:66
+msgid "Administrator"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:67
+msgid "Clinic Admin"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:68
+msgid "Doctor"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:69
+msgid "Patient"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:70
+msgid "Receptionist"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:817
+msgid "Role not found"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:822
+msgid "Invalid role specified"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:853
+msgid "Permission updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProPermissionSetting.php:859
+msgid "Invalid data provided"
+msgstr ""
+
+#: app/controllers/api/KCProPrintBillController.php:33
+msgid "Bill ID"
+msgstr ""
+
+#: app/controllers/api/KCProPrintBillController.php:240
+#: app/controllers/api/KCProPrintEncounterController.php:237
+#: app/controllers/api/KCProPrintPrescriptionController.php:243
+msgid "Print template not found"
+msgstr ""
+
+#: app/controllers/api/KCProPrintEncounterController.php:35
+#: app/controllers/api/KCProPrintPrescriptionController.php:32
+msgid "Encounter ID"
+msgstr ""
+
+#: app/controllers/api/KCProPrintEncounterController.php:59
+#: app/controllers/api/KCProPrintPrescriptionController.php:46
+msgid "Encounter ID is required"
+msgstr ""
+
+#: app/controllers/api/KCProPrintEncounterController.php:329
+msgid "Open"
+msgstr ""
+
+#: app/controllers/api/KCProPrintEncounterController.php:329
+msgid "Closed"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:91
+#: app/controllers/api/KCProServiceSessionController.php:124
+#: app/controllers/api/KCProServiceSessionController.php:171
+msgid "mapping_id is required"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:97
+#: app/controllers/api/KCProServiceSessionController.php:134
+msgid "Service mapping not found"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:102
+msgid "Sessions retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:105
+msgid "Failed to retrieve sessions"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:128
+msgid "days array is required"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:142
+msgid "Sessions updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:145
+msgid "Sessions created successfully"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:156
+msgid "Failed to save sessions"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:178
+msgid "Sessions deleted successfully"
+msgstr ""
+
+#: app/controllers/api/KCProServiceSessionController.php:182
+msgid "Failed to delete sessions"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:82
+msgid "Failed to get sidebar settings."
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:163
+msgid "Invalid request data"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:173
+#: app/controllers/api/KCProSidebarSetting.php:222
+msgid "Invalid role type"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:190
+msgid "Sidebar reset to default successfully"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:210
+msgid "Invalid sidebar data structure"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:217
+msgid "Dashboard sidebar data saved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:219
+msgid "Failed to save sidebar data"
+msgstr ""
+
+#: app/controllers/api/KCProSidebarSetting.php:229
+msgid "Failed to save sidebar settings."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:393
+#: app/controllers/api/KCProTaxController.php:893
+msgid "Tax rate must be greater than 0."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:578
+msgid "No taxes could be created. All combinations already exist or have no valid mappings."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:582
+msgid "Tax created successfully"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:584
+#, php-format
+msgid " (%d combinations skipped due to duplicates)"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:595
+msgid "Failed to create tax."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:792
+msgid "Taxes retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:796
+msgid "Failed to fetch taxes."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:828
+#: app/controllers/api/KCProTaxController.php:947
+#: app/controllers/api/KCProTaxController.php:1057
+msgid "Tax not found."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:849
+msgid "Tax detail fetched successfully"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:856
+#: app/controllers/api/KCProTaxController.php:943
+#: app/controllers/api/KCProTaxController.php:1050
+msgid "Invalid tax ID."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:863
+msgid "Tax not found"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:926
+msgid "Failed to update tax"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:929
+msgid "Tax updated successfully"
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:950
+msgid "Tax deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:967
+#: app/controllers/api/KCProTaxController.php:1007
+msgid "No tax IDs provided."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:973
+msgid "No taxes found for deletion."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:986
+#, php-format
+msgid "%d taxes deleted successfully."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:1010
+#: app/controllers/api/KCProTaxController.php:1053
+msgid "No status provided."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:1016
+msgid "No taxes found for status update."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:1030
+#, php-format
+msgid "%d taxes status updated."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:1061
+msgid "Tax status updated."
+msgstr ""
+
+#: app/controllers/api/KCProTaxController.php:1194
+msgid "Taxes data retrieved successfully"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:159
+msgid "Type of test message - either sms or whatsapp."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:168
+msgid "Recipient mobile number."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:174
+msgid "Message content to be sent."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:197
+msgid "Patient Templates"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:198
+msgid "Doctor Templates"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:199
+msgid "Clinic Templates"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:200
+msgid "Receptionist Templates"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:201
+msgid "Common Templates"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:222
+msgid "SMS template saved successfully."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:224
+msgid "Failed to update template."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:229
+msgid "Failed to update settings"
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:245
+msgid "All fields are required."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:252
+msgid "Failed to send test message."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:254
+msgid "Test message sent successfully."
+msgstr ""
+
+#: app/controllers/api/KCPSMSWhatsappTemplate.php:258
+msgid "Failed to send test message"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:39
+msgid "Please update kivicare pro plugin"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:41
+msgid "Please install kivicare pro plugin"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:338
+#: app/controllers/api/ProSettings.php:360
+#: app/controllers/api/ProSettings.php:371
+msgid "Invalid logo ID"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:349
+msgid "Invalid WordPress logo ID"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:616
+msgid "Pro Settings updated successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:618
+msgid "Failed to update settings."
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:653
+msgid "Dashboard slugs saved"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:911
+msgid "SMS configuration saved successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:930
+msgid "WhatsApp configuration saved successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:942
+msgid "Google Calendar configuration saved successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:960
+msgid "Google Calendar status colors saved successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:965
+msgid "Google Calendar status colors not provided"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1008
+msgid "Setting Saved"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1019
+msgid "CopyRight Text Saved Successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1129
+msgid "Fonts updated successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1135
+msgid "Failed to update fonts"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1155
+msgid "Sync setting retrieved"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1188
+msgid "Sync setting updated successfully"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1193
+msgid "Invalid parameters"
+msgstr ""
+
+#: app/controllers/api/ProSettings.php:1243
+msgid "All doctors disconnected from Google Calendar successfully"
+msgstr ""
+
+#: app/controllers/filters/KCProBookingLimitFilters.php:61
+#: app/controllers/filters/KCProBookingLimitFilters.php:89
+msgid "Permission denied"
+msgstr ""
+
+#: app/controllers/filters/KCProBookingLimitFilters.php:79
+msgid "Booking Limit setting retrieved successfully"
+msgstr ""
+
+#: app/controllers/filters/KCProBookingLimitFilters.php:120
+msgid "Booking Limit setting saved successfully"
+msgstr ""
+
+#: app/controllers/filters/KCProBookingLimitFilters.php:126
+msgid "Setting update failed"
+msgstr ""
+
+#: app/controllers/filters/KCProBookingLimitFilters.php:131
+msgid "Failed to save Booking Limit settings."
+msgstr ""
+
+#: app/controllers/filters/KCProSettingsFilters.php:64
+msgid "Invalid or missing encounter module settings."
+msgstr ""
+
+#: app/controllers/filters/KCProSettingsFilters.php:74
+#: app/controllers/filters/KCProSettingsFilters.php:100
+msgid "Settings updated successfully."
+msgstr ""
+
+#: app/controllers/filters/KCProSettingsFilters.php:75
+#: app/controllers/filters/KCProSettingsFilters.php:101
+#: app/controllers/filters/KCProSettingsFilters.php:182
+#: app/controllers/filters/KCProSettingsFilters.php:214
+msgid "No changes made or failed to update settings."
+msgstr ""
+
+#: app/controllers/filters/KCProSettingsFilters.php:90
+msgid "Invalid or missing prescription module settings."
+msgstr ""
+
+#: app/controllers/filters/KCProSettingsFilters.php:181
+msgid "Follow-up settings updated successfully."
+msgstr ""
+
+#: app/controllers/filters/KCProSettingsFilters.php:213
+msgid "Treatment chain settings updated successfully."
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:116
+msgid "Please review and accept the updated Privacy Policy and Terms & Conditions to continue."
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:149
+msgid "KiviCare Data"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:182
+msgid "KiviCare – Personal Information"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:188
+msgid "KiviCare – Export Metadata"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:194
+msgid "KiviCare – Appointments"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:200
+msgid "KiviCare – Reports"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:206
+msgid "KiviCare – Payment History"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:243
+msgid "KiviCare – Patient Encounters"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:250
+#, php-format
+msgid "Encounter #%d"
+msgstr ""
+
+#: app/filterClasses/KCGdprExportFilters.php:296
+msgid "--- Medical History ---"
+msgstr ""
+
+#: app/filterClasses/KCPCommonFilters.php:142
+msgid "Only patients can perform this action"
+msgstr ""
+
+#: app/filterClasses/KCPCommonFilters.php:148
+msgid "failed to Checkout Clinic"
+msgstr ""
+
+#: app/filterClasses/KCPCommonFilters.php:164
+msgid "Patient Clinic Updated"
+msgstr ""
+
+#: app/filterClasses/KCPCommonFilters.php:216
+msgid "Patient clinic updated successfully"
+msgstr ""
+
+#: app/filterClasses/KCPCommonFilters.php:219
+msgid "Clinic Not selected"
+msgstr ""
+
+#: app/notifications/KCPNotificationTemplateManager.php:75
+msgid "Custom KiviCare Notification Templates"
+msgstr ""
+
+#: app/notifications/listeners/KCFollowupNotificationListener.php:53
+msgid "Service not selected"
+msgstr ""
+
+#: app/notifications/listeners/KCFollowupNotificationListener.php:65
+msgid "To be scheduled"
+msgstr ""
+
+#: kivicare-clinic-management-system-pro.php:82
+msgid "<strong>KiviCare Pro</strong> has been deactivated. It requires KiviCare Lite version 4.4.0 or higher."
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:36
+msgid "Invoice"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:140
+msgid "Invoice Date:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:144
+msgid "Invoice No:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:154
+#: templates/KCEncounterPrintTemplate.php:156
+#: templates/KCEncounterPrintTemplate.php:178
+#: templates/KCPrescriptionPrintTemplate.php:163
+msgid "Address:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:165
+#: templates/KCEncounterPrintTemplate.php:176
+#: templates/KCPrescriptionPrintTemplate.php:161
+msgid "Contact:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:166
+#: templates/KCEncounterPrintTemplate.php:152
+#: templates/KCEncounterPrintTemplate.php:177
+#: templates/KCPrescriptionPrintTemplate.php:142
+#: templates/KCPrescriptionPrintTemplate.php:162
+msgid "Email:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:172
+msgid "Patient Information"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:176
+msgid "Patient ID"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:177
+msgid "Patient Name"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:178
+msgid "Age"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:179
+msgid "Contact"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:192
+msgid "Service Details"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:196
+#: templates/KCBillPrintTemplate.php:230
+msgid "S No."
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:197
+msgid "Description"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:198
+msgid "Price"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:199
+msgid "Amount"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:219
+msgid "No services"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:226
+msgid "Tax Details"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:231
+msgid "Tax Name"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:232
+msgid "Charges"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:260
+msgid "Sub Total:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:266
+msgid "Discount:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:272
+msgid "Total Tax:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:277
+msgid "Grand Total:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:287
+msgid "Payment Method:"
+msgstr ""
+
+#: templates/KCBillPrintTemplate.php:290
+msgid "Payment Status:"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:6
+#: templates/KCEncounterPrintTemplate.php:130
+msgid "Encounter Details"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:148
+#: templates/KCPrescriptionPrintTemplate.php:138
+msgid "Patient Name:"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:169
+msgid "Encounter Date & Time:"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:195
+msgid "Clinical Details:"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:200
+#: templates/KCPrescriptionPrintTemplate.php:211
+msgid "Problems"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:201
+#: templates/KCPrescriptionPrintTemplate.php:212
+msgid "Observations"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:202
+#: templates/KCPrescriptionPrintTemplate.php:213
+msgid "Notes"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:227
+msgid "Prescription:"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:232
+#: templates/KCPrescriptionPrintTemplate.php:185
+msgid "Name"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:233
+#: templates/KCPrescriptionPrintTemplate.php:186
+msgid "Frequency"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:234
+#: templates/KCPrescriptionPrintTemplate.php:187
+msgid "Duration"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:235
+#: templates/KCPrescriptionPrintTemplate.php:188
+msgid "Instructions"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:253
+#: templates/KCPrescriptionPrintTemplate.php:258
+msgid "Other information"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:258
+#: templates/KCPrescriptionPrintTemplate.php:263
+msgid "Field"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:259
+#: templates/KCPrescriptionPrintTemplate.php:264
+msgid "Value"
+msgstr ""
+
+#: templates/KCEncounterPrintTemplate.php:280
+#: templates/KCPrescriptionPrintTemplate.php:284
+msgid "Doctor Signature"
+msgstr ""
+
+#: templates/KCPrescriptionPrintTemplate.php:6
+msgid "Prescription"
+msgstr ""
+
+#: templates/KCPrescriptionPrintTemplate.php:146
+msgid "Blood Group:"
+msgstr ""
+
+#: templates/KCPrescriptionPrintTemplate.php:150
+msgid "Gender:"
+msgstr ""
+
+#: templates/KCPrescriptionPrintTemplate.php:154
+msgid "Date & Time:"
+msgstr ""
+
+#: templates/KCPrescriptionPrintTemplate.php:178
+msgid "Prescriptions"
+msgstr ""
+
+#: templates/KCPrescriptionPrintTemplate.php:206
+msgid "Clinical Details"
+msgstr ""

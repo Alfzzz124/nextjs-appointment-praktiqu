@@ -1,0 +1,15 @@
+{
+    "name": "iqonic/kivicare-clinic-management-system-stripe-addon",
+    "authors": [{
+        "name": "Iqonic.design",
+        "email": "hello@iqonic.design"
+    }],
+    "autoload": {
+        "psr-4": {
+            "KCTApp\\": "./app"
+        }
+    },
+    "config": {
+        "autoloader-suffix": "KiviCareTelemedAddon"
+    }
+}
