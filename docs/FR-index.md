@@ -1,8 +1,8 @@
 # Functional Requirements Index
 
-**Project:** PraktiQU - Next.js Clinic Management System (EHR)  
+**Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** FR Index - Functional Requirements  
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -10,7 +10,17 @@
 
 ## Overview
 
-This document indexes all Functional Requirements derived from the KiviCare WordPress plugin analysis. Each requirement is numbered, categorized, and prioritized for implementation.
+This document indexes all Functional Requirements for PraktiQU, adapted for **Psychology Practice Management**.
+
+### Terminology Changes from KiviCare
+| KiviCare (Medical) | → | PraktiQU (Psychology) |
+|--------------------|---|------------------------|
+| Doctor | → | **Professional / Psikolog** |
+| Patient | → | **Client / Klien** |
+| Appointment | → | **Session / Sesi** |
+| Encounter | → | **Session Notes** |
+| Prescription | → | **Intervention Plan** |
+| Session Duration | 15-30 min | **50-60 min** |
 
 ---
 
@@ -27,49 +37,52 @@ This document indexes all Functional Requirements derived from the KiviCare Word
 | FR-01.06 | Multi-role user system | P0 |
 | FR-01.07 | User profile management | P1 |
 | FR-01.08 | Inactive user account handling | P1 |
-| FR-01.09 | Profile image upload | P2 |
 
-### FR-02: Clinic Management
+### FR-02: Professional Management
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-02.01 | Create clinic | P0 |
-| FR-02.02 | Update clinic details | P0 |
-| FR-02.03 | Delete clinic | P1 |
-| FR-02.04 | Clinic logo upload | P1 |
-| FR-02.05 | Clinic address management | P0 |
-| FR-02.06 | Clinic contact information | P0 |
-| FR-02.07 | Clinic specialties assignment | P1 |
-| FR-02.08 | Clinic timezone configuration | P1 |
-| FR-02.09 | Clinic currency settings | P1 |
-| FR-02.10 | Clinic status (active/inactive) | P1 |
+| FR-02.01 | Professional registration | P0 |
+| FR-02.02 | Professional profile management | P0 |
+| FR-02.03 | Professional type assignment (Psikolog Klinis, Psikiater, dll) | P0 |
+| FR-02.04 | Professional registration number (SIP/SIK) | P0 |
+| FR-02.05 | Professional service association | P1 |
+| FR-02.06 | Professional location/clinic assignment | P1 |
+| FR-02.07 | Professional availability schedule | P0 |
+| FR-02.08 | Day-wise session slot configuration (50 min default) | P0 |
+| FR-02.09 | Professional digital signature | P2 |
+| FR-02.10 | Professional status management | P1 |
 
-### FR-03: Doctor Management
+### FR-03: Client Management
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-03.01 | Doctor registration | P0 |
-| FR-03.02 | Doctor profile management | P0 |
-| FR-03.03 | Doctor specialty assignment | P1 |
-| FR-03.04 | Doctor service association | P1 |
-| FR-03.05 | Doctor clinic assignment | P1 |
-| FR-03.06 | Doctor availability schedule | P0 |
-| FR-03.07 | Day-wise time slot configuration | P0 |
-| FR-03.08 | Doctor digital signature | P2 |
-| FR-03.09 | Doctor status management | P1 |
-| FR-03.10 | Doctor list with search/filter | P0 |
+| FR-03.01 | Client registration | P0 |
+| FR-03.02 | Client unique ID generation | P1 |
+| FR-03.03 | Client profile with demographics | P0 |
+| FR-03.04 | Client session history | P1 |
+| FR-03.05 | Client clinic registration | P1 |
+| FR-03.06 | Client self-registration portal | P1 |
+| FR-03.07 | Client status management | P1 |
+| FR-03.08 | Client list with pagination | P0 |
+| FR-03.09 | Client search by mobile number | P1 |
+| FR-03.10 | Client progress tracking | P1 |
+| FR-03.11 | Informed consent verification | P1 |
 
-### FR-04: Patient Management
+### FR-04: Session Management (Previously: Appointment)
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-04.01 | Patient registration | P0 |
-| FR-04.02 | Patient unique ID generation | P1 |
-| FR-04.03 | Patient profile with demographics | P0 |
-| FR-04.04 | Patient medical history | P1 |
-| FR-04.05 | Patient clinic registration | P1 |
-| FR-04.06 | Patient self-registration portal | P1 |
-| FR-04.07 | Patient status management | P1 |
-| FR-04.08 | Patient list with pagination | P0 |
-| FR-04.09 | Patient search by mobile number | P1 |
-| FR-04.10 | Patient statistics | P2 |
+| FR-04.01 | Create session booking | P0 |
+| FR-04.02 | Update session | P0 |
+| FR-04.03 | Cancel session | P0 |
+| FR-04.04 | Session status workflow | P0 |
+| FR-04.05 | Calendar view display | P0 |
+| FR-04.06 | Session slot generation (default: 50 min) | P0 |
+| FR-04.07 | Conflict prevention | P1 |
+| FR-04.08 | Auto-close past sessions | P2 |
+| FR-04.09 | Session filters | P1 |
+| FR-04.10 | Session export (CSV) | P2 |
+| FR-04.11 | Session type (Individual/Group/Assessment) | P1 |
+| FR-04.12 | Multi-timezone support | P1 |
+| FR-04.13 | Session notes integration | P1 |
 
 ### FR-05: Service Catalog
 | ID | Requirement | Priority |
@@ -78,142 +91,133 @@ This document indexes all Functional Requirements derived from the KiviCare Word
 | FR-05.02 | Update service | P0 |
 | FR-05.03 | Delete service | P1 |
 | FR-05.04 | Service pricing | P0 |
-| FR-05.05 | Service duration | P1 |
-| FR-05.06 | Service type classification | P1 |
+| FR-05.05 | Service duration (default: 50 min) | P1 |
+| FR-05.06 | Service type (Konseling, Asesmen, Workshop) | P1 |
 | FR-05.07 | Private/public service flag | P2 |
-| FR-05.08 | Service image | P2 |
 
-### FR-06: Appointment System
+### FR-06: Session Notes (Previously: Encounter)
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-06.01 | Create appointment | P0 |
-| FR-06.02 | Update appointment | P0 |
-| FR-06.03 | Cancel appointment | P0 |
-| FR-06.04 | Appointment status workflow | P0 |
-| FR-06.05 | Calendar view display | P0 |
-| FR-06.06 | Time slot generation | P0 |
-| FR-06.07 | Conflict prevention | P1 |
-| FR-06.08 | Auto-close past appointments | P2 |
-| FR-06.09 | Appointment filters | P1 |
-| FR-06.10 | Appointment export (CSV) | P2 |
-| FR-06.11 | Visit type (in-person/telemed) | P1 |
-| FR-06.12 | Multi-timezone support | P1 |
+| FR-06.01 | Create session notes | P1 |
+| FR-06.02 | Session notes content | P1 |
+| FR-06.03 | Session notes status (open/closed) | P1 |
+| FR-06.04 | Session notes template | P2 |
+| FR-06.05 | Progress report upload | P2 |
+| FR-06.06 | Informed consent tracking | P1 |
+| FR-06.07 | Link to session | P1 |
+| FR-06.08 | Print session notes | P2 |
 
-### FR-07: Encounter Management
+### FR-07: Intervention Plan (Previously: Prescription - Non-Medication)
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-07.01 | Create encounter | P1 |
-| FR-07.02 | Clinical notes | P1 |
-| FR-07.03 | Encounter status (open/closed) | P1 |
-| FR-07.04 | Encounter template | P2 |
-| FR-07.05 | Medical report upload | P2 |
-| FR-07.06 | Vital signs recording | P2 |
-| FR-07.07 | Encounter print | P2 |
-| FR-07.08 | Link to appointment | P1 |
+| FR-07.01 | Create intervention plan | P1 |
+| FR-07.02 | Plan recommendations | P1 |
+| FR-07.03 | Plan duration | P1 |
+| FR-07.04 | Plan list | P1 |
+| FR-07.05 | Print plan | P2 |
+| FR-07.06 | View plan (Client access) | P1 |
 
-### FR-08: Prescription Management
+### FR-08: Informed Consent
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-08.01 | Create prescription | P1 |
-| FR-08.02 | Prescription details (medicine, dosage, frequency) | P1 |
-| FR-08.03 | Prescription duration | P1 |
-| FR-08.04 | Prescription instructions | P2 |
-| FR-08.05 | Prescription list | P1 |
-| FR-08.06 | Prescription print | P2 |
+| FR-08.01 | Create consent form | P1 |
+| FR-08.02 | Send consent for signature | P1 |
+| FR-08.03 | Client digital signature | P0 |
+| FR-08.04 | View consent status | P1 |
+| FR-08.05 | Withdraw consent | P2 |
 
-### FR-09: Billing & Payments
+### FR-09: Clinic Management
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-09.01 | Generate bill | P1 |
-| FR-09.02 | Bill items management | P1 |
-| FR-09.03 | Discount application | P1 |
-| FR-09.04 | Tax calculation | P2 |
-| FR-09.05 | Invoice generation | P1 |
-| FR-09.06 | Invoice print | P1 |
-| FR-09.07 | Payment status tracking | P1 |
-| FR-09.08 | Payment method recording | P1 |
-| FR-09.09 | Currency prefix/postfix | P1 |
+| FR-09.01 | Create clinic | P0 |
+| FR-09.02 | Update clinic details | P0 |
+| FR-09.03 | Clinic logo upload | P1 |
+| FR-09.04 | Clinic address management | P0 |
+| FR-09.05 | Clinic timezone configuration | P1 |
+| FR-09.06 | Clinic currency settings | P1 |
+| FR-09.07 | Clinic status (active/inactive) | P1 |
 
-### FR-10: Communication & Notifications
+### FR-10: Billing & Payments
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-10.01 | Email notification sending | P1 |
-| FR-10.02 | Email template customization | P1 |
-| FR-10.03 | Appointment reminders | P1 |
-| FR-10.04 | Patient welcome email | P2 |
-| FR-10.05 | HTML email templates | P1 |
-| FR-10.06 | Background job queue | P2 |
+| FR-10.01 | Generate bill | P1 |
+| FR-10.02 | Bill items management | P1 |
+| FR-10.03 | Discount application | P1 |
+| FR-10.04 | Invoice generation | P1 |
+| FR-10.05 | Invoice print | P1 |
+| FR-10.06 | Payment status tracking | P1 |
 
-### FR-11: Public Booking Portal
+### FR-11: Communication & Notifications
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-11.01 | Public booking page | P0 |
-| FR-11.02 | Doctor selection | P0 |
-| FR-11.03 | Service selection | P0 |
-| FR-11.04 | Date/time selection | P0 |
-| FR-11.05 | Inline patient registration | P1 |
-| FR-11.06 | Shortcode/widget support | P1 |
-| FR-11.07 | Clinic list display | P1 |
-| FR-11.08 | Login/register page | P1 |
-| FR-11.09 | Booking confirmation | P0 |
+| FR-11.01 | Email notification sending | P1 |
+| FR-11.02 | Email template customization | P1 |
+| FR-11.03 | Session reminders | P1 |
+| FR-11.04 | Client welcome email | P2 |
 
-### FR-12: Dashboard & Reporting
+### FR-12: Public Booking Portal
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-12.01 | Dashboard overview | P0 |
-| FR-12.02 | Appointment statistics | P1 |
-| FR-12.03 | Patient statistics | P2 |
-| FR-12.04 | Revenue reports | P2 |
-| FR-12.05 | Data export | P2 |
-| FR-12.06 | Calendar integration | P0 |
+| FR-12.01 | Public booking page | P0 |
+| FR-12.02 | Professional selection | P0 |
+| FR-12.03 | Service selection | P0 |
+| FR-12.04 | Date/time selection | P0 |
+| FR-12.05 | Inline client registration | P1 |
+| FR-12.06 | Booking confirmation | P0 |
 
-### FR-13: Scheduling & Holidays
+### FR-13: Dashboard & Reporting
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-13.01 | Clinic schedule management | P1 |
-| FR-13.02 | Holiday management | P1 |
-| FR-13.03 | Holiday range dates | P1 |
-| FR-13.04 | Doctor off days | P1 |
-| FR-13.05 | Display holidays on calendar | P1 |
-| FR-13.06 | Remaining slots display | P1 |
+| FR-13.01 | Dashboard overview | P0 |
+| FR-13.02 | Session statistics | P1 |
+| FR-13.03 | Active clients count | P1 |
+| FR-13.04 | Upcoming sessions widget | P0 |
+| FR-13.05 | Calendar integration | P0 |
 
-### FR-14: Custom Fields & Forms
+### FR-14: Scheduling & Holidays
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-14.01 | Custom field builder | P2 |
-| FR-14.02 | Field types (text, select, date, etc.) | P2 |
-| FR-14.03 | Module-specific fields | P2 |
-| FR-14.04 | Clinic-specific fields | P2 |
+| FR-14.01 | Practice schedule management | P1 |
+| FR-14.02 | Holiday management | P1 |
+| FR-14.03 | Professional off days | P1 |
+| FR-14.04 | Display holidays on calendar | P1 |
 
 ### FR-15: Settings & Configuration
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-15.01 | General settings | P1 |
-| FR-15.02 | Appointment settings | P1 |
-| FR-15.03 | Patient settings | P1 |
+| FR-15.02 | Session settings | P1 |
+| FR-15.03 | Client settings | P1 |
 | FR-15.04 | Email settings | P1 |
-| FR-15.05 | Login redirect settings | P1 |
-| FR-15.06 | Gender options | P1 |
-| FR-15.07 | Date/time format | P1 |
 
 ### FR-16: Security & Compliance
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-16.01 | End-to-end encryption (E2EE) | P1 |
-| FR-16.02 | Data encryption at rest | P1 |
-| FR-16.03 | Session security | P0 |
-| FR-16.04 | SQL injection prevention | P0 |
-| FR-16.05 | Input validation | P0 |
+| FR-16.02 | Session security | P0 |
+| FR-16.03 | Input validation | P0 |
 
-### FR-17: UI/UX Requirements
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| FR-17.01 | Responsive design | P0 |
-| FR-17.02 | Dark mode | P2 |
-| FR-17.03 | Loading skeletons | P1 |
-| FR-17.04 | Error states | P1 |
-| FR-17.05 | Empty states | P2 |
-| FR-17.06 | Multi-language support | P2 |
+---
+
+## Key Adaptations Summary
+
+### Removed Features
+- ❌ Medical Prescription (Psikolog tidak bisa prescribe medication)
+- ❌ Vital Signs (Not relevant for psychology)
+
+### Renamed Entities
+- Doctor → Professional / Psikolog
+- Patient → Client / Klien
+- Appointment → Session / Sesi
+- Encounter → Session Notes
+
+### New Features
+- ✅ Informed Consent tracking
+- ✅ Session Types (Individual, Group, Assessment)
+- ✅ Intervention Plans (non-medication)
+
+### Session Duration
+- Default slot duration: **50 minutes**
 
 ---
 

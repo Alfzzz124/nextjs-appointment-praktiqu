@@ -1,8 +1,8 @@
 # User Stories Index
 
-**Project:** PraktiQU - Next.js Clinic Management System (EHR)  
+**Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** US Index - User Stories  
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -10,7 +10,15 @@
 
 ## Overview
 
-This document indexes all User Stories derived from the KiviCare WordPress plugin analysis. Each user story is written from the perspective of a specific user role.
+This document indexes all User Stories adapted for **Psychology Practice Management**.
+
+### Terminology Adaptation
+| KiviCare | → | PraktiQU |
+|----------|---|----------|
+| Doctor | → | **Professional** |
+| Patient | → | **Client** |
+| Appointment | → | **Session** |
+| Encounter | → | **Session Notes** |
 
 ---
 
@@ -37,130 +45,142 @@ Priority: P0/P1/P2
 ### US-01: Authentication & Authorization
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-01.01 | Register new user account | Patient | P0 |
+| US-01.01 | Register new user account | Client | P0 |
 | US-01.02 | Login to system | All Users | P0 |
 | US-01.03 | Reset forgotten password | All Users | P0 |
 | US-01.04 | Logout from system | All Users | P0 |
 | US-01.05 | View role-based dashboard | All Users | P0 |
 | US-01.06 | Manage profile information | All Users | P1 |
 
-### US-02: Clinic Management
+### US-02: Practice Management (Previously: Clinic)
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-02.01 | Set up clinic profile | Super Admin | P0 |
-| US-02.02 | Update clinic information | Clinic Admin | P0 |
-| US-02.03 | Upload clinic logo | Clinic Admin | P1 |
-| US-02.04 | Configure clinic schedule | Clinic Admin | P1 |
-| US-02.05 | Set clinic timezone | Clinic Admin | P1 |
-| US-02.06 | Configure currency | Clinic Admin | P1 |
-| US-02.07 | Manage holidays | Clinic Admin | P1 |
+| US-02.01 | Set up practice profile | Super Admin | P0 |
+| US-02.02 | Update practice information | Practice Admin | P0 |
+| US-02.03 | Upload practice logo | Practice Admin | P1 |
+| US-02.04 | Configure practice schedule | Practice Admin | P1 |
+| US-02.05 | Set practice timezone | Practice Admin | P1 |
+| US-02.06 | Manage holidays | Practice Admin | P1 |
 
-### US-03: Doctor Management
+### US-03: Professional Management (Previously: Doctor)
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-03.01 | Register as doctor | Super Admin | P0 |
-| US-03.02 | Complete doctor profile | Doctor | P0 |
-| US-03.03 | Set specialties | Doctor | P1 |
-| US-03.04 | Assign services | Doctor | P1 |
-| US-03.05 | Configure availability | Doctor | P0 |
-| US-03.06 | Set day-wise schedule | Doctor | P0 |
-| US-03.07 | View doctor list | Clinic Admin | P0 |
-| US-03.08 | Update doctor status | Clinic Admin | P1 |
+| US-03.01 | Register as professional | Super Admin | P0 |
+| US-03.02 | Complete professional profile | Professional | P0 |
+| US-03.03 | Set professional type | Professional | P0 |
+| US-03.04 | Enter registration number (SIP/SIK) | Professional | P0 |
+| US-03.05 | Set specialties | Professional | P1 |
+| US-03.06 | Configure availability | Professional | P0 |
+| US-03.07 | Set day-wise schedule (50 min slots) | Professional | P0 |
+| US-03.08 | View professional list | Practice Admin | P0 |
+| US-03.09 | Update professional status | Practice Admin | P1 |
 
-### US-04: Patient Management
+### US-04: Client Management (Previously: Patient)
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-04.01 | Register as patient | Patient | P0 |
-| US-04.02 | Complete patient profile | Patient | P0 |
-| US-04.03 | Add patient by staff | Receptionist | P0 |
-| US-04.04 | Search patients | Staff | P0 |
-| US-04.05 | View patient details | Staff | P0 |
-| US-04.06 | View patient history | Doctor | P1 |
-| US-04.07 | Update patient status | Clinic Admin | P1 |
+| US-04.01 | Register as client | Client | P0 |
+| US-04.02 | Complete client profile | Client | P0 |
+| US-04.03 | Add client by staff | Receptionist | P0 |
+| US-04.04 | Search clients | Staff | P0 |
+| US-04.05 | View client details | Staff | P0 |
+| US-04.06 | View client session history | Professional | P1 |
+| US-04.07 | Update client status | Practice Admin | P1 |
+| US-04.08 | Track client progress | Professional | P1 |
 
 ### US-05: Service Management
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-05.01 | Create service | Clinic Admin | P0 |
-| US-05.02 | Update service | Clinic Admin | P0 |
-| US-05.03 | Set service price | Clinic Admin | P0 |
-| US-05.04 | Assign service to doctor | Clinic Admin | P1 |
-| US-05.05 | View service list | All Staff | P0 |
+| US-05.01 | Create service | Practice Admin | P0 |
+| US-05.02 | Update service | Practice Admin | P0 |
+| US-05.03 | Set service price | Practice Admin | P0 |
+| US-05.04 | Set service duration (50 min default) | Practice Admin | P0 |
+| US-05.05 | Assign service to professional | Practice Admin | P1 |
+| US-05.06 | View service list | All Staff | P0 |
+| US-05.07 | Set service type (konseling/asesmen/workshop) | Practice Admin | P1 |
 
-### US-06: Appointment Management
+### US-06: Session Management (Previously: Appointment)
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-06.01 | Book appointment | Patient | P0 |
-| US-06.02 | View calendar | Staff | P0 |
-| US-06.03 | Check in patient | Receptionist | P0 |
-| US-06.04 | Check out patient | Receptionist | P0 |
-| US-06.05 | Cancel appointment | Patient, Staff | P0 |
-| US-06.06 | Reschedule appointment | Patient, Staff | P1 |
-| US-06.07 | View appointment details | Staff | P0 |
-| US-06.08 | Filter appointments | Staff | P1 |
+| US-06.01 | Book session | Client | P0 |
+| US-06.02 | Book session for client | Staff | P0 |
+| US-06.03 | View calendar | Staff | P0 |
+| US-06.04 | Check in client | Receptionist | P0 |
+| US-06.05 | Check out client | Receptionist | P0 |
+| US-06.06 | Cancel session | Client, Staff | P0 |
+| US-06.07 | Reschedule session | Client, Staff | P1 |
+| US-06.08 | View session details | Staff | P0 |
+| US-06.09 | Filter sessions | Staff | P1 |
+| US-06.10 | Select session type (individual/group/assessment) | Client | P1 |
 
-### US-07: Encounter Management
+### US-07: Session Notes (Previously: Encounter)
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-07.01 | Create encounter | Doctor | P1 |
-| US-07.02 | Add clinical notes | Doctor | P1 |
-| US-07.03 | Upload medical report | Doctor | P2 |
-| US-07.04 | Close encounter | Doctor | P1 |
-| US-07.05 | Record vital signs | Doctor | P2 |
-| US-07.06 | Print encounter | Doctor | P2 |
+| US-07.01 | Create session notes | Professional | P1 |
+| US-07.02 | Add notes content | Professional | P1 |
+| US-07.03 | Close session notes | Professional | P1 |
+| US-07.04 | View session notes list | Professional | P1 |
+| US-07.05 | Print session notes | Professional | P2 |
+| US-07.06 | Use notes template | Professional | P2 |
 
-### US-08: Prescription Management
+### US-08: Informed Consent
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-08.01 | Create prescription | Doctor | P1 |
-| US-08.02 | Add medicine details | Doctor | P1 |
-| US-08.03 | Print prescription | Doctor | P2 |
-| US-08.04 | View prescriptions | Patient | P1 |
+| US-08.01 | Create consent form | Practice Admin | P1 |
+| US-08.02 | Send consent for signature | Professional | P1 |
+| US-08.03 | Sign consent form | Client | P0 |
+| US-08.04 | View consent status | Professional | P1 |
 
-### US-09: Billing
+### US-09: Intervention Plan (Previously: Prescription - Non-Medication)
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-09.01 | Generate bill | Receptionist | P1 |
-| US-09.02 | Add bill items | Receptionist | P1 |
-| US-09.03 | Apply discount | Receptionist | P1 |
-| US-09.04 | Print invoice | Receptionist | P1 |
-| US-09.05 | Record payment | Receptionist | P1 |
-| US-09.06 | View billing history | Clinic Admin | P1 |
+| US-09.01 | Create intervention plan | Professional | P1 |
+| US-09.02 | Add recommendations | Professional | P1 |
+| US-09.03 | View intervention plan | Client | P1 |
+| US-09.04 | Print intervention plan | Professional | P2 |
 
-### US-10: Public Booking Portal
+### US-10: Billing
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-10.01 | Browse available doctors | Visitor | P0 |
-| US-10.02 | Select service | Visitor | P0 |
-| US-10.03 | Choose date and time | Visitor | P0 |
-| US-10.04 | Register during booking | Visitor | P1 |
-| US-10.05 | View booking confirmation | Patient | P0 |
-| US-10.06 | Login to existing account | Visitor | P1 |
+| US-10.01 | Generate bill | Receptionist | P1 |
+| US-10.02 | Add bill items | Receptionist | P1 |
+| US-10.03 | Apply discount | Receptionist | P1 |
+| US-10.04 | Print invoice | Receptionist | P1 |
+| US-10.05 | Record payment | Receptionist | P1 |
+| US-10.06 | View billing history | Practice Admin | P1 |
 
-### US-11: Dashboard & Reporting
+### US-11: Public Booking Portal
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-11.01 | View dashboard overview | All Staff | P0 |
-| US-11.02 | View today's appointments | Staff | P0 |
-| US-11.03 | View upcoming appointments | Patient | P1 |
-| US-11.04 | View statistics | Clinic Admin | P1 |
-| US-11.05 | Export reports | Clinic Admin | P2 |
+| US-11.01 | Browse available professionals | Visitor | P0 |
+| US-11.02 | Select session type | Visitor | P0 |
+| US-11.03 | Choose date and time | Visitor | P0 |
+| US-11.04 | Register during booking | Visitor | P1 |
+| US-11.05 | View booking confirmation | Client | P0 |
+| US-11.06 | Login to existing account | Visitor | P1 |
 
-### US-12: Settings
+### US-12: Dashboard & Reporting
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-12.01 | Configure general settings | Super Admin | P1 |
-| US-12.02 | Configure appointment settings | Clinic Admin | P1 |
-| US-12.03 | Customize email templates | Clinic Admin | P1 |
-| US-12.04 | Set login redirects | Clinic Admin | P1 |
+| US-12.01 | View dashboard overview | All Staff | P0 |
+| US-12.02 | View today's sessions | Staff | P0 |
+| US-12.03 | View upcoming sessions | Client | P1 |
+| US-12.04 | View statistics | Practice Admin | P1 |
+| US-12.05 | View active clients count | Professional | P1 |
 
-### US-13: Communication
+### US-13: Settings
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-13.01 | Receive welcome email | Patient | P2 |
-| US-13.02 | Receive appointment confirmation | Patient | P0 |
-| US-13.03 | Receive appointment reminder | Patient | P1 |
-| US-13.04 | Resend credentials | Clinic Admin | P2 |
+| US-13.01 | Configure general settings | Super Admin | P1 |
+| US-13.02 | Configure session settings | Practice Admin | P1 |
+| US-13.03 | Customize email templates | Practice Admin | P1 |
+| US-13.04 | Manage consent templates | Practice Admin | P1 |
+
+### US-14: Communication
+| ID | Title | Role | Priority |
+|----|-------|------|----------|
+| US-14.01 | Receive welcome email | Client | P2 |
+| US-14.02 | Receive session confirmation | Client | P0 |
+| US-14.03 | Receive session reminder | Client | P1 |
 
 ---
 
@@ -173,32 +193,32 @@ I want to manage all aspects of the system
 So that I can ensure proper system operation
 ```
 
-### Clinic Admin
+### Practice Admin (Previously: Clinic Admin)
 ```
-As a Clinic Admin
-I want to manage my clinic's operations
-So that my clinic runs smoothly
+As a Practice Admin
+I want to manage my practice's operations
+So that my practice runs smoothly
 ```
 
-### Doctor
+### Professional (Previously: Doctor)
 ```
-As a Doctor
-I want to manage my schedule and patient care
-So that I can provide better healthcare
+As a Professional (Psikolog)
+I want to manage my schedule and client care
+So that I can provide better psychological services
 ```
 
 ### Receptionist
 ```
 As a Receptionist
-I want to efficiently manage appointments
-So that patients have a smooth experience
+I want to efficiently manage sessions
+So that clients have a smooth experience
 ```
 
-### Patient
+### Client (Previously: Patient)
 ```
-As a Patient
-I want to easily book appointments
-So that I can receive timely healthcare
+As a Client
+I want to easily book sessions
+So that I can receive timely psychological support
 ```
 
 ---
@@ -210,6 +230,7 @@ A user story is ready for implementation when:
 - [ ] Acceptance criteria are specific and testable
 - [ ] Priority is assigned
 - [ ] Dependencies are identified
+- [ ] Role mapping to psychology context is clear
 
 ## Definition of Done (DoD)
 
@@ -218,6 +239,8 @@ A user story is done when:
 - [ ] All acceptance criteria are met
 - [ ] Unit tests are written
 - [ ] No new bugs introduced
+- [ ] Documentation updated
+- [ ] Terminology follows psychology practice standards
 
 ---
 

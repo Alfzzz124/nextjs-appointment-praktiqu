@@ -1,220 +1,147 @@
-# PraktiQU - KiviCare Next.js Migration Project
+# PraktiQU - KiviCare Next.js Migration Project (Psychology Practice)
 
 ## Overview
 
-This document captures the project to clone/recreate the KiviCare WordPress plugin as a standalone Next.js application.
+This document captures the project to clone/recreate the KiviCare WordPress plugin as a standalone Next.js application, **adapted for Psychology Practice Management**.
 
 **Source**: KiviCare Clinic & Patient Management System (EHR) v4.4.0
-**Target**: PraktiQU - Next.js Clinic Management Application
+**Target**: PraktiQU - Next.js Psychology Practice Management System
 
 ---
 
-## KiviCare WordPress Plugin Analysis
+## Terminology Adaptation
 
-### Core Technology Stack
-- **Frontend**: React 19 + Bootstrap 5 (compiled to dist/assets/)
-- **Backend**: WordPress REST API (namespace: `kivi-care`)
-- **Database**: WordPress + custom tables (`wp_kc_*`)
-- **Authentication**: WordPress cookies + Application Passwords
+| KiviCare (Medical) | → | PraktiQU (Psychology) |
+|--------------------|---|------------------------|
+| Doctor | → | **Professional / Psikolog** |
+| Patient | → | **Client / Klien** |
+| Prescription | → | **Intervention Plan** (optional, non-medication) |
+| Clinical Notes | → | **Session Notes / Catatan Konseling** |
+| Vital Signs | → | **Optional (Mood Scale)** |
+| Encounter | → | **Session Notes** |
+| Appointment | → | **Session / Sesi** |
 
-### Key Modules Identified
+---
 
-#### 1. Clinic Management
-- CRUD for clinics with full address details
-- Multi-clinic support (Pro feature)
-- Clinic admin assignment
-- Clinic schedule/holidays
+## Key Adaptations
 
-#### 2. User Management (Multi-Role)
-| Role | WordPress Role | Capabilities |
-|------|----------------|--------------|
-| Super Admin | administrator | Full system access |
-| Clinic Admin | kiviCare_clinic_admin | Clinic-level management |
-| Doctor | kiviCare_doctor | Patient care, scheduling |
-| Receptionist | kiviCare_receptionist | Front desk operations |
-| Patient | kiviCare_patient | Self-service portal |
+### 1. Terminology Changes
+- Doctor → Professional (Psikolog, Psikiater)
+- Patient → Client (Klien)
+- Appointment → Session (Sesi)
+- Encounter → Session Notes (Catatan Konseling)
 
-#### 3. Doctor Management
-- Doctor profiles with specialties
-- Service associations
-- Session/time slot management
-- Day-wise availability scheduling
-- Multi-clinic assignments (Pro)
+### 2. Session Duration
+- Default changed from 15-30 minutes → **50-60 minutes** (standard psychology session)
 
-#### 4. Patient Management
-- Patient registration/login
-- Unique patient ID generation
-- Medical history tracking
-- Multi-clinic registration
-- Profile with photo, contact, demographics
+### 3. Prescription System
+- Removed medical prescriptions (Psikolog tidak bisa prescribe medication)
+- Replaced with Intervention Plan (psychological recommendations, exercises)
 
-#### 5. Appointment System
+### 4. Informed Consent
+- New feature: Informed Consent tracking (mandatory before first session)
+- Required for psychology practice compliance
+
+### 5. Session Types
+- Individual Counseling (Konseling Individual)
+- Group Counseling (Konseling Kelompok)
+- Psychological Assessment (Asesmen Psikologis)
+
+---
+
+## User Roles
+
+| KiviCare Role | → | PraktiQU Role |
+|--------------|---|---------------|
+| Doctor | → | **Professional** (Psikolog/Psikiater) |
+| Patient | → | **Client** |
+| Clinic Admin | → | **Practice Admin** |
+
+### Role Descriptions
+
+| Role | Description | Access Level |
+|------|-------------|--------------|
+| Super Admin | System administrator | All modules, all practices |
+| Practice Admin | Manages a psychology practice | Assigned practice |
+| Professional | Psychologist/Psychiatrist | Assigned clients, sessions |
+| Receptionist | Front desk operations | Sessions, client registration |
+| Client | Self-service portal | Own records, self-booking |
+
+---
+
+## Professional Types
+
+| Type | Description |
+|------|-------------|
+| Psikolog Klinis | Clinical Psychologist |
+| Psikiater | Psychiatrist |
+| Psikolog Pendidikan | Educational Psychologist |
+| Psikolog Industri & Organisasi | Industrial/Organizational Psychologist |
+| Psikolog Anak & Remaja | Child & Adolescent Psychologist |
+| Psikolog Forensik | Forensic Psychologist |
+
+---
+
+## Key Modules
+
+### 1. Professional Management
+- Profile with registration number (SIP/SIK)
+- Professional types assignment
+- Availability scheduling
+- Day-wise session slots (50 min default)
+
+### 2. Client Management
+- Client registration with unique ID
+- Session history tracking
+- Informed consent verification
+- Progress tracking
+
+### 3. Session Management
 - Calendar-based booking
-- Doctor/service selection
-- Status workflow: Pending → Confirmed → Check-in → Check-out → Complete
+- Session types: Individual, Group, Assessment
+- Status workflow: Pending → Booked → Check-in → Check-out → Completed
 - Conflict prevention
-- Auto-close for past appointments
-- Appointment reminders
+- Session notes per session
 
-#### 6. Encounter Management
-- Patient visit tracking
-- Clinical notes
-- Medical reports upload
-- Prescription management
-- Body chart annotation (Addon)
+### 4. Intervention Plans
+- Non-medication recommendations
+- Psychological exercises
+- Treatment goals
+- Duration and frequency
 
-#### 7. Billing & Payments
-- Service-based pricing
-- Encounter billing
-- Payment gateways:
-  - PayPal
-  - Stripe (Addon)
-  - Razorpay (Addon)
-  - KnitPay (500+ gateways)
-  - WooCommerce (Pro)
-- Tax calculations
+### 5. Informed Consent
+- Digital consent forms
+- Signature tracking
+- Withdrawal capability
 
-#### 8. Services Module
-- Service catalog with pricing
-- Service-doctor mappings
-- Private/public service flag
-
-#### 9. Prescription System
-- Medication prescriptions
-- Dosage and frequency tracking
-- Prescription templates
-
-#### 10. Reporting & Dashboard
-- Real-time clinic overview
-- Appointment statistics
-- Revenue reports
-- Patient statistics
-
-#### 11. Communication
-- Email notifications (templated)
-- SMS via Twilio (Addon)
-- WhatsApp alerts (Addon)
-- Appointment reminders
-
-### Database Schema (Core Tables)
-
-```
-wp_kc_appointments
-├── id, clinic_id, doctor_id, patient_id
-├── appointment_start_date/time, appointment_end_date/time
-├── visit_type, description, status
-└── created_at, appointment_report
-
-wp_kc_clinics
-├── id, name, email, telephone_no
-├── address, city, state, country, postal_code
-├── clinic_admin_id, clinic_logo, status
-└── country_code, country_calling_code
-
-wp_kc_doctors
-├── id, user_id, specialties
-├── consultation_fee, signature, status
-└── created_at, updated_at
-
-wp_kc_patients
-├── id, user_id, patient_unique_id
-├── blood_group, emergency_contact
-└── status, registered_at
-
-wp_kc_services
-├── id, type, name, price, duration
-├── status, clinic_id
-└── created_at
-
-wp_kc_patient_encounters
-├── id, appointment_id, patient_id, doctor_id, clinic_id
-├── encounter_date, status, clinical_notes
-├── medical_report, template_id
-└── created_at
-
-wp_kc_prescriptions
-├── id, encounter_id, patient_id, doctor_id
-├── medicine_name, dosage, frequency, duration
-├── instructions
-└── created_at
-
-wp_kc_bills
-├── id, encounter_id, clinic_id
-├── total_amount, discount, tax_amount
-└── actual_amount, payment_status
-
-wp_kc_bill_items
-├── id, bill_id, service_id
-├── item_name, price, quantity
-└── created_at
-```
-
-### WordPress REST API Endpoints
-
-| Route | Methods | Description |
-|-------|---------|-------------|
-| `/wp-json/kivi-care/appointments` | GET, POST | Appointments CRUD |
-| `/wp-json/kivi-care/clinics` | GET, POST | Clinics management |
-| `/wp-json/kivi-care/doctors` | GET, POST | Doctors management |
-| `/wp-json/kivi-care/patients` | GET, POST | Patients management |
-| `/wp-json/kivi-care/services` | GET, POST | Services catalog |
-| `/wp-json/kivi-care/encounters` | GET, POST | Patient encounters |
-| `/wp-json/kivi-care/bills` | GET, POST | Billing operations |
-| `/wp-json/kivi-care/prescriptions` | GET, POST | Prescriptions |
-| `/wp-json/kivi-care/dashboard` | GET | Dashboard data |
-| `/wp-json/kivi-care/settings/*` | GET, POST | Configuration |
-| `/wp-json/kivi-care/static-data` | GET | Static reference data |
-| `/wp-json/kivi-care/auth/*` | POST | Authentication |
-
-### Pro/Addon Features (Out of Scope for MVP)
-- Multi-clinic enterprise management
-- Google Calendar integration
-- Zoom/Google Meet telemedicine
-- SMS notifications (Twilio)
-- WhatsApp alerts
-- WooCommerce integration
-- Stripe/Razorpay payment gateways
-- Body chart editor
-- Custom forms (Pro)
+### 6. Session Notes
+- Professional documentation
+- Template support
+- Progress reports
+- Link to sessions
 
 ---
 
-## Next.js Implementation Strategy
+## Database Schema Adaptations
 
-### Technology Stack
-- **Framework**: Next.js 14+ (App Router)
-- **UI**: React 19 + Tailwind CSS
-- **State**: TanStack Query (React Query)
-- **Forms**: React Hook Form + Zod
-- **Database**: PostgreSQL (via Prisma)
-- **Auth**: NextAuth.js with credentials provider
-- **API**: REST API routes
-- **Calendar**: FullCalendar or custom implementation
+### Tables That Change Name (Conceptual)
+| KiviCare | → | PraktiQU |
+|----------|---|----------|
+| `wp_kc_doctors` | → | Professional |
+| `wp_kc_patients` | → | Client |
+| `wp_kc_appointments` | → | Session |
+| `wp_kc_patient_encounters` | → | Session Notes |
 
-### Project Structure
-```
-/praktiqu
-├── /src
-│   ├── /app                    # Next.js App Router
-│   │   ├── /api                # API routes
-│   │   ├── /(auth)             # Auth pages
-│   │   └── /(dashboard)        # Protected dashboard
-│   ├── /components
-│   │   ├── /ui                 # Base UI components
-│   │   ├── /forms              # Form components
-│   │   ├── /calendar           # Calendar components
-│   │   └── /layouts            # Layout components
-│   ├── /lib
-│   │   ├── /db                 # Database client
-│   │   ├── /auth               # Auth config
-│   │   └── /utils              # Utilities
-│   ├── /hooks                  # Custom hooks
-│   ├── /types                  # TypeScript types
-│   └── /validations            # Zod schemas
-├── /prisma
-│   └── schema.prisma           # Database schema
-└── /public                     # Static assets
-```
+### Tables That Are Removed
+| KiviCare | Reason |
+|----------|--------|
+| `wp_kc_prescriptions` | Not applicable (no medication prescription) |
+
+### New Tables
+| Table | Purpose |
+|-------|---------|
+| `informed_consent` | Consent form management |
+| `client_consent_signatures` | Track client consent signatures |
 
 ---
 
@@ -222,4 +149,4 @@ wp_kc_bill_items
 
 - [KiviCare WordPress Plugin](https://kivicare.io)
 - [KiviCare Documentation](https://documentation.iqonic.design/kivicare-wordpress)
-- [KiviCare Demo](https://demo.kivicare.io)
+- Psychology practice management best practices
