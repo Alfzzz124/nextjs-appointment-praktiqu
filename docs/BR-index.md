@@ -2,7 +2,7 @@
 
 **Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** BR Index - Business Requirements  
-**Version:** 1.2  
+**Version:** 1.3  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -68,11 +68,12 @@ This document indexes all Business Requirements adapted for **Psychology Practic
 | BR-05.02 | Sessions must have date and time | P0 |
 | BR-05.03 | No double-booking for same professional | P0 |
 | BR-05.04 | Session status workflow rules | P0 |
+| BR-05.04b | Client books → PENDING → **Professional must approve** → BOOKED | P0 |
 | BR-05.05 | Cannot book during holidays | P1 |
 | BR-05.06 | Cannot book during professional off days | P1 |
 | BR-05.07 | All times stored in UTC | P1 |
 | BR-05.08 | Display in user's timezone | P1 |
-| BR-05.09 | Standard session duration: 50 minutes | P0 |
+| BR-05.09 | Session duration based on service (e.g., 60, 90, 120 min) | P0 |
 
 ### BR-06: Service & Session Types
 | ID | Requirement | Priority |
@@ -136,10 +137,12 @@ This document indexes all Business Requirements adapted for **Psychology Practic
 
 ## Session Status Workflow
 ```
-PENDING (2) → BOOKED (1) → CHECK_IN (4) → CHECK_OUT (3) → COMPLETED
-       ↓
-   CANCELLED (0)
+CLIENT BOOK → PENDING → PROFESSIONAL APPROVE → BOOKED → CHECK_IN → CHECK_OUT → COMPLETED
+                    ↓
+                 REJECTED/CANCELLED
 ```
+
+> **Note:** New flow - client books session, status becomes PENDING, professional must approve/reject before confirmation.
 
 ## Role Hierarchy
 ```

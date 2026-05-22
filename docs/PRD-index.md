@@ -1,15 +1,15 @@
 # Product Requirements Document (PRD)
 
-**Project:** PraktiQU - Next.js Clinic Management System (EHR)  
+**Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** PRD Index  
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** 2026-05-22  
 
 ---
 
 ## Overview
 
-This PRD describes the product requirements for PraktiQU, a standalone Next.js application that replicates and improves upon the KiviCare WordPress plugin functionality.
+This PRD describes the product requirements for PraktiQU, a standalone Next.js application adapted for **Psychology Practice Management**.
 
 ---
 
@@ -17,11 +17,11 @@ This PRD describes the product requirements for PraktiQU, a standalone Next.js a
 
 | Role | Description | Access Level |
 |------|-------------|--------------|
-| Super Admin | System administrator with full access | All modules, all clinics |
-| Clinic Admin | Manages a single clinic | Assigned clinic only |
-| Doctor | Medical professional | Assigned patients, appointments |
-| Receptionist | Front desk operations | Appointments, patient registration |
-| Patient | End user | Own records, self-booking |
+| Super Admin | System administrator with full access | All modules, all practices |
+| Practice Admin | Manages a psychology practice | Assigned practice |
+| Professional | Psychologist/Psychiatrist | Assigned clients, sessions |
+| Receptionist | Front desk operations | Sessions, client registration |
+| Client | Self-service portal | Own records, self-booking |
 
 ---
 
@@ -32,24 +32,42 @@ This PRD describes the product requirements for PraktiQU, a standalone Next.js a
 | Module | Features | Priority |
 |--------|----------|----------|
 | Authentication | Login, Register, Password Reset, RBAC | P0 |
-| Clinic | CRUD, Logo, Address, Contact | P0 |
-| Doctor | CRUD, Profile, Specialties, Services | P0 |
-| Patient | CRUD, Unique ID, Registration | P0 |
-| Appointment | Calendar, Booking, Status Workflow | P0 |
-| Service | CRUD, Pricing, Doctor Mapping | P1 |
-| Dashboard | Statistics, Overview | P1 |
-| Public Booking | Doctor/Services Selection, Date/Time | P0 |
+| Professional | CRUD, Profile, SIP/SIK, Specialties | P0 |
+| Client | CRUD, Unique ID, Registration, Consent | P0 |
+| Service | CRUD, Pricing, Duration (flexible) | P0 |
+| Session | **Booking Request → Approval Flow**, Calendar, Status | P0 |
+| Dashboard | Statistics, Overview, Upcoming Sessions | P0 |
+| Public Booking | Professional/Service Selection, Date/Time | P0 |
 
 ### Phase 2: Core Features
 
 | Module | Features | Priority |
 |--------|----------|----------|
-| Encounter | Visit Tracking, Clinical Notes | P1 |
-| Prescription | Medication Orders | P1 |
+| Session Notes | Visit Tracking, Clinical Notes | P1 |
+| Intervention Plan | Recommendations for clients | P1 |
+| Informed Consent | Digital consent forms | P1 |
 | Billing | Invoice, Payments | P1 |
-| Notifications | Email Templates, Reminders | P1 |
+| Notifications | Email Templates, Reminders, **Approval Notifications** | P1 |
 | Custom Fields | Dynamic Forms | P2 |
-| Reports | Revenue, Appointments | P2 |
+
+---
+
+## Key Workflow Changes
+
+### Session Booking Flow
+```
+Client books → PENDING → Professional approves → BOOKED → CHECK_IN → CHECK_OUT → COMPLETED
+                ↓
+             REJECTED
+```
+
+> **Note:** Professional must approve/reject session requests before confirmation.
+
+### Session Duration
+> Session duration is based on **service type**, not a fixed default.
+> - Konseling Individual: 60 min
+> - Konseling Kelompok: 90 min
+> - Asesmen Psikologis: 120 min
 
 ---
 

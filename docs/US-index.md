@@ -2,7 +2,7 @@
 
 **Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** US Index - User Stories  
-**Version:** 1.2  
+**Version:** 1.3  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -74,7 +74,7 @@ Priority: P0/P1/P2
 | US-03.04 | Enter registration number (SIP/SIK) | Professional | P0 |
 | US-03.05 | Set specialties | Professional | P1 |
 | US-03.06 | Configure availability | Professional | P0 |
-| US-03.07 | Set day-wise schedule (50 min slots) | Professional | P0 |
+| US-03.07 | Set day-wise schedule (based on service duration) | Professional | P0 |
 | US-03.08 | View professional list | Practice Admin | P0 |
 | US-03.09 | Update professional status | Practice Admin | P1 |
 
@@ -96,15 +96,18 @@ Priority: P0/P1/P2
 | US-05.01 | Create service | Practice Admin | P0 |
 | US-05.02 | Update service | Practice Admin | P0 |
 | US-05.03 | Set service price | Practice Admin | P0 |
-| US-05.04 | Set service duration (50 min default) | Practice Admin | P0 |
+| US-05.04 | Set service duration (flexible, e.g., 60, 90, 120 min) | Practice Admin | P0 |
 | US-05.05 | Assign service to professional | Practice Admin | P1 |
 | US-05.06 | View service list | All Staff | P0 |
 | US-05.07 | Set service type (konseling/asesmen/workshop) | Practice Admin | P1 |
 
 ### US-06: Session Management (Previously: Appointment)
+> **Note:** Client books → PENDING → **Professional must approve** → BOOKED
+
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-06.01 | Book session | Client | P0 |
+| US-06.01 | Book session (creates PENDING request) | Client | P0 |
+| US-06.01b | Approve/reject session request | Professional | P0 |
 | US-06.02 | Book session for client | Staff | P0 |
 | US-06.03 | View calendar | Staff | P0 |
 | US-06.04 | Check in client | Receptionist | P0 |

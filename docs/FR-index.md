@@ -2,7 +2,7 @@
 
 **Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** FR Index - Functional Requirements  
-**Version:** 1.2  
+**Version:** 1.3  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -70,6 +70,8 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 | FR-03.11 | Informed consent verification | P1 |
 
 ### FR-04: Session Management (Previously: Appointment)
+> **Note:** Client books → PENDING → **Professional must approve** → BOOKED
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-04.01 | Create session booking | P0 |
@@ -77,7 +79,7 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 | FR-04.03 | Cancel session | P0 |
 | FR-04.04 | Session status workflow | P0 |
 | FR-04.05 | Calendar view display | P0 |
-| FR-04.06 | Session slot generation (default: 50 min) | P0 |
+| FR-04.06 | Session slot generation (based on service duration) | P0 |
 | FR-04.07 | Conflict prevention | P1 |
 | FR-04.08 | Auto-close past sessions | P2 |
 | FR-04.09 | Session filters | P1 |
@@ -93,7 +95,7 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 | FR-05.02 | Update service | P0 |
 | FR-05.03 | Delete service | P1 |
 | FR-05.04 | Service pricing | P0 |
-| FR-05.05 | Service duration (default: 50 min) | P1 |
+| FR-05.05 | Service duration (flexible per service, e.g., 60, 90, 120 min) | P1 |
 | FR-05.06 | Service type (Konseling, Asesmen, Workshop) | P1 |
 | FR-05.07 | Private/public service flag | P2 |
 
@@ -226,7 +228,8 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 > - Instructions
 
 ### Session Duration
-- Default slot duration: **50 minutes**
+- Duration is **based on service** (e.g., 60, 90, 120 minutes)
+- Not a fixed default per slot
 
 ---
 
