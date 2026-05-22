@@ -2,7 +2,7 @@
 
 **Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** BR Index - Business Requirements  
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -18,7 +18,9 @@ This document indexes all Business Requirements adapted for **Psychology Practic
 | Doctor | → | **Professional** |
 | Patient | → | **Client** |
 | Appointment | → | **Session** |
-| Prescription | → | **Intervention Plan** |
+| Prescription | → | **Intervention Plan / Recommendations** |
+
+> **Note:** Prescription table (`wp_kc_prescriptions`) **KEPT** - isinya untuk menulis rekomendasi/activities yang perlu dilakukan client.
 
 ---
 
@@ -80,45 +82,55 @@ This document indexes all Business Requirements adapted for **Psychology Practic
 | BR-06.03 | Service belongs to a practice | P1 |
 | BR-06.04 | Session types: Individual, Group, Assessment | P1 |
 
-### BR-07: Billing & Financial Rules
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| BR-07.01 | Bill generated per session | P1 |
-| BR-07.02 | Bill includes service items | P1 |
-| BR-07.03 | Discount cannot exceed total | P1 |
-| BR-07.04 | Payment status tracked | P1 |
+### BR-07: Intervention Plan / Recommendations
+> Formerly Prescription - but used for writing recommendations/activities for clients
 
-### BR-08: Communication Rules
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| BR-08.01 | Email sent on registration | P1 |
-| BR-08.02 | Email sent on session confirmation | P0 |
-| BR-08.03 | Reminder sent before session | P1 |
+| BR-07.01 | Intervention plan created per session | P1 |
+| BR-07.02 | Intervention plan includes recommendations | P1 |
+| BR-07.03 | Intervention plan includes frequency/duration | P1 |
+| BR-07.04 | Client can view intervention plan | P1 |
 
-### BR-09: Data Access Rules
+### BR-08: Billing & Financial Rules
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| BR-09.01 | Professionals see own clients only | P0 |
-| BR-09.02 | Receptionists see practice clients | P0 |
-| BR-09.03 | Practice Admin sees practice data | P0 |
-| BR-09.04 | Super Admin sees all data | P0 |
-| BR-09.05 | Clients see own session history | P0 |
+| BR-08.01 | Bill generated per session | P1 |
+| BR-08.02 | Bill includes service items | P1 |
+| BR-08.03 | Discount cannot exceed total | P1 |
+| BR-08.04 | Payment status tracked | P1 |
 
-### BR-10: Compliance & Security
+### BR-09: Communication Rules
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| BR-10.01 | User data encrypted at rest | P1 |
-| BR-10.02 | API requires authentication | P0 |
-| BR-10.03 | Sessions expire after inactivity | P1 |
-| BR-10.04 | Psychology documentation confidentiality | P1 |
-| BR-10.05 | Informed consent tracking | P1 |
+| BR-09.01 | Email sent on registration | P1 |
+| BR-09.02 | Email sent on session confirmation | P0 |
+| BR-09.03 | Reminder sent before session | P1 |
 
-### BR-11: Psychology Documentation Rules
+### BR-10: Data Access Rules
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| BR-11.01 | Informed consent mandatory before service | P0 |
-| BR-11.02 | Session notes per session | P1 |
-| BR-11.03 | Intervention plans for ongoing clients | P1 |
+| BR-10.01 | Professionals see own clients only | P0 |
+| BR-10.02 | Receptionists see practice clients | P0 |
+| BR-10.03 | Practice Admin sees practice data | P0 |
+| BR-10.04 | Super Admin sees all data | P0 |
+| BR-10.05 | Clients see own session history | P0 |
+
+### BR-11: Compliance & Security
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| BR-11.01 | User data encrypted at rest | P1 |
+| BR-11.02 | API requires authentication | P0 |
+| BR-11.03 | Sessions expire after inactivity | P1 |
+| BR-11.04 | Psychology documentation confidentiality | P1 |
+| BR-11.05 | Informed consent tracking | P1 |
+
+### BR-12: Psychology Documentation Rules
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| BR-12.01 | Informed consent mandatory before service | P0 |
+| BR-12.02 | Session notes per session | P1 |
+| BR-12.03 | Intervention plans for ongoing clients | P1 |
 
 ---
 
@@ -153,8 +165,7 @@ Super Admin
 | Aspect | Medical Clinic (KiviCare) | Psychology Practice (PraktiQU) |
 |--------|-------------------------|--------------------------------|
 | Standard session | 15-30 minutes | **50-60 minutes** |
-| Prescriptions | Yes (doctors can prescribe) | **No** (Intervention Plans only) |
-| Vital Signs | Important | **Not applicable** |
+| Prescription | For medication | **Intervention Plan for recommendations** |
 | Informed Consent | Optional | **Mandatory** |
 | Session Types | In-person/Telemed | **Individual, Group, Assessment** |
 

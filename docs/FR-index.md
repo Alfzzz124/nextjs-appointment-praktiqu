@@ -2,7 +2,7 @@
 
 **Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** FR Index - Functional Requirements  
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -19,8 +19,9 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 | Patient | → | **Client / Klien** |
 | Appointment | → | **Session / Sesi** |
 | Encounter | → | **Session Notes** |
-| Prescription | → | **Intervention Plan** |
-| Session Duration | 15-30 min | **50-60 min** |
+| Prescription | → | **Intervention Plan / Recommendations** |
+
+> **Note:** Prescription table (`wp_kc_prescriptions`) **KEPT** - isinya untuk menulis rekomendasi/activities yang perlu dilakukan client, bukan medication.
 
 ---
 
@@ -51,6 +52,7 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 | FR-02.08 | Day-wise session slot configuration (50 min default) | P0 |
 | FR-02.09 | Professional digital signature | P2 |
 | FR-02.10 | Professional status management | P1 |
+| FR-02.11 | Professional list with search/filter | P0 |
 
 ### FR-03: Client Management
 | ID | Requirement | Priority |
@@ -107,15 +109,19 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 | FR-06.07 | Link to session | P1 |
 | FR-06.08 | Print session notes | P2 |
 
-### FR-07: Intervention Plan (Previously: Prescription - Non-Medication)
+### FR-07: Intervention Plan / Recommendations
+> **formerly Prescription** - but used for writing recommendations/activities for clients
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-07.01 | Create intervention plan | P1 |
-| FR-07.02 | Plan recommendations | P1 |
-| FR-07.03 | Plan duration | P1 |
-| FR-07.04 | Plan list | P1 |
-| FR-07.05 | Print plan | P2 |
-| FR-07.06 | View plan (Client access) | P1 |
+| FR-07.01 | Create intervention plan/recommendations | P1 |
+| FR-07.02 | Add recommendation details | P1 |
+| FR-07.03 | Set frequency/duration | P1 |
+| FR-07.04 | Add instructions | P2 |
+| FR-07.05 | Intervention plan list | P1 |
+| FR-07.06 | Print/download intervention plan | P2 |
+| FR-07.07 | View intervention plan (Client access) | P1 |
+| FR-07.08 | Link to session notes | P1 |
 
 ### FR-08: Informed Consent
 | ID | Requirement | Priority |
@@ -201,20 +207,23 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 
 ## Key Adaptations Summary
 
-### Removed Features
-- ❌ Medical Prescription (Psikolog tidak bisa prescribe medication)
-- ❌ Vital Signs (Not relevant for psychology)
+### Terminology Changes
+| KiviCare | → | PraktiQU |
+|----------|---|----------|
+| Doctor | → | **Professional** |
+| Patient | → | **Client** |
+| Appointment | → | **Session** |
+| Encounter | → | **Session Notes** |
+| Prescription | → | **Intervention Plan** (KEPT - untuk rekomendasi) |
+| Visit Type | → | **Session Type** |
 
-### Renamed Entities
-- Doctor → Professional / Psikolog
-- Patient → Client / Klien
-- Appointment → Session / Sesi
-- Encounter → Session Notes
-
-### New Features
-- ✅ Informed Consent tracking
-- ✅ Session Types (Individual, Group, Assessment)
-- ✅ Intervention Plans (non-medication)
+### Intervention Plan / Recommendations
+> Table `wp_kc_prescriptions` **KEPT** - digunakan untuk menulis:
+> - Rekomendasi kegiatan/client activities
+> - Exercises untuk client
+> - Homework/assignments
+> - Frequency dan duration
+> - Instructions
 
 ### Session Duration
 - Default slot duration: **50 minutes**

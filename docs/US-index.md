@@ -2,7 +2,7 @@
 
 **Project:** PraktiQU - Next.js Psychology Practice Management System  
 **Document:** US Index - User Stories  
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** 2026-05-22  
 **Status:** Draft - For Review  
 
@@ -19,6 +19,9 @@ This document indexes all User Stories adapted for **Psychology Practice Managem
 | Patient | → | **Client** |
 | Appointment | → | **Session** |
 | Encounter | → | **Session Notes** |
+| Prescription | → | **Intervention Plan / Recommendations** |
+
+> **Note:** Prescription table **KEPT** - digunakan untuk menulis rekomendasi/activities untuk client.
 
 ---
 
@@ -130,13 +133,17 @@ Priority: P0/P1/P2
 | US-08.03 | Sign consent form | Client | P0 |
 | US-08.04 | View consent status | Professional | P1 |
 
-### US-09: Intervention Plan (Previously: Prescription - Non-Medication)
+### US-09: Intervention Plan / Recommendations (Previously: Prescription)
+> **KEPT** - untuk menulis rekomendasi/activities untuk client
+
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
 | US-09.01 | Create intervention plan | Professional | P1 |
-| US-09.02 | Add recommendations | Professional | P1 |
-| US-09.03 | View intervention plan | Client | P1 |
-| US-09.04 | Print intervention plan | Professional | P2 |
+| US-09.02 | Add recommendations/activities | Professional | P1 |
+| US-09.03 | Set frequency and duration | Professional | P1 |
+| US-09.04 | Add instructions | Professional | P2 |
+| US-09.05 | View intervention plan | Client | P1 |
+| US-09.06 | Print intervention plan | Professional | P2 |
 
 ### US-10: Billing
 | ID | Title | Role | Priority |
