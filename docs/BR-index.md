@@ -113,7 +113,7 @@ This document indexes all Business Requirements adapted for **Psychology Practic
 |----|-------------|----------|
 | BR-10.01 | Professionals see own clients only | P0 |
 | BR-10.02 | Receptionists see practice clients | P0 |
-| BR-10.03 | Practice Admin sees practice data | P0 |
+| BR-10.03 | Clinic Admin sees practice data | P0 |
 | BR-10.04 | Super Admin sees all data | P0 |
 | BR-10.05 | Clients see own session history | P0 |
 
@@ -148,7 +148,7 @@ CLIENT BOOK → PENDING → PROFESSIONAL APPROVE → BOOKED → CHECK_IN → CHE
 ```
 Super Admin
     │
-    ├── Practice Admin
+    ├── Clinic Admin
     │       │
     │       ├── Professional (Psikolog/Psikiater)
     │       │       │

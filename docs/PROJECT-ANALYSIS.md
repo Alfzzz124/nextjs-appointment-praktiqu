@@ -55,14 +55,14 @@ This document captures the project to clone/recreate the KiviCare WordPress plug
 |--------------|---|---------------|
 | Doctor | → | **Professional** (Psikolog/Psikiater) |
 | Patient | → | **Client** |
-| Clinic Admin | → | **Practice Admin** |
+| Clinic Admin | → | **Clinic Admin** |
 
 ### Role Descriptions
 
 | Role | Description | Access Level |
 |------|-------------|--------------|
 | Super Admin | System administrator | All modules, all practices |
-| Practice Admin | Manages a psychology practice | Assigned practice |
+| Clinic Admin | Manages a clinic | Assigned clinic |
 | Professional | Psychologist/Psychiatrist | Assigned clients, sessions |
 | Receptionist | Front desk operations | Sessions, client registration |
 | Client | Self-service portal | Own records, self-booking |

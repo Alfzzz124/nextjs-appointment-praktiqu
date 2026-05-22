@@ -59,11 +59,11 @@ Priority: P0/P1/P2
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
 | US-02.01 | Set up practice profile | Super Admin | P0 |
-| US-02.02 | Update practice information | Practice Admin | P0 |
-| US-02.03 | Upload practice logo | Practice Admin | P1 |
-| US-02.04 | Configure practice schedule | Practice Admin | P1 |
-| US-02.05 | Set practice timezone | Practice Admin | P1 |
-| US-02.06 | Manage holidays | Practice Admin | P1 |
+| US-02.02 | Update clinic information | Clinic Admin | P0 |
+| US-02.03 | Upload practice logo | Clinic Admin | P1 |
+| US-02.04 | Configure practice schedule | Clinic Admin | P1 |
+| US-02.05 | Set practice timezone | Clinic Admin | P1 |
+| US-02.06 | Manage holidays | Clinic Admin | P1 |
 
 ### US-03: Professional Management (Previously: Doctor)
 | ID | Title | Role | Priority |
@@ -75,8 +75,8 @@ Priority: P0/P1/P2
 | US-03.05 | Set specialties | Professional | P1 |
 | US-03.06 | Configure availability | Professional | P0 |
 | US-03.07 | Set day-wise schedule (based on service duration) | Professional | P0 |
-| US-03.08 | View professional list | Practice Admin | P0 |
-| US-03.09 | Update professional status | Practice Admin | P1 |
+| US-03.08 | View professional list | Clinic Admin | P0 |
+| US-03.09 | Update professional status | Clinic Admin | P1 |
 
 ### US-04: Client Management (Previously: Patient)
 | ID | Title | Role | Priority |
@@ -87,19 +87,19 @@ Priority: P0/P1/P2
 | US-04.04 | Search clients | Staff | P0 |
 | US-04.05 | View client details | Staff | P0 |
 | US-04.06 | View client session history | Professional | P1 |
-| US-04.07 | Update client status | Practice Admin | P1 |
+| US-04.07 | Update client status | Clinic Admin | P1 |
 | US-04.08 | Track client progress | Professional | P1 |
 
 ### US-05: Service Management
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-05.01 | Create service | Practice Admin | P0 |
-| US-05.02 | Update service | Practice Admin | P0 |
-| US-05.03 | Set service price | Practice Admin | P0 |
-| US-05.04 | Set service duration (flexible, e.g., 60, 90, 120 min) | Practice Admin | P0 |
-| US-05.05 | Assign service to professional | Practice Admin | P1 |
+| US-05.01 | Create service | Clinic Admin | P0 |
+| US-05.02 | Update service | Clinic Admin | P0 |
+| US-05.03 | Set service price | Clinic Admin | P0 |
+| US-05.04 | Set service duration (flexible, e.g., 60, 90, 120 min) | Clinic Admin | P0 |
+| US-05.05 | Assign service to professional | Clinic Admin | P1 |
 | US-05.06 | View service list | All Staff | P0 |
-| US-05.07 | Set service type (konseling/asesmen/workshop) | Practice Admin | P1 |
+| US-05.07 | Set service type (konseling/asesmen/workshop) | Clinic Admin | P1 |
 
 ### US-06: Session Management (Previously: Appointment)
 > **Note:** Client books → PENDING → **Professional must approve** → BOOKED
@@ -131,7 +131,7 @@ Priority: P0/P1/P2
 ### US-08: Informed Consent
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
-| US-08.01 | Create consent form | Practice Admin | P1 |
+| US-08.01 | Create consent form | Clinic Admin | P1 |
 | US-08.02 | Send consent for signature | Professional | P1 |
 | US-08.03 | Sign consent form | Client | P0 |
 | US-08.04 | View consent status | Professional | P1 |
@@ -156,7 +156,7 @@ Priority: P0/P1/P2
 | US-10.03 | Apply discount | Receptionist | P1 |
 | US-10.04 | Print invoice | Receptionist | P1 |
 | US-10.05 | Record payment | Receptionist | P1 |
-| US-10.06 | View billing history | Practice Admin | P1 |
+| US-10.06 | View billing history | Clinic Admin | P1 |
 
 ### US-11: Public Booking Portal
 | ID | Title | Role | Priority |
@@ -174,16 +174,16 @@ Priority: P0/P1/P2
 | US-12.01 | View dashboard overview | All Staff | P0 |
 | US-12.02 | View today's sessions | Staff | P0 |
 | US-12.03 | View upcoming sessions | Client | P1 |
-| US-12.04 | View statistics | Practice Admin | P1 |
+| US-12.04 | View statistics | Clinic Admin | P1 |
 | US-12.05 | View active clients count | Professional | P1 |
 
 ### US-13: Settings
 | ID | Title | Role | Priority |
 |----|-------|------|----------|
 | US-13.01 | Configure general settings | Super Admin | P1 |
-| US-13.02 | Configure session settings | Practice Admin | P1 |
-| US-13.03 | Customize email templates | Practice Admin | P1 |
-| US-13.04 | Manage consent templates | Practice Admin | P1 |
+| US-13.02 | Configure session settings | Clinic Admin | P1 |
+| US-13.03 | Customize email templates | Clinic Admin | P1 |
+| US-13.04 | Manage consent templates | Clinic Admin | P1 |
 
 ### US-14: Communication
 | ID | Title | Role | Priority |
@@ -203,9 +203,9 @@ I want to manage all aspects of the system
 So that I can ensure proper system operation
 ```
 
-### Practice Admin (Previously: Clinic Admin)
+### Clinic Admin (Previously: Clinic Admin)
 ```
-As a Practice Admin
+As a Clinic Admin
 I want to manage my practice's operations
 So that my practice runs smoothly
 ```

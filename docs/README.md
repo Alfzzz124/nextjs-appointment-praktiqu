@@ -17,14 +17,14 @@ PraktiQU is a standalone Next.js application designed to replicate and improve u
 |--------------------|---|------------------------|
 | Doctor | → | **Professional / Psikolog** |
 | Patient | → | **Client / Klien** |
-| Prescription | → | **(Removed - Psikolog tidak prescribe medication)** |
+| Prescription | → | **Intervention Plan** (KEPT - untuk rekomendasi) |
 | Clinical Notes | → | **Session Notes / Catatan Konseling** |
 | Vital Signs | → | **Not Applicable** |
 | Session Duration | 15-30 min | **50-60 min (standard psychology session)** |
 
 ### Features
 
-- **Multi-Role User System**: Super Admin, Practice Admin, Professional (Psikolog/Psikiater), Receptionist, Client
+- **Multi-Role User System**: Super Admin, Clinic Admin, Professional (Psikolog/Psikiater), Receptionist, Client
 - **Professional Management**: Registration, profiles, specialties, availability scheduling
 - **Client Management**: Registration, session history, unique ID generation, informed consent
 - **Session Management**: Calendar-based booking with status workflow (50-min default)
@@ -112,7 +112,7 @@ See [docs/database-mapping.md](./docs/database-mapping.md) for full details.
 | Role | Description | Access Level |
 |------|-------------|--------------|
 | Super Admin | Full system control | All modules, all practices |
-| Practice Admin | Practice-level management | Assigned practice |
+| Clinic Admin | Practice-level management | Assigned clinic |
 | Professional | Psychologist/Psychiatrist | Assigned clients, sessions |
 | Receptionist | Front desk operations | Sessions, client registration |
 | Client | Self-service portal | Own records, self-booking |

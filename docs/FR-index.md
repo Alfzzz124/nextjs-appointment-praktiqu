@@ -185,7 +185,7 @@ This document indexes all Functional Requirements for PraktiQU, adapted for **Ps
 ### FR-14: Scheduling & Holidays
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-14.01 | Practice schedule management | P1 |
+| FR-14.01 | Clinic schedule management | P1 |
 | FR-14.02 | Holiday management | P1 |
 | FR-14.03 | Professional off days | P1 |
 | FR-14.04 | Display holidays on calendar | P1 |

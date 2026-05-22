@@ -18,7 +18,7 @@ This PRD describes the product requirements for PraktiQU, a standalone Next.js a
 | Role | Description | Access Level |
 |------|-------------|--------------|
 | Super Admin | System administrator with full access | All modules, all practices |
-| Practice Admin | Manages a psychology practice | Assigned practice |
+| Clinic Admin | Manages a clinic | Assigned clinic |
 | Professional | Psychologist/Psychiatrist | Assigned clients, sessions |
 | Receptionist | Front desk operations | Sessions, client registration |
 | Client | Self-service portal | Own records, self-booking |
