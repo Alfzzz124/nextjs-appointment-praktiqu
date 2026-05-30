@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>New Intervention Plan</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for textareas */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background-color: #c7c4d8; /* outline-variant */
+            border-radius: 4px;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-tertiary-fixed": "#351000",
+                        "primary-container": "#5046e5",
+                        "on-surface": "#1b1b24",
+                        "on-error": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "secondary-container": "#8792fe",
+                        "outline": "#777587",
+                        "error-container": "#ffdad6",
+                        "surface-variant": "#e4e1ee",
+                        "inverse-primary": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "surface-container": "#f0ecf9",
+                        "surface-dim": "#dcd8e5",
+                        "outline-variant": "#c7c4d8",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-container": "#dbd8ff",
+                        "error": "#ba1a1a",
+                        "tertiary": "#7e3000",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-background": "#1b1b24",
+                        "surface-container-low": "#f6f2ff",
+                        "primary-fixed": "#e2dfff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-tertiary-container": "#ffd2c0",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-bright": "#fcf8ff",
+                        "secondary-fixed": "#e0e0ff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#4953bc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-primary-fixed": "#0f0069",
+                        "inverse-surface": "#302f39",
+                        "background": "#fcf8ff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "tertiary-container": "#a54100",
+                        "surface": "#fcf8ff",
+                        "surface-tint": "#4e44e3",
+                        "on-primary": "#ffffff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "base": "4px",
+                        "xl": "32px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "sm": "8px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "lg": "24px"
+                    },
+                    fontFamily: {
+                        "small": ["Inter"],
+                        "label": ["Inter"],
+                        "body": ["Inter"],
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    fontSize: {
+                        "small": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+                        "label": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "600" }],
+                        "body": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "h1": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "display": ["30px", { lineHeight: "38px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "body-semibold": ["14px", { lineHeight: "20px", fontWeight: "600" }],
+                        "h2": ["20px", { lineHeight: "28px", fontWeight: "600" }],
+                        "h1-mobile": ["20px", { lineHeight: "28px", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface-container-low min-h-screen flex justify-center items-start md:items-center p-0 md:p-margin font-body text-body text-on-surface">
+<!-- Modal Container -->
+<div class="w-full max-w-[640px] bg-surface flex flex-col min-h-screen md:min-h-0 md:rounded-xl md:shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] overflow-hidden">
+<!-- TopAppBar (Adapted for Modal context, applying JSON structural intents) -->
+<header class="w-full top-0 sticky border-b border-outline-variant shadow-sm bg-surface flex items-center justify-between px-margin py-sm z-10 flex-shrink-0">
+<button aria-label="Go back" class="text-on-surface-variant hover:bg-surface-container-high transition-colors active:opacity-70 p-2 rounded-full flex items-center justify-center -ml-2" type="button">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<h1 class="text-h1-mobile font-h1-mobile text-on-surface flex-1 text-center truncate px-4">New Intervention Plan</h1>
+<div class="w-10 flex-shrink-0"></div> <!-- Spacer to perfectly center the title against the leading icon -->
+</header>
+<!-- Main Form Area -->
+<main class="flex-1 overflow-y-auto p-margin flex flex-col gap-lg">
+<!-- Plan Type Dropdown -->
+<div class="flex flex-col gap-xs">
+<label class="text-label font-label text-on-surface" for="planType">Plan Type</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded-lg px-4 py-3 text-body font-body text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-shadow duration-200 cursor-pointer" id="planType" name="planType">
+<option disabled="" selected="" value="">Select a plan type...</option>
+<option value="technique">Technique</option>
+<option value="strategy">Strategy</option>
+<option value="goal">Goal</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-on-surface-variant">
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Description -->
+<div class="flex flex-col gap-xs">
+<label class="text-label font-label text-on-surface" for="description">Description</label>
+<textarea class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 text-body font-body text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-shadow duration-200 resize-y placeholder:text-outline" id="description" name="description" placeholder="Briefly describe the objective and methodology of this plan..." rows="3"></textarea>
+</div>
+<!-- 2-Column Grid for Duration and Date -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-margin">
+<!-- Planned Duration -->
+<div class="flex flex-col gap-xs">
+<label class="text-label font-label text-on-surface" for="duration">Planned Duration</label>
+<div class="relative flex items-center">
+<input class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 pr-20 text-body font-body text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-shadow duration-200 placeholder:text-outline" id="duration" min="1" name="duration" placeholder="e.g., 12" type="number"/>
+<span class="absolute right-4 text-on-surface-variant font-body text-small pointer-events-none">sessions</span>
+</div>
+</div>
+<!-- Start Date -->
+<div class="flex flex-col gap-xs">
+<label class="text-label font-label text-on-surface" for="startDate">Start Date</label>
+<div class="relative">
+<input class="w-full appearance-none bg-surface border border-outline-variant rounded-lg px-4 py-3 text-body font-body text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-shadow duration-200 [&amp;::-webkit-calendar-picker-indicator]:opacity-0 [&amp;::-webkit-calendar-picker-indicator]:absolute [&amp;::-webkit-calendar-picker-indicator]:w-full cursor-pointer" id="startDate" name="startDate" type="date"/>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-on-surface-variant">
+<span class="material-symbols-outlined">calendar_today</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Internal Notes -->
+<div class="flex flex-col gap-xs">
+<label class="text-label font-label text-on-surface flex items-center gap-2" for="internalNotes">
+                    Internal Notes
+                    <span class="px-2 py-0.5 rounded-full bg-surface-variant text-on-surface-variant font-small text-[10px] uppercase tracking-wider">Private</span>
+</label>
+<textarea class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 text-body font-body text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-shadow duration-200 resize-y placeholder:text-outline" id="internalNotes" name="internalNotes" placeholder="Add confidential notes, observations, or specific clinician instructions..." rows="4"></textarea>
+</div>
+</main>
+<!-- Footer Actions -->
+<footer class="p-margin border-t border-outline-variant bg-surface flex items-center justify-end gap-sm flex-shrink-0">
+<button class="h-[40px] px-4 rounded-lg border border-outline text-on-surface font-body-semibold text-body hover:bg-surface-container-high transition-colors active:scale-[0.98]" type="button">
+                Cancel
+            </button>
+<button class="h-[40px] px-6 rounded-lg bg-primary-container text-on-primary-container font-body-semibold text-body hover:brightness-110 shadow-sm transition-all active:scale-[0.98]" type="submit">
+                Create Plan
+            </button>
+</footer>
+</div>
+</body></html>

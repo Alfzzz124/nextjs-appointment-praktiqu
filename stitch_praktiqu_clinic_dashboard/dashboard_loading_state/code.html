@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Dashboard Loading</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-secondary-container": "#17228f",
+                        "outline": "#777587",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "secondary-container": "#8792fe",
+                        "primary": "#3625cd",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-on-surface": "#f3effc",
+                        "error-container": "#ffdad6",
+                        "on-background": "#1b1b24",
+                        "surface-container": "#f0ecf9",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "on-tertiary-fixed": "#351000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-container-low": "#f6f2ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "surface": "#fcf8ff",
+                        "on-tertiary-container": "#ffd2c0",
+                        "outline-variant": "#c7c4d8",
+                        "secondary": "#4953bc",
+                        "surface-container-high": "#eae6f4",
+                        "on-error-container": "#93000a",
+                        "primary-fixed": "#e2dfff",
+                        "on-surface-variant": "#464555",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "inverse-surface": "#302f39",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "background": "#fcf8ff",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-secondary-fixed": "#000767",
+                        "primary-container": "#5046e5",
+                        "tertiary": "#7e3000",
+                        "inverse-primary": "#c3c0ff",
+                        "surface-tint": "#4e44e3",
+                        "surface-dim": "#dcd8e5",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "error": "#ba1a1a",
+                        "on-primary-container": "#dbd8ff",
+                        "tertiary-container": "#a54100",
+                        "surface-variant": "#e4e1ee",
+                        "surface-bright": "#fcf8ff",
+                        "on-surface": "#1b1b24"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "xl": "32px",
+                        "md": "16px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h1": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body antialiased min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="hidden lg:flex flex-col p-md border-r border-outline-variant bg-surface-container-low fixed left-0 top-0 h-full w-[260px] z-20">
+<!-- Brand / Header -->
+<div class="mb-xl px-sm pt-sm flex items-center gap-md">
+<div class="h-8 w-8 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[20px]">medical_services</span>
+</div>
+<div>
+<h1 class="font-h2 text-h2 font-bold text-primary">PraktiQU</h1>
+<p class="font-small text-small text-on-surface-variant">Clinical Suite</p>
+</div>
+</div>
+<!-- Main Navigation -->
+<div class="flex-1 flex flex-col gap-xs">
+<a class="bg-primary-container text-on-primary-container rounded-lg translate-x-1 transition-transform p-sm flex items-center gap-md font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+                Dashboard
+            </a>
+<a class="text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 p-sm flex items-center gap-md rounded-lg font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined">calendar_today</span>
+                Sessions
+            </a>
+<a class="text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 p-sm flex items-center gap-md rounded-lg font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined">group</span>
+                Clients
+            </a>
+<a class="text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 p-sm flex items-center gap-md rounded-lg font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined">clinical_notes</span>
+                Professionals
+            </a>
+</div>
+<!-- Footer Navigation -->
+<div class="flex flex-col gap-xs pt-md border-t border-outline-variant">
+<a class="text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 p-sm flex items-center gap-md rounded-lg font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+<a class="text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 p-sm flex items-center gap-md rounded-lg font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined">help</span>
+                Help
+            </a>
+</div>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="lg:pl-[260px] flex-1 flex flex-col min-h-screen w-full">
+<!-- TopNavBar -->
+<header class="bg-surface shadow-sm sticky top-0 z-10 flex justify-between items-center px-lg h-16 w-full max-w-[1440px] mx-auto">
+<div class="flex items-center">
+<!-- Mobile brand, hidden on desktop since sidebar covers it, but kept for structure -->
+<h2 class="lg:hidden font-h2 text-h2 font-bold text-primary">PraktiQU</h2>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-md">
+<button class="h-10 w-10 rounded-full hover:bg-surface-container-high transition-colors flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="h-10 w-10 rounded-full hover:bg-surface-container-high transition-colors flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">apps</span>
+</button>
+<div class="h-9 w-9 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed font-label text-label cursor-pointer ml-sm">
+                    PR
+                </div>
+</div>
+</header>
+<!-- Main Canvas (Loading State) -->
+<main class="flex-1 p-margin w-full max-w-[1440px] mx-auto">
+<div class="flex items-center justify-between mb-margin">
+<h2 class="font-h1 text-h1 text-on-surface">Dashboard</h2>
+<!-- Skeleton for primary action button -->
+<div class="h-10 w-32 bg-surface-variant rounded-lg animate-pulse"></div>
+</div>
+<!-- Stat Cards Grid Skeletons -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-md mb-margin">
+<!-- Card 1 -->
+<div class="bg-surface rounded-xl shadow-sm p-lg flex flex-col h-[130px] animate-pulse">
+<div class="flex justify-between items-start mb-auto">
+<div class="h-10 w-10 rounded-full bg-surface-variant"></div>
+<div class="h-4 w-12 rounded bg-surface-variant"></div>
+</div>
+<div class="h-4 w-24 rounded bg-surface-variant mb-xs"></div>
+<div class="h-8 w-20 rounded bg-surface-variant"></div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface rounded-xl shadow-sm p-lg flex flex-col h-[130px] animate-pulse">
+<div class="flex justify-between items-start mb-auto">
+<div class="h-10 w-10 rounded-full bg-surface-variant"></div>
+<div class="h-4 w-12 rounded bg-surface-variant"></div>
+</div>
+<div class="h-4 w-24 rounded bg-surface-variant mb-xs"></div>
+<div class="h-8 w-20 rounded bg-surface-variant"></div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface rounded-xl shadow-sm p-lg flex flex-col h-[130px] animate-pulse">
+<div class="flex justify-between items-start mb-auto">
+<div class="h-10 w-10 rounded-full bg-surface-variant"></div>
+<div class="h-4 w-12 rounded bg-surface-variant"></div>
+</div>
+<div class="h-4 w-24 rounded bg-surface-variant mb-xs"></div>
+<div class="h-8 w-20 rounded bg-surface-variant"></div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface rounded-xl shadow-sm p-lg flex flex-col h-[130px] animate-pulse">
+<div class="flex justify-between items-start mb-auto">
+<div class="h-10 w-10 rounded-full bg-surface-variant"></div>
+<div class="h-4 w-12 rounded bg-surface-variant"></div>
+</div>
+<div class="h-4 w-24 rounded bg-surface-variant mb-xs"></div>
+<div class="h-8 w-20 rounded bg-surface-variant"></div>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-margin">
+<!-- Upcoming Sessions (Span 2) -->
+<div class="lg:col-span-2 bg-surface rounded-xl shadow-sm border border-outline-variant/30 flex flex-col">
+<div class="p-lg border-b border-surface-container-high flex justify-between items-center">
+<h3 class="font-h2 text-h2 text-on-surface">Upcoming Sessions</h3>
+<div class="h-8 w-20 bg-surface-variant rounded animate-pulse"></div>
+</div>
+<div class="p-lg flex flex-col gap-sm animate-pulse">
+<!-- Table Row Skeleton 1 -->
+<div class="flex items-center gap-md py-sm border-b border-surface-container-high last:border-0">
+<div class="h-10 w-10 rounded-full bg-surface-variant shrink-0"></div>
+<div class="flex-1 flex flex-col gap-sm">
+<div class="h-4 w-48 rounded bg-surface-variant"></div>
+<div class="h-3 w-32 rounded bg-surface-variant"></div>
+</div>
+<div class="hidden md:block h-4 w-24 rounded bg-surface-variant mx-md"></div>
+<div class="h-8 w-24 rounded-full bg-surface-variant shrink-0"></div>
+</div>
+<!-- Table Row Skeleton 2 -->
+<div class="flex items-center gap-md py-sm border-b border-surface-container-high last:border-0">
+<div class="h-10 w-10 rounded-full bg-surface-variant shrink-0"></div>
+<div class="flex-1 flex flex-col gap-sm">
+<div class="h-4 w-40 rounded bg-surface-variant"></div>
+<div class="h-3 w-28 rounded bg-surface-variant"></div>
+</div>
+<div class="hidden md:block h-4 w-20 rounded bg-surface-variant mx-md"></div>
+<div class="h-8 w-24 rounded-full bg-surface-variant shrink-0"></div>
+</div>
+<!-- Table Row Skeleton 3 -->
+<div class="flex items-center gap-md py-sm border-b border-surface-container-high last:border-0">
+<div class="h-10 w-10 rounded-full bg-surface-variant shrink-0"></div>
+<div class="flex-1 flex flex-col gap-sm">
+<div class="h-4 w-56 rounded bg-surface-variant"></div>
+<div class="h-3 w-36 rounded bg-surface-variant"></div>
+</div>
+<div class="hidden md:block h-4 w-28 rounded bg-surface-variant mx-md"></div>
+<div class="h-8 w-24 rounded-full bg-surface-variant shrink-0"></div>
+</div>
+<!-- Table Row Skeleton 4 -->
+<div class="flex items-center gap-md py-sm border-b border-surface-container-high last:border-0">
+<div class="h-10 w-10 rounded-full bg-surface-variant shrink-0"></div>
+<div class="flex-1 flex flex-col gap-sm">
+<div class="h-4 w-44 rounded bg-surface-variant"></div>
+<div class="h-3 w-32 rounded bg-surface-variant"></div>
+</div>
+<div class="hidden md:block h-4 w-24 rounded bg-surface-variant mx-md"></div>
+<div class="h-8 w-24 rounded-full bg-surface-variant shrink-0"></div>
+</div>
+</div>
+</div>
+<!-- Recent Activity (Span 1) -->
+<div class="bg-surface rounded-xl shadow-sm border border-outline-variant/30 flex flex-col">
+<div class="p-lg border-b border-surface-container-high">
+<h3 class="font-h2 text-h2 text-on-surface">Recent Activity</h3>
+</div>
+<div class="p-lg flex flex-col animate-pulse pt-xl">
+<!-- Timeline Item Skeleton 1 -->
+<div class="flex gap-md relative mb-xl">
+<div class="w-px bg-surface-container-high absolute left-[15px] top-8 bottom-[-32px]"></div>
+<div class="h-8 w-8 rounded-full bg-surface-variant shrink-0 relative z-10 border-4 border-surface"></div>
+<div class="flex-1 flex flex-col gap-sm pt-1">
+<div class="h-4 w-3/4 rounded bg-surface-variant"></div>
+<div class="h-3 w-1/2 rounded bg-surface-variant"></div>
+<div class="h-16 w-full rounded-lg bg-surface-container mt-sm"></div>
+</div>
+</div>
+<!-- Timeline Item Skeleton 2 -->
+<div class="flex gap-md relative mb-xl">
+<div class="w-px bg-surface-container-high absolute left-[15px] top-8 bottom-[-32px]"></div>
+<div class="h-8 w-8 rounded-full bg-surface-variant shrink-0 relative z-10 border-4 border-surface"></div>
+<div class="flex-1 flex flex-col gap-sm pt-1">
+<div class="h-4 w-2/3 rounded bg-surface-variant"></div>
+<div class="h-3 w-1/3 rounded bg-surface-variant"></div>
+</div>
+</div>
+<!-- Timeline Item Skeleton 3 -->
+<div class="flex gap-md relative">
+<div class="h-8 w-8 rounded-full bg-surface-variant shrink-0 relative z-10 border-4 border-surface"></div>
+<div class="flex-1 flex flex-col gap-sm pt-1">
+<div class="h-4 w-4/5 rounded bg-surface-variant"></div>
+<div class="h-3 w-2/5 rounded bg-surface-variant"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

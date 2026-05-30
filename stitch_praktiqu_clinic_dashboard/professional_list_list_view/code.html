@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Professional List</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "background": "#fcf8ff",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#5046e5",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface": "#fcf8ff",
+                        "on-secondary-fixed": "#000767",
+                        "secondary": "#4953bc",
+                        "inverse-surface": "#302f39",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-surface": "#1b1b24",
+                        "tertiary": "#7e3000",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#8792fe",
+                        "outline-variant": "#c7c4d8",
+                        "inverse-on-surface": "#f3effc",
+                        "on-tertiary-fixed": "#351000",
+                        "primary": "#3625cd",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "tertiary-container": "#a54100",
+                        "surface-variant": "#e4e1ee",
+                        "on-background": "#1b1b24",
+                        "surface-container-low": "#f6f2ff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "surface-container-high": "#eae6f4",
+                        "on-tertiary-container": "#ffd2c0",
+                        "surface-tint": "#4e44e3",
+                        "on-primary-container": "#dbd8ff",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "surface-bright": "#fcf8ff",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-secondary-container": "#17228f",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "xl": "32px",
+                        "sm": "8px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "xs": "4px",
+                        "base": "4px",
+                        "margin": "24px",
+                        "lg": "24px"
+                    },
+                    fontFamily: {
+                        "h2": ["Inter", "sans-serif"],
+                        "small": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"],
+                        "display": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "h1-mobile": ["Inter", "sans-serif"],
+                        "h1": ["Inter", "sans-serif"],
+                        "body-semibold": ["Inter", "sans-serif"]
+                    },
+                    fontSize: {
+                        "h2": ["20px", { lineHeight: "28px", fontWeight: "600" }],
+                        "small": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+                        "label": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "600" }],
+                        "display": ["30px", { lineHeight: "38px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "body": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "h1-mobile": ["20px", { lineHeight: "28px", fontWeight: "600" }],
+                        "h1": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "body-semibold": ["14px", { lineHeight: "20px", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body text-body antialiased min-h-screen flex">
+<!-- Desktop SideNavBar -->
+<aside class="hidden lg:flex flex-col p-md border-r border-outline-variant fixed left-0 top-0 h-full w-[260px] bg-surface-container-low z-50">
+<!-- Brand Header -->
+<div class="flex items-center gap-md mb-xl px-sm">
+<img alt="Clinic Logo" class="w-10 h-10 rounded-full" data-alt="A clean, minimalist abstract geometric logo design for a modern clinical healthcare suite, featuring overlapping soft blue and purple shapes on a white background, representing trust and connection. High-quality vector art style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBLs8gfHndDktZcvD10S_MgtoG20jYmrr1RWakIOs6WuTM5pKLlAfcd807tdUHyFlYB1uy8BXH4O1yBxwfhyDfXMGukudaSo1X2BUmBmsGacUMr4l2b0oHRG_QXdEVsSZExf_2YVg5A6MN-WPFtYpN_SFrlt8DXQP3c5BIDbgmLKBmV23dUhUPTGyIo0nrfw0uGWWZ0Pav-pUVN8xy_Km6rioYdpBk4i-6zNYA3qpLiDsKMFP8CFMjMmYdRZbW6i9PNgY3JYNXXdmev"/>
+<div>
+<h1 class="font-h2 text-h2 font-bold text-primary">PraktiQU</h1>
+<p class="font-small text-small text-on-surface-variant">Clinical Suite</p>
+</div>
+</div>
+<!-- Main Navigation -->
+<nav class="flex-1 flex flex-col gap-xs">
+<!-- Inactive -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-semibold text-body-semibold">Dashboard</span>
+</a>
+<!-- Inactive -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined">calendar_today</span>
+<span class="font-body-semibold text-body-semibold">Sessions</span>
+</a>
+<!-- Inactive -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-body-semibold text-body-semibold">Clients</span>
+</a>
+<!-- Active -->
+<a class="flex items-center gap-md px-md py-sm bg-primary-container text-on-primary-container rounded-lg translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined fill">clinical_notes</span>
+<span class="font-body-semibold text-body-semibold">Professionals</span>
+</a>
+</nav>
+<!-- Footer Navigation -->
+<div class="mt-auto border-t border-outline-variant pt-md flex flex-col gap-xs">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-semibold text-body-semibold">Settings</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-body-semibold text-body-semibold">Help</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col w-full lg:ml-[260px] pb-[80px] lg:pb-0 min-h-screen">
+<!-- Mobile & Top Navbar -->
+<header class="bg-surface shadow-sm sticky top-0 z-40 flex justify-between items-center px-md lg:px-lg h-16 w-full transition-colors">
+<!-- Mobile Brand (Hidden on Desktop since Sidebar has it) -->
+<div class="lg:hidden flex items-center gap-sm">
+<span class="font-h1-mobile text-h1-mobile font-bold text-primary">PraktiQU</span>
+</div>
+<!-- Desktop Page Context (Hidden on Mobile) -->
+<div class="hidden lg:flex items-center gap-sm">
+<span class="font-h2 text-h2 text-on-surface">Provider Directory</span>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-sm">
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">apps</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-primary-fixed overflow-hidden ml-sm cursor-pointer border border-outline-variant">
+<img alt="Provider profile picture" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZax1ydZ-smToV1M7OgEPl-EJ1NXXO1t6Ua2rsNgxLLHPkldX5Zf2AU7Q0jHjOEG3KrtlTIueBF9Wn-T5mbzv1WgsyHHM2VmBQkGHL-JWxzIyoIxtaN5At9jh7clTdPAVU7a_vvSkWVth0eUvYn5uol_0vqo6ug_11uegtjRDrdnBYQcUqhd4Ia2TEMneg4x_KSSV60QX9oGmdv9LA8aTj6gpeSh8R_xIlIKDmlssgtanm5oUnLTCZ9WH0exuusNub1IKhHmlBex84"/>
+</div>
+</div>
+</header>
+<!-- Content Area -->
+<div class="flex-1 overflow-y-auto p-md lg:p-lg max-w-[1200px] w-full mx-auto">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-md mb-margin">
+<div>
+<h2 class="font-h1 text-h1 text-on-background">Professionals</h2>
+<p class="font-body text-body text-on-surface-variant mt-xs">Manage and view details of all clinical staff within the suite.</p>
+</div>
+<button class="bg-primary-container text-on-primary h-[40px] px-md rounded flex items-center justify-center gap-sm hover:opacity-90 transition-opacity w-full md:w-auto">
+<span class="material-symbols-outlined text-[20px]">add</span>
+<span class="font-label text-label">Add Provider</span>
+</button>
+</div>
+<!-- Filter & Search Bar -->
+<div class="bg-surface border border-outline-variant rounded-xl p-sm mb-lg shadow-[0px_1px_2px_rgba(0,0,0,0.06)] flex flex-col md:flex-row gap-sm items-center">
+<!-- Search -->
+<div class="relative flex-1 w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full h-[40px] pl-10 pr-4 bg-surface-container-low border border-outline-variant rounded-lg font-body text-body text-on-surface placeholder-outline focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors" placeholder="Search by name or SIP..." type="text"/>
+</div>
+<!-- Filters -->
+<div class="flex gap-sm w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+<select class="h-[40px] px-md bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface-variant focus:outline-none focus:border-secondary appearance-none pr-8 relative min-w-[140px]">
+<option>All Specialties</option>
+<option>Cardiology</option>
+<option>Neurology</option>
+<option>Pediatrics</option>
+</select>
+<select class="h-[40px] px-md bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface-variant focus:outline-none focus:border-secondary appearance-none pr-8 relative min-w-[140px]">
+<option>All Statuses</option>
+<option>Accepting Patients</option>
+<option>Fully Booked</option>
+<option>On Leave</option>
+</select>
+</div>
+</div>
+<!-- Professional List (List View) -->
+<div class="flex flex-col gap-sm">
+<!-- List Item 1 -->
+<div class="bg-surface rounded-xl p-md border border-outline-variant shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-md hover:border-primary-fixed transition-colors group cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-surface-container">
+<img alt="Dr. Sarah Jenkins" class="w-full h-full object-cover" data-alt="A professional headshot of a female doctor wearing a white lab coat over a light blue blouse. She is smiling warmly in a brightly lit, modern clinical office with soft white walls and a hint of a blurred plant in the background. The lighting is bright and clean, emphasizing a professional, trustworthy, and approachable aesthetic consistent with a light-mode medical application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvFE0JynjfQG2ZwkvIhrGs6gca9h24V6BICGgNfI6jUJ1P4yr5pVa5al-w2LgS_-HCyCbbmj4-FzFSpoTyBZnkgUfxuHt-snkR_BnmmPSrdJUb0Sty9wf_Ed6kOwGMoQhYtA8YpdyP4WFXKUcMwYONwBhvrYVjkdfiQtecpDtd-n1rbpbO4CtF14zFJpnl7MhYPR5tVyEJL9dTrDsAbcqN-Acn5pJEGyS4R_Hsj_2kIJZz60Bd7yAIhrj_wgm0uwrzuorXJSbt0R2-"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface group-hover:text-primary transition-colors">Dr. Sarah Jenkins</h3>
+<div class="flex items-center gap-xs mt-xs">
+<span class="font-body text-body text-on-surface-variant">Cardiology</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-small text-small text-outline">SIP: 982-103-44</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between sm:justify-end gap-md w-full sm:w-auto mt-sm sm:mt-0 pt-sm sm:pt-0 border-t sm:border-t-0 border-outline-variant">
+<div class="flex items-center gap-xs px-2 py-1 bg-surface-container-low text-on-surface rounded-full">
+<span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+<span class="font-small text-small">Accepting Patients</span>
+</div>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:bg-surface-container hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- List Item 2 -->
+<div class="bg-surface rounded-xl p-md border border-outline-variant shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-md hover:border-primary-fixed transition-colors group cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-surface-container">
+<img alt="Dr. Michael Chen" class="w-full h-full object-cover" data-alt="A professional headshot of an Asian male doctor in his 40s wearing scrubs and a stethoscope around his neck. He has a serious but reassuring expression. The background is a clean, out-of-focus hospital corridor with bright overhead lighting, projecting a highly competent and modern clinical atmosphere suitable for a light-themed interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbD9dBuDuoxbdZ6UBqIkRLDL9EEK0VsBxbHUUwouDqdM8-cpSmpHzTMcfr1Jx4bCvcBanDtU57hRy5pcuLEpDK3E8oIkDpKnzvNjYj3eL9_uQX61elCSJ5z-WWZ1Jh6UHKXfLO_ZVLY_r-U_X0MwoGl3wuVgefWiswCwg-5kxDXviJZ_bfU7kvOTrZhpO41XlxRc7MQwea1faiASgsm-iO2zRQNOxVmkeL7PCOH95ogB_avtJYI2LtG19SagWyuF4Kb1cGcGAhJef_"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface group-hover:text-primary transition-colors">Dr. Michael Chen</h3>
+<div class="flex items-center gap-xs mt-xs">
+<span class="font-body text-body text-on-surface-variant">Neurology</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-small text-small text-outline">SIP: 441-890-21</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between sm:justify-end gap-md w-full sm:w-auto mt-sm sm:mt-0 pt-sm sm:pt-0 border-t sm:border-t-0 border-outline-variant">
+<div class="flex items-center gap-xs px-2 py-1 bg-surface-container-low text-on-surface rounded-full">
+<span class="w-2 h-2 rounded-full bg-[#F59E0B]"></span>
+<span class="font-small text-small">Fully Booked (Nov)</span>
+</div>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:bg-surface-container hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- List Item 3 -->
+<div class="bg-surface rounded-xl p-md border border-outline-variant shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-md hover:border-primary-fixed transition-colors group cursor-pointer opacity-75">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-surface-container">
+<img alt="Dr. Emily Rodriguez" class="w-full h-full object-cover grayscale" data-alt="A portrait of a female medical professional looking confidently at the camera. The image has been slightly desaturated to indicate an inactive or 'on leave' status within the UI. The setting implies a modern, well-lit medical facility with clean lines and soft white tones, maintaining a professional and orderly aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbsfYO8oDgeuNXnkB7tmQ2KSmQpYK2DFgHmy-qvFA0Y7ZSeZ4GVHyqEFwQ4Wmf19g9woD0-a-48JMsJpuswb7XGL0OgX-FakhfhsfWJQac70TWCGbEJ5d5h0viM7-cCPc5SW-IKSgWEohm6bT3z0xEhSyIGyttA7E-MDWBZlMDnDX-L_XlLwKnjhkw3NAXGDpm5Y7QBmJqHt30dI-JBRZ9CEQvTxgyMskb9i9VUZVnmVdXSnGSMeKXSBoYgOTwegPXW8M_gJ5R14uA"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface group-hover:text-primary transition-colors">Dr. Emily Rodriguez</h3>
+<div class="flex items-center gap-xs mt-xs">
+<span class="font-body text-body text-on-surface-variant">Pediatrics</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-small text-small text-outline">SIP: 772-301-99</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between sm:justify-end gap-md w-full sm:w-auto mt-sm sm:mt-0 pt-sm sm:pt-0 border-t sm:border-t-0 border-outline-variant">
+<div class="flex items-center gap-xs px-2 py-1 bg-surface-container-low text-on-surface-variant rounded-full">
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+<span class="font-small text-small">On Leave (Returns Dec 1)</span>
+</div>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:bg-surface-container hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- List Item 4 -->
+<div class="bg-surface rounded-xl p-md border border-outline-variant shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-md hover:border-primary-fixed transition-colors group cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-surface-container flex items-center justify-center text-primary-fixed bg-primary-fixed-dim">
+<span class="font-h2 text-h2">AJ</span>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface group-hover:text-primary transition-colors">Dr. Arthur Jones</h3>
+<div class="flex items-center gap-xs mt-xs">
+<span class="font-body text-body text-on-surface-variant">Orthopedics</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="font-small text-small text-outline">SIP: 112-455-80</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between sm:justify-end gap-md w-full sm:w-auto mt-sm sm:mt-0 pt-sm sm:pt-0 border-t sm:border-t-0 border-outline-variant">
+<div class="flex items-center gap-xs px-2 py-1 bg-surface-container-low text-on-surface rounded-full">
+<span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+<span class="font-small text-small">Accepting Patients</span>
+</div>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:bg-surface-container hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Pagination (Simple) -->
+<div class="flex items-center justify-between mt-xl py-md border-t border-outline-variant">
+<span class="font-small text-small text-outline">Showing 1-4 of 24 Providers</span>
+<div class="flex gap-xs">
+<button class="px-3 py-1 rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container text-sm disabled:opacity-50" disabled="">Prev</button>
+<button class="px-3 py-1 rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container text-sm">Next</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Mobile Bottom NavBar -->
+<nav class="lg:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 pb-safe shadow-[0_-1px_3px_rgba(0,0,0,0.1)] bg-surface rounded-t-xl">
+<!-- Inactive -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors p-2 rounded-lg" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label text-label mt-1 text-[10px]">Home</span>
+</a>
+<!-- Inactive -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors p-2 rounded-lg" href="#">
+<span class="material-symbols-outlined">event</span>
+<span class="font-label text-label mt-1 text-[10px]">Sessions</span>
+</a>
+<!-- Inactive -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors p-2 rounded-lg" href="#">
+<span class="material-symbols-outlined">person_search</span>
+<span class="font-label text-label mt-1 text-[10px]">Clients</span>
+</a>
+<!-- Active (Fallback intent for Directory/Network management on mobile based on JSON labels) -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined fill">account_circle</span>
+<span class="font-label text-label mt-1 text-[10px]">Profile</span>
+</a>
+</nav>
+</body></html>

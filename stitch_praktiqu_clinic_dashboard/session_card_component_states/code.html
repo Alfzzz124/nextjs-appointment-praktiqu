@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Session Card States - PraktiQU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed": "#000767",
+                        "on-tertiary-container": "#ffd2c0",
+                        "on-error-container": "#93000a",
+                        "on-background": "#1b1b24",
+                        "surface-tint": "#4e44e3",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "inverse-on-surface": "#f3effc",
+                        "background": "#fcf8ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary": "#7e3000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-container-low": "#f6f2ff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#5046e5",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-highest": "#e4e1ee",
+                        "outline": "#777587",
+                        "secondary-container": "#8792fe",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "tertiary-container": "#a54100",
+                        "surface-dim": "#dcd8e5",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-tertiary-fixed": "#351000",
+                        "secondary": "#4953bc",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary-fixed": "#e2dfff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-surface-variant": "#464555",
+                        "inverse-primary": "#c3c0ff",
+                        "surface": "#fcf8ff",
+                        "surface-variant": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "outline-variant": "#c7c4d8",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-container": "#dbd8ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fcf8ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "margin": "24px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "gutter": "24px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "label": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body">
+<!-- Top Navigation -->
+<header class="flex justify-between items-center w-full px-lg h-[64px] max-w-[1200px] mx-auto border-b border-outline-variant dark:border-outline bg-surface dark:bg-on-background docked full-width top-0 z-40">
+<div class="flex items-center gap-md">
+<button class="hover:bg-surface-container-high dark:hover:bg-surface-dim rounded-full p-sm scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" data-icon="menu">menu</span>
+</button>
+<h1 class="font-display text-display text-primary dark:text-primary-fixed-dim tracking-tight">Session Management</h1>
+</div>
+<div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden hover:bg-surface-container-high dark:hover:bg-surface-dim rounded-full p-sm scale-95 active:scale-90 transition-transform cursor-pointer">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Professional clinical headshot of a smiling administrator against a clean white background. High key lighting, sharp focus, modern corporate healthcare aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0wyyq42sb9RKcp6j2dTjgKDeT_QuepEs5v2xWU3jz8Dj0QQpCOuohlTr8waWMtaolY1BwkyKb2xCiIHcZOBbjjiUOFLPjTYFmP-6eFbMGlVoRCiaoWz9aNxqig5pCN5UhRq-VnUkPpyPUQSYXVlhaznBhx5DaS0JU_ifBcb73MUk2JeBWm829IvyfvRhnlkVnp39ycTWqY-DQDZn-_40rUiyKV_wjUWnjFMGuCSr6MomGZBCSlyqcv7d0YE3X1nBWp-q7-DONQI8R"/>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- Sidebar Navigation (Desktop) -->
+<nav class="hidden md:flex flex-col h-full py-md w-[260px] bg-surface-container-lowest dark:bg-inverse-surface shadow-sm transition-all duration-200 ease-in-out shrink-0 border-r border-outline-variant/50">
+<div class="px-lg pb-lg mb-sm border-b border-outline-variant/30">
+<div class="flex items-center gap-sm">
+<div class="w-12 h-12 rounded-full bg-primary-container/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[24px]">local_hospital</span>
+</div>
+<div>
+<h2 class="font-body-semibold text-on-surface">PraktiQU Admin</h2>
+<p class="font-small text-small text-on-surface-variant">Central Clinic</p>
+<p class="font-small text-[10px] text-outline mt-1">v1.2.0</p>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-1 px-sm">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                    Dashboard
+                </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-primary-fixed-dim font-body-semibold border-r-4 border-primary dark:border-primary-fixed-dim bg-primary-container/10 hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+                    Sessions
+                </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+                    Patients
+                </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+                    Analytics
+                </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                    Settings
+                </a>
+</div>
+</nav>
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto p-md md:p-lg lg:p-xl bg-surface-container-low">
+<div class="max-w-[1200px] mx-auto">
+<div class="mb-xl">
+<h2 class="font-h1 text-h1 text-on-background mb-sm">Session States Component</h2>
+<p class="font-body text-body text-on-surface-variant max-w-2xl">This screen demonstrates the 5 distinct visual states of a session card within the clinical dashboard, utilizing layout grids and tonal elevation.</p>
+</div>
+<!-- Bento Grid Layout for Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-lg">
+<!-- State 1: Pending (Amber tint simulation via Tailwind generic colors for functional state ONLY, relying on structural design system mostly) -->
+<div class="bg-surface rounded-[12px] p-lg border-l-4 border-yellow-500 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] hover:shadow-md transition-shadow relative overflow-hidden group">
+<!-- Subtle background tint -->
+<div class="absolute inset-0 bg-yellow-50/50 pointer-events-none"></div>
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-md">
+<div class="bg-yellow-100 text-yellow-800 px-sm py-xs rounded-full font-label text-label flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+                                    Pending
+                                </div>
+<span class="font-body-semibold text-body-semibold text-on-surface">09:00 AM</span>
+</div>
+<div class="flex items-center gap-md mb-md">
+<div class="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-outline-variant">
+<img alt="Client Avatar" class="w-full h-full object-cover" data-alt="Headshot of a middle-aged woman with glasses, smiling softly. Clinical, clean white background, professional lighting, modern healthcare style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuADXdkJ_sEtb40uNnfJw5ce8uc05KViONjHh_9_lLiL9oqWhGykjpxwIlQ1yk5dl6zkqQGTRq-KVuWBJbqz6VFg5SYXqppHK2f3t9g0Dc-1ena8MIqvxoUwuCL4vRvRKnf8D35jFKApMndc4Um4azMy3ffZDG6x3aAeZ_pzDAAK3rTGzRRwuTd0YiZRfH5OA3WPnQKNxzRPDdv6fRyyceAEB2O8YiE9eAmhCzyCG7HZl4RF9uKZbs0Xzz8fwFjfs2hu77tQ3cry39FB"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">Sarah Jenkins</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-84729</p>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-sm mt-sm flex justify-between items-center">
+<div class="flex flex-col">
+<span class="font-small text-small text-outline">Professional</span>
+<span class="font-body text-body text-on-surface">Dr. A. Chen</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-small text-small text-outline">Service</span>
+<span class="font-body text-body text-on-surface">Initial Consultation</span>
+</div>
+</div>
+</div>
+</div>
+<!-- State 2: Confirmed (Blue tint simulation) -->
+<div class="bg-surface rounded-[12px] p-lg border-l-4 border-blue-500 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] hover:shadow-md transition-shadow relative overflow-hidden">
+<div class="absolute inset-0 bg-blue-50/50 pointer-events-none"></div>
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-md">
+<div class="bg-blue-100 text-blue-800 px-sm py-xs rounded-full font-label text-label flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">event_available</span>
+                                    Confirmed
+                                </div>
+<span class="font-body-semibold text-body-semibold text-on-surface">10:30 AM</span>
+</div>
+<div class="flex items-center gap-md mb-md">
+<div class="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-outline-variant">
+<img alt="Client Avatar" class="w-full h-full object-cover" data-alt="Headshot of a young man with short dark hair, looking relaxed. Clinical, clean white background, professional lighting, modern healthcare style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAu5lmVdF1m4xaid2Ga28TC7IklHGg7OAUCGMrU7FZbAJXU16ZKOaP5j9w47D8N6iknA5CUZ7iDK0u_9eBPtjUuqDel_JKZi9mzGXpEVfR867P_LmO3adR3ShjyhaFoGYhEEavLQr7B30xZbRe7a3gNw5oqkGoWrS-4wj6xjenvz8GbGHFAJ8HeDhl4OhRoKFcR707nSxqMDdfkLDl_AuU2qJ8ieYHHO6YuEaCrgtho8-HErz0swqV6bmCtkaEypWaqyahdsLCkLHyI"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">Marcus Rodriguez</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-10294</p>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-sm mt-sm flex justify-between items-center">
+<div class="flex flex-col">
+<span class="font-small text-small text-outline">Professional</span>
+<span class="font-body text-body text-on-surface">Dr. M. Wallace</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-small text-small text-outline">Service</span>
+<span class="font-body text-body text-on-surface">Follow-up Therapy</span>
+</div>
+</div>
+</div>
+</div>
+<!-- State 3: Check-in (Purple tint simulation using primary) -->
+<div class="bg-surface rounded-[12px] p-lg border-l-4 border-primary shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] hover:shadow-md transition-shadow relative overflow-hidden">
+<div class="absolute inset-0 bg-primary-container/10 pointer-events-none"></div>
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-md">
+<div class="bg-primary-container text-on-primary-container px-sm py-xs rounded-full font-label text-label flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                    Checked In
+                                </div>
+<span class="font-body-semibold text-body-semibold text-primary">11:15 AM</span>
+</div>
+<div class="flex items-center gap-md mb-md">
+<div class="w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-primary">
+<img alt="Client Avatar" class="w-full h-full object-cover" data-alt="Headshot of a senior woman with silver hair, warm expression. Clinical, clean white background, professional lighting, modern healthcare style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPuXdk59_Q-FVCF0CTperfP2jXzgSri-zGJ7euQt4yxheI5YyZLRrJ1I88m3WfwSdiFcBJFubX3n2ZimaLzppGISUghXO8BoYeR2iHKW6Bobq3SUhOBR7INIhlFokL8SqyIfY8lURcdAxeiTJNEamkZf8UUvfm891T0iChbLuZ_kDh8P-x7s_oKQZk486n_8fjqFwNvx7E69DLQdMwA3D6iXhfqCuXdISgFZ65F8iMaeZi3oQtdBe0ZaAP3y3VDLxGo4LSz9FTiejV"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">Eleanor Vance</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-55821</p>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-sm mt-sm flex justify-between items-center">
+<div class="flex flex-col">
+<span class="font-small text-small text-outline">Professional</span>
+<span class="font-body text-body text-on-surface">Dr. A. Chen</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-small text-small text-outline">Service</span>
+<span class="font-body text-body text-on-surface">Cognitive Assessment</span>
+</div>
+</div>
+</div>
+</div>
+<!-- State 4: Completed (Green tint simulation) -->
+<div class="bg-surface rounded-[12px] p-lg border-l-4 border-green-500 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] hover:shadow-md transition-shadow relative overflow-hidden opacity-90">
+<div class="absolute inset-0 bg-green-50/30 pointer-events-none"></div>
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-md">
+<div class="bg-green-100 text-green-800 px-sm py-xs rounded-full font-label text-label flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+                                    Completed
+                                </div>
+<span class="font-body-semibold text-body-semibold text-on-surface-variant">08:00 AM</span>
+</div>
+<div class="flex items-center gap-md mb-md">
+<div class="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-outline-variant grayscale-[20%]">
+<img alt="Client Avatar" class="w-full h-full object-cover" data-alt="Headshot of a middle-aged man with a slight beard, neutral expression. Clinical, clean white background, professional lighting, modern healthcare style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGF9WjylaNfJh44B8mkxMzN92D87j5DQ8Pld8fPfEY-PcmobTbcP6S5KRiIRBPg1DWZrOUx5WzqSUiDB6lsRETZ729h5PwcUOAPuyudJl2Qe6yMnhOj-GXl-iE_XiXXcmqyR4KIY1AtSYAWdQyE4UuXsJnsdgIySYUmx9_mUxlpaUyevgjqErY5AHWVtaSHXhHqmvqDc-2rkt5FIZR_0ejYMBbPm6uNhrH3vnbi03ftoPMlKlthcn5NZc1uRqbNYXyQr4DFHaD5ZE-"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">David Kim</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-33290</p>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-sm mt-sm flex justify-between items-center">
+<div class="flex flex-col">
+<span class="font-small text-small text-outline">Professional</span>
+<span class="font-body text-body text-on-surface">Dr. M. Wallace</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-small text-small text-outline">Service</span>
+<span class="font-body text-body text-on-surface">Routine Checkup</span>
+</div>
+</div>
+</div>
+</div>
+<!-- State 5: Cancelled (Gray background, strikethrough) -->
+<div class="bg-surface-container-low rounded-[12px] p-lg border-l-4 border-outline shadow-sm relative overflow-hidden opacity-75">
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-md">
+<div class="bg-surface-variant text-on-surface-variant px-sm py-xs rounded-full font-label text-label flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">cancel</span>
+                                    Cancelled
+                                </div>
+<span class="font-body-semibold text-body-semibold text-outline line-through">02:00 PM</span>
+</div>
+<div class="flex items-center gap-md mb-md">
+<div class="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-outline-variant grayscale">
+<img alt="Client Avatar" class="w-full h-full object-cover" data-alt="Headshot of a young woman with dark hair tied back. Clinical, clean white background, professional lighting, modern healthcare style, desaturated." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7dKmXcNqrywpoGvgAasS9_4hsAQG8I6jFm0agCk0jXW1NoY_aXIMnyCLI3Z32GMUHRGY3LSG1fZwbz0iXuMOKOIOBPtJPRcWb8MMLl3P2RuXpMPGR3HoP-QMO04tQ8eWkwXjhxBDuNIDP0wVuDByv80Kp9m5hxur6mRSw0ipBHpZ_v7VG5NDC7j6G7tiuayH025H-7MWE-Z9G0Je39MobtRUJTZuIRRISKCevmq56pWgyC5LU_mdJtIb-JPd1uNCmlvn7N2x8A2HQ"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface-variant leading-tight line-through decoration-outline">Emma Watson</h3>
+<p class="font-small text-small text-outline">ID: PT-99102</p>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-sm mt-sm flex justify-between items-center">
+<div class="flex flex-col">
+<span class="font-small text-small text-outline">Professional</span>
+<span class="font-body text-body text-on-surface-variant line-through decoration-outline">Dr. A. Chen</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-small text-small text-outline">Service</span>
+<span class="font-body text-body text-on-surface-variant line-through decoration-outline">Diagnostics</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Bottom Navigation (Mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-sm py-xs bg-surface-container dark:bg-surface-container-highest shadow-lg rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="event_note">event_note</span>
+<span class="font-label text-label">Schedule</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container dark:bg-primary dark:text-on-primary rounded-xl px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="event_note">calendar_month</span>
+<span class="font-label text-label">Sessions</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label text-label">Patients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="assignment_turned_in">assignment_turned_in</span>
+<span class="font-label text-label">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span class="font-label text-label">Profile</span>
+</a>
+</nav>
+</body></html>

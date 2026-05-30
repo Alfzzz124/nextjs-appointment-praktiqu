@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Booking Success</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-container": "#5046e5",
+                        "primary": "#3625cd",
+                        "tertiary-container": "#a54100",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-container": "#f0ecf9",
+                        "surface": "#fcf8ff",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "tertiary": "#7e3000",
+                        "surface-bright": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-container-high": "#eae6f4",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary-container": "#dbd8ff",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "inverse-primary": "#c3c0ff",
+                        "secondary-container": "#8792fe",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "background": "#fcf8ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-secondary-container": "#17228f",
+                        "secondary": "#4953bc",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#4e44e3",
+                        "on-surface-variant": "#464555",
+                        "error-container": "#ffdad6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "base": "4px",
+                        "gutter": "24px",
+                        "xs": "4px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "small": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        @keyframes scaleIn {
+            0% { transform: scale(0); opacity: 0; }
+            60% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-scale-in {
+            animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col items-center justify-center p-md md:p-margin antialiased">
+<!-- Main Content Canvas -->
+<main class="w-full max-w-[480px] flex flex-col items-center">
+<!-- Success Animation/Icon -->
+<div class="mb-lg animate-scale-in flex items-center justify-center w-24 h-24 rounded-full bg-primary-container shadow-sm">
+<span class="material-symbols-outlined text-on-primary-container" style="font-size: 48px; font-variation-settings: 'FILL' 1;">
+                check_circle
+            </span>
+</div>
+<!-- Headline -->
+<h1 class="font-h1-mobile text-h1-mobile md:font-h1 md:text-h1 text-on-surface mb-margin text-center">
+            Booking Successful!
+        </h1>
+<!-- Details Card -->
+<div class="w-full bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-lg mb-margin border border-surface-variant">
+<div class="flex flex-col gap-md">
+<div class="flex justify-between items-start border-b border-surface-variant pb-sm">
+<span class="font-label text-label text-on-surface-variant">Confirmation #</span>
+<span class="font-body-semibold text-body-semibold text-on-surface">SBK-2026-0089</span>
+</div>
+<div class="flex justify-between items-start">
+<span class="font-label text-label text-on-surface-variant">Client</span>
+<span class="font-body-semibold text-body-semibold text-on-surface">Sarah Wijaya</span>
+</div>
+<div class="flex justify-between items-start">
+<span class="font-label text-label text-on-surface-variant">Date</span>
+<span class="font-body-semibold text-body-semibold text-on-surface text-right">Tuesday, 3 June 2026</span>
+</div>
+<div class="flex justify-between items-start">
+<span class="font-label text-label text-on-surface-variant">Time</span>
+<span class="font-body-semibold text-body-semibold text-on-surface">14:00 - 15:00</span>
+</div>
+<div class="flex justify-between items-start">
+<span class="font-label text-label text-on-surface-variant">Professional</span>
+<span class="font-body-semibold text-body-semibold text-on-surface text-right">Dr. Anita Kusuma</span>
+</div>
+<div class="flex justify-between items-start">
+<span class="font-label text-label text-on-surface-variant">Service</span>
+<span class="font-body-semibold text-body-semibold text-on-surface text-right">Konseling Individual</span>
+</div>
+<div class="flex justify-between items-center py-sm border-y border-surface-variant">
+<span class="font-label text-label text-on-surface-variant">Status</span>
+<div class="bg-surface-variant text-on-surface-variant px-3 py-1 rounded-full font-small text-small font-medium">
+                        Pending Approval
+                    </div>
+</div>
+<div class="flex justify-between items-end pt-xs">
+<span class="font-label text-label text-on-surface-variant">Total</span>
+<span class="font-h2 text-h2 text-primary">Rp 250.000</span>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="w-full flex flex-col gap-sm">
+<button class="w-full h-[40px] bg-primary hover:bg-primary-container text-on-primary hover:text-on-primary-container transition-colors rounded-lg flex items-center justify-center font-body-semibold text-body-semibold gap-2 shadow-sm">
+<span class="material-symbols-outlined" style="font-size: 18px;">calendar_add_on</span>
+                Add to Calendar
+            </button>
+<button class="w-full h-[40px] bg-surface-container-lowest border border-outline-variant hover:bg-surface-container-low text-on-surface transition-colors rounded-lg flex items-center justify-center font-body-semibold text-body-semibold">
+                Book Another Session
+            </button>
+</div>
+<!-- Footer Note -->
+<p class="mt-lg font-small text-small text-on-surface-variant text-center max-w-[80%]">
+            Notification will be sent to client once approved
+        </p>
+</main>
+</body></html>

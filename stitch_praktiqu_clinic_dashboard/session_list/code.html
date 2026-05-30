@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Sessions</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed": "#000767",
+                        "on-tertiary-container": "#ffd2c0",
+                        "on-error-container": "#93000a",
+                        "on-background": "#1b1b24",
+                        "surface-tint": "#4e44e3",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "inverse-on-surface": "#f3effc",
+                        "background": "#fcf8ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary": "#7e3000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-container-low": "#f6f2ff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#5046e5",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-highest": "#e4e1ee",
+                        "outline": "#777587",
+                        "secondary-container": "#8792fe",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "tertiary-container": "#a54100",
+                        "surface-dim": "#dcd8e5",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-tertiary-fixed": "#351000",
+                        "secondary": "#4953bc",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary-fixed": "#e2dfff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-surface-variant": "#464555",
+                        "inverse-primary": "#c3c0ff",
+                        "surface": "#fcf8ff",
+                        "surface-variant": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "outline-variant": "#c7c4d8",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-container": "#dbd8ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fcf8ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "margin": "24px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "gutter": "24px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "label": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body min-h-screen flex flex-col md:flex-row">
+<!-- Sidebar (Desktop) -->
+<nav class="hidden md:flex fixed left-0 top-0 h-full w-[260px] bg-surface-container-lowest shadow-sm flex-col py-md z-40">
+<div class="px-lg pb-lg">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-surface-container overflow-hidden">
+<img alt="Clinic Administrator Avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a female clinic administrator in her 40s. She is wearing a dark blazer over a light blue blouse, smiling warmly at the camera. The background is a brightly lit, modern medical office with blurred equipment. The lighting is soft and natural, conveying trust and competence." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwsREmbEQC3laJ_ujKrflI4ltOEJJyCF0TkeEQnPYnNe3020yhiThMvrjtPUXLlJx-zvt04EwRXltL1V6klFzHbxmSY1M9Bq3Mq0CYdJJvXWK_SmYKcOvKX_kteV7PKWhjAbInV-QeyVeZiiGUNUKmPp4TMfJF63xfJvB-qp7-nwWgTz7KtooNR8RHAstXLd1bP9bUlaOK3-neANM7D2BRAGSwPDM-pKoFB6Rt_JBs1nF9QROKOdwn_WkmdwrNkmG3bBG6YKahife0"/>
+</div>
+<div>
+<h2 class="font-body-semibold text-body-semibold text-on-surface">PraktiQU Admin</h2>
+<p class="font-small text-small text-on-surface-variant">Central Clinic</p>
+</div>
+</div>
+<div class="mt-xs text-on-surface-variant font-small text-small">v1.2.0</div>
+</div>
+<div class="flex flex-col flex-1 gap-xs mt-md">
+<a class="flex items-center gap-md px-lg py-sm text-on-surface-variant font-body hover:bg-surface-container-low transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-md px-lg py-sm text-primary font-body-semibold border-r-4 border-primary bg-primary-container/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined fill">calendar_month</span>
+                Sessions
+            </a>
+<a class="flex items-center gap-md px-lg py-sm text-on-surface-variant font-body hover:bg-surface-container-low transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">person</span>
+                Patients
+            </a>
+<a class="flex items-center gap-md px-lg py-sm text-on-surface-variant font-body hover:bg-surface-container-low transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                Analytics
+            </a>
+<a class="flex items-center gap-md px-lg py-sm text-on-surface-variant font-body hover:bg-surface-container-low transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col md:ml-[260px] pb-24 md:pb-0">
+<!-- Top App Bar -->
+<header class="flex justify-between items-center w-full px-lg h-[64px] max-w-[1200px] mx-auto bg-surface border-b border-outline-variant sticky top-0 z-30">
+<div class="flex items-center gap-md">
+<button class="md:hidden p-sm rounded-full hover:bg-surface-container-high transition-transform scale-95 active:scale-90 text-on-surface-variant">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="font-h1 text-h1-mobile md:text-h1 text-primary">Sessions</h1>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A professional headshot of a female clinic administrator in her 40s. She is wearing a dark blazer over a light blue blouse, smiling warmly at the camera. The background is a brightly lit, modern medical office with blurred equipment. The lighting is soft and natural, conveying trust and competence." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAN1UCJazHBYeWttbAvq0Df76RgFA1CHAqVcpxE8-e4YEy_eUmMKQ8FRnqBNCjsqciFPW9aaItznBNJl8z7y6L_5fwPGxlcP1xdYy3uGeCm570xBcyXcxW3cfKtUn1z2ZG-ptDHOhjLVhl5a-GGwAmJ6sqp0vA7xDPxsR2mH2ZwCQnT0uKWiJcy1UjrDdJU_sEBOAPqEzezQGF8qCVqk14PfX9b6ktWircry7kn2dfeZHQMBMW0ls5Ppayd72O-dWcWtpkL4CMQpaGs"/>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-1 w-full max-w-[1200px] mx-auto p-md md:p-lg">
+<div class="flex flex-col lg:flex-row gap-lg">
+<!-- Left Sidebar: Calendar & Filters -->
+<div class="w-full lg:w-[320px] flex flex-col gap-lg">
+<!-- Date Picker (Mini Calendar) -->
+<div class="bg-surface rounded-xl p-md shadow-sm border border-outline-variant/30">
+<div class="flex justify-between items-center mb-md">
+<h2 class="font-h2 text-h2 text-on-surface">October 2023</h2>
+<div class="flex gap-xs">
+<button class="p-xs text-on-surface-variant hover:bg-surface-container rounded-full"><span class="material-symbols-outlined">chevron_left</span></button>
+<button class="p-xs text-on-surface-variant hover:bg-surface-container rounded-full"><span class="material-symbols-outlined">chevron_right</span></button>
+</div>
+</div>
+<div class="grid grid-cols-7 gap-xs text-center mb-sm">
+<div class="text-small font-label text-on-surface-variant">Mo</div>
+<div class="text-small font-label text-on-surface-variant">Tu</div>
+<div class="text-small font-label text-on-surface-variant">We</div>
+<div class="text-small font-label text-on-surface-variant">Th</div>
+<div class="text-small font-label text-on-surface-variant">Fr</div>
+<div class="text-small font-label text-on-surface-variant">Sa</div>
+<div class="text-small font-label text-on-surface-variant">Su</div>
+</div>
+<div class="grid grid-cols-7 gap-xs text-center">
+<!-- Empty days -->
+<div class="p-xs text-body font-body text-on-surface-variant/30"></div>
+<div class="p-xs text-body font-body text-on-surface-variant/30"></div>
+<!-- Days -->
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto">1</button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto">2</button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto">3</button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto">4</button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto relative">5<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full"></span></button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto relative">6<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full"></span></button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto relative">7<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full"></span></button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto relative">8<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full"></span></button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto relative">9<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full"></span></button>
+<button class="p-xs text-body font-body text-on-primary bg-primary rounded-full w-8 h-8 flex items-center justify-center mx-auto shadow-sm">10</button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto relative">11<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full"></span></button>
+<button class="p-xs text-body font-body text-on-surface hover:bg-surface-container rounded-full w-8 h-8 flex items-center justify-center mx-auto">12</button>
+<!-- More days truncated for brevity... -->
+<div class="col-span-7 h-px bg-outline-variant/30 my-sm"></div>
+<div class="col-span-7 flex justify-between items-center text-small font-small text-on-surface-variant">
+<span>Selected: Oct 10, 2023</span>
+<button class="text-primary font-label hover:underline">Today</button>
+</div>
+</div>
+</div>
+<!-- Filters -->
+<div class="bg-surface rounded-xl p-md shadow-sm border border-outline-variant/30">
+<div class="flex items-center gap-sm mb-md pb-sm border-b border-outline-variant/30">
+<span class="material-symbols-outlined text-on-surface-variant">filter_list</span>
+<h3 class="font-body-semibold text-body-semibold text-on-surface">Filters</h3>
+</div>
+<div class="space-y-md">
+<div>
+<label class="block font-label text-label text-on-surface-variant mb-xs">Professional</label>
+<select class="w-full bg-surface border border-outline-variant rounded-lg p-sm text-body font-body text-on-surface focus:ring-1 focus:ring-primary focus:border-primary">
+<option>All Professionals</option>
+<option>Dr. Anita</option>
+<option>Dr. Budi</option>
+<option>Nurse Ratna</option>
+</select>
+</div>
+<div>
+<label class="block font-label text-label text-on-surface-variant mb-xs">Status</label>
+<div class="flex flex-col gap-xs">
+<label class="flex items-center gap-sm">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary" type="checkbox"/>
+<span class="text-body font-body text-on-surface">Confirmed</span>
+</label>
+<label class="flex items-center gap-sm">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary" type="checkbox"/>
+<span class="text-body font-body text-on-surface">Pending</span>
+</label>
+<label class="flex items-center gap-sm">
+<input class="rounded border-outline-variant text-primary focus:ring-primary" type="checkbox"/>
+<span class="text-body font-body text-on-surface">Cancelled</span>
+</label>
+<label class="flex items-center gap-sm">
+<input class="rounded border-outline-variant text-primary focus:ring-primary" type="checkbox"/>
+<span class="text-body font-body text-on-surface">Completed</span>
+</label>
+</div>
+</div>
+</div>
+<button class="w-full mt-md py-sm px-md border border-outline-variant text-on-surface font-label text-label rounded-lg hover:bg-surface-container transition-colors">
+                            Reset Filters
+                        </button>
+</div>
+</div>
+<!-- Session List -->
+<div class="flex-1 flex flex-col gap-md">
+<div class="flex justify-between items-end mb-sm">
+<div>
+<h2 class="font-h2 text-h2 text-on-surface">Tuesday, Oct 10</h2>
+<p class="font-body text-body text-on-surface-variant">4 Sessions scheduled</p>
+</div>
+</div>
+<!-- Session Card: Confirmed -->
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary/30 transition-all cursor-pointer group flex flex-col sm:flex-row gap-md relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-[#10B981]"></div>
+<div class="flex flex-col w-[120px] shrink-0 border-r border-outline-variant/30 pr-md justify-center">
+<span class="font-h2 text-h2 text-on-surface leading-none">09:00</span>
+<span class="font-body text-body text-on-surface-variant mt-1">10:00</span>
+<div class="mt-2 text-small font-small text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span> 60m
+                            </div>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-body-semibold text-body-semibold text-on-surface text-lg">Sarah Wijaya</h3>
+<span class="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-label bg-[#10B981]/10 text-[#047857]">
+                                    Confirmed
+                                </span>
+</div>
+<div class="flex flex-wrap gap-x-md gap-y-sm mt-sm">
+<div class="flex items-center gap-xs">
+<div class="w-6 h-6 rounded-full bg-surface-container overflow-hidden">
+<img alt="Dr. Anita" class="w-full h-full object-cover" data-alt="A headshot of a female doctor in a white lab coat over a blue scrub top. She has a stethoscope around her neck and is looking confidently slightly off-camera. The background is a blurred clinical setting. The lighting is bright and clean, typical of a modern healthcare facility." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB0msMSTFUI_pBq70VdVgSvlNbRIiylZXpP13aVA_fByeWWf8m3hPE-aLOh8Nxb5BZX9BZDU9t-Qhg9CFRKGQqQEX2Hv1hPUzgkTEKdce_BRFM8tIm9_nsjJ5NQdbDmg2w9f0gZUQKoI7H97184rZgtSiJVBazF1Uum51LWsppZD1oCXkSzm7GiblhazqZps1vBy834uGxkxpR3Dfvmn3SBHPcgagYNzprTHiDwQ7tfDmOiymN3NHnIbTZ-1n8dEea_cxCEs8UvPIvw"/>
+</div>
+<span class="font-body text-body text-on-surface-variant">Dr. Anita</span>
+</div>
+<div class="flex items-center gap-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">health_and_safety</span>
+<span class="font-body text-body">Initial Consultation</span>
+</div>
+<div class="flex items-center gap-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">room</span>
+<span class="font-body text-body">Room 101</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Session Card: Pending -->
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary/30 transition-all cursor-pointer group flex flex-col sm:flex-row gap-md relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-[#F59E0B]"></div>
+<div class="flex flex-col w-[120px] shrink-0 border-r border-outline-variant/30 pr-md justify-center">
+<span class="font-h2 text-h2 text-on-surface leading-none">10:30</span>
+<span class="font-body text-body text-on-surface-variant mt-1">11:00</span>
+<div class="mt-2 text-small font-small text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span> 30m
+                            </div>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-body-semibold text-body-semibold text-on-surface text-lg">Budi Santoso</h3>
+<span class="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-label bg-[#F59E0B]/10 text-[#B45309]">
+                                    Pending
+                                </span>
+</div>
+<div class="flex flex-wrap gap-x-md gap-y-sm mt-sm">
+<div class="flex items-center gap-xs">
+<div class="w-6 h-6 rounded-full bg-surface-container overflow-hidden">
+<img alt="Dr. Budi" class="w-full h-full object-cover" data-alt="A portrait of a male doctor in his 50s with glasses, wearing a white lab coat and a tie. He is looking directly at the camera with a reassuring expression. The background is a softly blurred office environment with a light blue tint." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1n9E8J6QXwU5sNKCqeh_5oDUGrNQpjiaFDeF4u1w0KX5XxJqLZGkWzoTa889fmL6110_fgtE5zLGsGkPhluv-WzR1prNA_Lhk6Kue2UWnR2MU767M3P7Q8Q7i7T27ytMGT1Ro08gElmd-_UzDI3XFEfzlTdLRzsBivLNXmSAWpocNP17eajhQWrTfxcir-U1P_XEpD26ISPdp5-SDBdWtnZ7a487cOs5JAPfpczmq13Rb47hhNsfyvuonNc13aC03IhbJ0Sglqw0-"/>
+</div>
+<span class="font-body text-body text-on-surface-variant">Dr. Budi</span>
+</div>
+<div class="flex items-center gap-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">monitor_heart</span>
+<span class="font-body text-body">Follow-up</span>
+</div>
+<div class="flex items-center gap-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">room</span>
+<span class="font-body text-body">Room 102</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Session Card: Confirmed -->
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary/30 transition-all cursor-pointer group flex flex-col sm:flex-row gap-md relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-[#10B981]"></div>
+<div class="flex flex-col w-[120px] shrink-0 border-r border-outline-variant/30 pr-md justify-center">
+<span class="font-h2 text-h2 text-on-surface leading-none">13:00</span>
+<span class="font-body text-body text-on-surface-variant mt-1">14:00</span>
+<div class="mt-2 text-small font-small text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span> 60m
+                            </div>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-body-semibold text-body-semibold text-on-surface text-lg">Dewi Lestari</h3>
+<span class="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-label bg-[#10B981]/10 text-[#047857]">
+                                    Confirmed
+                                </span>
+</div>
+<div class="flex flex-wrap gap-x-md gap-y-sm mt-sm">
+<div class="flex items-center gap-xs">
+<div class="w-6 h-6 rounded-full bg-surface-container overflow-hidden">
+<img alt="Dr. Anita" class="w-full h-full object-cover" data-alt="A headshot of a female doctor in a white lab coat over a blue scrub top. She has a stethoscope around her neck and is looking confidently slightly off-camera. The background is a blurred clinical setting. The lighting is bright and clean, typical of a modern healthcare facility." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBoKUaLt6-nyqLS8ZjAB9lI-zZYnjOypTKarghUo8tj668LDGLbxC57v6T1NwcOOUF0tUmhJaJTDhzb-6tDAO4Q-TaR6I6Bl-YIWp2cNaUYgorrmXxd65lVxIKSSPaCpNXN9Q9iIH0KYYC5U5tbtZDuA3wJZZIIEiaeefiAKKjIvw01akhyfMF4Zf7bKFsoFcZ_I-FeR4My3XwerJmy7hSixjwMNkef0ok8jWa_E-quajKgQskRydlmNFzlupB0ia5cLKCl5W2a_dYt"/>
+</div>
+<span class="font-body text-body text-on-surface-variant">Dr. Anita</span>
+</div>
+<div class="flex items-center gap-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">vaccines</span>
+<span class="font-body text-body">Vaccination</span>
+</div>
+<div class="flex items-center gap-xs text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">room</span>
+<span class="font-body text-body">Room 101</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Floating Action Button (FAB) -->
+<button class="fixed right-6 bottom-24 md:bottom-8 bg-primary text-on-primary hover:bg-primary-fixed hover:text-on-primary-fixed-variant transition-colors shadow-lg rounded-xl h-[56px] px-lg flex items-center gap-sm z-40">
+<span class="material-symbols-outlined">add</span>
+<span class="font-label text-label">New Session</span>
+</button>
+<!-- Bottom Navigation Bar (Mobile) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-sm py-xs md:hidden shadow-lg bg-surface-container rounded-t-xl">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-xl px-md py-xs scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined fill">event_note</span>
+<span class="font-label text-label mt-1 text-[10px]">Schedule</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-md py-xs hover:bg-primary-fixed transition-colors scale-95 active:scale-90 rounded-xl" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label text-label mt-1 text-[10px]">Patients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-md py-xs hover:bg-primary-fixed transition-colors scale-95 active:scale-90 rounded-xl" href="#">
+<span class="material-symbols-outlined">assignment_turned_in</span>
+<span class="font-label text-label mt-1 text-[10px]">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-md py-xs hover:bg-primary-fixed transition-colors scale-95 active:scale-90 rounded-xl" href="#">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-label text-label mt-1 text-[10px]">Profile</span>
+</a>
+</nav>
+</body></html>

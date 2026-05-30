@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Add New Client</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#93000a",
+                        "outline": "#777587",
+                        "on-surface": "#1b1b24",
+                        "on-tertiary-fixed": "#351000",
+                        "on-surface-variant": "#464555",
+                        "surface": "#fcf8ff",
+                        "secondary-container": "#8792fe",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary-fixed": "#0f0069",
+                        "on-error": "#ffffff",
+                        "tertiary-container": "#a54100",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "inverse-on-surface": "#f3effc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "primary-fixed": "#e2dfff",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#dcd8e5",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-secondary-fixed": "#000767",
+                        "surface-bright": "#fcf8ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container": "#f0ecf9",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed": "#e0e0ff",
+                        "on-background": "#1b1b24",
+                        "inverse-surface": "#302f39",
+                        "tertiary": "#7e3000",
+                        "background": "#fcf8ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-primary-container": "#dbd8ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "secondary": "#4953bc",
+                        "primary": "#3625cd",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "surface-tint": "#4e44e3",
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#eae6f4",
+                        "primary-container": "#5046e5",
+                        "on-secondary-container": "#17228f",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin": "24px",
+                        "lg": "24px",
+                        "gutter": "24px",
+                        "sm": "8px",
+                        "xl": "32px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "label": ["Inter"],
+                        "small": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined[data-weight="fill"] {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body text-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="bg-surface border-b border-outline-variant shadow-sm docked full-width top-0 z-50 flex items-center justify-between px-lg h-16 w-full max-w-7xl mx-auto md:hidden">
+<div class="flex items-center gap-md">
+<span class="font-h1-mobile text-h1-mobile text-primary tracking-tight">PraktiQU</span>
+</div>
+<div class="flex items-center">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors duration-200 active:opacity-80">
+<span class="material-symbols-outlined text-on-surface-variant">settings</span>
+</button>
+</div>
+</header>
+<!-- NavigationDrawer (Desktop) -->
+<nav class="bg-surface-container-low hidden lg:flex flex-col p-lg gap-sm h-full fixed left-0 top-0 w-[260px] border-r border-outline-variant">
+<div class="flex items-center gap-md mb-xl">
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-body-semibold">DM</div>
+<div>
+<h2 class="font-h2 text-h2 text-primary">Dr. Miller</h2>
+<p class="font-small text-small text-on-surface-variant">Clinical Lead</p>
+<p class="font-small text-small text-outline">Clinic ID: 8821</p>
+</div>
+</div>
+<div class="flex flex-col gap-xs mt-lg">
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container-highest rounded-lg active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label text-label">Dashboard</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container-highest rounded-lg active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label text-label">Clients</span>
+</a>
+<a class="bg-secondary-container text-on-secondary-container rounded-lg font-body-semibold flex items-center gap-md px-md py-sm active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-weight="fill">person_add</span>
+<span class="font-label text-label">Registration</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container-highest rounded-lg active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label text-label">Settings</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 lg:ml-[260px] p-md md:p-lg pb-24 md:pb-lg flex flex-col items-center justify-center w-full max-w-7xl mx-auto">
+<div class="w-full max-w-lg bg-surface rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] overflow-hidden border border-surface-variant">
+<div class="px-lg py-md border-b border-surface-variant bg-surface-container-low">
+<h1 class="font-h2 text-h2 text-on-surface">Add New Client</h1>
+<p class="font-small text-small text-on-surface-variant mt-1">Enter patient details to register them in the system.</p>
+</div>
+<form class="p-lg flex flex-col gap-md">
+<!-- Full Name -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface" for="fullName">Full Name <span class="text-error">*</span></label>
+<input class="w-full h-10 px-sm border border-[#E2E8F0] rounded font-body text-body text-on-surface placeholder:text-outline focus:outline-none focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] bg-surface transition-colors" id="fullName" name="fullName" placeholder="e.g. Jane Doe" required="" type="text"/>
+</div>
+<!-- Email -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface" for="email">Email <span class="text-error">*</span></label>
+<input class="w-full h-10 px-sm border border-[#E2E8F0] rounded font-body text-body text-on-surface placeholder:text-outline focus:outline-none focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] bg-surface transition-colors" id="email" name="email" placeholder="jane.doe@example.com" required="" type="email"/>
+</div>
+<!-- Phone -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface" for="phone">Phone</label>
+<input class="w-full h-10 px-sm border border-[#E2E8F0] rounded font-body text-body text-on-surface placeholder:text-outline focus:outline-none focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] bg-surface transition-colors" id="phone" name="phone" placeholder="(555) 123-4567" type="tel"/>
+</div>
+<!-- Date of Birth -->
+<div class="flex flex-col gap-xs relative">
+<label class="font-label text-label text-on-surface" for="dob">Date of Birth</label>
+<div class="relative flex items-center">
+<input class="w-full h-10 pl-sm pr-10 border border-[#E2E8F0] rounded font-body text-body text-on-surface focus:outline-none focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] bg-surface transition-colors appearance-none [&amp;::-webkit-calendar-picker-indicator]:hidden" id="dob" name="dob" type="date"/>
+<span class="material-symbols-outlined absolute right-sm text-outline pointer-events-none">calendar_today</span>
+</div>
+</div>
+<!-- Notes -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface" for="notes">Notes</label>
+<textarea class="w-full p-sm border border-[#E2E8F0] rounded font-body text-body text-on-surface placeholder:text-outline focus:outline-none focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] bg-surface transition-colors resize-y min-h-[80px]" id="notes" name="notes" placeholder="Any initial clinical notes or context..." rows="3"></textarea>
+</div>
+<!-- Actions -->
+<div class="pt-md mt-sm border-t border-surface-variant flex items-center justify-end gap-md">
+<button class="h-10 px-md rounded-lg border border-outline-variant text-[#1E293B] font-body-semibold hover:bg-surface-container transition-colors focus:outline-none focus:ring-2 focus:ring-primary" type="button">
+                        Cancel
+                    </button>
+<button class="h-10 px-md rounded-lg bg-[#5046E5] text-[#ffffff] font-body-semibold hover:bg-[#4338CA] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#5046E5] shadow-sm" type="submit">
+                        Save Client
+                    </button>
+</div>
+</form>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="bg-surface fixed bottom-0 w-full z-50 rounded-t-xl shadow-[0px_-1px_3px_rgba(0,0,0,0.1)] lg:hidden flex justify-around items-center px-4 py-3 pb-safe border-t-0">
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:bg-surface-variant transition-colors active:scale-90 rounded-full" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-mobile text-label-mobile mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:bg-surface-variant transition-colors active:scale-90 rounded-full" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-mobile text-label-mobile mt-1">Clients</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container px-4 py-1 rounded-full active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-weight="fill">add_circle</span>
+<span class="font-label-mobile text-label-mobile mt-1">Add</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:bg-surface-variant transition-colors active:scale-90 rounded-full" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-mobile text-label-mobile mt-1">Settings</span>
+</a>
+</nav>
+<script>
+        // Simple form interaction prevention for demo
+        document.querySelector('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            // In a real app, this would handle the submission
+            console.log('Form submitted');
+        });
+    </script>
+</body></html>

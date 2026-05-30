@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Calendar Component</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-container": "#5046e5",
+                        "primary": "#3625cd",
+                        "tertiary-container": "#a54100",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-container": "#f0ecf9",
+                        "surface": "#fcf8ff",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "tertiary": "#7e3000",
+                        "surface-bright": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-container-high": "#eae6f4",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary-container": "#dbd8ff",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "inverse-primary": "#c3c0ff",
+                        "secondary-container": "#8792fe",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "background": "#fcf8ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-secondary-container": "#17228f",
+                        "secondary": "#4953bc",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#4e44e3",
+                        "on-surface-variant": "#464555",
+                        "error-container": "#ffdad6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "base": "4px",
+                        "gutter": "24px",
+                        "xs": "4px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "small": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #f0ecf9; /* surface-container */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-screen flex items-center justify-center p-md text-on-surface antialiased">
+<!-- Standalone Calendar Component -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] border border-outline-variant p-margin w-full max-w-[340px]">
+<!-- Header -->
+<div class="flex items-center justify-between mb-margin">
+<button aria-label="Previous month" class="h-8 w-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container-lowest">
+<span class="material-symbols-outlined" style="font-size: 20px;">chevron_left</span>
+</button>
+<h2 class="font-h2 text-h2 text-on-surface">June 2026</h2>
+<button aria-label="Next month" class="h-8 w-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container-lowest">
+<span class="material-symbols-outlined" style="font-size: 20px;">chevron_right</span>
+</button>
+</div>
+<!-- Days of Week -->
+<div class="grid grid-cols-7 gap-xs mb-sm text-center">
+<span class="font-label text-label text-outline py-xs">S</span>
+<span class="font-label text-label text-on-surface-variant py-xs">M</span>
+<span class="font-label text-label text-on-surface-variant py-xs">T</span>
+<span class="font-label text-label text-on-surface-variant py-xs">W</span>
+<span class="font-label text-label text-on-surface-variant py-xs">T</span>
+<span class="font-label text-label text-on-surface-variant py-xs">F</span>
+<span class="font-label text-label text-outline py-xs">S</span>
+</div>
+<!-- Dates Grid -->
+<div class="grid grid-cols-7 gap-y-sm gap-x-xs text-center place-items-center">
+<!-- Week 1 -->
+<div class="h-[36px] w-[36px]"></div> <!-- Sun May 31 -->
+<!-- June 1: Current Day (Subtly Marked) -->
+<button aria-label="June 1, 2026, Today" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary underline decoration-2 underline-offset-[4px] hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">1</button>
+<button aria-label="June 2, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">2</button>
+<!-- June 3: Selected Day -->
+<button aria-label="June 3, 2026, Selected" class="h-[36px] w-[36px] flex items-center justify-center rounded-full bg-primary text-on-primary font-body-semibold text-body-semibold shadow-sm hover:bg-primary-fixed-variant transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">3</button>
+<button aria-label="June 4, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">4</button>
+<button aria-label="June 5, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">5</button>
+<!-- Weekends: Muted, non-interactive visual styling for simplicity in this demo, though could be buttons in a real app -->
+<div aria-label="June 6, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">6</div>
+<!-- Week 2 -->
+<div aria-label="June 7, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">7</div>
+<button aria-label="June 8, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">8</button>
+<button aria-label="June 9, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">9</button>
+<button aria-label="June 10, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">10</button>
+<button aria-label="June 11, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">11</button>
+<button aria-label="June 12, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">12</button>
+<div aria-label="June 13, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">13</div>
+<!-- Week 3 -->
+<div aria-label="June 14, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">14</div>
+<button aria-label="June 15, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">15</button>
+<button aria-label="June 16, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">16</button>
+<button aria-label="June 17, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">17</button>
+<button aria-label="June 18, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">18</button>
+<button aria-label="June 19, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">19</button>
+<div aria-label="June 20, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">20</div>
+<!-- Week 4 -->
+<div aria-label="June 21, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">21</div>
+<button aria-label="June 22, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">22</button>
+<button aria-label="June 23, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">23</button>
+<button aria-label="June 24, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">24</button>
+<button aria-label="June 25, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">25</button>
+<button aria-label="June 26, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">26</button>
+<div aria-label="June 27, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">27</div>
+<!-- Week 5 -->
+<div aria-label="June 28, 2026" class="h-[36px] w-[36px] flex items-center justify-center font-body text-body text-outline pointer-events-none">28</div>
+<button aria-label="June 29, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">29</button>
+<button aria-label="June 30, 2026" class="h-[36px] w-[36px] flex items-center justify-center rounded-full font-body text-body text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">30</button>
+<div class="h-[36px] w-[36px]"></div>
+<div class="h-[36px] w-[36px]"></div>
+<div class="h-[36px] w-[36px]"></div>
+<div class="h-[36px] w-[36px]"></div>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Client List</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error-container": "#93000a",
+                      "outline": "#777587",
+                      "on-surface": "#1b1b24",
+                      "on-tertiary-fixed": "#351000",
+                      "on-surface-variant": "#464555",
+                      "surface": "#fcf8ff",
+                      "secondary-container": "#8792fe",
+                      "inverse-primary": "#c3c0ff",
+                      "on-primary-fixed": "#0f0069",
+                      "on-error": "#ffffff",
+                      "tertiary-container": "#a54100",
+                      "on-primary": "#ffffff",
+                      "tertiary-fixed": "#ffdbcc",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "inverse-on-surface": "#f3effc",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "error": "#ba1a1a",
+                      "secondary-fixed-dim": "#bdc2ff",
+                      "primary-fixed": "#e2dfff",
+                      "on-tertiary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "surface-dim": "#dcd8e5",
+                      "on-primary-fixed-variant": "#3422cc",
+                      "on-secondary-fixed": "#000767",
+                      "surface-bright": "#fcf8ff",
+                      "surface-variant": "#e4e1ee",
+                      "surface-container": "#f0ecf9",
+                      "surface-container-highest": "#e4e1ee",
+                      "secondary-fixed": "#e0e0ff",
+                      "on-background": "#1b1b24",
+                      "inverse-surface": "#302f39",
+                      "tertiary": "#7e3000",
+                      "background": "#fcf8ff",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "on-primary-container": "#dbd8ff",
+                      "on-secondary-fixed-variant": "#2f3aa3",
+                      "secondary": "#4953bc",
+                      "primary": "#3625cd",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-container-low": "#f6f2ff",
+                      "surface-tint": "#4e44e3",
+                      "on-secondary": "#ffffff",
+                      "surface-container-high": "#eae6f4",
+                      "primary-container": "#5046e5",
+                      "on-secondary-container": "#17228f",
+                      "outline-variant": "#c7c4d8",
+                      "on-tertiary-container": "#ffd2c0"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin": "24px",
+                      "lg": "24px",
+                      "gutter": "24px",
+                      "sm": "8px",
+                      "xl": "32px",
+                      "xs": "4px",
+                      "md": "16px",
+                      "base": "4px"
+              },
+              "fontFamily": {
+                      "label": [
+                              "Inter"
+                      ],
+                      "small": [
+                              "Inter"
+                      ],
+                      "h1-mobile": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "display": [
+                              "Inter"
+                      ],
+                      "body-semibold": [
+                              "Inter"
+                      ],
+                      "h2": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "small": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h1-mobile": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h1": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "display": [
+                              "30px",
+                              {
+                                      "lineHeight": "38px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-semibold": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h2": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface dark:bg-surface-dim text-on-surface dark:text-on-surface antialiased flex h-screen overflow-hidden">
+<!-- NavigationDrawer (Desktop) -->
+<nav aria-label="Main Navigation" class="hidden lg:flex flex-col p-lg gap-sm h-full bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline fixed left-0 top-0 h-full w-[260px] z-40">
+<div class="mb-xl flex items-center gap-md">
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-h2 text-h2 overflow-hidden shadow-sm">
+<img alt="Clinician Avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a clinician, modern clinical setting, soft natural lighting, high quality, realistic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAML039kMcEG-vP1g2oybgifaWxHAwxnB3V8t1wOKXHV0DHxMdSWp3WTB5hhYHICTvN2hZWaLSKhyw16Bcr_m_Rx5hNXGjY4lZQh9gJWZZXlDYUvlRR_sfn5WnUgF-U5LjhixbzJ4JnB0JIZCkGcwu3h-AN9GBsheTBV98mlMTsDjsF4fhRGQnLEkH1NgW5P487b7Y9cKWNzuV40RHx8sOtC6YF_M4m5U4tOZSpztXcHj8Ew5rBdXkDgVmPBhq7LCPqznSSd9pOeXIp"/>
+</div>
+<div>
+<h2 class="font-h2 text-h2 text-primary dark:text-primary-fixed-dim tracking-tight">Dr. Miller</h2>
+<p class="font-label text-label text-on-surface-variant">Clinical Lead</p>
+</div>
+</div>
+<ul class="flex flex-col gap-sm flex-1">
+<li>
+<a class="text-on-surface-variant dark:text-outline flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface rounded-lg active:scale-[0.98] transition-transform transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label text-label">Dashboard</span>
+</a>
+</li>
+<li>
+<a aria-current="page" class="bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-lg font-body-semibold flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="group" data-weight="fill" style="font-variation-settings: 'FILL' 1;">group</span>
+<span class="font-label text-label">Clients</span>
+</a>
+</li>
+<li>
+<a class="text-on-surface-variant dark:text-outline flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface rounded-lg active:scale-[0.98] transition-transform transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="person_add">person_add</span>
+<span class="font-label text-label">Registration</span>
+</a>
+</li>
+</ul>
+<div class="mt-auto pt-lg border-t border-outline-variant">
+<a class="text-on-surface-variant dark:text-outline flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface rounded-lg active:scale-[0.98] transition-transform transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label text-label">Settings</span>
+</a>
+<p class="font-small text-small text-outline mt-md px-md">Clinic ID: 8821</p>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col h-full lg:ml-[260px] overflow-hidden relative">
+<!-- TopAppBar (Mobile/Desktop) -->
+<header class="bg-surface dark:bg-surface-container border-b border-outline-variant dark:border-outline shadow-sm flex items-center justify-between px-lg h-16 w-full max-w-7xl mx-auto z-30 lg:hidden">
+<div class="flex items-center gap-md">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center overflow-hidden">
+<img alt="Clinician Profile" class="w-full h-full object-cover" data-alt="A professional headshot of a clinician, modern clinical setting, soft natural lighting, high quality, realistic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJ6aNSzk5zONwIFs5725oP3uDwZ8HLwFV0ugzWP7_BFPPjEPI6gGDCFgZOB8MGImiiI9TSKruRWNmmYncwn_7yo2i1EcYblzQXEpUEUf_uVQzgprcWdBbX-ThaswCy9erdneVVbtrE6XvvJ4x_dwTrAzxR16E3wyzXBtTW3uWhPdAvsG8jx6LQXW-kKzSWtC32jCUar56qC-N_s0oITPN0CdoVPYpgMc6PnuufXJIGfdioh96vl9BvBXJXYLQCnmo-OzZPEDgWZYTm"/>
+</div>
+<h1 class="font-h1-mobile text-h1-mobile md:font-h1 md:text-h1 text-primary dark:text-primary-fixed-dim tracking-tight">PraktiQU</h1>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-inverse-surface transition-colors duration-200 p-2 rounded-full active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 overflow-y-auto p-md lg:p-xl bg-background pb-24 lg:pb-xl w-full max-w-7xl mx-auto">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-md mb-lg">
+<div>
+<h1 class="font-h1-mobile text-h1-mobile md:font-h1 md:text-h1 text-on-surface tracking-tight">Clients</h1>
+<p class="font-body text-body text-on-surface-variant mt-xs">Manage your patient roster and documentation.</p>
+</div>
+<button class="hidden md:flex items-center justify-center gap-sm bg-primary-container text-on-primary-container font-body-semibold text-body-semibold px-md py-2 rounded-lg hover:bg-[#4338ca] transition-colors shadow-sm">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                    Add Client
+                </button>
+</div>
+<!-- Search & Filters -->
+<div class="bg-surface rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-md mb-lg flex flex-col md:flex-row gap-md border border-outline-variant/30">
+<div class="relative flex-1">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface font-body text-body rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary-container focus:border-primary-container outline-none transition-shadow" placeholder="Search by name, email, or client ID..." type="text"/>
+</div>
+<div class="flex overflow-x-auto hide-scrollbar gap-sm pb-1 md:pb-0">
+<button class="whitespace-nowrap px-md py-1.5 rounded-full bg-primary-container/10 text-primary-container font-label text-label border border-primary-container/20">All</button>
+<button class="whitespace-nowrap px-md py-1.5 rounded-full bg-surface-container text-on-surface-variant font-label text-label border border-transparent hover:bg-surface-variant transition-colors">Recent</button>
+<button class="whitespace-nowrap px-md py-1.5 rounded-full bg-surface-container text-on-surface-variant font-label text-label border border-transparent hover:bg-surface-variant transition-colors">Consent Pending</button>
+</div>
+</div>
+<!-- Client Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md lg:gap-lg mb-lg">
+<!-- Card 1 -->
+<div class="bg-surface rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-md border border-outline-variant/30 hover:shadow-md transition-shadow group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary-container rounded-l-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start mb-md">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full bg-surface-container-high overflow-hidden shadow-sm flex-shrink-0">
+<img alt="Sarah Wijaya" class="w-full h-full object-cover" data-alt="Portrait of a young Asian woman smiling softly, natural lighting, professional but approachable, high quality photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUpCoMdeS303vTQe8Un-kuaxzvoU3-1mC_dFW_G56ynqbquz-RdD8F4eKkcFrACMspsjvZMYcay6cteHdQ_ZKgT5gz6KGJNe5obIrcg19LkgjLVJoCrY1Z4LotB7_qLrp0EpUdp4cdG8yTLMPhJX00G6B0rRQRSYOdYZq24XWLX4-WaOntZGWednvUJt4_VL4SUep8ktZgYXmTwewTMsL9HyIK_zcQuC2mqXsBjBvnwV_Wl_GJ6mSkSuOZ5Die333BQ5fy_VBim95T"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">Sarah Wijaya</h3>
+<p class="font-small text-small text-on-surface-variant mt-xs">ID: KLN-2026-0042</p>
+</div>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors p-1 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<div class="space-y-sm mb-md">
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[18px]" data-icon="mail">mail</span>
+<span class="truncate">s.wijaya@example.com</span>
+</div>
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[18px]" data-icon="phone">phone</span>
+<span>+62 812-3456-7890</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-md border-t border-outline-variant/30">
+<div class="flex items-center gap-xs bg-[#bbf7d0]/30 text-[#166534] px-2 py-1 rounded-full border border-[#bbf7d0]">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+<span class="font-label text-label text-[10px]">Signed</span>
+</div>
+<div class="font-small text-small text-on-surface-variant">
+<strong>12</strong> Sessions
+                        </div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-md border border-outline-variant/30 hover:shadow-md transition-shadow group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary-container rounded-l-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start mb-md">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full bg-surface-container-high overflow-hidden shadow-sm flex-shrink-0">
+<span class="w-full h-full flex items-center justify-center font-h2 text-h2 text-primary-container bg-primary-container/10">JD</span>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">James Doe</h3>
+<p class="font-small text-small text-on-surface-variant mt-xs">ID: KLN-2026-0043</p>
+</div>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors p-1 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<div class="space-y-sm mb-md">
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[18px]" data-icon="mail">mail</span>
+<span class="truncate">james.doe@example.com</span>
+</div>
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[18px]" data-icon="phone">phone</span>
+<span>+62 813-4567-8901</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-md border-t border-outline-variant/30">
+<div class="flex items-center gap-xs bg-[#fef08a]/40 text-[#854d0e] px-2 py-1 rounded-full border border-[#fef08a]">
+<span class="material-symbols-outlined text-[14px]" data-icon="pending">pending</span>
+<span class="font-label text-label text-[10px]">Pending</span>
+</div>
+<div class="font-small text-small text-on-surface-variant">
+<strong>3</strong> Sessions
+                        </div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-md border border-outline-variant/30 hover:shadow-md transition-shadow group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary-container rounded-l-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start mb-md">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full bg-surface-container-high overflow-hidden shadow-sm flex-shrink-0">
+<img alt="Michael Chen" class="w-full h-full object-cover" data-alt="Portrait of a middle aged man with short hair, neutral expression, soft lighting, professional portrait." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBWvm2SVOkvkXpwTuXFcXtqpR1VVYw6kr2wP6_H42bieqQ3HdE0aanK4ci3b2q00WcXoitNipbLkB-_cjSUDi-DC1FMTX6uT0usnLCHFNfRoQ8Odr5KbGRiEwcpzHKlgroQiatFhzU_yt3BgQltXD_QJ4QlqmbEyapcOlg5YbL7E2jn1Ye-NK2PwzsbqEeCJNRkwavimYlaowfGwt4TkQtxtRnUN8iJ49DlJp-nTwFjslOvgg0-rSYKdOSjO4b-WoUDKY65t2b1oRAF"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface leading-tight">Michael Chen</h3>
+<p class="font-small text-small text-on-surface-variant mt-xs">ID: KLN-2026-0044</p>
+</div>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors p-1 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<div class="space-y-sm mb-md">
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[18px]" data-icon="mail">mail</span>
+<span class="truncate">m.chen@example.com</span>
+</div>
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[18px]" data-icon="phone">phone</span>
+<span>+62 811-2233-4455</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-md border-t border-outline-variant/30">
+<div class="flex items-center gap-xs bg-[#bbf7d0]/30 text-[#166534] px-2 py-1 rounded-full border border-[#bbf7d0]">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+<span class="font-label text-label text-[10px]">Signed</span>
+</div>
+<div class="font-small text-small text-on-surface-variant">
+<strong>45</strong> Sessions
+                        </div>
+</div>
+</div>
+</div>
+<!-- Footer / Pagination -->
+<div class="flex items-center justify-between text-on-surface-variant border-t border-outline-variant/30 pt-md">
+<p class="font-small text-small">Showing 1-3 of 142 clients</p>
+<div class="flex gap-2">
+<button class="w-8 h-8 rounded border border-outline-variant flex items-center justify-center hover:bg-surface-container transition-colors disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[18px]" data-icon="chevron_left">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded border border-outline-variant flex items-center justify-center hover:bg-surface-container transition-colors bg-primary-container text-on-primary-container border-transparent">
+<span class="font-label text-label">1</span>
+</button>
+<button class="w-8 h-8 rounded border border-outline-variant flex items-center justify-center hover:bg-surface-container transition-colors">
+<span class="font-label text-label">2</span>
+</button>
+<span class="w-8 h-8 flex items-center justify-center">...</span>
+<button class="w-8 h-8 rounded border border-outline-variant flex items-center justify-center hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</main>
+<!-- Floating Action Button (Mobile Only) -->
+<button class="md:hidden fixed bottom-24 right-md w-14 h-14 bg-primary-container text-on-primary-container rounded-full shadow-lg flex items-center justify-center hover:bg-[#4338ca] active:scale-90 transition-transform z-40">
+<span class="material-symbols-outlined text-[28px]" data-icon="add">add</span>
+</button>
+<!-- BottomNavBar (Mobile) -->
+<nav aria-label="Mobile Navigation" class="lg:hidden flex justify-around items-center w-full px-4 py-3 pb-safe bg-surface dark:bg-surface-container-highest shadow-[0px_-1px_3px_rgba(0,0,0,0.1)] fixed bottom-0 w-full z-50 rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-mobile text-label-mobile">Home</span>
+</a>
+<a aria-current="page" class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-full px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="group" data-weight="fill" style="font-variation-settings: 'FILL' 1;">group</span>
+<span class="font-label-mobile text-label-mobile">Clients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span class="font-label-mobile text-label-mobile">Add</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-mobile text-label-mobile">Settings</span>
+</a>
+</nav>
+</div>
+</body></html>

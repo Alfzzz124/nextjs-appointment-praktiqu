@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Session Notes History - PraktiQU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#351000",
+                        "primary-container": "#5046e5",
+                        "on-surface": "#1b1b24",
+                        "on-error": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "secondary-container": "#8792fe",
+                        "outline": "#777587",
+                        "error-container": "#ffdad6",
+                        "surface-variant": "#e4e1ee",
+                        "inverse-primary": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "surface-container": "#f0ecf9",
+                        "surface-dim": "#dcd8e5",
+                        "outline-variant": "#c7c4d8",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-container": "#dbd8ff",
+                        "error": "#ba1a1a",
+                        "tertiary": "#7e3000",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-background": "#1b1b24",
+                        "surface-container-low": "#f6f2ff",
+                        "primary-fixed": "#e2dfff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-tertiary-container": "#ffd2c0",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-bright": "#fcf8ff",
+                        "secondary-fixed": "#e0e0ff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#4953bc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-primary-fixed": "#0f0069",
+                        "inverse-surface": "#302f39",
+                        "background": "#fcf8ff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "tertiary-container": "#a54100",
+                        "surface": "#fcf8ff",
+                        "surface-tint": "#4e44e3",
+                        "on-primary": "#ffffff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "xl": "32px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "sm": "8px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "small": ["Inter"],
+                        "label": ["Inter"],
+                        "body": ["Inter"],
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .custom-shadow { box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1), 0px 1px 2px rgba(0, 0, 0, 0.06); }
+        .timeline-line::before {
+            content: '';
+            position: absolute;
+            top: 24px;
+            bottom: -24px;
+            left: 11px;
+            width: 2px;
+            background-color: theme('colors.surface-variant');
+            z-index: 0;
+        }
+        .timeline-item:last-child .timeline-line::before { display: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body antialiased min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim text-primary dark:text-primary-fixed-dim w-full top-0 sticky border-b border-outline-variant dark:border-outline shadow-sm flex items-center justify-between px-margin py-sm w-full z-40">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:opacity-70 text-on-surface">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div class="text-h1-mobile font-h1-mobile text-primary dark:text-primary-container">
+            PraktiQU
+        </div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:opacity-70 text-on-surface">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</header>
+<!-- Main Canvas -->
+<main class="w-full max-w-[1200px] mx-auto px-margin py-xl flex-grow flex flex-col gap-lg">
+<!-- Header & Search -->
+<div class="flex flex-col gap-md md:flex-row md:items-end md:justify-between border-b border-surface-variant pb-lg">
+<div class="flex flex-col gap-xs">
+<h2 class="text-h2 font-h2 text-on-surface-variant">Session Notes History</h2>
+<h1 class="text-display font-display text-on-surface">Sarah Wijaya</h1>
+</div>
+<div class="w-full md:w-[320px] relative mt-sm md:mt-0">
+<span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-xl pr-md h-[40px] rounded-lg border border-outline-variant bg-surface text-body font-body text-on-surface placeholder:text-outline focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-all" placeholder="Search by date or professional..." type="text"/>
+</div>
+</div>
+<!-- History Timeline -->
+<div class="flex flex-col py-md mt-sm">
+<!-- Session #5 -->
+<div class="timeline-item relative pl-xl pb-xl timeline-line">
+<!-- Timeline Node -->
+<div class="absolute left-0 top-[6px] w-[24px] h-[24px] rounded-full bg-primary-container border-[4px] border-background flex items-center justify-center z-10 custom-shadow">
+<div class="w-2 h-2 rounded-full bg-surface"></div>
+</div>
+<!-- Card Content -->
+<div class="bg-surface rounded-xl custom-shadow border border-surface-variant p-lg flex flex-col gap-md hover:border-outline-variant transition-all group">
+<div class="flex flex-wrap items-start justify-between gap-sm">
+<div class="flex flex-col gap-xs">
+<div class="flex items-center gap-sm">
+<span class="text-body-semibold font-body-semibold text-on-surface">Session #5</span>
+<span class="px-sm py-[2px] rounded-full bg-surface-container-high text-on-surface-variant text-small font-small flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Completed
+                                </span>
+</div>
+<span class="text-body font-body text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span> May 27, 2026
+                            </span>
+</div>
+<div class="flex flex-col items-end gap-xs text-right">
+<span class="text-label font-label text-on-surface">Dr. Elena Rostova</span>
+<span class="text-small font-small text-outline">Cognitive Behavioral Therapy</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border-l-[3px] border-surface-tint pl-md py-sm mt-xs">
+<p class="text-body font-body text-on-surface-variant line-clamp-2">
+                            Client reported improved mood and better sleep patterns following the implementation of evening grounding techniques. Discussed triggers related to workplace stress and identified three core cognitive distortions. Assigned thought-record worksheet for the upcoming week.
+                        </p>
+</div>
+<div class="flex justify-end mt-xs">
+<button class="h-[40px] px-md rounded-lg border border-outline-variant text-on-surface font-label text-label flex items-center gap-xs hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span> View Note
+                        </button>
+</div>
+</div>
+</div>
+<!-- Session #4 -->
+<div class="timeline-item relative pl-xl pb-xl timeline-line">
+<!-- Timeline Node -->
+<div class="absolute left-0 top-[6px] w-[24px] h-[24px] rounded-full bg-surface-variant border-[4px] border-background flex items-center justify-center z-10">
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+</div>
+<!-- Card Content -->
+<div class="bg-surface rounded-xl custom-shadow border border-surface-variant p-lg flex flex-col gap-md hover:border-outline-variant transition-all group">
+<div class="flex flex-wrap items-start justify-between gap-sm">
+<div class="flex flex-col gap-xs">
+<div class="flex items-center gap-sm">
+<span class="text-body-semibold font-body-semibold text-on-surface">Session #4</span>
+<span class="px-sm py-[2px] rounded-full bg-surface-container-high text-on-surface-variant text-small font-small flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Completed
+                                </span>
+</div>
+<span class="text-body font-body text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span> May 13, 2026
+                            </span>
+</div>
+<div class="flex flex-col items-end gap-xs text-right">
+<span class="text-label font-label text-on-surface">Dr. Elena Rostova</span>
+<span class="text-small font-small text-outline">Cognitive Behavioral Therapy</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border-l-[3px] border-surface-variant pl-md py-sm mt-xs">
+<p class="text-body font-body text-on-surface-variant line-clamp-2">
+                            Explored recent anxiety spike regarding upcoming project deadlines. Introduced cognitive restructuring exercises to address catastrophizing thoughts. Client practiced identifying alternative perspectives during the session with moderate success.
+                        </p>
+</div>
+<div class="flex justify-end mt-xs">
+<button class="h-[40px] px-md rounded-lg border border-outline-variant text-on-surface font-label text-label flex items-center gap-xs hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span> View Note
+                        </button>
+</div>
+</div>
+</div>
+<!-- Session #3 -->
+<div class="timeline-item relative pl-xl pb-xl timeline-line">
+<!-- Timeline Node -->
+<div class="absolute left-0 top-[6px] w-[24px] h-[24px] rounded-full bg-surface-variant border-[4px] border-background flex items-center justify-center z-10">
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+</div>
+<!-- Card Content -->
+<div class="bg-surface rounded-xl custom-shadow border border-surface-variant p-lg flex flex-col gap-md hover:border-outline-variant transition-all group">
+<div class="flex flex-wrap items-start justify-between gap-sm">
+<div class="flex flex-col gap-xs">
+<div class="flex items-center gap-sm">
+<span class="text-body-semibold font-body-semibold text-on-surface">Session #3</span>
+<span class="px-sm py-[2px] rounded-full bg-surface-container-high text-on-surface-variant text-small font-small flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Completed
+                                </span>
+</div>
+<span class="text-body font-body text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span> Apr 29, 2026
+                            </span>
+</div>
+<div class="flex flex-col items-end gap-xs text-right">
+<span class="text-label font-label text-on-surface">Dr. Marcus Vance</span>
+<span class="text-small font-small text-outline">Initial Assessment</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border-l-[3px] border-surface-variant pl-md py-sm mt-xs">
+<p class="text-body font-body text-on-surface-variant line-clamp-2">
+                            Completed standard intake protocols. Client presents with symptoms of generalized anxiety and mild depressive episodes present for approximately 6 months. Established preliminary treatment goals focusing on symptom management and emotional regulation.
+                        </p>
+</div>
+<div class="flex justify-end mt-xs">
+<button class="h-[40px] px-md rounded-lg border border-outline-variant text-on-surface font-label text-label flex items-center gap-xs hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span> View Note
+                        </button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

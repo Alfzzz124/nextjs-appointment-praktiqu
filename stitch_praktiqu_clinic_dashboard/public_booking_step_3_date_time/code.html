@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick a Date &amp; Time</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-low": "#f6f2ff",
+                        "primary-fixed": "#e2dfff",
+                        "primary-container": "#5046e5",
+                        "outline-variant": "#c7c4d8",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "surface-variant": "#e4e1ee",
+                        "background": "#fcf8ff",
+                        "inverse-on-surface": "#f3effc",
+                        "error": "#ba1a1a",
+                        "surface-container": "#f0ecf9",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-tertiary-fixed": "#351000",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#dcd8e5",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#dbd8ff",
+                        "surface": "#fcf8ff",
+                        "error-container": "#ffdad6",
+                        "secondary-container": "#8792fe",
+                        "on-secondary-fixed": "#000767",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#0f0069",
+                        "inverse-primary": "#c3c0ff",
+                        "surface-tint": "#4e44e3",
+                        "on-tertiary": "#ffffff",
+                        "on-background": "#1b1b24",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-error": "#ffffff",
+                        "on-tertiary-container": "#ffd2c0",
+                        "surface-container-high": "#eae6f4",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "secondary-fixed": "#e0e0ff",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "primary": "#3625cd",
+                        "outline": "#777587",
+                        "tertiary": "#7e3000",
+                        "inverse-surface": "#302f39",
+                        "on-surface": "#1b1b24",
+                        "on-secondary": "#ffffff",
+                        "tertiary-container": "#a54100",
+                        "surface-bright": "#fcf8ff",
+                        "secondary": "#4953bc",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-surface-variant": "#464555"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "md": "16px",
+                        "sm": "8px",
+                        "gutter": "24px",
+                        "xl": "32px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "xs": "4px",
+                        "margin": "24px"
+                    },
+                    "fontFamily": {
+                        "body-semibold": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"],
+                        "body": ["Inter"],
+                        "h1": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body min-h-screen flex flex-col antialiased">
+<!-- Transactional Flow Header -->
+<header class="flex items-center justify-between px-margin py-md bg-surface z-50 sticky top-0">
+<button aria-label="Go back" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors text-on-surface">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<span class="font-body-semibold text-body-semibold text-on-surface">Step 3 of 4</span>
+<button aria-label="Close" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined">close</span>
+</button>
+</header>
+<!-- Progress Bar -->
+<div class="w-full h-1 bg-surface-container-highest">
+<div class="h-full bg-primary transition-all duration-500 ease-in-out" style="width: 75%;"></div>
+</div>
+<!-- Main Content Area -->
+<main class="max-w-[1200px] w-full mx-auto px-4 md:px-margin py-lg md:py-xl flex-1 flex flex-col">
+<h1 class="font-display text-display text-on-background mb-lg md:mb-xl">Pick a Date &amp; Time</h1>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start">
+<!-- Left Column: Calendar -->
+<div class="lg:col-span-7 bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),_0px_1px_2px_rgba(0,0,0,0.06)] p-lg border border-outline-variant/30 flex flex-col h-full">
+<!-- Calendar Header -->
+<div class="flex justify-between items-center mb-lg">
+<h2 class="font-h2 text-h2 text-on-surface">June 2026</h2>
+<div class="flex gap-sm">
+<button class="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high text-on-surface transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Calendar Grid -->
+<!-- Weekdays -->
+<div class="grid grid-cols-7 mb-sm">
+<div class="text-center font-label text-label text-on-surface-variant py-sm">Su</div>
+<div class="text-center font-label text-label text-on-surface-variant py-sm">Mo</div>
+<div class="text-center font-label text-label text-on-surface-variant py-sm">Tu</div>
+<div class="text-center font-label text-label text-on-surface-variant py-sm">We</div>
+<div class="text-center font-label text-label text-on-surface-variant py-sm">Th</div>
+<div class="text-center font-label text-label text-on-surface-variant py-sm">Fr</div>
+<div class="text-center font-label text-label text-on-surface-variant py-sm">Sa</div>
+</div>
+<!-- Days -->
+<div class="grid grid-cols-7 gap-y-xs gap-x-xs">
+<!-- Week 1 -->
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">1</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">2</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body-semibold text-body-semibold bg-primary text-on-primary shadow-sm ring-2 ring-primary ring-offset-2 ring-offset-surface-container-lowest transition-all">3</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">4</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">5</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">6</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">7</button></div>
+<!-- Week 2 -->
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">8</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">9</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">10</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">11</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">12</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">13</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">14</button></div>
+<!-- Week 3 -->
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">15</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">16</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">17</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">18</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">19</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">20</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">21</button></div>
+<!-- Week 4 -->
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">22</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">23</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">24</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">25</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">26</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">27</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">28</button></div>
+<!-- Week 5 -->
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-outline-variant cursor-not-allowed">29</button></div>
+<div class="py-sm flex justify-center"><button class="w-10 h-10 rounded-full flex items-center justify-center font-body text-body text-on-surface hover:bg-surface-container-high transition-colors">30</button></div>
+<div class="col-span-5"></div>
+</div>
+<!-- Spacer -->
+<div class="flex-1"></div>
+<!-- Legend -->
+<div class="mt-lg pt-lg border-t border-surface-variant flex flex-wrap justify-center gap-margin">
+<div class="flex items-center gap-sm font-small text-small text-on-surface-variant">
+<div class="w-3 h-3 rounded-full border border-outline-variant bg-surface-container-lowest"></div> Available
+                    </div>
+<div class="flex items-center gap-sm font-small text-small text-on-surface-variant">
+<div class="w-3 h-3 rounded-full bg-primary shadow-sm"></div> Selected
+                    </div>
+<div class="flex items-center gap-sm font-small text-small text-on-surface-variant">
+<span class="text-outline-variant material-symbols-outlined text-[16px]">close</span> Unavailable
+                    </div>
+</div>
+</div>
+<!-- Right Column: Times & Summary -->
+<div class="lg:col-span-5 flex flex-col gap-gutter h-full">
+<!-- Time Slots Card -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),_0px_1px_2px_rgba(0,0,0,0.06)] p-lg border border-outline-variant/30 flex-1">
+<div class="mb-lg border-b border-surface-variant pb-md">
+<h3 class="font-h2 text-h2 text-on-surface mb-xs">Tuesday, June 3</h3>
+<p class="font-body text-body text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">schedule</span> 
+                            60-minute session
+                        </p>
+</div>
+<h4 class="font-label text-label text-on-surface-variant mb-sm tracking-wider">MORNING</h4>
+<div class="grid grid-cols-3 gap-sm mb-lg">
+<button class="h-10 border border-outline-variant rounded-lg font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:bg-surface-container-low hover:text-primary transition-all">09:00</button>
+<button class="h-10 border border-outline-variant rounded-lg font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:bg-surface-container-low hover:text-primary transition-all">10:00</button>
+<button class="h-10 border border-outline-variant rounded-lg font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:bg-surface-container-low hover:text-primary transition-all">11:00</button>
+</div>
+<h4 class="font-label text-label text-on-surface-variant mb-sm tracking-wider">AFTERNOON</h4>
+<div class="grid grid-cols-3 gap-sm">
+<button class="h-10 border-2 border-primary bg-primary-container text-on-primary-container rounded-lg font-body-semibold text-body-semibold shadow-sm transition-all flex items-center justify-center gap-xs">
+                            14:00
+                            <span class="material-symbols-outlined icon-fill text-[16px]">check_circle</span>
+</button>
+<button class="h-10 border border-outline-variant rounded-lg font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:bg-surface-container-low hover:text-primary transition-all">15:00</button>
+<button class="h-10 border border-outline-variant rounded-lg font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:bg-surface-container-low hover:text-primary transition-all">16:00</button>
+<button class="h-10 border border-outline-variant rounded-lg font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:bg-surface-container-low hover:text-primary transition-all">17:00</button>
+</div>
+</div>
+<!-- Sticky Summary / Action Card -->
+<div class="bg-surface-container rounded-xl p-lg border border-primary-fixed-dim/50 shadow-sm relative overflow-hidden">
+<!-- Decorative subtle glow -->
+<div class="absolute -top-10 -right-10 w-32 h-32 bg-primary-fixed-dim rounded-full blur-3xl opacity-40 pointer-events-none"></div>
+<div class="relative z-10 flex flex-col sm:flex-row lg:flex-col justify-between items-start sm:items-center lg:items-start gap-lg">
+<div>
+<p class="font-small text-small text-on-surface-variant mb-xs flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">event_available</span>
+                                Selected
+                            </p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Tuesday, June 3, 2026 at 14:00</p>
+<p class="font-small text-small text-on-surface-variant mt-xs">(60-minute session)</p>
+</div>
+<button class="w-full sm:w-auto lg:w-full h-10 px-xl bg-primary text-on-primary font-body-semibold text-body-semibold rounded-lg hover:bg-on-primary-fixed hover:shadow-md transition-all active:scale-95 flex items-center justify-center gap-sm">
+                            Continue
+                            <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

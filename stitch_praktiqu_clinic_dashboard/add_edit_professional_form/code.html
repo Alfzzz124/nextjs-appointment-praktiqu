@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Add Professional Modal</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "background": "#fcf8ff",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#5046e5",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface": "#fcf8ff",
+                        "on-secondary-fixed": "#000767",
+                        "secondary": "#4953bc",
+                        "inverse-surface": "#302f39",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-surface": "#1b1b24",
+                        "tertiary": "#7e3000",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#8792fe",
+                        "outline-variant": "#c7c4d8",
+                        "inverse-on-surface": "#f3effc",
+                        "on-tertiary-fixed": "#351000",
+                        "primary": "#3625cd",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "tertiary-container": "#a54100",
+                        "surface-variant": "#e4e1ee",
+                        "on-background": "#1b1b24",
+                        "surface-container-low": "#f6f2ff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "surface-container-high": "#eae6f4",
+                        "on-tertiary-container": "#ffd2c0",
+                        "surface-tint": "#4e44e3",
+                        "on-primary-container": "#dbd8ff",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "surface-bright": "#fcf8ff",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-secondary-container": "#17228f",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "sm": "8px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "xs": "4px",
+                        "base": "4px",
+                        "margin": "24px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "h2": ["Inter"],
+                        "small": ["Inter"],
+                        "label": ["Inter"],
+                        "display": ["Inter"],
+                        "body": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-semibold": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for multi-select area */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #c7c4d8; /* outline-variant */
+            border-radius: 10px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased overflow-hidden font-body h-screen flex">
+<!-- Background Context: SideNavBar (Dimmed out by modal) -->
+<nav class="hidden lg:flex flex-col p-md border-r border-outline-variant bg-surface-container-low fixed left-0 top-0 h-full w-[260px] z-0">
+<div class="mb-xl flex items-center gap-sm">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-on-primary font-h2 font-bold">P</div>
+<div>
+<h1 class="font-h2 text-h2 font-bold text-primary">PraktiQU</h1>
+<p class="font-label text-label text-on-surface-variant font-normal">Clinical Suite</p>
+</div>
+</div>
+<ul class="flex flex-col gap-sm flex-grow">
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span> Dashboard
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_today</span> Sessions
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]">group</span> Clients
+                </a>
+</li>
+<li>
+<!-- Active State -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg bg-primary-container text-on-primary-container translate-x-1 transition-transform font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">clinical_notes</span> Professionals
+                </a>
+</li>
+</ul>
+<ul class="flex flex-col gap-sm border-t border-outline-variant pt-md mt-md">
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span> Settings
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 font-body-semibold text-body-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]">help</span> Help
+                </a>
+</li>
+</ul>
+</nav>
+<!-- Background Context: Main Content Area (Blurred) -->
+<main class="flex-1 lg:ml-[260px] p-xl h-full flex flex-col blur-[2px] opacity-60 pointer-events-none transition-all duration-300">
+<header class="flex justify-between items-center mb-xl">
+<div>
+<h2 class="font-h1 text-h1 text-on-surface">Professionals Directory</h2>
+<p class="font-body text-body text-on-surface-variant mt-1">Manage clinic staff and specialties.</p>
+</div>
+<button class="bg-primary-container text-on-primary h-10 px-md rounded-lg font-body-semibold text-body-semibold flex items-center gap-sm shadow-sm">
+<span class="material-symbols-outlined text-[18px]">add</span> Add New
+            </button>
+</header>
+<!-- Dummy Content to simulate page behind modal -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.1)] flex-1 border border-outline-variant/30"></div>
+</main>
+<!-- Modal Overlay Backdrop -->
+<div class="fixed inset-0 bg-inverse-surface/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4 sm:p-md lg:pl-[260px]">
+<!-- Modal Container -->
+<div class="bg-surface-container-lowest w-full max-w-[640px] rounded-xl shadow-lg flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ring-1 ring-outline/10">
+<!-- Modal Header -->
+<div class="px-lg py-md border-b border-surface-variant flex justify-between items-center bg-surface-container-lowest">
+<div>
+<h2 class="font-h2 text-h2 text-on-surface">Add Professional</h2>
+<p class="font-small text-small text-on-surface-variant mt-xs">Enter details to register a new provider to the clinic.</p>
+</div>
+<button aria-label="Close modal" class="w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Modal Body (Form Content) -->
+<div class="p-lg overflow-y-auto custom-scrollbar max-h-[calc(100vh-200px)]">
+<form class="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<!-- Full Name -->
+<div class="flex flex-col gap-xs md:col-span-2">
+<label class="font-label text-label text-on-surface-variant" for="fullName">Full Name *</label>
+<input class="h-10 px-3 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface font-body text-body placeholder:text-outline-variant focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" id="fullName" placeholder="e.g. Dr. Sarah Jenkins" type="text"/>
+</div>
+<!-- Professional Type Dropdown -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface-variant" for="profType">Professional Type *</label>
+<div class="relative">
+<select class="h-10 pl-3 pr-10 w-full appearance-none rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface font-body text-body focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" id="profType">
+<option disabled="" selected="" value="">Select type...</option>
+<option value="physician">Physician (MD/DO)</option>
+<option value="nurse_practitioner">Nurse Practitioner (NP)</option>
+<option value="therapist">Physical Therapist</option>
+<option value="specialist">Clinical Specialist</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none text-[20px]">expand_more</span>
+</div>
+</div>
+<!-- SIP Number -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface-variant" for="sipNumber">SIP / License Number</label>
+<input class="h-10 px-3 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface font-body text-body placeholder:text-outline-variant focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" id="sipNumber" placeholder="e.g. AB-123456" type="text"/>
+</div>
+<!-- Email -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface-variant" for="email">Email Address *</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[18px]">mail</span>
+<input class="h-10 pl-10 pr-3 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface font-body text-body placeholder:text-outline-variant focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" id="email" placeholder="sarah.j@clinic.com" type="email"/>
+</div>
+</div>
+<!-- Phone -->
+<div class="flex flex-col gap-xs">
+<label class="font-label text-label text-on-surface-variant" for="phone">Contact Phone</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[18px]">call</span>
+<input class="h-10 pl-10 pr-3 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface font-body text-body placeholder:text-outline-variant focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" id="phone" placeholder="+1 (555) 000-0000" type="tel"/>
+</div>
+</div>
+<!-- Specialties (Simulated Multi-select with Chips) -->
+<div class="flex flex-col gap-xs md:col-span-2">
+<label class="font-label text-label text-on-surface-variant">Specialties</label>
+<!-- Styled container acting as the input area -->
+<div class="min-h-[80px] p-3 rounded-lg border border-outline-variant bg-surface-container-lowest flex flex-wrap gap-2 items-start focus-within:border-primary-container focus-within:ring-1 focus-within:ring-primary-container transition-all cursor-text relative group">
+<!-- Selected Chips -->
+<div class="inline-flex items-center gap-1 bg-surface-variant text-on-surface-variant px-3 py-1.5 rounded-full font-label text-label shadow-[0_1px_2px_rgba(0,0,0,0.06)] group-hover:bg-primary-fixed group-hover:text-on-primary-fixed transition-colors">
+                                Neurology
+                                <button aria-label="Remove Neurology" class="w-4 h-4 flex items-center justify-center rounded-full hover:bg-on-surface/10 transition-colors ml-1" type="button">
+<span class="material-symbols-outlined text-[14px]">close</span>
+</button>
+</div>
+<div class="inline-flex items-center gap-1 bg-surface-variant text-on-surface-variant px-3 py-1.5 rounded-full font-label text-label shadow-[0_1px_2px_rgba(0,0,0,0.06)] group-hover:bg-primary-fixed group-hover:text-on-primary-fixed transition-colors">
+                                Pain Management
+                                <button aria-label="Remove Pain Management" class="w-4 h-4 flex items-center justify-center rounded-full hover:bg-on-surface/10 transition-colors ml-1" type="button">
+<span class="material-symbols-outlined text-[14px]">close</span>
+</button>
+</div>
+<!-- Text Input for searching/adding -->
+<input class="flex-1 min-w-[150px] bg-transparent border-none focus:outline-none focus:ring-0 text-on-surface font-body text-body p-0 mt-1 h-6 placeholder:text-outline-variant" placeholder="Search specialties..." type="text"/>
+<!-- Dropdown Icon indicator -->
+<span class="material-symbols-outlined absolute right-3 top-3 text-outline-variant pointer-events-none text-[20px]">arrow_drop_down</span>
+</div>
+<p class="font-small text-small text-outline mt-1">Select one or more specialized clinical areas.</p>
+</div>
+</form>
+</div>
+<!-- Modal Footer (Actions) -->
+<div class="px-lg py-md border-t border-surface-variant bg-surface flex justify-end items-center gap-md rounded-b-xl">
+<button class="h-10 px-md rounded-lg font-body-semibold text-body-semibold text-on-surface border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low focus:ring-2 focus:ring-outline-variant focus:outline-none transition-all shadow-[0_1px_2px_rgba(0,0,0,0.06)]" type="button">
+                    Cancel
+                </button>
+<button class="h-10 px-lg rounded-lg font-body-semibold text-body-semibold text-on-primary bg-primary-container hover:brightness-110 focus:ring-2 focus:ring-primary-container focus:outline-none transition-all shadow-sm flex items-center gap-sm" type="button">
+<span class="material-symbols-outlined text-[18px]">save</span> Save Profile
+                </button>
+</div>
+</div>
+</div>
+<!-- Script for interactive demonstration (simulating multi-select focus) -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const multiSelectContainer = document.querySelector('.group.cursor-text');
+            const multiSelectInput = multiSelectContainer.querySelector('input[type="text"]');
+
+            multiSelectContainer.addEventListener('click', () => {
+                multiSelectInput.focus();
+            });
+        });
+    </script>
+</body></html>

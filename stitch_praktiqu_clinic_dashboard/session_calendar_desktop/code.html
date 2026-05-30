@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PraktiQU - Session Management</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed": "#000767",
+                        "on-tertiary-container": "#ffd2c0",
+                        "on-error-container": "#93000a",
+                        "on-background": "#1b1b24",
+                        "surface-tint": "#4e44e3",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "inverse-on-surface": "#f3effc",
+                        "background": "#fcf8ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary": "#7e3000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-container-low": "#f6f2ff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#5046e5",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-highest": "#e4e1ee",
+                        "outline": "#777587",
+                        "secondary-container": "#8792fe",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "tertiary-container": "#a54100",
+                        "surface-dim": "#dcd8e5",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-tertiary-fixed": "#351000",
+                        "secondary": "#4953bc",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary-fixed": "#e2dfff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-surface-variant": "#464555",
+                        "inverse-primary": "#c3c0ff",
+                        "surface": "#fcf8ff",
+                        "surface-variant": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "outline-variant": "#c7c4d8",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-container": "#dbd8ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fcf8ff",
+                        "status-pending": "#d97706",
+                        "status-pending-bg": "#fef3c7",
+                        "status-confirmed": "#2563eb",
+                        "status-confirmed-bg": "#dbeafe",
+                        "status-checkin": "#9333ea",
+                        "status-checkin-bg": "#f3e8ff",
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "margin": "24px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "gutter": "24px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "label": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined[style*="FILL' 1"] {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-surface-container-lowest text-on-surface font-body h-screen flex overflow-hidden">
+<!-- NavigationDrawer -->
+<aside class="hidden md:flex flex-col h-full py-md bg-surface-container-lowest dark:bg-inverse-surface shadow-sm fixed left-0 top-0 h-full w-[260px] z-40 border-r border-outline-variant">
+<div class="px-margin mb-xl">
+<div class="flex items-center gap-sm mb-lg">
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center overflow-hidden">
+<img alt="Clinic Administrator Avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a female clinic administrator with a warm smile, wearing a neat navy blue blazer over a light blue blouse. The lighting is soft and even, highlighting a clean, modern medical office setting in the background. The mood is welcoming and trustworthy, emphasizing a clinical yet approachable aesthetic. The image uses a cool, professional color palette consistent with high-end healthcare environments." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBpZnR85PPwP-58PKBSBhFSYRqBXAeSRhDOYlyCEjU_6pZJXoU0DEKkiPWxJlqbbVYtIPC37UH8vbUShzfsLCbl5egvfK96Gt3SXhkeT8uP0X9V3VWrVhHW2q7OJRGlLz45Ly4BoJhxOU7FpjyvFbkihomGYtzfcnn3akvuraXGiIVdgpJOgthG9gQfAv88AAUPS52x2zZUy1kzgAYblwbPEECJbWpuwBHQaQ5PnzuVuXYNXeE21swyMwGuMqvtJNWGmhlJZ1YEzvt7"/>
+</div>
+<div>
+<h2 class="font-body-semibold text-body text-primary dark:text-primary-fixed-dim">PraktiQU Admin</h2>
+<p class="font-small text-small text-on-surface-variant">Central Clinic</p>
+</div>
+</div>
+<div class="font-small text-small text-outline mb-4">v1.2.0</div>
+</div>
+<nav class="flex-1 px-sm space-y-2">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-primary-fixed-dim font-body-semibold border-r-4 border-primary dark:border-primary-fixed-dim bg-primary-container/10 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">calendar_month</span>
+                Sessions
+            </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">person</span>
+                Patients
+            </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                Analytics
+            </a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-outline-variant font-body hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+</nav>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col md:ml-[260px] h-full overflow-hidden bg-background">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-lg h-[64px] max-w-[1200px] mx-auto docked full-width top-0 bg-surface dark:bg-on-background border-b border-outline-variant dark:border-outline flat no shadows z-30">
+<div class="flex items-center gap-md">
+<button class="md:hidden p-sm rounded-full hover:bg-surface-container-high dark:hover:bg-surface-dim transition-colors scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim">menu</span>
+</button>
+<h1 class="font-h1 text-h1 text-primary dark:text-primary-fixed-dim font-bold">Session Management</h1>
+</div>
+<div class="flex items-center gap-md">
+<button class="w-8 h-8 rounded-full bg-surface-container overflow-hidden hover:bg-surface-container-high dark:hover:bg-surface-dim transition-colors scale-95 active:scale-90 transition-transform">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A professional headshot of a female clinic administrator with a warm smile, wearing a neat navy blue blazer over a light blue blouse. The lighting is soft and even, highlighting a clean, modern medical office setting in the background. The mood is welcoming and trustworthy, emphasizing a clinical yet approachable aesthetic. The image uses a cool, professional color palette consistent with high-end healthcare environments." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB-VL2Nb9IvtpighTh5oIlmmW4pYVAOHLFT9x4mqB699fhK4KJEOMLjBYy5R35owPPvctC9JMkhUtOvaVsxcC-P5LCdnLBZvafnODJVNOgCO_D_u2rgQj9NrsyFNqFBKJQDF5OXP8TJyHcDT8xKHbaQy-9h021H7vBOaW3jgwF0t9MTa7QpuFeEeS6cZpKSPcsyruqPpKrO8I9T8yjC4o-n8xBqnekOAzYfIA7ONMGIfU6Epq8V0h9WNkwn_x57bCkpSUejLeKtkW5P"/>
+</button>
+</div>
+</header>
+<!-- Calendar Area -->
+<div class="flex-1 overflow-auto p-margin max-w-[1200px] w-full mx-auto pb-24 md:pb-margin">
+<!-- Calendar Header & Controls -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-lg gap-md bg-surface p-md rounded-xl shadow-sm border border-outline-variant/30">
+<div class="flex items-center gap-sm">
+<button class="p-xs rounded-lg hover:bg-surface-container-high transition-colors border border-outline-variant text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="px-md py-sm rounded-lg hover:bg-surface-container-high transition-colors border border-outline-variant font-body-semibold text-body-semibold text-on-surface-variant">
+                        Today
+                    </button>
+<button class="p-xs rounded-lg hover:bg-surface-container-high transition-colors border border-outline-variant text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+<h2 class="font-h2 text-h2 text-on-surface ml-md">Week of May 26 - Jun 1, 2026</h2>
+</div>
+<div class="flex items-center gap-md">
+<!-- Legend -->
+<div class="flex items-center gap-sm mr-lg">
+<div class="flex items-center gap-xs font-small text-small text-on-surface-variant">
+<span class="w-3 h-3 rounded-full bg-status-pending border border-status-pending"></span>
+                            Pending
+                        </div>
+<div class="flex items-center gap-xs font-small text-small text-on-surface-variant">
+<span class="w-3 h-3 rounded-full bg-status-confirmed border border-status-confirmed"></span>
+                            Confirmed
+                        </div>
+<div class="flex items-center gap-xs font-small text-small text-on-surface-variant">
+<span class="w-3 h-3 rounded-full bg-status-checkin border border-status-checkin"></span>
+                            Checked-in
+                        </div>
+</div>
+<button class="flex items-center gap-xs bg-primary-container text-on-primary font-body-semibold text-body-semibold px-md py-sm rounded-lg hover:bg-primary transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                        New Session
+                    </button>
+</div>
+</div>
+<!-- Calendar Grid -->
+<div class="bg-surface rounded-xl shadow-sm border border-outline-variant/30 overflow-hidden flex flex-col h-[700px]">
+<!-- Days Header -->
+<div class="flex border-b border-outline-variant/50 bg-surface-container-lowest">
+<div class="w-16 flex-shrink-0 border-r border-outline-variant/30"></div> <!-- Time column spacer -->
+<div class="flex-1 grid grid-cols-5 divide-x divide-outline-variant/30">
+<div class="text-center py-sm">
+<div class="font-label text-label text-on-surface-variant uppercase">Mon</div>
+<div class="font-h2 text-h2 text-on-surface mt-xs">26</div>
+</div>
+<div class="text-center py-sm bg-primary-container/5">
+<div class="font-label text-label text-primary uppercase">Tue</div>
+<div class="font-h2 text-h2 text-primary mt-xs">27</div>
+</div>
+<div class="text-center py-sm">
+<div class="font-label text-label text-on-surface-variant uppercase">Wed</div>
+<div class="font-h2 text-h2 text-on-surface mt-xs">28</div>
+</div>
+<div class="text-center py-sm">
+<div class="font-label text-label text-on-surface-variant uppercase">Thu</div>
+<div class="font-h2 text-h2 text-on-surface mt-xs">29</div>
+</div>
+<div class="text-center py-sm">
+<div class="font-label text-label text-on-surface-variant uppercase">Fri</div>
+<div class="font-h2 text-h2 text-on-surface mt-xs">30</div>
+</div>
+</div>
+</div>
+<!-- Grid Body -->
+<div class="flex-1 overflow-y-auto relative bg-surface-container-lowest">
+<div class="flex">
+<!-- Time Column -->
+<div class="w-16 flex-shrink-0 border-r border-outline-variant/30 bg-surface-container-lowest z-10 sticky left-0">
+<!-- 08:00 to 17:00 -->
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">08:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">09:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">10:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">11:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">12:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">13:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">14:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">15:00</span>
+</div>
+<div class="h-20 border-b border-outline-variant/10 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">16:00</span>
+</div>
+<div class="h-20 flex items-start justify-center pt-xs">
+<span class="font-small text-small text-on-surface-variant">17:00</span>
+</div>
+</div>
+<!-- Days Columns -->
+<div class="flex-1 grid grid-cols-5 divide-x divide-outline-variant/30 relative min-w-[600px]">
+<!-- Horizontal Grid Lines -->
+<div class="absolute inset-0 pointer-events-none z-0">
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 border-b border-outline-variant/10 w-full"></div>
+<div class="h-20 w-full"></div>
+</div>
+<!-- Monday -->
+<div class="relative z-10">
+<!-- Confirmed Slot 09:00 - 10:00 -->
+<div class="absolute top-[80px] left-1 right-1 h-[80px] bg-status-confirmed-bg border-l-4 border-status-confirmed rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-confirmed truncate">Initial Consult</div>
+<div class="font-small text-[11px] text-status-confirmed/80 truncate">Sarah J.</div>
+<div class="font-small text-[11px] text-status-confirmed/80 mt-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[12px]">schedule</span> 09:00-10:00
+                                    </div>
+</div>
+<!-- Pending Slot 11:30 - 12:30 -->
+<div class="absolute top-[280px] left-1 right-1 h-[80px] bg-status-pending-bg border-l-4 border-status-pending rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-pending truncate">Follow-up</div>
+<div class="font-small text-[11px] text-status-pending/80 truncate">Michael R.</div>
+</div>
+</div>
+<!-- Tuesday (Today) -->
+<div class="relative z-10 bg-primary-container/5">
+<!-- Current Time Indicator (e.g., 10:45) -->
+<div class="absolute top-[220px] left-0 right-0 h-px bg-error z-20 flex items-center">
+<div class="w-2 h-2 rounded-full bg-error -ml-1"></div>
+</div>
+<!-- Check-in Slot 08:30 - 09:30 -->
+<div class="absolute top-[40px] left-1 right-1 h-[80px] bg-status-checkin-bg border-l-4 border-status-checkin rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-checkin truncate">Therapy Session</div>
+<div class="font-small text-[11px] text-status-checkin/80 truncate">Emma W.</div>
+</div>
+<!-- Confirmed Slot 13:00 - 15:00 -->
+<div class="absolute top-[400px] left-1 right-1 h-[160px] bg-status-confirmed-bg border-l-4 border-status-confirmed rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-confirmed truncate">Group Counseling</div>
+<div class="font-small text-[11px] text-status-confirmed/80 truncate">Room A • 5 Pax</div>
+<div class="font-small text-[11px] text-status-confirmed/80 mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">schedule</span> 13:00-15:00
+                                    </div>
+</div>
+</div>
+<!-- Wednesday -->
+<div class="relative z-10">
+<!-- Pending Slot 10:00 - 11:00 -->
+<div class="absolute top-[160px] left-1 right-1 h-[80px] bg-status-pending-bg border-l-4 border-status-pending rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-pending truncate">Assessment</div>
+<div class="font-small text-[11px] text-status-pending/80 truncate">David L.</div>
+</div>
+</div>
+<!-- Thursday -->
+<div class="relative z-10">
+<!-- Confirmed Slot 09:00 - 10:30 -->
+<div class="absolute top-[80px] left-1 right-1 h-[120px] bg-status-confirmed-bg border-l-4 border-status-confirmed rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-confirmed truncate">Initial Consult</div>
+<div class="font-small text-[11px] text-status-confirmed/80 truncate">Olivia T.</div>
+</div>
+<!-- Confirmed Slot 14:30 - 15:30 -->
+<div class="absolute top-[520px] left-1 right-1 h-[80px] bg-status-confirmed-bg border-l-4 border-status-confirmed rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-confirmed truncate">Follow-up</div>
+<div class="font-small text-[11px] text-status-confirmed/80 truncate">James B.</div>
+</div>
+</div>
+<!-- Friday -->
+<div class="relative z-10">
+<!-- Pending Slot 11:00 - 12:00 -->
+<div class="absolute top-[240px] left-1 right-1 h-[80px] bg-status-pending-bg border-l-4 border-status-pending rounded p-xs shadow-sm cursor-pointer hover:shadow-md transition-shadow group">
+<div class="font-body-semibold text-[13px] leading-tight text-status-pending truncate">Therapy Session</div>
+<div class="font-small text-[11px] text-status-pending/80 truncate">Sophia K.</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-sm py-xs bg-surface-container dark:bg-surface-container-highest shadow-lg rounded-t-xl docked full-width bottom-0">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container dark:bg-primary dark:text-on-primary rounded-xl px-md py-xs scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">event_note</span>
+<span class="font-label text-label">Schedule</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 transition-transform rounded-xl" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label text-label">Patients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 transition-transform rounded-xl" href="#">
+<span class="material-symbols-outlined">assignment_turned_in</span>
+<span class="font-label text-label">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-md py-xs hover:bg-primary-fixed dark:hover:bg-primary-fixed-dim transition-colors scale-95 active:scale-90 transition-transform rounded-xl" href="#">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-label text-label">Profile</span>
+</a>
+</nav>
+</body></html>

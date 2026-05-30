@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Book Session - Step 1</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-container": "#5046e5",
+                        "primary": "#3625cd",
+                        "tertiary-container": "#a54100",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-container": "#f0ecf9",
+                        "surface": "#fcf8ff",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "tertiary": "#7e3000",
+                        "surface-bright": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-container-high": "#eae6f4",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary-container": "#dbd8ff",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "inverse-primary": "#c3c0ff",
+                        "secondary-container": "#8792fe",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "background": "#fcf8ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-secondary-container": "#17228f",
+                        "secondary": "#4953bc",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#4e44e3",
+                        "on-surface-variant": "#464555",
+                        "error-container": "#ffdad6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "base": "4px",
+                        "gutter": "24px",
+                        "xs": "4px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "small": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        input[type="radio"]:checked + div {
+            border-color: #5046e5;
+            box-shadow: 0 0 0 1px #5046e5;
+        }
+        input[type="radio"]:checked + div .radio-inner {
+            background-color: #5046e5;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body antialiased min-h-screen flex flex-col pt-[64px] pb-[140px] md:pb-lg md:pl-[260px] md:pt-0">
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-md h-[64px] bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm md:hidden">
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors p-sm rounded-full flex items-center justify-center h-10 w-10">
+<span class="material-symbols-outlined" data-weight="regular">arrow_back</span>
+</button>
+<h1 class="font-h1-mobile text-h1-mobile font-semibold text-primary">Book Session</h1>
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors p-sm rounded-full flex items-center justify-center h-10 w-10">
+<span class="material-symbols-outlined" data-weight="regular">close</span>
+</button>
+</header>
+<!-- SideNav (Desktop) - Hidden on mobile, shown on desktop -->
+<aside class="hidden md:flex flex-col w-[260px] h-screen fixed left-0 top-0 bg-surface-container-lowest border-r border-outline-variant shadow-sm z-40">
+<div class="p-lg flex items-center gap-sm">
+<div class="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-on-primary font-bold">
+                C
+            </div>
+<span class="font-h2 text-h2 font-bold text-primary">ClinicFlow</span>
+</div>
+<nav class="flex-1 px-sm py-md space-y-sm">
+<!-- Navigation items would go here for a full dashboard -->
+<div class="px-md py-sm text-on-surface-variant font-label text-label uppercase tracking-wider">Booking Flow</div>
+<a class="flex items-center gap-md px-md py-sm rounded-lg bg-primary-container text-on-primary-container" href="#">
+<span class="material-symbols-outlined" data-weight="fill">person_search</span>
+<span class="font-body-semibold text-body-semibold">Step 1</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">calendar_month</span>
+<span class="font-body-semibold text-body-semibold">Step 2</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">person_add</span>
+<span class="font-body-semibold text-body-semibold">Step 3</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">check_circle</span>
+<span class="font-body-semibold text-body-semibold">Step 4</span>
+</a>
+</nav>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 w-full max-w-[800px] mx-auto p-md md:p-xl space-y-xl mt-4 md:mt-0">
+<!-- Header & Progress -->
+<div class="space-y-md">
+<div>
+<h2 class="font-display text-display text-on-surface md:text-3xl">Select Professional &amp; Service</h2>
+<p class="font-body text-body text-on-surface-variant mt-xs">Choose the right expert and service type for your needs.</p>
+</div>
+<div class="space-y-xs">
+<div class="flex justify-between font-label text-label text-on-surface-variant">
+<span>Progress</span>
+<span>25%</span>
+</div>
+<div class="h-2 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full transition-all duration-500 ease-out w-1/4"></div>
+</div>
+</div>
+</div>
+<!-- Section 1: Select Professional -->
+<section class="space-y-md">
+<h3 class="font-h2 text-h2 text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary" data-weight="fill">clinical_notes</span>
+                Select Professional
+            </h3>
+<!-- Horizontal Scroll Container -->
+<div class="flex overflow-x-auto gap-md pb-sm hide-scrollbar -mx-md px-md md:mx-0 md:px-0">
+<!-- Card 1 -->
+<label class="relative flex-none w-[280px] cursor-pointer group">
+<input checked="" class="peer sr-only" name="professional" type="radio" value="dr_anita"/>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col gap-md transition-all duration-200 hover:border-primary peer-checked:border-primary peer-checked:ring-1 peer-checked:ring-primary shadow-sm">
+<div class="flex gap-md items-start">
+<div class="h-12 w-12 rounded-full bg-surface-container-highest overflow-hidden flex-shrink-0 border border-outline-variant">
+<img alt="Avatar of Dr. Anita" class="h-full w-full object-cover" data-alt="A professional headshot of a female doctor in a clinical setting. She is wearing a white coat over a modern blue top. The lighting is bright, soft, and even, conveying a clean, trustworthy medical environment. The background is a slightly out-of-focus modern clinic hallway with cool white and subtle blue tones. The mood is approachable and highly competent." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNbdzLl1cSk8C0fFFfbkmG1NNgPCWe2t2pduL9wuJk8Ido6FOM6wvdv6kKKcpw3m-t5ViJ9hFeE-YIsBjeibYJ__CLSLOj5Q053knEkR1uEZdNuWINAYWkjxY3sAyueMAIKqH4OY5peCBfWCOGGSvFJB3HCjY9XDkBv2WJ7Qk9Nfry_w1-gHaGLAUrYvdNiy6oOEqMy6DIs7sPyev9eHiISxQNHx6IJvtalq5uBgGClpwe5u1wf3sYTfmfPl2CtmaRJvQZJ8nNXlcz"/>
+</div>
+<div class="flex-1">
+<h4 class="font-body-semibold text-body-semibold text-on-surface">Dr. Anita</h4>
+<p class="font-small text-small text-on-surface-variant">Klinis</p>
+<p class="font-small text-small text-outline mt-xs">SIP: 1234</p>
+</div>
+<div class="h-5 w-5 rounded-full border border-outline-variant flex items-center justify-center radio-outer mt-1">
+<div class="h-2.5 w-2.5 rounded-full radio-inner transition-colors"></div>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-lg p-sm flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px] text-tertiary-container">schedule</span>
+<span class="font-small text-small text-on-surface font-medium">Available: Today 2PM</span>
+</div>
+</div>
+</label>
+<!-- Card 2 -->
+<label class="relative flex-none w-[280px] cursor-pointer group">
+<input class="peer sr-only" name="professional" type="radio" value="dr_budi"/>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col gap-md transition-all duration-200 hover:border-primary peer-checked:border-primary peer-checked:ring-1 peer-checked:ring-primary shadow-sm">
+<div class="flex gap-md items-start">
+<div class="h-12 w-12 rounded-full bg-surface-container-highest overflow-hidden flex-shrink-0 border border-outline-variant">
+<img alt="Avatar of Dr. Budi" class="h-full w-full object-cover" data-alt="A professional headshot of a male doctor in a bright clinical setting. He is wearing a white medical coat and a stethoscope around his neck. The lighting is clean, clinical, and reassuring with a soft focus background of a modern hospital or clinic. The color palette emphasizes cool whites, sterile blues, and neutral grays. The overall aesthetic is professional, calm, and trustworthy." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpWMjs2o2YmPe4ezs29FdvmGmaCUpy2XTt6hbuMnnr3Pl5vI3i28RbRH4OS5ACkAEIMu-gVs3nmFDo53m_LS8gEthYG0XeV1nCEXg7Y3FTGrqW4SDVcex8kERV5SwNh1imXkJAx_XzAdWvrC_bc513srOJ0jVFSfvxaw1DWHgW6wqpFjIZjgbGdDD1U-9pr3cQ_NKmVgK3KWagr5ZmdsyoZ0OntLsZdIGt3Nj244ns5CQgMC0MRM1U0ctrLRV8dVVZS80y2Wm6VYop"/>
+</div>
+<div class="flex-1">
+<h4 class="font-body-semibold text-body-semibold text-on-surface">Dr. Budi</h4>
+<p class="font-small text-small text-on-surface-variant line-clamp-1">Anak &amp; Remaja</p>
+<p class="font-small text-small text-outline mt-xs">SIP: 5678</p>
+</div>
+<div class="h-5 w-5 rounded-full border border-outline-variant flex items-center justify-center radio-outer mt-1">
+<div class="h-2.5 w-2.5 rounded-full radio-inner transition-colors"></div>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-lg p-sm flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px] text-outline">event</span>
+<span class="font-small text-small text-on-surface-variant font-medium">Available: Tomorrow</span>
+</div>
+</div>
+</label>
+<!-- Card 3 -->
+<label class="relative flex-none w-[280px] cursor-pointer group">
+<input class="peer sr-only" name="professional" type="radio" value="dr_clara"/>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col gap-md transition-all duration-200 hover:border-primary peer-checked:border-primary peer-checked:ring-1 peer-checked:ring-primary shadow-sm">
+<div class="flex gap-md items-start">
+<div class="h-12 w-12 rounded-full bg-surface-container-highest overflow-hidden flex-shrink-0 border border-outline-variant">
+<img alt="Avatar of Dr. Clara" class="h-full w-full object-cover" data-alt="A close-up professional portrait of a female industrial psychologist in a modern corporate health office. She is dressed in smart business-casual attire, exuding confidence and approachability. The lighting is bright and natural, coming from a nearby window, casting soft shadows. The background features minimalist office decor with subtle hints of greenery. The color palette is composed of warm neutrals, soft whites, and muted greens." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCqiDVEv-aOOJ4pDO_AzP9oU_V7EJHdJDALp3Vt0bfgbcFyRXMrFnEdO-ZM-aG1z7Oqa6HIbIkLg4Xu35W8ynY1QUZtCmJBRC6SuLwTRXL2Yu6UwNZDvUo8DDv81LtT0kejfkEKSbjHvWQ-vSi4Ba_xYASwpcPrgxa2UVQVNquNqc6GVIFoJ32_0YPdjgxas7VXIMKQSXAdPgDP84ri3cb2UE9YM2NWiqTT3p4badGjIC2MrgaQo4HgRFi3gcb8YcSiU3fSLdvSc4p"/>
+</div>
+<div class="flex-1">
+<h4 class="font-body-semibold text-body-semibold text-on-surface">Dr. Clara</h4>
+<p class="font-small text-small text-on-surface-variant">Industri</p>
+<p class="font-small text-small text-outline mt-xs">SIP: 9012</p>
+</div>
+<div class="h-5 w-5 rounded-full border border-outline-variant flex items-center justify-center radio-outer mt-1">
+<div class="h-2.5 w-2.5 rounded-full radio-inner transition-colors"></div>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-lg p-sm flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px] text-tertiary-container">schedule</span>
+<span class="font-small text-small text-on-surface font-medium">Available: Today 10AM</span>
+</div>
+</div>
+</label>
+</div>
+</section>
+<!-- Section 2: Select Service Type -->
+<section class="space-y-md">
+<h3 class="font-h2 text-h2 text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary" data-weight="fill">medical_services</span>
+                Select Service Type
+            </h3>
+<div class="space-y-sm">
+<!-- Service Option 1 -->
+<label class="block relative cursor-pointer">
+<input checked="" class="peer sr-only" name="service_type" type="radio" value="individual"/>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between transition-all duration-200 hover:bg-surface-container-lowest hover:shadow-sm peer-checked:border-primary peer-checked:bg-surface-container-low">
+<div class="flex items-center gap-md">
+<div class="h-5 w-5 rounded-full border border-outline-variant flex items-center justify-center radio-outer flex-shrink-0">
+<div class="h-2.5 w-2.5 rounded-full radio-inner transition-colors"></div>
+</div>
+<div>
+<h4 class="font-body-semibold text-body-semibold text-on-surface">Konseling Individual</h4>
+<p class="font-small text-small text-on-surface-variant flex items-center gap-1 mt-xs">
+<span class="material-symbols-outlined text-[14px]">timer</span> 60 min
+                                </p>
+</div>
+</div>
+<div class="font-body-semibold text-body-semibold text-on-surface text-right">
+                            Rp 250.000
+                        </div>
+</div>
+</label>
+<!-- Service Option 2 -->
+<label class="block relative cursor-pointer">
+<input class="peer sr-only" name="service_type" type="radio" value="group"/>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between transition-all duration-200 hover:bg-surface-container-lowest hover:shadow-sm peer-checked:border-primary peer-checked:bg-surface-container-low">
+<div class="flex items-center gap-md">
+<div class="h-5 w-5 rounded-full border border-outline-variant flex items-center justify-center radio-outer flex-shrink-0">
+<div class="h-2.5 w-2.5 rounded-full radio-inner transition-colors"></div>
+</div>
+<div>
+<h4 class="font-body-semibold text-body-semibold text-on-surface">Konseling Kelompok</h4>
+<p class="font-small text-small text-on-surface-variant flex items-center gap-1 mt-xs">
+<span class="material-symbols-outlined text-[14px]">timer</span> 90 min
+                                </p>
+</div>
+</div>
+<div class="font-body-semibold text-body-semibold text-on-surface text-right">
+                            Rp 400.000
+                        </div>
+</div>
+</label>
+<!-- Service Option 3 -->
+<label class="block relative cursor-pointer">
+<input class="peer sr-only" name="service_type" type="radio" value="assessment"/>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between transition-all duration-200 hover:bg-surface-container-lowest hover:shadow-sm peer-checked:border-primary peer-checked:bg-surface-container-low">
+<div class="flex items-center gap-md">
+<div class="h-5 w-5 rounded-full border border-outline-variant flex items-center justify-center radio-outer flex-shrink-0">
+<div class="h-2.5 w-2.5 rounded-full radio-inner transition-colors"></div>
+</div>
+<div>
+<h4 class="font-body-semibold text-body-semibold text-on-surface">Asesmen Psikologis</h4>
+<p class="font-small text-small text-on-surface-variant flex items-center gap-1 mt-xs">
+<span class="material-symbols-outlined text-[14px]">timer</span> 120 min
+                                </p>
+</div>
+</div>
+<div class="font-body-semibold text-body-semibold text-on-surface text-right">
+                            Rp 500.000
+                        </div>
+</div>
+</label>
+</div>
+</section>
+</main>
+<!-- Sticky Bottom Action Bar (Web & Mobile) -->
+<div class="fixed bottom-[80px] md:bottom-0 left-0 md:left-[260px] right-0 p-md bg-surface border-t border-outline-variant shadow-[0px_-4px_6px_rgba(0,0,0,0.05)] z-40 flex justify-end">
+<div class="w-full max-w-[800px] mx-auto flex justify-between items-center gap-md">
+<div class="hidden md:flex flex-col">
+<span class="font-label text-label text-on-surface-variant">Selected:</span>
+<span class="font-body-semibold text-body-semibold text-on-surface">Dr. Anita • Individual</span>
+</div>
+<button class="w-full md:w-auto h-10 px-xl bg-primary hover:bg-primary-fixed-variant text-on-primary font-body-semibold text-body-semibold rounded-lg transition-colors flex items-center justify-center gap-xs shadow-sm">
+                Continue
+                <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-lg py-sm pb-safe bg-surface-container-lowest dark:bg-surface-container-low border-t border-outline-variant shadow-[0px_-1px_3px_rgba(0,0,0,0.1)] md:hidden rounded-t-xl">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 Active: scale-95 transition-transform duration-150 hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-weight="fill">person_search</span>
+<span class="font-label text-label mt-1">Step 1</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined">calendar_month</span>
+<span class="font-label text-label mt-1">Step 2</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined">person_add</span>
+<span class="font-label text-label mt-1">Step 3</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined">check_circle</span>
+<span class="font-label text-label mt-1">Step 4</span>
+</a>
+</nav>
+</body></html>

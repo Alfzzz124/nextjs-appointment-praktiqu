@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Client Profile Overview - PraktiQU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error-container": "#93000a",
+                      "outline": "#777587",
+                      "on-surface": "#1b1b24",
+                      "on-tertiary-fixed": "#351000",
+                      "on-surface-variant": "#464555",
+                      "surface": "#fcf8ff",
+                      "secondary-container": "#8792fe",
+                      "inverse-primary": "#c3c0ff",
+                      "on-primary-fixed": "#0f0069",
+                      "on-error": "#ffffff",
+                      "tertiary-container": "#a54100",
+                      "on-primary": "#ffffff",
+                      "tertiary-fixed": "#ffdbcc",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "inverse-on-surface": "#f3effc",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "error": "#ba1a1a",
+                      "secondary-fixed-dim": "#bdc2ff",
+                      "primary-fixed": "#e2dfff",
+                      "on-tertiary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "surface-dim": "#dcd8e5",
+                      "on-primary-fixed-variant": "#3422cc",
+                      "on-secondary-fixed": "#000767",
+                      "surface-bright": "#fcf8ff",
+                      "surface-variant": "#e4e1ee",
+                      "surface-container": "#f0ecf9",
+                      "surface-container-highest": "#e4e1ee",
+                      "secondary-fixed": "#e0e0ff",
+                      "on-background": "#1b1b24",
+                      "inverse-surface": "#302f39",
+                      "tertiary": "#7e3000",
+                      "background": "#fcf8ff",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "on-primary-container": "#dbd8ff",
+                      "on-secondary-fixed-variant": "#2f3aa3",
+                      "secondary": "#4953bc",
+                      "primary": "#3625cd",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-container-low": "#f6f2ff",
+                      "surface-tint": "#4e44e3",
+                      "on-secondary": "#ffffff",
+                      "surface-container-high": "#eae6f4",
+                      "primary-container": "#5046e5",
+                      "on-secondary-container": "#17228f",
+                      "outline-variant": "#c7c4d8",
+                      "on-tertiary-container": "#ffd2c0"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin": "24px",
+                      "lg": "24px",
+                      "gutter": "24px",
+                      "sm": "8px",
+                      "xl": "32px",
+                      "xs": "4px",
+                      "md": "16px",
+                      "base": "4px"
+              },
+              "fontFamily": {
+                      "label": ["Inter"],
+                      "small": ["Inter"],
+                      "h1-mobile": ["Inter"],
+                      "h1": ["Inter"],
+                      "body": ["Inter"],
+                      "display": ["Inter"],
+                      "body-semibold": ["Inter"],
+                      "h2": ["Inter"]
+              },
+              "fontSize": {
+                      "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                      "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                      "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                      "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                      "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                      "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                      "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                      "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c7c4d8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #777587; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body text-body flex h-screen overflow-hidden antialiased">
+<!-- Desktop Navigation Drawer -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-surface-container-low border-r border-outline-variant hidden lg:flex flex-col p-lg gap-sm z-40">
+<div class="mb-xl">
+<h1 class="font-h2 text-h2 text-primary tracking-tight">PraktiQU</h1>
+</div>
+<!-- Header Type: Profile -->
+<div class="flex items-center gap-md mb-xl p-md bg-surface-container-high rounded-xl border border-surface-variant">
+<img alt="Clinician Avatar" class="w-12 h-12 rounded-full object-cover border border-outline-variant" data-alt="A professional headshot of a middle-aged clinician, Dr. Miller, wearing a clean medical coat over a modern blue shirt. The background is a soft, blurred clinical office setting bathed in bright, neutral light. The mood is approachable, trustworthy, and expertly clinical, fitting a premium healthcare platform." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDTB8Uu3OK_wnM4TXuXJeE7CoEp5kH9_6IsSBo-TbHXfAaRlSuStdTtujDQZvHqT86jh9wxntPUiXidvME8MT7XMf9KBAoBpsuwHmkCniOYqi8gwPsQ7hSz6muptJQz2CHI0HTZeIv0bjOrn4TIBNwc-834lVFYUmaVgrfyu_SU60KtdE1RG7qoUOQW8HUnnC8VpuNNPlzwO1oPbsnnjPMfqfXg6Mfb9lzsR9Uv81Bubme2Uwm6EOMvM1m-Qz6GN8iaSW_mbpjWdklV"/>
+<div class="flex flex-col">
+<span class="font-body-semibold text-on-surface">Dr. Miller</span>
+<span class="font-small text-on-surface-variant">Clinical Lead</span>
+<span class="font-small text-outline">Clinic ID: 8821</span>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-sm">
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container-highest rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-outline">dashboard</span>
+<span class="font-label text-label">Dashboard</span>
+</a>
+<!-- Active State: Clients -->
+<a class="bg-secondary-container text-on-secondary-container rounded-lg font-body-semibold flex items-center gap-md px-md py-sm shadow-sm" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">group</span>
+<span>Clients</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container-highest rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-outline">person_add</span>
+<span class="font-label text-label">Registration</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm hover:bg-surface-container-highest rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-outline">settings</span>
+<span class="font-label text-label">Settings</span>
+</a>
+</nav>
+</aside>
+<!-- Main Content Canvas -->
+<div class="flex-1 flex flex-col h-full lg:ml-[260px] relative">
+<!-- Mobile/Tablet TopAppBar -->
+<header class="bg-surface border-b border-outline-variant shadow-sm w-full lg:hidden flex items-center justify-between px-lg h-16 z-30 sticky top-0">
+<div class="flex items-center gap-md">
+<img alt="Clinician Profile" class="w-8 h-8 rounded-full object-cover" data-alt="A professional headshot of a middle-aged clinician, Dr. Miller, wearing a clean medical coat over a modern blue shirt. The background is a soft, blurred clinical office setting bathed in bright, neutral light. The mood is approachable, trustworthy, and expertly clinical, fitting a premium healthcare platform." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAI1H9N2HxSQQS3josf7XLzFBgtTF8cUtp5d0EtYYjBtqHiMFlTaTD0hFlblch9XN8oEQiTt-PGAm3IROGTJRPrqNSE-A1_fG1JcJdQrGejk9jvOQX7UsFG0svz6Wc7kT-eGYdpC743XcW77d12A19Lg1yvl-Djfh8dfWwcO5_5e4dEMt1-_pbZusrARgTP1p2MzSBB99DM3socK8J-SMm_oE1h6xiLg1xWLSgtOyyAgfSYoaErsNAom7SnX_XDORrPlGoBerQDCj7i"/>
+<span class="font-h1-mobile text-h1-mobile text-primary tracking-tight font-extrabold">PraktiQU</span>
+</div>
+<button class="text-on-surface-variant p-2 rounded-full hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</header>
+<!-- Scrollable Canvas -->
+<main class="flex-1 overflow-y-auto bg-background">
+<div class="max-w-7xl mx-auto px-md md:px-lg py-lg space-y-lg pb-32"> <!-- pb-32 accounts for mobile bottom nav -->
+<!-- Breadcrumb -->
+<div class="flex items-center text-on-surface-variant font-label text-label gap-sm">
+<a class="hover:text-primary transition-colors flex items-center" href="#"><span class="material-symbols-outlined text-[16px]">arrow_back</span> Back to Clients</a>
+</div>
+<!-- Client Header Card (Bento/Glassmorphism approach) -->
+<section class="bg-surface rounded-xl p-lg border border-surface-variant shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] flex flex-col md:flex-row items-start md:items-center justify-between gap-lg relative overflow-hidden">
+<!-- Subtle background pattern -->
+<div class="absolute right-0 top-0 w-64 h-64 bg-gradient-to-br from-primary-fixed to-transparent opacity-20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+<div class="flex items-center gap-lg z-10">
+<img alt="Sarah Wijaya Avatar" class="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-surface shadow-sm" data-alt="A clear, professional portrait of Sarah Wijaya, a young adult female client of a clinical practice. She has dark hair, a warm and calm expression, and is wearing a simple, comfortable neutral sweater. The lighting is soft and flattering, set against a clean, light-colored studio background to maintain a clinical but welcoming aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDXFvmWNSq-LmJwp8pETJa7w4kZrG6T4Kp_zLBYfinEpusnbcJrrVhR3yCjMW31p3PPwP6oCXpdb-SelHkyQ6e4sziJGPeXQs87ZcdKB1RMSYjoMRLG24kQ6lXlReAYr1M9PqzQYUbw_y_0HIvtlt1vLbF4zC6lvm92if4K6rTr_RttA-6PYSKP7TJ2D6Ll7NN-soPqcsLbX0nave15PT8d3NzeygpMIF8fFVYcl02cWj9FghQa8II4FydeO_RCPoKIAB9qKA2AOPMk"/>
+<div>
+<h2 class="font-display text-display text-on-surface mb-xs">Sarah Wijaya</h2>
+<div class="flex flex-wrap items-center gap-y-xs gap-x-md text-on-surface-variant font-body text-body">
+<span class="flex items-center gap-xs"><span class="material-symbols-outlined text-[18px]">badge</span> ID: SW-2049</span>
+<span class="flex items-center gap-xs"><span class="material-symbols-outlined text-[18px]">mail</span> sarah.w@example.com</span>
+<span class="flex items-center gap-xs"><span class="material-symbols-outlined text-[18px]">call</span> +1 (555) 019-2834</span>
+</div>
+</div>
+</div>
+<div class="flex flex-row md:flex-col gap-sm w-full md:w-auto z-10">
+<button class="flex-1 md:flex-none flex items-center justify-center gap-xs bg-primary-container text-on-primary-container px-md py-sm rounded-lg font-body-semibold hover:bg-primary hover:text-on-primary transition-colors h-10 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">edit</span> Edit Profile
+                        </button>
+<button class="flex-1 md:flex-none flex items-center justify-center gap-xs bg-surface border border-outline-variant text-on-surface px-md py-sm rounded-lg font-body-semibold hover:bg-surface-variant transition-colors h-10">
+<span class="material-symbols-outlined text-[18px]">notifications</span> Send Reminder
+                        </button>
+</div>
+</section>
+<!-- Consent Status Banner -->
+<div class="bg-surface-container-low border border-primary-fixed text-on-surface px-md py-sm rounded-lg flex items-center gap-md text-body font-body shadow-sm">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">verified</span>
+<div>
+<span class="font-body-semibold">Consent Status: Active</span>
+<span class="text-on-surface-variant ml-xs">— Signed on May 15, 2026</span>
+</div>
+</div>
+<!-- Stats Bento Grid -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-md">
+<!-- Stat 1 -->
+<div class="bg-surface rounded-xl p-md border border-surface-variant shadow-sm flex flex-col justify-between">
+<div class="flex justify-between items-start mb-md">
+<span class="text-on-surface-variant font-label text-label uppercase tracking-wider">Total Sessions</span>
+<div class="w-8 h-8 rounded-full bg-secondary-fixed flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[20px]">history</span>
+</div>
+</div>
+<span class="font-display text-display text-on-surface">5</span>
+</div>
+<!-- Stat 2 -->
+<div class="bg-surface rounded-xl p-md border border-surface-variant shadow-sm flex flex-col justify-between">
+<div class="flex justify-between items-start mb-md">
+<span class="text-on-surface-variant font-label text-label uppercase tracking-wider">Upcoming Sessions</span>
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">calendar_month</span>
+</div>
+</div>
+<span class="font-display text-display text-on-surface">1</span>
+</div>
+<!-- Stat 3 (Progress) -->
+<div class="bg-surface rounded-xl p-md border border-surface-variant shadow-sm flex flex-col justify-between">
+<div class="flex justify-between items-start mb-md">
+<span class="text-on-surface-variant font-label text-label uppercase tracking-wider">Progress Score</span>
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-end mb-xs">
+<span class="font-h1-mobile text-h1-mobile text-on-surface">78<span class="text-small text-outline">%</span></span>
+<span class="font-small text-small text-outline">Target: 100</span>
+</div>
+<div class="w-full h-2 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 78%;"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Tab Navigation -->
+<div class="border-b border-outline-variant flex gap-lg overflow-x-auto hide-scrollbar">
+<button class="font-body-semibold text-primary border-b-2 border-primary pb-sm px-xs transition-colors whitespace-nowrap">Overview</button>
+<button class="font-body-semibold text-on-surface-variant hover:text-on-surface hover:border-outline border-b-2 border-transparent pb-sm px-xs transition-colors whitespace-nowrap">Sessions</button>
+<button class="font-body-semibold text-on-surface-variant hover:text-on-surface hover:border-outline border-b-2 border-transparent pb-sm px-xs transition-colors whitespace-nowrap">Notes</button>
+<button class="font-body-semibold text-on-surface-variant hover:text-on-surface hover:border-outline border-b-2 border-transparent pb-sm px-xs transition-colors whitespace-nowrap">Plans</button>
+</div>
+<!-- Content Area Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-lg">
+<!-- Recent Sessions List -->
+<div class="space-y-md">
+<h3 class="font-h2 text-h2 text-on-surface flex items-center gap-xs">
+<span class="material-symbols-outlined text-outline">list_alt</span> Recent Sessions
+                        </h3>
+<div class="bg-surface border border-surface-variant rounded-xl overflow-hidden shadow-sm">
+<!-- Item 1 -->
+<div class="p-md border-b border-outline-variant flex items-center justify-between hover:bg-surface-container-lowest transition-colors">
+<div class="flex items-center gap-md">
+<div class="bg-surface-container h-10 w-10 rounded-lg flex flex-col items-center justify-center text-primary">
+<span class="font-label text-label leading-none">MAY</span>
+<span class="font-body-semibold leading-none">27</span>
+</div>
+<div>
+<p class="font-body-semibold text-on-surface">Standard Consultation</p>
+<p class="font-small text-small text-on-surface-variant">45 mins • Dr. Miller</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<span class="bg-secondary-fixed text-on-secondary-fixed-variant px-2 py-1 rounded-full font-small text-small hidden sm:inline-block">Completed</span>
+<button class="text-primary font-body-semibold text-body hover:underline">View</button>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="p-md border-b border-outline-variant flex items-center justify-between hover:bg-surface-container-lowest transition-colors">
+<div class="flex items-center gap-md">
+<div class="bg-surface-container h-10 w-10 rounded-lg flex flex-col items-center justify-center text-on-surface-variant">
+<span class="font-label text-label leading-none">MAY</span>
+<span class="font-body-semibold leading-none">13</span>
+</div>
+<div>
+<p class="font-body-semibold text-on-surface">Follow-up Assessment</p>
+<p class="font-small text-small text-on-surface-variant">30 mins • Dr. Miller</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<span class="bg-secondary-fixed text-on-secondary-fixed-variant px-2 py-1 rounded-full font-small text-small hidden sm:inline-block">Completed</span>
+<button class="text-primary font-body-semibold text-body hover:underline">View</button>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="p-md flex items-center justify-between hover:bg-surface-container-lowest transition-colors">
+<div class="flex items-center gap-md">
+<div class="bg-surface-container h-10 w-10 rounded-lg flex flex-col items-center justify-center text-on-surface-variant">
+<span class="font-label text-label leading-none">APR</span>
+<span class="font-body-semibold leading-none">29</span>
+</div>
+<div>
+<p class="font-body-semibold text-on-surface">Initial Intake</p>
+<p class="font-small text-small text-on-surface-variant">60 mins • Dr. Miller</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<span class="bg-secondary-fixed text-on-secondary-fixed-variant px-2 py-1 rounded-full font-small text-small hidden sm:inline-block">Completed</span>
+<button class="text-primary font-body-semibold text-body hover:underline">View</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Active Intervention Plans -->
+<div class="space-y-md">
+<h3 class="font-h2 text-h2 text-on-surface flex items-center gap-xs">
+<span class="material-symbols-outlined text-outline">psychology</span> Active Intervention Plans
+                        </h3>
+<div class="bg-surface border border-surface-variant rounded-xl p-md shadow-sm relative overflow-hidden">
+<!-- Decor -->
+<div class="absolute right-0 bottom-0 text-surface-variant opacity-30 -mr-4 -mb-4 pointer-events-none">
+<span class="material-symbols-outlined text-[120px]" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-sm">
+<div>
+<h4 class="font-body-semibold text-on-surface text-h2">CBT Techniques</h4>
+<p class="font-body text-body text-on-surface-variant mt-xs max-w-[80%]">Focusing on identifying and challenging cognitive distortions.</p>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-variant p-1 rounded transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+<div class="mt-md bg-surface-container-lowest p-md rounded-lg border border-outline-variant">
+<div class="flex justify-between items-center mb-sm">
+<span class="font-label text-label text-on-surface">Module Progress</span>
+<span class="font-body-semibold text-primary">4/6 Completed</span>
+</div>
+<div class="flex gap-1 h-3 w-full">
+<div class="flex-1 bg-primary rounded-l-full"></div>
+<div class="flex-1 bg-primary"></div>
+<div class="flex-1 bg-primary"></div>
+<div class="flex-1 bg-primary"></div>
+<div class="flex-1 bg-surface-variant"></div>
+<div class="flex-1 bg-surface-variant rounded-r-full"></div>
+</div>
+</div>
+<button class="mt-md w-full py-2 border border-outline-variant text-on-surface font-body-semibold rounded-lg hover:bg-surface-variant transition-colors">
+                                    Review Plan Details
+                                </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Mobile Bottom Navigation Bar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-xl bg-surface shadow-[0px_-1px_3px_rgba(0,0,0,0.1)] lg:hidden flex justify-around items-center px-4 py-3 pb-safe border-t border-surface-variant">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant px-4 py-1 rounded-full transition-colors" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-mobile text-label-mobile mt-1">Home</span>
+</a>
+<!-- Active Tab -->
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 shadow-sm transition-transform active:scale-90" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">group</span>
+<span class="font-label-mobile text-label-mobile mt-1 font-semibold">Clients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant px-4 py-1 rounded-full transition-colors" href="#">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="font-label-mobile text-label-mobile mt-1">Add</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant px-4 py-1 rounded-full transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-mobile text-label-mobile mt-1">Settings</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Session Detail - PraktiQU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed": "#000767",
+                        "on-tertiary-container": "#ffd2c0",
+                        "on-error-container": "#93000a",
+                        "on-background": "#1b1b24",
+                        "surface-tint": "#4e44e3",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "inverse-on-surface": "#f3effc",
+                        "background": "#fcf8ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary": "#7e3000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-container-low": "#f6f2ff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#5046e5",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-highest": "#e4e1ee",
+                        "outline": "#777587",
+                        "secondary-container": "#8792fe",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "tertiary-container": "#a54100",
+                        "surface-dim": "#dcd8e5",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-tertiary-fixed": "#351000",
+                        "secondary": "#4953bc",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary-fixed": "#e2dfff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-surface-variant": "#464555",
+                        "inverse-primary": "#c3c0ff",
+                        "surface": "#fcf8ff",
+                        "surface-variant": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "outline-variant": "#c7c4d8",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-container": "#dbd8ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fcf8ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "margin": "24px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "gutter": "24px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "label": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface-dim font-body text-body text-on-surface h-screen w-screen overflow-hidden flex items-center justify-center relative antialiased">
+<!-- Background overlay for modal effect -->
+<div class="absolute inset-0 bg-on-surface/40 backdrop-blur-sm z-40"></div>
+<!-- Modal Container -->
+<div class="relative z-50 w-full max-w-2xl bg-surface-container-lowest rounded-xl shadow-[0px_4px_16px_rgba(0,0,0,0.1),_0px_2px_4px_rgba(0,0,0,0.06)] flex flex-col mx-md max-h-[795px] overflow-hidden">
+<!-- Modal Header -->
+<div class="flex items-center justify-between p-lg border-b border-outline-variant bg-surface">
+<h1 class="font-h2 text-h2 text-on-surface">Session Detail</h1>
+<button class="p-sm rounded-full hover:bg-surface-container-high transition-colors flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</div>
+<!-- Modal Body -->
+<div class="p-lg overflow-y-auto flex-1 flex flex-col gap-xl">
+<!-- Client Section -->
+<section class="flex flex-col gap-md">
+<h2 class="font-label text-label text-on-surface-variant uppercase tracking-wider">Client Information</h2>
+<div class="flex items-center gap-md bg-surface-container-low p-md rounded-lg border border-surface-variant">
+<div class="w-16 h-16 rounded-full overflow-hidden shrink-0 border-2 border-surface bg-surface-variant flex items-center justify-center">
+<img alt="Avatar of Sarah Wijaya" class="w-full h-full object-cover" data-alt="A professional headshot of a young Southeast Asian woman, Sarah Wijaya. She has a warm, approachable smile and is wearing a neat, light-colored blouse. The lighting is soft and natural, typical of a modern clinical profile picture, set against a neutral, slightly warm-toned background. The overall aesthetic is clean, professional, and consistent with a light-mode clinical UI." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDubranMqP_6ZcvatEEGdpkNV739fzua2pHe0cBPvoEn6HlXUeFmwoCsJz4iyTO77cU_f2TMTbQ7ohTArHZhw6_vPSZGa8Uoo9s3RqUT82uaS6AtlwKJSPTW4_9kyhfXzJFRTB2_nwfXysqi0ch52DttHPtX6GUitH8fFEEnkGmvqnRMRR6RPFpf4m5CwExqBow54VghukCO2-TGTkSOdYs46tsFHvtTdsHZWvOvr2at_ortDNtkXT4mLyA7tLVASSJGobuIpCtcADU"/>
+</div>
+<div class="flex flex-col flex-1">
+<div class="flex items-center justify-between w-full">
+<h3 class="font-h2 text-h2 text-on-surface">Sarah Wijaya</h3>
+<span class="font-label text-label bg-secondary-container/20 text-on-secondary-container px-sm py-xs rounded-full">ID: KLN-2026-0042</span>
+</div>
+<div class="flex flex-col gap-xs mt-sm">
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[16px]" data-icon="mail">mail</span>
+<span>sarah.wijaya@example.com</span>
+</div>
+<div class="flex items-center gap-sm text-on-surface-variant font-body text-body">
+<span class="material-symbols-outlined text-[16px]" data-icon="phone">phone</span>
+<span>+62 812 3456 7890</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Session Info Section -->
+<section class="flex flex-col gap-md">
+<h2 class="font-label text-label text-on-surface-variant uppercase tracking-wider">Session Details</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+<!-- Date -->
+<div class="flex flex-col gap-xs p-md bg-surface-container-lowest border border-outline-variant rounded-lg">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]" data-icon="calendar_today">calendar_today</span>
+                            Date
+                        </span>
+<span class="font-body-semibold text-body-semibold text-on-surface">Monday, 2 June 2026</span>
+</div>
+<!-- Time -->
+<div class="flex flex-col gap-xs p-md bg-surface-container-lowest border border-outline-variant rounded-lg">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+                            Time
+                        </span>
+<span class="font-body-semibold text-body-semibold text-on-surface">09:00 - 10:00</span>
+</div>
+<!-- Service -->
+<div class="flex flex-col gap-xs p-md bg-surface-container-lowest border border-outline-variant rounded-lg">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]" data-icon="psychology">psychology</span>
+                            Service
+                        </span>
+<span class="font-body-semibold text-body-semibold text-on-surface">Konseling Individual</span>
+</div>
+<!-- Professional -->
+<div class="flex flex-col gap-xs p-md bg-surface-container-lowest border border-outline-variant rounded-lg">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]" data-icon="badge">badge</span>
+                            Professional
+                        </span>
+<span class="font-body-semibold text-body-semibold text-on-surface">Dr. Anita Kusuma</span>
+</div>
+</div>
+</section>
+<!-- Notes Section -->
+<section class="flex flex-col gap-md">
+<h2 class="font-label text-label text-on-surface-variant uppercase tracking-wider">Notes</h2>
+<div class="p-md bg-surface-container border border-surface-variant rounded-lg">
+<p class="font-body text-body text-on-surface">First session consultation. Client expressed anxiety regarding recent career changes. Recommended standard 60-minute evaluation protocol.</p>
+</div>
+</section>
+</div>
+<!-- Modal Footer Actions -->
+<div class="p-lg border-t border-outline-variant bg-surface flex justify-end items-center gap-md">
+<button class="h-[40px] px-lg rounded-lg border border-outline text-on-surface font-body-semibold text-body-semibold hover:bg-surface-container-high transition-colors">
+                Reject
+            </button>
+<button class="h-[40px] px-lg rounded-lg bg-primary text-on-primary font-body-semibold text-body-semibold hover:bg-primary/90 transition-colors shadow-sm">
+                Approve
+            </button>
+</div>
+</div>
+</body></html>

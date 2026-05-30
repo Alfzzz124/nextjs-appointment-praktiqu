@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Intervention Plan Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#351000",
+                      "primary-container": "#5046e5",
+                      "on-surface": "#1b1b24",
+                      "on-error": "#ffffff",
+                      "on-surface-variant": "#464555",
+                      "secondary-container": "#8792fe",
+                      "outline": "#777587",
+                      "error-container": "#ffdad6",
+                      "surface-variant": "#e4e1ee",
+                      "inverse-primary": "#c3c0ff",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "surface-container": "#f0ecf9",
+                      "surface-dim": "#dcd8e5",
+                      "outline-variant": "#c7c4d8",
+                      "on-primary-fixed-variant": "#3422cc",
+                      "on-error-container": "#93000a",
+                      "surface-container-highest": "#e4e1ee",
+                      "on-secondary-container": "#17228f",
+                      "on-secondary-fixed": "#000767",
+                      "on-primary-container": "#dbd8ff",
+                      "error": "#ba1a1a",
+                      "tertiary": "#7e3000",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "on-background": "#1b1b24",
+                      "surface-container-low": "#f6f2ff",
+                      "primary-fixed": "#e2dfff",
+                      "secondary-fixed-dim": "#bdc2ff",
+                      "on-tertiary-container": "#ffd2c0",
+                      "inverse-on-surface": "#f3effc",
+                      "surface-bright": "#fcf8ff",
+                      "secondary-fixed": "#e0e0ff",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-lowest": "#ffffff",
+                      "secondary": "#4953bc",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "surface-container-high": "#eae6f4",
+                      "on-secondary-fixed-variant": "#2f3aa3",
+                      "on-primary-fixed": "#0f0069",
+                      "inverse-surface": "#302f39",
+                      "background": "#fcf8ff",
+                      "tertiary-fixed": "#ffdbcc",
+                      "tertiary-container": "#a54100",
+                      "surface": "#fcf8ff",
+                      "surface-tint": "#4e44e3",
+                      "on-primary": "#ffffff",
+                      "primary": "#3625cd",
+                      "on-secondary": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "base": "4px",
+                      "xl": "32px",
+                      "gutter": "24px",
+                      "md": "16px",
+                      "sm": "8px",
+                      "margin": "24px",
+                      "xs": "4px",
+                      "lg": "24px"
+              },
+              "fontFamily": {
+                      "small": ["Inter"],
+                      "label": ["Inter"],
+                      "body": ["Inter"],
+                      "h1": ["Inter"],
+                      "display": ["Inter"],
+                      "body-semibold": ["Inter"],
+                      "h2": ["Inter"],
+                      "h1-mobile": ["Inter"]
+              },
+              "fontSize": {
+                      "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                      "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                      "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                      "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                      "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                      "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                      "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                      "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Custom progress ring animation */
+        @keyframes drawRing {
+            to { stroke-dashoffset: 125.6; } /* 50% of 251.2 */
+        }
+        .progress-ring-circle {
+            transition: stroke-dashoffset 1s ease-out;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            stroke-dasharray: 251.2; /* 2 * pi * r (r=40) */
+            stroke-dashoffset: 251.2;
+            animation: drawRing 1s ease-out forwards;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen pb-xl flex flex-col">
+<!-- TopAppBar (Shared Component) -->
+<!-- Applying structural constraint: Shell Border Ban implies avoiding solid contrasting borders, using subtle JSON styles -->
+<header class="w-full top-0 sticky z-40 bg-surface border-b border-outline-variant shadow-sm flex items-center justify-between px-margin py-sm">
+<div class="flex items-center gap-md">
+<button class="text-primary hover:bg-surface-container-high transition-colors active:opacity-70 p-sm rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<!-- Header Typography Anchor applied -->
+<h1 class="text-h1-mobile font-h1-mobile text-primary md:text-h1 md:font-h1 font-extrabold tracking-tight">PraktiQU</h1>
+</div>
+<button class="text-primary hover:bg-surface-container-high transition-colors active:opacity-70 p-sm rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">account_circle</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<!-- BottomNavBar suppressed per rule: Sub-page featuring a 'Back' action -->
+<main class="flex-1 w-full max-w-[1200px] mx-auto px-md md:px-margin pt-lg md:pt-xl pb-24">
+<!-- Header Section -->
+<div class="mb-lg">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-md mb-sm">
+<div>
+<span class="inline-flex items-center gap-1 bg-surface-container-high text-on-surface-variant font-label text-label px-3 py-1 rounded-full mb-3">
+<span class="material-symbols-outlined text-[14px]">neurology</span>
+                        Intervention Plan
+                    </span>
+<h2 class="text-display font-display text-on-surface">CBT for Anxiety Management</h2>
+</div>
+<div class="flex items-center gap-2 bg-inverse-on-surface px-4 py-2 rounded-lg border border-outline-variant/30">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+<span class="text-body-semibold font-body-semibold text-on-surface">In Progress</span>
+</div>
+</div>
+<p class="text-body font-body text-on-surface-variant max-w-3xl">Structured cognitive behavioral therapy protocol aimed at identifying and reframing anxiety-inducing thought patterns.</p>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-margin">
+<!-- Progress Summary Card (Col Span 4) -->
+<div class="md:col-span-4 bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-lg flex flex-col items-center justify-center relative overflow-hidden border border-outline-variant/30">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary-container/5 rounded-bl-full -z-10"></div>
+<h3 class="text-h2 font-h2 text-on-surface self-start mb-auto">Session Progress</h3>
+<div class="relative w-40 h-40 flex items-center justify-center my-lg">
+<!-- Background Ring -->
+<svg class="w-full h-full absolute" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="40" stroke="#f0ecf9" stroke-width="8"></circle>
+</svg>
+<!-- Progress Ring (50% = 4/8) -->
+<svg class="w-full h-full absolute" viewbox="0 0 100 100">
+<circle class="progress-ring-circle" cx="50" cy="50" fill="none" r="40" stroke="#5046e5" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<!-- Center Text -->
+<div class="flex flex-col items-center text-center">
+<span class="text-display font-display text-on-surface leading-none">4<span class="text-h2 text-on-surface-variant">/8</span></span>
+<span class="text-small font-small text-on-surface-variant mt-1">Completed</span>
+</div>
+</div>
+<p class="text-body font-body text-on-surface-variant text-center mt-auto w-full pt-4 border-t border-surface-variant">
+                    Next session scheduled for <strong class="text-on-surface">Oct 24</strong>
+</p>
+</div>
+<!-- Timeline Card (Col Span 8) -->
+<div class="md:col-span-8 bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-lg border border-outline-variant/30 flex flex-col">
+<h3 class="text-h2 font-h2 text-on-surface mb-lg flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">timeline</span>
+                    Technique Application Timeline
+                </h3>
+<div class="flex-1 relative">
+<!-- Vertical Line -->
+<div class="absolute left-[19px] top-2 bottom-6 w-[2px] bg-surface-variant rounded-full"></div>
+<ul class="space-y-6 relative z-10">
+<!-- Completed Item 1 -->
+<li class="flex gap-md group">
+<div class="w-10 h-10 rounded-full bg-primary-container/10 flex items-center justify-center shrink-0 border border-primary-container/20 group-hover:bg-primary-container/20 transition-colors">
+<span class="material-symbols-outlined icon-fill text-[20px] text-primary-container">check_circle</span>
+</div>
+<div class="flex-1 pt-2">
+<div class="flex justify-between items-start mb-1">
+<h4 class="text-body-semibold font-body-semibold text-on-surface">Psychoeducation &amp; Goal Setting</h4>
+<span class="text-small font-small text-on-surface-variant">Session 1</span>
+</div>
+<p class="text-small font-small text-on-surface-variant">Established baseline anxiety metrics and introduced CBT model.</p>
+</div>
+</li>
+<!-- Completed Item 2 -->
+<li class="flex gap-md group">
+<div class="w-10 h-10 rounded-full bg-primary-container/10 flex items-center justify-center shrink-0 border border-primary-container/20 group-hover:bg-primary-container/20 transition-colors">
+<span class="material-symbols-outlined icon-fill text-[20px] text-primary-container">check_circle</span>
+</div>
+<div class="flex-1 pt-2">
+<div class="flex justify-between items-start mb-1">
+<h4 class="text-body-semibold font-body-semibold text-on-surface">Diaphragmatic Breathing</h4>
+<span class="text-small font-small text-on-surface-variant">Session 2</span>
+</div>
+<p class="text-small font-small text-on-surface-variant">Practiced physiological down-regulation techniques.</p>
+</div>
+</li>
+<!-- Completed Item 3 -->
+<li class="flex gap-md group">
+<div class="w-10 h-10 rounded-full bg-primary-container/10 flex items-center justify-center shrink-0 border border-primary-container/20 group-hover:bg-primary-container/20 transition-colors">
+<span class="material-symbols-outlined icon-fill text-[20px] text-primary-container">check_circle</span>
+</div>
+<div class="flex-1 pt-2">
+<div class="flex justify-between items-start mb-1">
+<h4 class="text-body-semibold font-body-semibold text-on-surface">Cognitive Restructuring</h4>
+<span class="text-small font-small text-on-surface-variant">Session 3 &amp; 4</span>
+</div>
+<p class="text-small font-small text-on-surface-variant">Identifying catastrophic thoughts and challenging cognitive distortions.</p>
+</div>
+</li>
+<!-- Upcoming Item -->
+<li class="flex gap-md group opacity-70 hover:opacity-100 transition-opacity">
+<div class="w-10 h-10 rounded-full bg-surface flex items-center justify-center shrink-0 border-2 border-outline border-dashed">
+<span class="material-symbols-outlined text-[20px] text-outline">radio_button_unchecked</span>
+</div>
+<div class="flex-1 pt-2">
+<div class="flex justify-between items-start mb-1">
+<h4 class="text-body-semibold font-body-semibold text-on-surface">Cognitive Defusion</h4>
+<span class="text-label font-label text-primary bg-primary/10 px-2 py-0.5 rounded">Upcoming</span>
+</div>
+<p class="text-small font-small text-on-surface-variant">Techniques to detach from unhelpful thoughts rather than challenging them directly.</p>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<!-- Add Recommendation Section (Col Span 12) -->
+<div class="md:col-span-12 bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-lg border border-outline-variant/30">
+<h3 class="text-h2 font-h2 text-on-surface mb-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant">note_add</span>
+                    Clinical Recommendations
+                </h3>
+<p class="text-body font-body text-on-surface-variant mb-md">Log specific homework assignments or technique adjustments for the patient file.</p>
+<div class="flex flex-col sm:flex-row gap-sm items-end">
+<div class="flex-1 w-full">
+<label class="block text-small font-small text-on-surface-variant font-bold mb-1" for="recommendation">Add Recommendation</label>
+<input class="w-full bg-surface-bright border border-outline-variant rounded-lg px-4 py-2 text-body font-body text-on-surface focus:outline-none focus:border-secondary-container focus:ring-2 focus:ring-secondary-container/20 transition-all h-10" id="recommendation" placeholder="e.g., Practice 4-7-8 breathing twice daily..." type="text"/>
+</div>
+<button class="h-10 bg-surface-container text-on-surface px-6 py-2 rounded-lg text-body-semibold font-body-semibold border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center gap-2 w-full sm:w-auto justify-center">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        Add
+                    </button>
+</div>
+</div>
+<!-- Global Action Bar -->
+<div class="md:col-span-12 mt-md flex justify-end">
+<button class="bg-primary-container text-on-primary-container h-10 px-8 rounded-lg text-body-semibold font-body-semibold shadow-sm hover:shadow-md hover:bg-primary transition-all flex items-center justify-center gap-2 w-full md:w-auto active:scale-95">
+<span class="material-symbols-outlined text-[20px]">done_all</span>
+                    Mark Plan as Complete
+                </button>
+</div>
+</div>
+</main>
+</body></html>

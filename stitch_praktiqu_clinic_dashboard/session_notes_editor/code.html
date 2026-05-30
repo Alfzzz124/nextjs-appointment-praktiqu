@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Session Notes - Sarah Wijaya</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#351000",
+                      "primary-container": "#5046e5",
+                      "on-surface": "#1b1b24",
+                      "on-error": "#ffffff",
+                      "on-surface-variant": "#464555",
+                      "secondary-container": "#8792fe",
+                      "outline": "#777587",
+                      "error-container": "#ffdad6",
+                      "surface-variant": "#e4e1ee",
+                      "inverse-primary": "#c3c0ff",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "surface-container": "#f0ecf9",
+                      "surface-dim": "#dcd8e5",
+                      "outline-variant": "#c7c4d8",
+                      "on-primary-fixed-variant": "#3422cc",
+                      "on-error-container": "#93000a",
+                      "surface-container-highest": "#e4e1ee",
+                      "on-secondary-container": "#17228f",
+                      "on-secondary-fixed": "#000767",
+                      "on-primary-container": "#dbd8ff",
+                      "error": "#ba1a1a",
+                      "tertiary": "#7e3000",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "on-background": "#1b1b24",
+                      "surface-container-low": "#f6f2ff",
+                      "primary-fixed": "#e2dfff",
+                      "secondary-fixed-dim": "#bdc2ff",
+                      "on-tertiary-container": "#ffd2c0",
+                      "inverse-on-surface": "#f3effc",
+                      "surface-bright": "#fcf8ff",
+                      "secondary-fixed": "#e0e0ff",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-lowest": "#ffffff",
+                      "secondary": "#4953bc",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "surface-container-high": "#eae6f4",
+                      "on-secondary-fixed-variant": "#2f3aa3",
+                      "on-primary-fixed": "#0f0069",
+                      "inverse-surface": "#302f39",
+                      "background": "#fcf8ff",
+                      "tertiary-fixed": "#ffdbcc",
+                      "tertiary-container": "#a54100",
+                      "surface": "#fcf8ff",
+                      "surface-tint": "#4e44e3",
+                      "on-primary": "#ffffff",
+                      "primary": "#3625cd",
+                      "on-secondary": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "base": "4px",
+                      "xl": "32px",
+                      "gutter": "24px",
+                      "md": "16px",
+                      "sm": "8px",
+                      "margin": "24px",
+                      "xs": "4px",
+                      "lg": "24px"
+              },
+              "fontFamily": {
+                      "small": [
+                              "Inter"
+                      ],
+                      "label": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "display": [
+                              "Inter"
+                      ],
+                      "body-semibold": [
+                              "Inter"
+                      ],
+                      "h2": [
+                              "Inter"
+                      ],
+                      "h1-mobile": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "small": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h1": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display": [
+                              "30px",
+                              {
+                                      "lineHeight": "38px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-semibold": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h2": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h1-mobile": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body w-full min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface border-b border-outline-variant shadow-sm z-50">
+<div class="flex items-center justify-between px-margin py-sm w-full">
+<button class="text-primary hover:bg-surface-container-high transition-colors active:opacity-70 p-sm rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-h1-mobile">arrow_back</span>
+</button>
+<h1 class="text-h1-mobile font-h1-mobile text-primary">PraktiQU</h1>
+<button class="text-primary hover:bg-surface-container-high transition-colors active:opacity-70 p-sm rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-h1-mobile">account_circle</span>
+</button>
+</div>
+</header>
+<main class="w-full max-w-[1200px] mx-auto px-md md:px-gutter py-margin flex flex-col gap-lg">
+<!-- Header Section -->
+<section class="bg-surface rounded-xl shadow-sm border border-outline-variant p-md flex flex-col gap-sm">
+<div class="flex justify-between items-start">
+<div>
+<h2 class="text-h2 font-h2 text-on-surface">Sarah Wijaya</h2>
+<p class="text-body font-body text-on-surface-variant">ID: KLN-2026-0042</p>
+</div>
+<div class="bg-primary-container bg-opacity-10 px-sm py-xs rounded-full">
+<span class="text-label font-label text-primary">Session #5</span>
+</div>
+</div>
+<div class="flex gap-md text-small font-small text-on-surface-variant mt-sm">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span>
+<span>May 27, 2026</span>
+</div>
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+<span>14:00 - 15:00</span>
+</div>
+</div>
+</section>
+<!-- SOAP Editor -->
+<section class="flex flex-col gap-md">
+<!-- Subjective -->
+<div class="flex flex-col gap-sm">
+<label class="text-label font-label text-on-surface" for="subjective">Subjective</label>
+<textarea class="w-full rounded-lg border border-outline-variant bg-surface p-sm text-body font-body text-on-surface focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] transition-colors resize-y" id="subjective" placeholder="Client statements and subjective observations..." rows="3">Client reports feeling less anxious overall this week, but mentioned experiencing two occasional panic attacks during high-stress situations at work. States she tried the breathing exercises with moderate success.</textarea>
+</div>
+<!-- Objective -->
+<div class="flex flex-col gap-sm">
+<label class="text-label font-label text-on-surface" for="objective">Objective</label>
+<textarea class="w-full rounded-lg border border-outline-variant bg-surface p-sm text-body font-body text-on-surface focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] transition-colors resize-y" id="objective" placeholder="Observable, measurable data..." rows="3">Client appeared calm and engaged during the session. Posture was relaxed. Speech was clear and pace was normal. No visible signs of distress when discussing the workplace incidents.</textarea>
+</div>
+<!-- Assessment -->
+<div class="flex flex-col gap-sm">
+<label class="text-label font-label text-on-surface" for="assessment">Assessment</label>
+<textarea class="w-full rounded-lg border border-outline-variant bg-surface p-sm text-body font-body text-on-surface focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] transition-colors resize-y" id="assessment" placeholder="Clinical analysis and synthesis..." rows="3">Client is making steady progress with generalized anxiety. The CBT techniques are showing positive effect, though acute stress still triggers panic responses. Insight into her own triggers is improving.</textarea>
+</div>
+<!-- Plan -->
+<div class="flex flex-col gap-sm">
+<label class="text-label font-label text-on-surface" for="plan">Plan</label>
+<textarea class="w-full rounded-lg border border-outline-variant bg-surface p-sm text-body font-body text-on-surface focus:border-[#818CF8] focus:ring-1 focus:ring-[#818CF8] transition-colors resize-y" id="plan" placeholder="Next steps, interventions, homework..." rows="3">1. Continue CBT focusing on workplace triggers.
+2. Review and practice advanced grounding techniques for panic onset.
+3. Homework: Maintain anxiety journal specifically noting context around workplace stress.
+4. Next session scheduled for June 10, 2026.</textarea>
+</div>
+</section>
+</main>
+<!-- Footer Actions -->
+<footer class="fixed bottom-0 w-full bg-surface border-t border-outline-variant shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] p-md flex flex-col gap-sm z-50">
+<div class="flex items-center justify-center gap-xs text-small font-small text-on-surface-variant">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+<span>Draft • Last saved: 5 min ago</span>
+</div>
+<div class="flex gap-md">
+<button class="flex-1 h-10 rounded-lg border border-outline-variant bg-surface text-body-semibold font-body-semibold text-on-surface hover:bg-surface-container-low transition-colors flex items-center justify-center">
+                Save Draft
+            </button>
+<button class="flex-1 h-10 rounded-lg bg-[#5046E5] text-body-semibold font-body-semibold text-on-primary hover:bg-primary transition-colors flex items-center justify-center shadow-sm">
+                Finalize Note
+            </button>
+</div>
+</footer>
+</body></html>

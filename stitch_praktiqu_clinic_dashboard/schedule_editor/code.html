@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Edit Schedule - Dr. Anita Kusuma</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "surface-container": "#f0ecf9",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "background": "#fcf8ff",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#5046e5",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface": "#fcf8ff",
+                        "on-secondary-fixed": "#000767",
+                        "secondary": "#4953bc",
+                        "inverse-surface": "#302f39",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-surface": "#1b1b24",
+                        "tertiary": "#7e3000",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#8792fe",
+                        "outline-variant": "#c7c4d8",
+                        "inverse-on-surface": "#f3effc",
+                        "on-tertiary-fixed": "#351000",
+                        "primary": "#3625cd",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "tertiary-container": "#a54100",
+                        "surface-variant": "#e4e1ee",
+                        "on-background": "#1b1b24",
+                        "surface-container-low": "#f6f2ff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "surface-container-high": "#eae6f4",
+                        "on-tertiary-container": "#ffd2c0",
+                        "surface-tint": "#4e44e3",
+                        "on-primary-container": "#dbd8ff",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "surface-bright": "#fcf8ff",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-secondary-container": "#17228f",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "sm": "8px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "xs": "4px",
+                        "base": "4px",
+                        "margin": "24px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "h2": ["Inter"],
+                        "small": ["Inter"],
+                        "label": ["Inter"],
+                        "display": ["Inter"],
+                        "body": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-semibold": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #5046E5;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #5046E5;
+        }
+        .toggle-checkbox:checked + .toggle-label:after {
+            transform: translateX(100%);
+            border-color: white;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body min-h-screen flex flex-col md:flex-row">
+<!-- SideNavBar (Web) -->
+<nav class="hidden lg:flex flex-col p-md border-r border-outline-variant bg-surface-container-low fixed left-0 top-0 h-full w-[260px] z-40">
+<div class="mb-xl px-sm">
+<h1 class="font-h2 text-h2 font-bold text-primary">PraktiQU</h1>
+<p class="font-small text-small text-on-surface-variant">Clinical Suite</p>
+</div>
+<div class="flex-1 space-y-sm">
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="font-body-semibold text-body-semibold">Dashboard</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg bg-primary-container text-on-primary-container translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">calendar_today</span>
+<span class="font-body-semibold text-body-semibold">Sessions</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">group</span>
+<span class="font-body-semibold text-body-semibold">Clients</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">clinical_notes</span>
+<span class="font-body-semibold text-body-semibold">Professionals</span>
+</a>
+</div>
+<div class="mt-auto space-y-sm pt-xl border-t border-outline-variant">
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+<span class="font-body-semibold text-body-semibold">Settings</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help</span>
+<span class="font-body-semibold text-body-semibold">Help</span>
+</a>
+</div>
+</nav>
+<!-- TopNavBar (Web) - Contextual header for the task -->
+<header class="hidden lg:flex justify-between items-center px-lg h-16 w-full ml-[260px] bg-surface shadow-sm sticky top-0 z-30">
+<div class="flex items-center gap-md">
+<button class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div>
+<h1 class="font-h1 text-h1 text-on-surface">Edit Schedule</h1>
+<p class="font-small text-small text-on-surface-variant">Dr. Anita Kusuma</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<button class="font-body-semibold text-body-semibold px-md py-sm rounded-lg border border-outline text-on-surface hover:bg-surface-container-high transition-colors h-[40px]">
+                Cancel
+            </button>
+<button class="font-body-semibold text-body-semibold px-md py-sm rounded-lg bg-primary text-on-primary hover:opacity-90 transition-opacity shadow-sm h-[40px]">
+                Save Changes
+            </button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 lg:ml-[260px] w-full max-w-[1200px] mx-auto p-md lg:p-xl space-y-xl pb-32 lg:pb-xl">
+<!-- Mobile Header (Visible only on mobile) -->
+<header class="lg:hidden flex justify-between items-center mb-md sticky top-0 bg-background z-20 py-sm">
+<div class="flex items-center gap-sm">
+<button class="p-xs text-on-surface-variant">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div>
+<h1 class="font-h1-mobile text-h1-mobile text-on-surface">Edit Schedule</h1>
+<p class="font-small text-small text-on-surface-variant">Dr. Anita Kusuma</p>
+</div>
+</div>
+<button class="font-label text-label px-sm py-xs rounded bg-primary text-on-primary">
+                Save
+            </button>
+</header>
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-lg">
+<!-- Left Column: Weekly Schedule & Time Slots -->
+<div class="xl:col-span-2 space-y-lg">
+<!-- Weekly Schedule Card -->
+<section class="bg-surface-container-lowest rounded-xl p-lg shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-outline-variant/30">
+<div class="mb-md pb-sm border-b border-surface-variant flex justify-between items-center">
+<h2 class="font-h2 text-h2 text-on-surface">Weekly Schedule</h2>
+<span class="font-small text-small text-on-surface-variant">Select active days and periods</span>
+</div>
+<div class="space-y-md">
+<!-- Day Row 1: Monday -->
+<div class="flex flex-col sm:flex-row sm:items-center gap-sm sm:gap-md p-sm rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between sm:w-32">
+<span class="font-body-semibold text-body-semibold text-on-surface">Monday</span>
+<div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+<input checked="" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="toggle-mon" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-surface-variant cursor-pointer" for="toggle-mon"></label>
+</div>
+</div>
+<div class="flex flex-wrap gap-sm flex-1">
+<button class="px-sm py-xs rounded border border-primary bg-primary-container/20 text-primary font-label text-label">Morning</button>
+<button class="px-sm py-xs rounded border border-primary bg-primary-container/20 text-primary font-label text-label">Afternoon</button>
+<button class="px-sm py-xs rounded border border-outline-variant text-on-surface-variant font-label text-label hover:bg-surface-container-high">Evening</button>
+</div>
+</div>
+<!-- Day Row 2: Tuesday -->
+<div class="flex flex-col sm:flex-row sm:items-center gap-sm sm:gap-md p-sm rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between sm:w-32">
+<span class="font-body-semibold text-body-semibold text-on-surface">Tuesday</span>
+<div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+<input checked="" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="toggle-tue" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-surface-variant cursor-pointer" for="toggle-tue"></label>
+</div>
+</div>
+<div class="flex flex-wrap gap-sm flex-1">
+<button class="px-sm py-xs rounded border border-primary bg-primary-container/20 text-primary font-label text-label">Morning</button>
+<button class="px-sm py-xs rounded border border-outline-variant text-on-surface-variant font-label text-label hover:bg-surface-container-high">Afternoon</button>
+<button class="px-sm py-xs rounded border border-outline-variant text-on-surface-variant font-label text-label hover:bg-surface-container-high">Evening</button>
+</div>
+</div>
+<!-- Day Row 3: Wednesday -->
+<div class="flex flex-col sm:flex-row sm:items-center gap-sm sm:gap-md p-sm rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between sm:w-32">
+<span class="font-body-semibold text-body-semibold text-on-surface">Wednesday</span>
+<div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+<input class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="toggle-wed" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-surface-variant cursor-pointer" for="toggle-wed"></label>
+</div>
+</div>
+<div class="flex flex-wrap gap-sm flex-1 opacity-50 pointer-events-none">
+<button class="px-sm py-xs rounded border border-outline-variant text-on-surface-variant font-label text-label">Morning</button>
+<button class="px-sm py-xs rounded border border-outline-variant text-on-surface-variant font-label text-label">Afternoon</button>
+<button class="px-sm py-xs rounded border border-outline-variant text-on-surface-variant font-label text-label">Evening</button>
+</div>
+</div>
+<!-- Day Row 4: Thursday -->
+<div class="flex flex-col sm:flex-row sm:items-center gap-sm sm:gap-md p-sm rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between sm:w-32">
+<span class="font-body-semibold text-body-semibold text-on-surface">Thursday</span>
+<div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+<input checked="" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="toggle-thu" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-surface-variant cursor-pointer" for="toggle-thu"></label>
+</div>
+</div>
+<div class="flex flex-wrap gap-sm flex-1">
+<button class="px-sm py-xs rounded border border-primary bg-primary-container/20 text-primary font-label text-label">Morning</button>
+<button class="px-sm py-xs rounded border border-primary bg-primary-container/20 text-primary font-label text-label">Afternoon</button>
+<button class="px-sm py-xs rounded border border-primary bg-primary-container/20 text-primary font-label text-label">Evening</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Time Slots Card -->
+<section class="bg-surface-container-lowest rounded-xl p-lg shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-outline-variant/30">
+<div class="mb-md pb-sm border-b border-surface-variant flex justify-between items-center">
+<h2 class="font-h2 text-h2 text-on-surface">Time Slots Configuration</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-md mb-lg">
+<div>
+<label class="block font-label text-label text-on-surface mb-xs">Slot Duration</label>
+<select class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest">
+<option>30 min</option>
+<option selected="">50 min</option>
+<option>60 min</option>
+<option>90 min</option>
+</select>
+</div>
+<div>
+<label class="block font-label text-label text-on-surface mb-xs">Gap Between Slots</label>
+<select class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest">
+<option>0 min</option>
+<option>5 min</option>
+<option selected="">10 min</option>
+<option>15 min</option>
+</select>
+</div>
+</div>
+<div class="space-y-md">
+<h3 class="font-body-semibold text-body-semibold text-on-surface border-b border-surface-variant pb-xs">Period Boundaries</h3>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-md items-center">
+<span class="font-body text-body text-on-surface-variant">Morning</span>
+<div>
+<input class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest" type="time" value="08:00"/>
+</div>
+<div>
+<input class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest" type="time" value="12:00"/>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-md items-center">
+<span class="font-body text-body text-on-surface-variant">Afternoon</span>
+<div>
+<input class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest" type="time" value="13:00"/>
+</div>
+<div>
+<input class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest" type="time" value="17:00"/>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-md items-center">
+<span class="font-body text-body text-on-surface-variant">Evening</span>
+<div>
+<input class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest" type="time" value="18:00"/>
+</div>
+<div>
+<input class="w-full border border-outline-variant rounded-lg px-md py-sm text-body font-body focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface-container-lowest" type="time" value="21:00"/>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Column: Blocking -->
+<div class="space-y-lg">
+<section class="bg-surface-container-lowest rounded-xl p-lg shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-outline-variant/30">
+<div class="mb-md pb-sm border-b border-surface-variant flex justify-between items-center">
+<h2 class="font-h2 text-h2 text-on-surface">Time Blocking</h2>
+</div>
+<p class="font-small text-small text-on-surface-variant mb-md">Block specific dates or times for vacations, conferences, or administrative work.</p>
+<div class="space-y-sm mb-md">
+<!-- Blocked item 1 -->
+<div class="bg-surface-container-low border border-outline-variant rounded-lg p-sm flex justify-between items-start">
+<div>
+<p class="font-body-semibold text-body-semibold text-on-surface">Annual Conference</p>
+<p class="font-small text-small text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">calendar_month</span> Jun 5 - Jun 7
+                                </p>
+</div>
+<button class="text-error hover:bg-error-container p-xs rounded transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+<button class="w-full flex items-center justify-center gap-sm font-body-semibold text-body-semibold px-md py-sm rounded-lg border border-primary text-primary hover:bg-primary-container/10 transition-colors h-[40px]">
+<span class="material-symbols-outlined">add</span> Add Block
+                    </button>
+</section>
+<!-- Quick Summary Card -->
+<section class="bg-primary-container/10 rounded-xl p-lg border border-primary/20">
+<h3 class="font-body-semibold text-body-semibold text-primary mb-xs">Schedule Impact</h3>
+<p class="font-body text-body text-on-surface-variant mb-sm">With these settings, your typical week will generate approximately:</p>
+<div class="flex items-end gap-xs">
+<span class="font-display text-display text-on-surface">32</span>
+<span class="font-body text-body text-on-surface-variant pb-1">slots / week</span>
+</div>
+</section>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="lg:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 pb-safe bg-surface shadow-[0_-1px_3px_rgba(0,0,0,0.1)] rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors w-16 py-1" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-mobile text-label-mobile">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">event</span>
+<span class="font-label-mobile text-label-mobile">Sessions</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors w-16 py-1" href="#">
+<span class="material-symbols-outlined">person_search</span>
+<span class="font-label-mobile text-label-mobile">Clients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors w-16 py-1" href="#">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-label-mobile text-label-mobile">Profile</span>
+</a>
+</nav>
+</body></html>

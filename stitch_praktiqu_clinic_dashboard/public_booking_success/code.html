@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Booking Success - PraktiQU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container-low": "#f6f2ff",
+                      "primary-fixed": "#e2dfff",
+                      "primary-container": "#5046e5",
+                      "outline-variant": "#c7c4d8",
+                      "tertiary-fixed-dim": "#ffb695",
+                      "surface-variant": "#e4e1ee",
+                      "background": "#fcf8ff",
+                      "inverse-on-surface": "#f3effc",
+                      "error": "#ba1a1a",
+                      "surface-container": "#f0ecf9",
+                      "on-secondary-fixed-variant": "#2f3aa3",
+                      "on-tertiary-fixed": "#351000",
+                      "on-primary": "#ffffff",
+                      "surface-dim": "#dcd8e5",
+                      "surface-container-highest": "#e4e1ee",
+                      "on-secondary-container": "#17228f",
+                      "on-primary-fixed-variant": "#3422cc",
+                      "on-error-container": "#93000a",
+                      "on-primary-container": "#dbd8ff",
+                      "surface": "#fcf8ff",
+                      "error-container": "#ffdad6",
+                      "secondary-container": "#8792fe",
+                      "on-secondary-fixed": "#000767",
+                      "surface-container-lowest": "#ffffff",
+                      "on-primary-fixed": "#0f0069",
+                      "inverse-primary": "#c3c0ff",
+                      "surface-tint": "#4e44e3",
+                      "on-tertiary": "#ffffff",
+                      "on-background": "#1b1b24",
+                      "secondary-fixed-dim": "#bdc2ff",
+                      "on-error": "#ffffff",
+                      "on-tertiary-container": "#ffd2c0",
+                      "surface-container-high": "#eae6f4",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "secondary-fixed": "#e0e0ff",
+                      "on-tertiary-fixed-variant": "#7b2f00",
+                      "primary": "#3625cd",
+                      "outline": "#777587",
+                      "tertiary": "#7e3000",
+                      "inverse-surface": "#302f39",
+                      "on-surface": "#1b1b24",
+                      "on-secondary": "#ffffff",
+                      "tertiary-container": "#a54100",
+                      "surface-bright": "#fcf8ff",
+                      "secondary": "#4953bc",
+                      "tertiary-fixed": "#ffdbcc",
+                      "on-surface-variant": "#464555"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "md": "16px",
+                      "sm": "8px",
+                      "gutter": "24px",
+                      "xl": "32px",
+                      "lg": "24px",
+                      "base": "4px",
+                      "xs": "4px",
+                      "margin": "24px"
+              },
+              "fontFamily": {
+                      "body-semibold": ["Inter"],
+                      "small": ["Inter"],
+                      "display": ["Inter"],
+                      "body": ["Inter"],
+                      "h1": ["Inter"],
+                      "h2": ["Inter"],
+                      "h1-mobile": ["Inter"],
+                      "label": ["Inter"]
+              },
+              "fontSize": {
+                      "body-semibold": ["14px", {"lineHeight": "20px", "fontWeight": "600"}],
+                      "small": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "display": ["30px", {"lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "body": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "h1": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "h2": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "h1-mobile": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "label": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        .animate-pop-in {
+            animation: popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background min-h-screen flex items-center justify-center p-md font-body text-body text-on-background">
+<main class="w-full max-w-[480px] flex flex-col gap-xl">
+<!-- Header Section -->
+<div class="flex flex-col items-center text-center gap-md">
+<div class="w-24 h-24 rounded-full bg-[#E6F4EA] text-[#137333] flex items-center justify-center shadow-sm animate-pop-in mb-sm">
+<span class="material-symbols-outlined" style="font-size: 48px; font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<h1 class="font-display text-display text-on-surface">Your Session is Booked!</h1>
+<p class="font-body text-body text-on-surface-variant max-w-[320px] mx-auto">
+                You will receive a notification once Dr. Anita approves your session request.
+            </p>
+</div>
+<!-- Details Card -->
+<div class="bg-surface rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_rgba(0,0,0,0.06)] p-lg flex flex-col gap-md border border-outline-variant/30 relative overflow-hidden">
+<!-- Decorative Accent -->
+<div class="absolute top-0 left-0 w-full h-1 bg-primary"></div>
+<div class="flex justify-between items-center pb-sm border-b border-surface-variant">
+<span class="font-label text-label text-on-surface-variant uppercase tracking-wider">Confirmation #</span>
+<span class="font-body-semibold text-body-semibold text-on-surface">SBK-2026-0089</span>
+</div>
+<div class="flex items-center gap-sm">
+<span class="inline-flex items-center gap-xs px-2 py-1 rounded-full bg-tertiary-container/10 text-tertiary font-label text-label">
+<span class="material-symbols-outlined text-[14px]">pending_actions</span>
+                    Waiting for Approval
+                </span>
+</div>
+<div class="flex flex-col gap-sm mt-sm">
+<div class="flex items-start gap-md">
+<span class="material-symbols-outlined text-outline mt-xs">person</span>
+<div>
+<p class="font-small text-small text-on-surface-variant">Provider</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Dr. Anita Kusuma</p>
+</div>
+</div>
+<div class="flex items-start gap-md">
+<span class="material-symbols-outlined text-outline mt-xs">spa</span>
+<div>
+<p class="font-small text-small text-on-surface-variant">Service</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Konseling Individual</p>
+</div>
+</div>
+<div class="flex items-start gap-md">
+<span class="material-symbols-outlined text-outline mt-xs">calendar_today</span>
+<div>
+<p class="font-small text-small text-on-surface-variant">Date &amp; Time</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Tuesday, June 3, 2026</p>
+<p class="font-body text-body text-on-surface">14:00 - 15:00</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex flex-col gap-md mt-sm">
+<div class="grid grid-cols-2 gap-sm">
+<button class="h-10 rounded-lg border border-outline-variant bg-surface text-on-surface font-body-semibold text-body-semibold flex items-center justify-center gap-sm hover:bg-surface-container-low transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[18px]">calendar_month</span>
+                    Google Calendar
+                </button>
+<button class="h-10 rounded-lg border border-outline-variant bg-surface text-on-surface font-body-semibold text-body-semibold flex items-center justify-center gap-sm hover:bg-surface-container-low transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[18px]">event</span>
+                    iCal/Outlook
+                </button>
+</div>
+<button class="h-10 rounded-lg bg-primary text-on-primary font-body-semibold text-body-semibold flex items-center justify-center w-full hover:opacity-90 transition-opacity mt-sm shadow-sm">
+                Back to Home
+            </button>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Client Card Component States</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#93000a",
+                        "outline": "#777587",
+                        "on-surface": "#1b1b24",
+                        "on-tertiary-fixed": "#351000",
+                        "on-surface-variant": "#464555",
+                        "surface": "#fcf8ff",
+                        "secondary-container": "#8792fe",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary-fixed": "#0f0069",
+                        "on-error": "#ffffff",
+                        "tertiary-container": "#a54100",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "inverse-on-surface": "#f3effc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "primary-fixed": "#e2dfff",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#dcd8e5",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-secondary-fixed": "#000767",
+                        "surface-bright": "#fcf8ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container": "#f0ecf9",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed": "#e0e0ff",
+                        "on-background": "#1b1b24",
+                        "inverse-surface": "#302f39",
+                        "tertiary": "#7e3000",
+                        "background": "#fcf8ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "on-primary-container": "#dbd8ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "secondary": "#4953bc",
+                        "primary": "#3625cd",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "surface-tint": "#4e44e3",
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#eae6f4",
+                        "primary-container": "#5046e5",
+                        "on-secondary-container": "#17228f",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin": "24px",
+                        "lg": "24px",
+                        "gutter": "24px",
+                        "sm": "8px",
+                        "xl": "32px",
+                        "xs": "4px",
+                        "md": "16px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "label": ["Inter"],
+                        "small": ["Inter"],
+                        "h1-mobile": ["Inter"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body min-h-screen flex flex-col md:flex-row">
+<!-- TopAppBar for Mobile -->
+<header class="md:hidden flex items-center justify-between px-lg h-16 w-full max-w-7xl mx-auto bg-surface dark:bg-surface-dim border-b border-outline-variant dark:border-outline shadow-sm docked full-width top-0 z-50">
+<div class="flex items-center gap-sm">
+<img alt="Clinician Profile" class="w-8 h-8 rounded-full border border-outline-variant" data-alt="A small, circular avatar portrait of a professional clinician looking directly at the camera with a neutral, welcoming expression. The lighting is soft and flattering, typical of a modern professional headshot." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgCcDbg4r3CK7eQmF3wcC0LIW-5VkiIx-ynKKHXvjI3892TyNsQAFbtYdxh4EZFN99eDa0HWa8vc1ALfOe20eO2asAzXocyOwlDl43PMOG-M9vQciUbSID459pz514Mv-8NIWGoaaYIh5aEKW1NiR-DrOVoci13xNrByMm14QO2v74ry1lbAjxnsz-kjKsQFtIYO-Hi4Df7Ea_6x6CEOrvZrkFh3cO44n3i_gDnObUd2VjlUg5XiMWZ4oK48fZmATU1gYf4jy7eYP3"/>
+<span class="font-h1-mobile text-h1-mobile text-primary dark:text-primary-fixed-dim tracking-tight">PraktiQU</span>
+</div>
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" data-icon="settings">settings</span>
+</header>
+<!-- NavigationDrawer for Desktop -->
+<nav class="hidden lg:flex flex-col p-lg gap-sm h-full bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline fixed left-0 top-0 h-full w-[260px]">
+<div class="mb-lg flex flex-col gap-sm">
+<div class="flex items-center gap-sm">
+<img alt="Clinician Avatar" class="w-12 h-12 rounded-full border border-outline-variant" data-alt="A small, circular avatar portrait of a professional clinician looking directly at the camera with a neutral, welcoming expression." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrFxmEqpOAY04LyDjlxLQJfEYVA4qSEdX9RTqJQONYTKFWZoRoVuyX5QYO4JndRyBwKbo-nRuPGs8fcCWKeXg4zlw4I2u3Dhe7u_J7LeLRs4xbt9saZKqjC3vjytFXP075El8Og8Wfw-BWf1hSbIgvuifhAuepLF3_K7oDPqBKeoSpbaTK8L344nDrTv7TqEVjh8Hr8B37_hqtin6aRqg1UURmJ4mvMpAEi34hCBrPXCbShjizClpk-08om7VwyOKeYI_t1_cbPF5U"/>
+<div>
+<h2 class="font-h2 text-h2 text-primary dark:text-primary-fixed-dim">Dr. Miller</h2>
+<p class="font-label text-label text-on-surface-variant">Clinical Lead</p>
+</div>
+</div>
+<p class="font-small text-small text-on-surface-variant">Clinic ID: 8821</p>
+</div>
+<a class="text-on-surface-variant dark:text-outline flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface rounded-lg active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label text-label">Dashboard</span>
+</a>
+<a class="bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-lg font-body-semibold flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label text-label">Clients</span>
+</a>
+<a class="text-on-surface-variant dark:text-outline flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface rounded-lg active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="person_add">person_add</span>
+<span class="font-label text-label">Registration</span>
+</a>
+<a class="text-on-surface-variant dark:text-outline flex items-center gap-md px-md py-sm hover:bg-surface-container-highest dark:hover:bg-inverse-surface rounded-lg active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label text-label">Settings</span>
+</a>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 lg:ml-[260px] p-md lg:p-xl w-full max-w-[1200px] mx-auto pb-[80px] lg:pb-xl">
+<header class="mb-lg lg:mb-xl">
+<h1 class="font-display text-display text-on-surface">Client Directory</h1>
+<p class="font-body text-body text-on-surface-variant mt-sm">Manage and view client states and details.</p>
+</header>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-md lg:gap-lg">
+<!-- State 1: Active/Signed Client -->
+<article class="bg-surface border border-outline-variant rounded-xl p-md shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col gap-sm hover:shadow-[0px_2px_6px_rgba(0,0,0,0.15)] transition-shadow duration-200">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-md">
+<img alt="Sarah Wijaya" class="w-12 h-12 rounded-full border border-outline-variant" data-alt="A portrait of a young woman with a warm smile, intended to represent a client in a clinical application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8sRpMs-DeQVQj_ywD3McU1FRfaB7M_bx5ECAkVQG63MTjLHrwOdB7cSFAYvjx2k28DCkGxQCqtzcNEHy5rxhN2MHVWM6Fe-VF-qbib-4ZZDeoSWh9hpL_axI9K0s-PmtLMFu1if_lWX75SalMzUnsTQxJ3KcopG0aqWJkAohFnvDrfB-bShjL1lNRGMNDm1jmZkt95GdvvanUUgWzkXmIsEzF6igu37hsr9ejCB52LDoL2c--NTISZS0TPGTDPHPCf1YEbN1BeTrY"/>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Sarah Wijaya</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-10492</p>
+</div>
+</div>
+<span class="bg-[#e6f4ea] text-[#137333] font-label text-label px-2 py-1 rounded-full flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+                        Active
+                    </span>
+</div>
+<div class="mt-sm grid grid-cols-2 gap-sm border-t border-surface-container-high pt-sm">
+<div>
+<p class="font-small text-small text-outline">Last Session</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Oct 12, 2023</p>
+</div>
+<div>
+<p class="font-small text-small text-outline">Next Appt</p>
+<p class="font-body-semibold text-body-semibold text-primary">Oct 26, 2023</p>
+</div>
+</div>
+</article>
+<!-- State 2: Pending Consent (Warning) -->
+<article class="bg-surface border border-outline-variant rounded-xl p-md shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col gap-sm hover:shadow-[0px_2px_6px_rgba(0,0,0,0.15)] transition-shadow duration-200">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center text-on-surface-variant font-h2 text-h2">BS</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Budi Santoso</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-10501</p>
+</div>
+</div>
+<span class="bg-[#fef7e0] text-[#b06000] font-label text-label px-2 py-1 rounded-full flex items-center gap-1 border border-[#fbbc04]">
+<span class="material-symbols-outlined text-[14px]" data-icon="warning">warning</span>
+                        Consent Pending
+                    </span>
+</div>
+<div class="mt-sm border-t border-surface-container-high pt-sm bg-[#fff8e1] -mx-md px-md pb-xs rounded-b-xl">
+<p class="font-small text-small text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-[#b06000]" data-icon="info">info</span>
+                        Action required before next session.
+                    </p>
+<button class="mt-xs text-primary font-label text-label hover:underline">Resend Forms</button>
+</div>
+</article>
+<!-- State 3: New Client / No Sessions -->
+<article class="bg-surface border border-outline-variant rounded-xl p-md shadow-[0px_1px_3px_rgba(0,0,0,0.1)] flex flex-col gap-sm hover:shadow-[0px_2px_6px_rgba(0,0,0,0.15)] transition-shadow duration-200 opacity-80">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-md">
+<img alt="New Client" class="w-12 h-12 rounded-full border border-outline-variant grayscale" data-alt="A portrait of a person representing a new client, slightly desaturated to indicate a new or pending status." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAW1HalZSUmiI-zEzyjwAMSXE_zZvvCt2EjSQzNrt8d4I4x3U6eVWIorPNWa6VBpfUJBP5d-ECWxJL6RCtMAy8MLybj0rCEWyBRkISr_qqBRnbiglvLqSotw7MeCyTOfPhjfyhHxjAYCc9hS_AWNoXBUQSJ0RNz0YoS51UlPehS6g9rUqTzrdP5A6B1bTQLKtkVKk42ArhTS24TC2Yg4fbAGV0lr-a_hUxYZlz8u7CJnSzEJDZRAS5VI-3tjaA6WQxEPGjHSMvVWH0o"/>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Liam O'Connor</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-10555</p>
+</div>
+</div>
+<span class="bg-surface-variant text-on-surface-variant font-label text-label px-2 py-1 rounded-full flex items-center gap-1">
+                        New
+                    </span>
+</div>
+<div class="mt-sm flex items-center justify-center border-t border-surface-container-high pt-sm border-dashed">
+<p class="font-small text-small text-outline italic">No sessions recorded yet.</p>
+</div>
+</article>
+<!-- State 4: Hover/Selected State -->
+<article class="bg-surface-container-low border-2 border-primary-container rounded-xl p-md shadow-[0px_2px_6px_rgba(80,70,229,0.2)] flex flex-col gap-sm relative overflow-hidden cursor-pointer">
+<div class="absolute top-0 right-0 w-8 h-8 bg-primary-container rounded-bl-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-[18px]" data-icon="check">check</span>
+</div>
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-md">
+<img alt="Selected Client" class="w-12 h-12 rounded-full border border-outline-variant" data-alt="A portrait of a selected client, bright and clear, indicating active focus." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDTYvVkNZmQwECd-Ej-GKcvo0X66lR_QgSH4maj9pRFrxGzdzbMEGvest6NV5vGbtX0zMaPNFqIws7r4ti0IZ2RmB0ff-LvZJ-bu1g0mTmgpBiRmDvcNXv8qHByZTplO97pTogL5I_3_1QSJR18bHAlt4AflIdqSrWXitseTjyvhRoRfJqqVATRP1Q-0D2t-IzE05SwRNDNXdtKZIqs2JLPeb5kQSI1vI9ID10MZ80aDoAx0IEs_PR8X3vM4gkV7zv1TYmhQwO_-BPL"/>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Priya Patel</h3>
+<p class="font-small text-small text-on-surface-variant">ID: PT-10332</p>
+</div>
+</div>
+</div>
+<div class="mt-sm flex gap-sm border-t border-surface-container-high pt-sm">
+<button class="flex-1 bg-primary-container text-on-primary font-label text-label h-10 rounded-lg hover:bg-primary transition-colors">
+                        View Profile
+                    </button>
+<button class="w-10 h-10 border border-outline-variant rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+</article>
+</div>
+</main>
+<!-- BottomNavBar for Mobile -->
+<nav class="md:hidden fixed bottom-0 w-full z-50 rounded-t-xl bg-surface dark:bg-surface-container-highest shadow-[0px_-1px_3px_rgba(0,0,0,0.1)] flex justify-around items-center px-4 py-3 pb-safe">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-mobile text-label-mobile">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-full px-4 py-1 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label-mobile text-label-mobile">Clients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span class="font-label-mobile text-label-mobile">Add</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline px-4 py-1 hover:bg-surface-variant dark:hover:bg-inverse-surface active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-mobile text-label-mobile">Settings</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard - PraktiQU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-secondary-container": "#17228f",
+                        "outline": "#777587",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "secondary-container": "#8792fe",
+                        "primary": "#3625cd",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-on-surface": "#f3effc",
+                        "error-container": "#ffdad6",
+                        "on-background": "#1b1b24",
+                        "surface-container": "#f0ecf9",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "on-tertiary-fixed": "#351000",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-container-low": "#f6f2ff",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "surface": "#fcf8ff",
+                        "on-tertiary-container": "#ffd2c0",
+                        "outline-variant": "#c7c4d8",
+                        "secondary": "#4953bc",
+                        "surface-container-high": "#eae6f4",
+                        "on-error-container": "#93000a",
+                        "primary-fixed": "#e2dfff",
+                        "on-surface-variant": "#464555",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "inverse-surface": "#302f39",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "background": "#fcf8ff",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-secondary-fixed": "#000767",
+                        "primary-container": "#5046e5",
+                        "tertiary": "#7e3000",
+                        "inverse-primary": "#c3c0ff",
+                        "surface-tint": "#4e44e3",
+                        "surface-dim": "#dcd8e5",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "error": "#ba1a1a",
+                        "on-primary-container": "#dbd8ff",
+                        "tertiary-container": "#a54100",
+                        "surface-variant": "#e4e1ee",
+                        "surface-bright": "#fcf8ff",
+                        "on-surface": "#1b1b24"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "xl": "32px",
+                        "md": "16px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h1": ["Inter"],
+                        "small": ["Inter"],
+                        "display": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body h-screen flex overflow-hidden">
+<!-- SideNavBar -->
+<nav class="hidden lg:flex flex-col p-md border-r border-outline-variant bg-surface-container-low w-[260px] h-full flex-shrink-0 z-10 relative">
+<div class="flex items-center gap-3 mb-xl px-2">
+<div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-h2">
+                P
+            </div>
+<div>
+<h1 class="font-h2 text-h2 font-bold text-primary">PraktiQU</h1>
+<p class="font-small text-small text-on-surface-variant">Clinical Suite</p>
+</div>
+</div>
+<div class="flex-1 space-y-sm">
+<a class="flex items-center gap-3 px-md py-sm bg-primary-container text-on-primary-container rounded-lg group transition-all translate-x-1" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-body-semibold text-body-semibold">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-md py-sm text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span class="font-body-semibold text-body-semibold">Sessions</span>
+</a>
+<a class="flex items-center gap-3 px-md py-sm text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-body-semibold text-body-semibold">Clients</span>
+</a>
+<a class="flex items-center gap-3 px-md py-sm text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined" data-icon="clinical_notes">clinical_notes</span>
+<span class="font-body-semibold text-body-semibold">Professionals</span>
+</a>
+</div>
+<div class="mt-auto space-y-sm border-t border-outline-variant pt-md">
+<a class="flex items-center gap-3 px-md py-sm text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-body-semibold text-body-semibold">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-md py-sm text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 rounded-lg group" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="font-body-semibold text-body-semibold">Help</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col h-full overflow-hidden relative">
+<!-- TopNavBar (Web) -->
+<header class="bg-surface shadow-sm docked full-width top-0 z-20 hidden md:flex justify-between items-center px-lg h-16 w-full">
+<div class="flex-1 max-w-[1440px] mx-auto flex justify-between items-center w-full">
+<div class="flex items-center lg:hidden">
+<span class="font-h2 text-h2 font-bold text-primary">PraktiQU</span>
+</div>
+<div class="hidden lg:block">
+<!-- Search bar hidden per JSON -->
+</div>
+<div class="flex items-center gap-sm">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high transition-colors rounded-full active:opacity-80 active:scale-95">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high transition-colors rounded-full active:opacity-80 active:scale-95">
+<span class="material-symbols-outlined" data-icon="apps">apps</span>
+</button>
+<div class="ml-sm w-8 h-8 rounded-full bg-surface-variant overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all">
+<img alt="Provider profile picture" class="w-full h-full object-cover" data-alt="A close-up headshot of a female medical professional wearing light blue scrubs, smiling warmly against a bright, sterile white background. Soft, diffused lighting highlights a modern, clinical, trustworthy aesthetic consistent with high-end healthcare platforms." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBv9qGMOeQK063AO9YayomJ1ZymGBLp43ALNwDK0pM_doEDyMFRwOUbhWMmgRJdVoH-Nn78Fd8wGik4Q7YYYApXWx8yE7AxqQJ6HNHj-z-QAKzreRb1z-ZJPvLSOSFNuU9xdBZ8QNZaqwS9w7Krw2nLfbXvdrulWkDe94zei6UMejS3YAHlsNnXPq-sR6b5UGIjiBWTUCxSGHLvyv9xeZjekGj0kJI7Wa_-WW3kFsrM3St4073-K9woBdDris4RFb8JgT7YoIUJx38R"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Top Header Mobile -->
+<header class="md:hidden flex justify-between items-center p-md bg-surface border-b border-outline-variant z-20">
+<span class="font-h1-mobile text-h1-mobile font-bold text-primary">PraktiQU</span>
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden">
+<img alt="Provider profile picture" class="w-full h-full object-cover" data-alt="A close-up headshot of a female medical professional wearing light blue scrubs, smiling warmly against a bright, sterile white background. Soft, diffused lighting highlights a modern, clinical, trustworthy aesthetic consistent with high-end healthcare platforms." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNrZ9oy2HeX2gppTuijBrygqgGnLyiGm8-NXXZkeusD20VdqOfI95BMx7C57tQgq_wQlJ_We8LyXxH5_nrOvRbF8I_gFxs8O0a2AVvTpp2zsoDL-rrgp5ZWeNvtyerrFxR_Vvk_ASIKkrEOJO5cFifsrMcjm39sqVr19mCERCGHnvDWS4xzuezb6scqHgs6dkX-EK0I3WOG2UUH39-UD9rW1mJxfSvjSNrqJPGzJiDIheGuf8IhtR5HUNxPZXybfl_UDaMuCDIMsoN"/>
+</div>
+</header>
+<!-- Scrollable Canvas -->
+<div class="flex-1 overflow-y-auto p-md md:p-lg pb-24 lg:pb-lg">
+<div class="max-w-[1200px] mx-auto w-full space-y-lg">
+<!-- Welcome Section -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+<div>
+<h2 class="font-h1 text-h1 text-on-surface">Good morning, Dr. Sarah</h2>
+<p class="font-body text-body text-on-surface-variant mt-1">Here is your overview for today.</p>
+</div>
+<button class="bg-primary-container text-on-primary hover:bg-primary transition-colors h-10 px-4 rounded-lg font-body-semibold text-body-semibold flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                        New Client
+                    </button>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-lg">
+<!-- Stats Overview (Empty State) -->
+<div class="md:col-span-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md">
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary-fixed-dim transition-all">
+<div class="flex justify-between items-start">
+<p class="font-label text-label text-on-surface-variant">Today's Sessions</p>
+<span class="material-symbols-outlined text-outline" data-icon="calendar_month">calendar_month</span>
+</div>
+<p class="font-display text-display text-on-surface mt-2">0</p>
+<p class="font-small text-small text-on-surface-variant mt-1">No sessions scheduled</p>
+</div>
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary-fixed-dim transition-all">
+<div class="flex justify-between items-start">
+<p class="font-label text-label text-on-surface-variant">Active Clients</p>
+<span class="material-symbols-outlined text-outline" data-icon="group">group</span>
+</div>
+<p class="font-display text-display text-on-surface mt-2">--</p>
+<p class="font-small text-small text-on-surface-variant mt-1">Awaiting data</p>
+</div>
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary-fixed-dim transition-all">
+<div class="flex justify-between items-start">
+<p class="font-label text-label text-on-surface-variant">Pending Tasks</p>
+<span class="material-symbols-outlined text-outline" data-icon="assignment">assignment</span>
+</div>
+<p class="font-display text-display text-on-surface mt-2">0</p>
+<p class="font-small text-small text-on-surface-variant mt-1">All caught up</p>
+</div>
+<div class="bg-surface rounded-xl p-md shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] border border-transparent hover:border-primary-fixed-dim transition-all">
+<div class="flex justify-between items-start">
+<p class="font-label text-label text-on-surface-variant">Unread Messages</p>
+<span class="material-symbols-outlined text-outline" data-icon="mail">mail</span>
+</div>
+<p class="font-display text-display text-on-surface mt-2">0</p>
+<p class="font-small text-small text-on-surface-variant mt-1">Inbox zero</p>
+</div>
+</div>
+<!-- Upcoming Sessions Empty State -->
+<div class="md:col-span-8 bg-surface rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] flex flex-col h-[400px]">
+<div class="p-md border-b border-surface-container-high flex justify-between items-center">
+<h3 class="font-h2 text-h2 text-on-surface">Upcoming Sessions</h3>
+<button class="text-primary hover:text-primary-container font-label text-label transition-colors">View Calendar</button>
+</div>
+<div class="flex-1 flex flex-col items-center justify-center p-lg text-center">
+<div class="w-48 h-48 mb-6 relative">
+<!-- Abstract empty state illustration via CSS to avoid bloat, mimicking a clinical clipboard/calendar -->
+<div class="absolute inset-0 bg-surface-container rounded-2xl border-2 border-outline-variant/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-6xl text-outline-variant" data-icon="event_busy">event_busy</span>
+</div>
+<div class="absolute -right-4 -bottom-4 w-16 h-16 bg-primary-container rounded-full border-4 border-surface flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-on-primary-container" data-icon="add">add</span>
+</div>
+</div>
+<h4 class="font-h2 text-h2 text-on-surface mb-2">No sessions today</h4>
+<p class="font-body text-body text-on-surface-variant mb-6 max-w-sm">Get started by booking your first session.</p>
+<button class="bg-primary-container text-on-primary hover:bg-primary transition-colors h-10 px-6 rounded-lg font-body-semibold text-body-semibold shadow-sm">
+                                Book Session
+                            </button>
+</div>
+</div>
+<!-- Quick Actions -->
+<div class="md:col-span-4 bg-surface rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] flex flex-col h-[400px]">
+<div class="p-md border-b border-surface-container-high">
+<h3 class="font-h2 text-h2 text-on-surface">Quick Actions</h3>
+</div>
+<div class="p-md flex-1 flex flex-col gap-sm">
+<button class="flex items-center gap-4 p-4 rounded-lg border border-outline-variant/50 hover:border-primary hover:bg-surface-container-low transition-all text-left group">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 text-secondary flex items-center justify-center group-hover:bg-secondary-container group-hover:text-on-secondary-container transition-colors">
+<span class="material-symbols-outlined" data-icon="person_add">person_add</span>
+</div>
+<div>
+<p class="font-body-semibold text-body-semibold text-on-surface">Add New Client</p>
+<p class="font-small text-small text-on-surface-variant">Create a new patient profile</p>
+</div>
+</button>
+<button class="flex items-center gap-4 p-4 rounded-lg border border-outline-variant/50 hover:border-primary hover:bg-surface-container-low transition-all text-left group">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 text-secondary flex items-center justify-center group-hover:bg-secondary-container group-hover:text-on-secondary-container transition-colors">
+<span class="material-symbols-outlined" data-icon="edit_document">edit_document</span>
+</div>
+<div>
+<p class="font-body-semibold text-body-semibold text-on-surface">Create Note</p>
+<p class="font-small text-small text-on-surface-variant">Draft a new clinical note</p>
+</div>
+</button>
+<button class="flex items-center gap-4 p-4 rounded-lg border border-outline-variant/50 hover:border-primary hover:bg-surface-container-low transition-all text-left group mt-auto">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center group-hover:bg-primary-container group-hover:text-on-primary-container transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</div>
+<div>
+<p class="font-body-semibold text-body-semibold text-on-surface">Setup Clinic</p>
+<p class="font-small text-small text-on-surface-variant">Configure your workspace</p>
+</div>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="lg:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 pb-safe bg-surface shadow-[0_-1px_3px_rgba(0,0,0,0.1)] rounded-t-xl">
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-small text-small mt-1 font-semibold">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="event">event</span>
+<span class="font-small text-small mt-1">Sessions</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="person_search">person_search</span>
+<span class="font-small text-small mt-1">Clients</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span class="font-small text-small mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

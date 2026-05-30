@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Book Session - Client Information</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-container": "#5046e5",
+                        "primary": "#3625cd",
+                        "tertiary-container": "#a54100",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-container": "#f0ecf9",
+                        "surface": "#fcf8ff",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "tertiary": "#7e3000",
+                        "surface-bright": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-container-high": "#eae6f4",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary-container": "#dbd8ff",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "inverse-primary": "#c3c0ff",
+                        "secondary-container": "#8792fe",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "background": "#fcf8ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-secondary-container": "#17228f",
+                        "secondary": "#4953bc",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#4e44e3",
+                        "on-surface-variant": "#464555",
+                        "error-container": "#ffdad6"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "lg": "24px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "base": "4px",
+                        "gutter": "24px",
+                        "xs": "4px",
+                        "xl": "32px"
+                    },
+                    fontFamily: {
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "small": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    fontSize: {
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body text-body min-h-screen flex flex-col">
+<!-- TopAppBar (from JSON) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-md h-[64px] bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm transition-colors">
+<button class="text-primary hover:bg-surface-container-high transition-colors p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-h1-mobile text-h1-mobile font-semibold text-primary">Book Session</h1>
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">close</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto pt-[88px] pb-[100px] px-md md:px-lg max-w-[800px] mx-auto w-full">
+<!-- Progress Bar -->
+<div class="mb-8 space-y-2">
+<div class="flex justify-between items-center font-small text-small text-on-surface-variant">
+<span>Step 3 of 4</span>
+<span>75%</span>
+</div>
+<div class="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: 75%"></div>
+</div>
+</div>
+<!-- Headline -->
+<h2 class="font-display text-display text-on-surface mb-6">Client Information</h2>
+<!-- Toggle Switch -->
+<div class="flex bg-surface-container-highest p-1 rounded-lg mb-6">
+<button class="flex-1 bg-surface shadow-sm rounded-md py-2 px-4 font-body-semibold text-body-semibold text-on-surface text-center transition-all">Existing Client</button>
+<button class="flex-1 py-2 px-4 font-body-semibold text-body-semibold text-on-surface-variant text-center hover:text-on-surface transition-all">New Client</button>
+</div>
+<!-- Search Bar -->
+<div class="relative mb-6">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-10 pr-4 py-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface placeholder-outline focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all shadow-sm" placeholder="Search by name, email, or client ID..." type="text"/>
+</div>
+<!-- Result Card -->
+<div class="bg-surface border border-primary/30 shadow-[0px_1px_3px_rgba(0,0,0,0.1),_0px_1px_2px_rgba(0,0,0,0.06)] rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 relative overflow-hidden group cursor-pointer transition-all hover:shadow-md">
+<div class="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+<div class="flex items-center gap-4 z-10">
+<div class="w-12 h-12 rounded-full bg-surface-container-high overflow-hidden shrink-0 border border-outline-variant/30">
+<img alt="Sarah Wijaya Portrait" class="w-full h-full object-cover" data-alt="A professional headshot of an Asian woman in her early thirties, smiling warmly. She is wearing a dark, tailored blazer over a crisp white shirt, standing in a well-lit, modern office environment. The lighting is soft and natural, creating a trustworthy and approachable clinical aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAk_Oqayp8Ne61-ysnGkWiOj9CFJw6-snrj4MZlhz2lF7OaAHeITnQaDRESvyY1P7QjEndVVpeSXahcF7ViBI3peWAhb58siA-fDr4jS-zbxRMPH3s73PcJhEE8SFxt1-gmTNwpir7KWEGmABZLVLj47ZkWoSwrhuL4HW__tndC1UphcF1vDmi1YeBr5x_rmUj9JgCXRTIAIeK1vWBFOy3H7yzaxBoashBe4sDivWSuTmqwV2_SAenBQdtS8VtFLEqhW-WTum8XbPjx"/>
+</div>
+<div>
+<h3 class="font-body-semibold text-body-semibold text-on-surface">Sarah Wijaya</h3>
+<p class="font-small text-small text-on-surface-variant mt-0.5">ID: KLN-2026-0042</p>
+</div>
+</div>
+<div class="z-10">
+<span class="inline-flex items-center gap-1 bg-surface-tint/10 text-primary-container px-3 py-1.5 rounded-full font-label text-label border border-surface-tint/20">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+                    Consent: Signed
+                </span>
+</div>
+</div>
+<!-- Session Summary Card -->
+<div class="bg-surface-container-lowest border border-outline-variant shadow-[0px_1px_3px_rgba(0,0,0,0.1)] rounded-xl p-6 mb-6">
+<h3 class="font-h2 text-h2 text-on-surface mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-outline">receipt_long</span>
+                Session Summary
+            </h3>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
+<div class="space-y-1">
+<p class="font-small text-small text-outline">Date</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Tue, 3 June</p>
+</div>
+<div class="space-y-1">
+<p class="font-small text-small text-outline">Time</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">14:00 - 15:00</p>
+</div>
+<div class="space-y-1">
+<p class="font-small text-small text-outline">Professional</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Dr. Anita</p>
+</div>
+<div class="space-y-1">
+<p class="font-small text-small text-outline">Service</p>
+<p class="font-body-semibold text-body-semibold text-on-surface">Individual Therapy</p>
+</div>
+</div>
+<div class="mt-6 pt-4 border-t border-surface-variant flex justify-between items-center">
+<p class="font-body-semibold text-body-semibold text-on-surface-variant">Total</p>
+<p class="font-display text-display text-primary">Rp 250.000</p>
+</div>
+</div>
+<!-- Checkbox -->
+<label class="flex items-start gap-3 p-4 border border-outline-variant rounded-xl bg-surface-container-lowest cursor-pointer hover:bg-surface-container-low transition-colors group">
+<div class="relative flex items-center justify-center w-5 h-5 mt-0.5 shrink-0">
+<input class="peer appearance-none w-5 h-5 border-2 border-outline rounded-md checked:bg-primary checked:border-primary focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background transition-all cursor-pointer" type="checkbox"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[16px] pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+<span class="font-body text-body text-on-surface group-hover:text-on-background transition-colors">I confirm client has signed informed consent and is ready to proceed.</span>
+</label>
+</main>
+<!-- Contextual Sticky Footer (Replaces BottomNavBar for linear flow) -->
+<footer class="fixed bottom-0 left-0 w-full bg-surface border-t border-outline-variant p-4 z-40 shadow-[0px_-2px_10px_rgba(0,0,0,0.05)]">
+<div class="max-w-[800px] mx-auto flex justify-between items-center gap-4">
+<button class="px-6 h-[40px] border border-outline-variant text-on-surface font-body-semibold text-body-semibold rounded-lg hover:bg-surface-container-low transition-colors flex items-center justify-center min-w-[100px]">
+                Back
+            </button>
+<button class="flex-1 h-[40px] bg-[#5046E5] text-white font-body-semibold text-body-semibold rounded-lg hover:bg-primary transition-colors flex items-center justify-center gap-2 shadow-sm">
+                Confirm Booking
+                <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+</div>
+</footer>
+</body></html>

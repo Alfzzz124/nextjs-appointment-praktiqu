@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Intervention Plans</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#351000",
+                        "primary-container": "#5046e5",
+                        "on-surface": "#1b1b24",
+                        "on-error": "#ffffff",
+                        "on-surface-variant": "#464555",
+                        "secondary-container": "#8792fe",
+                        "outline": "#777587",
+                        "error-container": "#ffdad6",
+                        "surface-variant": "#e4e1ee",
+                        "inverse-primary": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "surface-container": "#f0ecf9",
+                        "surface-dim": "#dcd8e5",
+                        "outline-variant": "#c7c4d8",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "on-secondary-container": "#17228f",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-container": "#dbd8ff",
+                        "error": "#ba1a1a",
+                        "tertiary": "#7e3000",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-background": "#1b1b24",
+                        "surface-container-low": "#f6f2ff",
+                        "primary-fixed": "#e2dfff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-tertiary-container": "#ffd2c0",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-bright": "#fcf8ff",
+                        "secondary-fixed": "#e0e0ff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#4953bc",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "surface-container-high": "#eae6f4",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-primary-fixed": "#0f0069",
+                        "inverse-surface": "#302f39",
+                        "background": "#fcf8ff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "tertiary-container": "#a54100",
+                        "surface": "#fcf8ff",
+                        "surface-tint": "#4e44e3",
+                        "on-primary": "#ffffff",
+                        "primary": "#3625cd",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "xl": "32px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "sm": "8px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "small": ["Inter"],
+                        "label": ["Inter"],
+                        "body": ["Inter"],
+                        "h1": ["Inter"],
+                        "display": ["Inter"],
+                        "body-semibold": ["Inter"],
+                        "h2": ["Inter"],
+                        "h1-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "small": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-semibold": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "h1-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body antialiased min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
+<!-- Shared Component: TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim w-full top-0 sticky border-b border-outline-variant dark:border-outline shadow-sm flex items-center justify-between px-margin py-sm z-50">
+<button aria-label="Go back" class="material-symbols-outlined text-primary dark:text-primary-fixed-dim hover:bg-surface-container-high transition-colors active:opacity-70 p-2 -ml-2 rounded-full">
+            arrow_back
+        </button>
+<span class="text-h1-mobile font-h1-mobile text-primary dark:text-primary-container">
+            PraktiQU
+        </span>
+<button aria-label="Account profile" class="material-symbols-outlined text-primary dark:text-primary-fixed-dim hover:bg-surface-container-high transition-colors active:opacity-70 p-2 -mr-2 rounded-full">
+            account_circle
+        </button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 px-margin py-lg flex flex-col gap-margin pb-32">
+<!-- Contextual Header -->
+<section class="flex flex-col gap-base">
+<h1 class="text-h1-mobile font-h1-mobile text-on-surface">Intervention Plans</h1>
+<div class="flex items-center gap-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-small font-small">person</span>
+<span class="text-body-semibold font-body-semibold">Sarah Wijaya</span>
+</div>
+</section>
+<!-- Plans List -->
+<div class="flex flex-col gap-md">
+<!-- Active Plan Card -->
+<article class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/40 p-md flex flex-col gap-md relative overflow-hidden group hover:shadow-md transition-shadow">
+<!-- Active Indicator Accent -->
+<div class="absolute top-0 left-0 w-1.5 h-full bg-primary"></div>
+<header class="flex justify-between items-start gap-4">
+<h2 class="text-h2 font-h2 text-on-surface leading-tight">CBT for Anxiety Management</h2>
+<span class="px-3 py-1 rounded-full bg-primary-container text-on-primary-container text-small font-small whitespace-nowrap flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                        Active
+                    </span>
+</header>
+<div class="flex items-center gap-sm text-on-surface-variant text-small font-small">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span>
+<span>Started Apr 15, 2026</span>
+</div>
+<div class="flex flex-col gap-sm pt-sm border-t border-surface-variant">
+<div class="flex justify-between items-end text-label font-label">
+<span class="text-on-surface-variant">Session Progress</span>
+<span class="text-primary">4/8 (50%)</span>
+</div>
+<div aria-valuemax="100" aria-valuemin="0" aria-valuenow="50" class="w-full h-2.5 bg-surface-variant rounded-full overflow-hidden" role="progressbar">
+<div class="h-full bg-primary rounded-full transition-all duration-500 ease-out" style="width: 50%"></div>
+</div>
+</div>
+</article>
+<!-- Completed Plan Card -->
+<article class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/30 p-md flex flex-col gap-md opacity-85 hover:opacity-100 transition-opacity">
+<header class="flex justify-between items-start gap-4">
+<h2 class="text-body-semibold font-body-semibold text-on-surface">Grief Counseling</h2>
+<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant text-small font-small whitespace-nowrap">
+                        Completed
+                    </span>
+</header>
+<div class="flex items-center gap-sm text-on-surface-variant text-small font-small">
+<span class="material-symbols-outlined text-[16px]">event_available</span>
+<span>Completed Jan 2026</span>
+</div>
+</article>
+</div>
+</main>
+<!-- Floating Action Button -->
+<!-- Positioned for right-handed mobile use, semantic fit for adding an entity to a list -->
+<button aria-label="Add New Plan" class="fixed bottom-margin right-margin w-[56px] h-[56px] bg-primary text-on-primary rounded-xl shadow-lg flex items-center justify-center hover:bg-surface-tint active:scale-95 transition-all duration-200 z-40 focus:outline-none focus:ring-4 focus:ring-primary/30">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">add</span>
+</button>
+</body></html>

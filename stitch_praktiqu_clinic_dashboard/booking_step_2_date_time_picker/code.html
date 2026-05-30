@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Book Session - Select Date &amp; Time</title>
+<!-- Fonts & Icons -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "primary-container": "#5046e5",
+                        "primary": "#3625cd",
+                        "tertiary-container": "#a54100",
+                        "inverse-on-surface": "#f3effc",
+                        "surface-container": "#f0ecf9",
+                        "surface": "#fcf8ff",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "tertiary": "#7e3000",
+                        "surface-bright": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e4e1ee",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "inverse-surface": "#302f39",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-container-high": "#eae6f4",
+                        "secondary-fixed": "#e0e0ff",
+                        "surface-variant": "#e4e1ee",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f2ff",
+                        "outline-variant": "#c7c4d8",
+                        "on-tertiary-container": "#ffd2c0",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-primary-container": "#dbd8ff",
+                        "on-surface": "#1b1b24",
+                        "on-secondary-fixed": "#000767",
+                        "on-primary-fixed": "#0f0069",
+                        "outline": "#777587",
+                        "on-primary-fixed-variant": "#3422cc",
+                        "inverse-primary": "#c3c0ff",
+                        "secondary-container": "#8792fe",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "error": "#ba1a1a",
+                        "surface-dim": "#dcd8e5",
+                        "primary-fixed": "#e2dfff",
+                        "background": "#fcf8ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1b1b24",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-secondary-container": "#17228f",
+                        "secondary": "#4953bc",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#4e44e3",
+                        "on-surface-variant": "#464555",
+                        "error-container": "#ffdad6"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "lg": "24px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "margin": "24px",
+                        "base": "4px",
+                        "gutter": "24px",
+                        "xs": "4px",
+                        "xl": "32px",
+                        "safe": "env(safe-area-inset-bottom, 20px)"
+                    },
+                    fontFamily: {
+                        "h1": ["Inter", "sans-serif"],
+                        "display": ["Inter", "sans-serif"],
+                        "body-semibold": ["Inter", "sans-serif"],
+                        "h2": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"],
+                        "small": ["Inter", "sans-serif"],
+                        "h1-mobile": ["Inter", "sans-serif"]
+                    },
+                    fontSize: {
+                        "h1": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "display": ["30px", { lineHeight: "38px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "body-semibold": ["14px", { lineHeight: "20px", fontWeight: "600" }],
+                        "h2": ["20px", { lineHeight: "28px", fontWeight: "600" }],
+                        "body": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "label": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "600" }],
+                        "small": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+                        "h1-mobile": ["20px", { lineHeight: "28px", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar hiding for clean UI */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body antialiased pt-[64px] pb-[88px] min-h-screen flex flex-col items-center">
+<!-- TopAppBar (From JSON, modified structurally per instructions) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-md h-[64px] bg-surface border-b border-outline-variant shadow-sm transition-colors duration-200 max-w-[1200px] mx-auto right-0">
+<button aria-label="Go back" class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-h1-mobile text-h1-mobile text-primary font-semibold truncate px-4">Book Session</h1>
+<button aria-label="Close" class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="w-full max-w-[600px] mx-auto px-md py-lg flex-1 flex flex-col gap-lg">
+<!-- Progress Bar -->
+<div aria-label="Booking progress: Step 2 of 4" class="w-full">
+<div class="flex justify-between items-end mb-xs">
+<span class="font-label text-label text-on-surface-variant">Step 2 of 4</span>
+<span class="font-label text-label text-primary">50%</span>
+</div>
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full transition-all duration-500" style="width: 50%;"></div>
+</div>
+</div>
+<!-- Page Header -->
+<section>
+<h2 class="font-h1 text-h1 text-on-surface mb-sm">Select Date &amp; Time</h2>
+<p class="font-body text-body text-on-surface-variant">Choose an available slot for your session.</p>
+</section>
+<!-- Context Summary Card -->
+<section class="bg-surface-container-low rounded-xl p-md flex items-center gap-md border border-outline-variant/30">
+<div class="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined fill" data-icon="psychology" data-weight="fill">psychology</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-semibold text-body-semibold text-on-surface">Dr. Anita Kusuma</span>
+<span class="font-small text-small text-on-surface-variant">Individual Counseling</span>
+</div>
+</section>
+<!-- Calendar Component -->
+<section class="bg-surface-container-lowest rounded-xl shadow-[0px_1px_3px_rgba(0,0,0,0.1),_0px_1px_2px_rgba(0,0,0,0.06)] border border-outline-variant/50 p-md">
+<!-- Calendar Header -->
+<div class="flex items-center justify-between mb-md">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
+</button>
+<h3 class="font-body-semibold text-body-semibold text-on-surface">June 2026</h3>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<!-- Days of Week -->
+<div class="grid grid-cols-7 gap-1 mb-sm text-center">
+<div class="font-label text-label text-on-surface-variant">S</div>
+<div class="font-label text-label text-on-surface-variant">M</div>
+<div class="font-label text-label text-on-surface-variant">T</div>
+<div class="font-label text-label text-on-surface-variant">W</div>
+<div class="font-label text-label text-on-surface-variant">T</div>
+<div class="font-label text-label text-on-surface-variant">F</div>
+<div class="font-label text-label text-on-surface-variant">S</div>
+</div>
+<!-- Calendar Grid (Simulated for June 2026) -->
+<div class="grid grid-cols-7 gap-y-2 gap-x-1 justify-items-center">
+<!-- Empty slots for previous month -->
+<div class="w-8 h-8"></div>
+<!-- Days -->
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">1</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">2</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">3</div>
+<!-- Available & Selected Days -->
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary bg-surface-container hover:bg-primary-container hover:text-on-primary-container transition-colors">4</button>
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary bg-surface-container hover:bg-primary-container hover:text-on-primary-container transition-colors">5</button>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">6</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">7</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-on-primary bg-primary shadow-sm">8</button>
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary bg-surface-container hover:bg-primary-container hover:text-on-primary-container transition-colors">9</button>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">10</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary bg-surface-container hover:bg-primary-container hover:text-on-primary-container transition-colors">11</button>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">12</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">13</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">14</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">15</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary bg-surface-container hover:bg-primary-container hover:text-on-primary-container transition-colors">16</button>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">17</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">18</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full font-body-semibold text-body-semibold text-primary bg-surface-container hover:bg-primary-container hover:text-on-primary-container transition-colors">19</button>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">20</div>
+<!-- Assuming rest are unavailable for simplicity of mockup -->
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">21</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">22</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">23</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">24</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">25</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">26</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">27</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">28</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">29</div>
+<div class="w-8 h-8 flex items-center justify-center font-body text-body text-on-surface-variant opacity-30">30</div>
+</div>
+</section>
+<!-- Time Slots Component -->
+<section class="flex flex-col gap-md">
+<h3 class="font-body-semibold text-body-semibold text-on-surface">Available Time - June 8, 2026</h3>
+<div class="flex flex-col gap-sm">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]" data-icon="light_mode">light_mode</span> Morning
+                </span>
+<div class="flex flex-wrap gap-sm">
+<button class="px-md py-sm rounded-lg border border-outline-variant font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:text-primary transition-colors bg-surface-container-lowest">09:00</button>
+<button class="px-md py-sm rounded-lg border border-outline-variant font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:text-primary transition-colors bg-surface-container-lowest">11:00</button>
+</div>
+</div>
+<div class="flex flex-col gap-sm">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]" data-icon="partly_cloudy_day">partly_cloudy_day</span> Afternoon
+                </span>
+<div class="flex flex-wrap gap-sm">
+<button class="px-md py-sm rounded-lg border-2 border-primary bg-primary text-on-primary font-body-semibold text-body-semibold shadow-sm transition-colors">14:00</button>
+<button class="px-md py-sm rounded-lg border border-outline-variant font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:text-primary transition-colors bg-surface-container-lowest">16:00</button>
+</div>
+</div>
+<div class="flex flex-col gap-sm">
+<span class="font-label text-label text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]" data-icon="dark_mode">dark_mode</span> Evening
+                </span>
+<div class="flex flex-wrap gap-sm">
+<button class="px-md py-sm rounded-lg border border-outline-variant font-body-semibold text-body-semibold text-on-surface hover:border-primary hover:text-primary transition-colors bg-surface-container-lowest">18:00</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Sticky Footer Navigation (Replacing BottomNavBar for Transactional Flow) -->
+<footer class="fixed bottom-0 left-0 w-full z-50 bg-surface border-t border-outline-variant/50 px-md py-sm pb-safe flex justify-between gap-md items-center shadow-[0px_-2px_10px_rgba(0,0,0,0.05)] max-w-[1200px] mx-auto right-0">
+<button class="h-10 px-lg rounded-lg border border-outline font-body-semibold text-body-semibold text-on-surface hover:bg-surface-container transition-colors flex items-center justify-center">
+            Back
+        </button>
+<button class="h-10 px-lg rounded-lg bg-primary-container text-on-primary-container font-body-semibold text-body-semibold hover:bg-primary hover:text-on-primary transition-colors flex items-center justify-center flex-1 max-w-[200px]">
+            Continue
+        </button>
+</footer>
+</body></html>
