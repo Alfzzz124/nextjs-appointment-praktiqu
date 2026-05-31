@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp",
+      "headersHelper": "bash -c 'printf \"{\\\"Authorization\\\": \\\"Bearer %s\\\"}\" \"$GITHUB_TOKEN\"'"
+    },
+    "stitch": {
+      "command": "/home/ahmad/.claude/stitch-proxy.sh"
+    }
+  }
+}
