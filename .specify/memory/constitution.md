@@ -39,15 +39,22 @@ Breaking changes: `!` after type (e.g., `feat(auth)!: remove legacy login`)
 ### IV. TDD with E2E Validation
 
 **Unit/Integration Testing:**
-- Tests written BEFORE implementation
+- Tests written BEFORE implementation (Vitest)
 - Red-Green-Refactor cycle: Write failing test → Verify fails → Implement → Verify passes → Refactor
 - Coverage target: 80% for core modules
 
 **E2E Testing (Post-Implementation):**
-- Uses `@vercel/agent-browser`
-- Test plan required BEFORE coding E2E tests
-- Critical paths: Public booking flow, session approval, client registration, authentication
-- Results documented in `/docs/testing/e2e-results.md`
+- Agent-based execution (NOT script-based)
+- Test plan written in markdown (`/docs/testing/[feature]-e2e-plan.md`)
+- Each plan describes: preconditions, steps, expected results
+- Agent reads plan → executes via `@vercel/agent-browser`
+- Results documented in `/docs/testing/[feature]-e2e-results.md`
+
+**Critical Paths (must have E2E plan):**
+- Public booking flow (4-step wizard)
+- Session approval workflow
+- Client self-registration
+- Authentication (login/logout)
 
 ---
 
@@ -58,7 +65,7 @@ Every PR MUST pass:
 2. **Type Check**: TypeScript strict mode
 3. **Unit Tests**: `npm test` (Vitest)
 4. **Build**: `npm run build` (Next.js production build)
-5. **E2E Tests** (for affected paths): `npm run test:e2e`
+5. **E2E Tests**: Manual execution via agent based on test plan docs
 
 PR CANNOT be merged if any check fails.
 
@@ -115,25 +122,37 @@ DELETE /api/v1/sessions/:id   - Delete
 
 ## E2E Testing Standards
 
-**Test Structure (Hybrid)**:
+**Test Plan Structure** (Markdown files):
 ```
-/tests/e2e
-  /flows/              # User journeys
-    client-booking-flow.spec.ts
-    session-approval-flow.spec.ts
-  /critical-pages/    # Important pages
-    dashboard-admin.spec.ts
-```
-
-**Test Data**: Deterministic database seed before each test run
-```bash
-npm run test:e2e:seed    # Reset DB
-npm run test:e2e         # Run tests
+/docs/testing/
+  auth-e2e-plan.md        # Authentication test plan
+  booking-e2e-plan.md      # Booking flow test plan
+  auth-e2e-results.md     # Authentication results
+  booking-e2e-results.md  # Booking flow results
 ```
 
-**Execution**: Full E2E suite on every PR (evolve to smart CI + nightly later)
+**Test Plan Format**:
+```markdown
+# [Feature] E2E Test Plan
 
-**Reporting**: Playwright HTML reports with screenshots/videos/traces
+## Preconditions
+- User logged out
+- Clean session state
+
+## Test Scenario 1: [Title]
+1. Go to `/login`
+2. Enter email `test@example.com`
+3. Enter password `Test123`
+4. Click login button
+5. Expect: Redirect to `/dashboard`
+
+## Expected Results
+- User logged in successfully
+- Session cookie set
+- Redirect to correct page
+```
+
+**Execution**: Agent reads plan → executes via `@vercel/agent-browser` → documents results
 
 ---
 
@@ -183,8 +202,9 @@ praktiQU/
 ├── prisma/               # Database schema & migrations
 ├── tests/
 │   ├── unit/             # Vitest unit tests
-│   ├── integration/     # API integration tests
-│   └── e2e/              # agent-browser E2E tests
+│   └── integration/     # API integration tests
+├── docs/
+│   └── testing/         # E2E test plans & results (markdown)
 ├── stitch_praktiqu_clinic_dashboard/  # Stitch design files
 ├── docs/                 # Documentation
 └── .specify/             # Speckit constitution
@@ -199,7 +219,7 @@ praktiQU/
 | Framework | Next.js 14+ (App Router) |
 | Language | TypeScript (strict mode) |
 | Styling | Tailwind CSS + Inter font |
-| Database | PostgreSQL + Prisma |
+| Database | MySQL (WordPress existing DB) + Prisma |
 | Auth | NextAuth.js v5 |
 | State | React Server Components + Zustand |
 | Testing | Vitest + agent-browser |
@@ -222,7 +242,7 @@ praktiQU/
 
 - [ ] Acceptance criteria from spec met
 - [ ] Unit/integration tests pass (80%+ coverage)
-- [ ] E2E tests pass (for affected paths)
+- [ ] E2E tests executed via agent (based on test plan docs)
 - [ ] Design matches Stitch mockups
 - [ ] No TypeScript/linting errors
 - [ ] PR reviewed and approved
