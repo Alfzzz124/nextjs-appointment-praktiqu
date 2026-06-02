@@ -18,11 +18,11 @@
 
 **Purpose**: Wizard layout and shared components all steps depend on
 
-- [ ] T001 Create wizard layout in `src/app/(public)/book/layout.tsx` with step indicator and URL-based step tracking
-- [ ] T002 [P] Create `src/components/booking/wizard-step-indicator.tsx` showing current step and progress
-- [ ] T003 [P] Create `src/components/booking/wizard-layout.tsx` with sidebar or header step navigation
-- [ ] T004 Create `src/services/booking/slot-hold.service.ts` with in-memory slot hold mechanism (15-min TTL, key = professionalId+serviceId+date+startTime)
-- [ ] T005 Write unit tests in `tests/unit/booking/slot-hold.service.test.ts` covering hold creation, expiry, and consumption
+- [X] T001 Create wizard layout in `src/app/(public)/book/layout.tsx` with step indicator and URL-based step tracking
+- [X] T002 [P] Create `src/components/booking/wizard-step-indicator.tsx` showing current step and progress
+- [X] T003 [P] Create `src/components/booking/wizard-layout.tsx` with sidebar or header step navigation
+- [X] T004 Create `src/services/booking/slot-hold.service.ts` with in-memory slot hold mechanism (15-min TTL, key = professionalId+serviceId+date+startTime)
+- [X] T005 Write unit tests in `tests/unit/booking/slot-hold.service.test.ts` covering hold creation, expiry, and consumption
 
 **Checkpoint**: Foundation ready - step implementation can begin
 
@@ -34,11 +34,11 @@
 
 **Independent Test**: Visitor opens `/book` → sees professional list → selects one → URL updates → advances to Step 2
 
-- [ ] T006 [US1] Create `src/app/(public)/book/page.tsx` — Step 1: Professional listing page
-- [ ] T007 [US1] Create `src/components/booking/professional-card.tsx` with name, photo, type, specialties, next available slot
-- [ ] T008 [US1] Consume GET `/api/v1/professionals/public` to list ACTIVE professionals with slot availability
-- [ ] T009 [US1] Add specialty filter chips in professional list
-- [ ] T010 [US1] Add integration test in `tests/integration/booking/professional-list.test.ts`
+- [X] T006 [US1] Create `src/app/(public)/book/page.tsx` — Step 1: Professional listing page
+- [X] T007 [US1] Create `src/components/booking/professional-card.tsx` with name, photo, type, specialties, next available slot
+- [X] T008 [US1] Consume GET `/api/v1/professionals/public` to list ACTIVE professionals with slot availability
+- [X] T009 [US1] Add specialty filter chips in professional list
+- [X] T010 [US1] Add integration test in `tests/integration/booking/professional-list.test.ts`
 
 ---
 
@@ -48,10 +48,10 @@
 
 **Independent Test**: Visitor on Step 2 → sees service list → selects one → advances to Step 3
 
-- [ ] T011 [US2] Create `src/app/(public)/book/[professionalId]/service/page.tsx` — Step 2: Service selection
-- [ ] T012 [US2] Create `src/components/booking/service-card.tsx` with name, description, duration, price
-- [ ] T013 [US2] Consume service list from GET `/api/v1/professionals/:id/services` (feature 002)
-- [ ] T014 [US2] Add integration test in `tests/integration/booking/service-select.test.ts`
+- [X] T011 [US2] Create `src/app/(public)/book/[professionalId]/service/page.tsx` — Step 2: Service selection
+- [X] T012 [US2] Create `src/components/booking/service-card.tsx` with name, description, duration, price
+- [X] T013 [US2] Consume service list from GET `/api/v1/professionals/:id/services` (feature 002)
+- [X] T014 [US2] Add integration test in `tests/integration/booking/service-select.test.ts`
 
 ---
 
@@ -61,14 +61,14 @@
 
 **Independent Test**: Visitor on Step 3 → picks date → sees slots → selects one → hold created → advances to Step 4
 
-- [ ] T015 [US3] Create `src/app/(public)/book/[professionalId]/[serviceId]/page.tsx` — Step 3: Slot selection
-- [ ] T016 [US3] Create `src/components/booking/slot-picker.tsx` with calendar date picker and time slot grid
-- [ ] T017 [US3] Consume GET `/api/v1/professionals/:id/slots?date=YYYY-MM-DD&serviceId=`
-- [ ] T018 [US3] Implement slot hold on selection: call slot-hold service, store 15-min hold in memory
-- [ ] T019 [US3] Display slot hold countdown timer on Step 4
-- [ ] T020 [US3] Add integration test in `tests/integration/booking/slot-pick.test.ts` covering slot hold creation and countdown
-- [ ] T020b [P] Add unit test in `tests/unit/booking/slot-hold-ttl.test.ts` covering: hold created with 15-min TTL, hold consumed on booking, hold expired after TTL, concurrent expiry race condition (SC-004)
-- [ ] T021 [US3] Implement slot expiry countdown warning UI: show timer when < 5 minutes remain
+- [X] T015 [US3] Create `src/app/(public)/book/[professionalId]/[serviceId]/page.tsx` — Step 3: Slot selection
+- [X] T016 [US3] Create `src/components/booking/slot-picker.tsx` with calendar date picker and time slot grid
+- [X] T017 [US3] Consume GET `/api/v1/professionals/:id/slots?date=YYYY-MM-DD&serviceId=`
+- [X] T018 [US3] Implement slot hold on selection: call slot-hold service, store 15-min hold in memory
+- [X] T019 [US3] Display slot hold countdown timer on Step 4
+- [X] T020 [US3] Add integration test in `tests/integration/booking/slot-pick.test.ts` covering slot hold creation and countdown
+- [X] T020b [P] Add unit test in `tests/unit/booking/slot-hold-ttl.test.ts` covering: hold created with 15-min TTL, hold consumed on booking, hold expired after TTL, concurrent expiry race condition (SC-004)
+- [X] T021 [US3] Implement slot expiry countdown warning UI: show timer when < 5 minutes remain
 
 ---
 
@@ -78,15 +78,15 @@
 
 **Independent Test**: Visitor on Step 4 → submits info → PENDING session created → advances to confirmation
 
-- [ ] T021 [US4] Create `src/app/(public)/book/[professionalId]/[serviceId]/confirm/page.tsx` — Step 4: Client info + login
-- [ ] T022 [US4] Create `src/components/booking/booking-form.tsx` with name, email, mobile, password fields for inline registration
-- [ ] T023 [US4] Create "Already have an account? Login" link triggering NextAuth login modal
-- [ ] T024 [US4] Implement inline registration: create WordPress user + client profile (feature 004 pattern), provision JWT, pre-fill form on success
-- [ ] T025 [US4] On form submit: consume POST `/api/v1/sessions` with slot details (feature 005 pattern)
-- [ ] T026 [US4] Display 15-min hold countdown with warning when < 5 minutes remain
-- [ ] T027 [US4] Handle 409 (slot unavailable) with "Slot no longer available — please select another time" message
-- [ ] T028 [US4] Handle 403 (inactive account) with "Account inactive — contact practice" message
-- [ ] T029 [US4] Add integration test in `tests/integration/booking/booking-confirm.test.ts` covering registration, login, hold expiry, double-booking rejection
+- [X] T021 [US4] Create `src/app/(public)/book/[professionalId]/[serviceId]/confirm/page.tsx` — Step 4: Client info + login
+- [X] T022 [US4] Create `src/components/booking/booking-form.tsx` with name, email, mobile, password fields for inline registration
+- [X] T023 [US4] Create "Already have an account? Login" link triggering NextAuth login modal
+- [X] T024 [US4] Implement inline registration: create WordPress user + client profile (feature 004 pattern), provision JWT, pre-fill form on success
+- [X] T025 [US4] On form submit: consume POST `/api/v1/sessions` with slot details (feature 005 pattern)
+- [X] T026 [US4] Display 15-min hold countdown with warning when < 5 minutes remain
+- [X] T027 [US4] Handle 409 (slot unavailable) with "Slot no longer available — please select another time" message
+- [X] T028 [US4] Handle 403 (inactive account) with "Account inactive — contact practice" message
+- [X] T029 [US4] Add integration test in `tests/integration/booking/booking-confirm.test.ts` covering registration, login, hold expiry, double-booking rejection
 
 ---
 
@@ -96,23 +96,23 @@
 
 **Independent Test**: Visitor completes booking → sees confirmation with all details and next steps
 
-- [ ] T030 [US5] Create `src/app/(public)/book/confirmation/page.tsx` — Step 5: Confirmation page
-- [ ] T031 [US5] Create `src/components/booking/confirmation.tsx` with session summary: date, time, professional, service, status PENDING
-- [ ] T032 [US5] Add "Add to Calendar" button generating .ics file or Google Calendar link
-- [ ] T033 [US5] Show new account credentials for inline-registered clients
-- [ ] T034 [US5] Consume notification service for confirmation email (feature 012 placeholder until implemented)
-- [ ] T035 [US5] Add integration test in `tests/integration/booking/confirmation.test.ts`
+- [X] T030 [US5] Create `src/app/(public)/book/confirmation/page.tsx` — Step 5: Confirmation page
+- [X] T031 [US5] Create `src/components/booking/confirmation.tsx` with session summary: date, time, professional, service, status PENDING
+- [X] T032 [US5] Add "Add to Calendar" button generating .ics file or Google Calendar link
+- [X] T033 [US5] Show new account credentials for inline-registered clients
+- [X] T034 [US5] Consume notification service for confirmation email (feature 012 placeholder until implemented)
+- [X] T035 [US5] Add integration test in `tests/integration/booking/confirmation.test.ts`
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T036 [P] Create E2E test plan markdown at `docs/testing/public-booking-e2e-plan.md` covering full wizard flow, inline registration, login, hold expiry
-- [ ] T037 Run ESLint and Prettier on all new files
-- [ ] T038 Run TypeScript strict mode check: `npx tsc --strict`
-- [ ] T039 Run full test suite: `npm test`
-- [ ] T040 Run production build: `npm run build`
-- [ ] T041 Create PR to main with feature description and checklist of completed items
+- [X] T036 [P] Create E2E test plan markdown at `docs/testing/public-booking-e2e-plan.md` covering full wizard flow, inline registration, login, hold expiry
+- [X] T037 Run ESLint and Prettier on all new files
+- [X] T038 Run TypeScript strict mode check: `npx tsc --strict`
+- [X] T039 Run full test suite: `npm test`
+- [X] T040 Run production build: `npm run build`
+- [X] T041 Create PR to main with feature description and checklist of completed items
 
 ---
 

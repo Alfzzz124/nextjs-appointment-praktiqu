@@ -18,11 +18,11 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Add Session model, SessionStatus enum to `prisma/schema.prisma` (see plan.md data model section)
-- [ ] T002 Generate Prisma migration: `npx prisma migrate dev --name add_session_management`
-- [ ] T003 Generate Prisma client: `npx prisma generate`
-- [ ] T004 [P] Create TypeScript types for Session and SessionStatus in `src/types/session.ts`
-- [ ] T005 [P] Create Zod validation schemas in `src/services/session/validation.ts` (slotDate, startTime, endTime, status transitions, rejection reason max 500)
+- [X] T001 Add Session model, SessionStatus enum to `prisma/schema.prisma` (see plan.md data model section)
+- [X] T002 Generate Prisma migration: `npx prisma migrate dev --name add_session_management`
+- [X] T003 Generate Prisma client: `npx prisma generate`
+- [X] T004 [P] Create TypeScript types for Session and SessionStatus in `src/types/session.ts`
+- [X] T005 [P] Create Zod validation schemas in `src/services/session/validation.ts` (slotDate, startTime, endTime, status transitions, rejection reason max 500)
 
 ---
 
@@ -32,27 +32,27 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Create `src/services/session/double-booking-check.ts` with atomic double-booking prevention using SERIALIZABLE transaction (see plan.md algorithm)
-- [ ] T007 Create `src/services/session/session.service.ts` with create, read, list, all status transitions, AUDIT logging
-- [ ] T008 Implement session status transition validation in session.service.ts — enforce valid transitions only (data-model.md rules)
-- [ ] T009 Implement client INACTIVE blocking in create() — return 403 if client.status != ACTIVE (FR-008 coordination with feature 004)
-- [ ] T010 Implement professional off-day validation in create() — check ProfessionalOffDay and reject 400 if off-day on slotDate
-- [ ] T011 Implement holiday validation in create() — check practice holidays and reject 400 if slotDate is holiday (BR-05.05)
-- [ ] T012 Add AUDIT logging for all status transitions in session.service.ts
-- [ ] T013 Create `GET /api/v1/sessions` endpoint in `src/app/api/v1/sessions/route.ts` with pagination, status/client/professional/service/dateFrom/dateTo filters
-- [ ] T014 Create `POST /api/v1/sessions` endpoint in `src/app/api/v1/sessions/route.ts` supporting both client booking (creates PENDING) and staff booking (creates BOOKED directly)
-- [ ] T015 Create `GET /api/v1/sessions/[id]` endpoint in `src/app/api/v1/sessions/[id]/route.ts`
-- [ ] T016 Create `POST /api/v1/sessions/[id]/approve` endpoint in `src/app/api/v1/sessions/[id]/approve/route.ts` (PENDING → BOOKED, sends confirmation)
-- [ ] T017 Create `POST /api/v1/sessions/[id]/reject` endpoint in `src/app/api/v1/sessions/[id]/reject/route.ts` (PENDING → REJECTED, reason required)
-- [ ] T018 Create `POST /api/v1/sessions/[id]/check-in` endpoint in `src/app/api/v1/sessions/[id]/check-in/route.ts` (BOOKED → CHECK_IN)
-- [ ] T019 Create `POST /api/v1/sessions/[id]/check-out` endpoint in `src/app/api/v1/sessions/[id]/check-out/route.ts` (CHECK_IN → CHECK_OUT)
-- [ ] T020 Create `POST /api/v1/sessions/[id]/cancel` endpoint in `src/app/api/v1/sessions/[id]/cancel/route.ts` (PENDING/BOOKED → CANCELLED, reason optional)
-- [ ] T021 Create `GET /api/v1/sessions/calendar` endpoint in `src/app/api/v1/sessions/calendar/route.ts` with day/week/month view and date parameter
-- [ ] T022 Create `GET /api/v1/sessions/pending` endpoint for professional's pending requests
-- [ ] T023 Add RBAC authorization checks to all session endpoints using existing auth helpers
-- [ ] T024 Write unit tests in `tests/unit/session/session.service.test.ts` covering all status transitions and validation rules
-- [ ] T025 Write unit tests in `tests/unit/session/double-booking-check.test.ts` covering overlap detection and transaction behavior
-- [ ] T026 Write unit tests in `tests/unit/session/validation.test.ts` covering all Zod schemas
+- [X] T006 Create `src/services/session/double-booking-check.ts` with atomic double-booking prevention using SERIALIZABLE transaction (see plan.md algorithm)
+- [X] T007 Create `src/services/session/session.service.ts` with create, read, list, all status transitions, AUDIT logging
+- [X] T008 Implement session status transition validation in session.service.ts — enforce valid transitions only (data-model.md rules)
+- [X] T009 Implement client INACTIVE blocking in create() — return 403 if client.status != ACTIVE (FR-008 coordination with feature 004)
+- [X] T010 Implement professional off-day validation in create() — check ProfessionalOffDay and reject 400 if off-day on slotDate
+- [X] T011 Implement holiday validation in create() — check practice holidays and reject 400 if slotDate is holiday (BR-05.05)
+- [X] T012 Add AUDIT logging for all status transitions in session.service.ts
+- [X] T013 Create `GET /api/v1/sessions` endpoint in `src/app/api/v1/sessions/route.ts` with pagination, status/client/professional/service/dateFrom/dateTo filters
+- [X] T014 Create `POST /api/v1/sessions` endpoint in `src/app/api/v1/sessions/route.ts` supporting both client booking (creates PENDING) and staff booking (creates BOOKED directly)
+- [X] T015 Create `GET /api/v1/sessions/[id]` endpoint in `src/app/api/v1/sessions/[id]/route.ts`
+- [X] T016 Create `POST /api/v1/sessions/[id]/approve` endpoint in `src/app/api/v1/sessions/[id]/approve/route.ts` (PENDING → BOOKED, sends confirmation)
+- [X] T017 Create `POST /api/v1/sessions/[id]/reject` endpoint in `src/app/api/v1/sessions/[id]/reject/route.ts` (PENDING → REJECTED, reason required)
+- [X] T018 Create `POST /api/v1/sessions/[id]/check-in` endpoint in `src/app/api/v1/sessions/[id]/check-in/route.ts` (BOOKED → CHECK_IN)
+- [X] T019 Create `POST /api/v1/sessions/[id]/check-out` endpoint in `src/app/api/v1/sessions/[id]/check-out/route.ts` (CHECK_IN → CHECK_OUT)
+- [X] T020 Create `POST /api/v1/sessions/[id]/cancel` endpoint in `src/app/api/v1/sessions/[id]/cancel/route.ts` (PENDING/BOOKED → CANCELLED, reason optional)
+- [X] T021 Create `GET /api/v1/sessions/calendar` endpoint in `src/app/api/v1/sessions/calendar/route.ts` with day/week/month view and date parameter
+- [X] T022 Create `GET /api/v1/sessions/pending` endpoint for professional's pending requests
+- [X] T023 Add RBAC authorization checks to all session endpoints using existing auth helpers
+- [X] T024 Write unit tests in `tests/unit/session/session.service.test.ts` covering all status transitions and validation rules
+- [X] T025 Write unit tests in `tests/unit/session/double-booking-check.test.ts` covering overlap detection and transaction behavior
+- [X] T026 Write unit tests in `tests/unit/session/validation.test.ts` covering all Zod schemas
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -66,12 +66,12 @@
 
 ### Implementation
 
-- [ ] T027 [US1] Implement client booking path in POST /sessions — creates PENDING session, sends notification to professional
-- [ ] T028 [US1] Add 403 response for INACTIVE client accounts (FR-008 coordination)
-- [ ] T029 [US1] Add 409 response for slot no longer available (double-booking caught at transaction time)
-- [ ] T030 [US1] Add 400 response for off-day or holiday slot (second-layer validation)
-- [ ] T031 [US1] Add integration test in `tests/integration/session/client-booking.test.ts` covering happy path, inactive client, slot unavailable, off-day rejection
-- [ ] T032 [US1] Verify booking submission completes and shows PENDING within 10 seconds (SC-001)
+- [X] T027 [US1] Implement client booking path in POST /sessions — creates PENDING session, sends notification to professional
+- [X] T028 [US1] Add 403 response for INACTIVE client accounts (FR-008 coordination)
+- [X] T029 [US1] Add 409 response for slot no longer available (double-booking caught at transaction time)
+- [X] T030 [US1] Add 400 response for off-day or holiday slot (second-layer validation)
+- [X] T031 [US1] Add integration test in `tests/integration/session/client-booking.test.ts` covering happy path, inactive client, slot unavailable, off-day rejection
+- [X] T032 [US1] Verify booking submission completes and shows PENDING within 10 seconds (SC-001)
 
 ---
 
@@ -83,14 +83,14 @@
 
 ### Implementation
 
-- [ ] T033 [US2] Implement approval in POST /approve — changes PENDING → BOOKED, sends client confirmation email
-- [ ] T034 [US2] Implement rejection in POST /reject — changes PENDING → REJECTED, reason required, sends client notification
-- [ ] T035 [US2] Add 400 response when session not in PENDING status
-- [ ] T036 [US2] Add 403 response when professional does not own the session
-- [ ] T037 [US2] Create pending requests component in `src/components/session/pending-requests.tsx` for professional dashboard
-- [ ] T038 [US2] Create professional sessions page at `src/app/(dashboard)/professional/sessions/page.tsx`
-- [ ] T039 [US2] Add integration test in `tests/integration/session/approve-reject.test.ts` covering approve, reject, invalid status, unauthorized
-- [ ] T040 [US2] Verify approval propagation to calendar within 5 seconds (SC-002)
+- [X] T033 [US2] Implement approval in POST /approve — changes PENDING → BOOKED, sends client confirmation email
+- [X] T034 [US2] Implement rejection in POST /reject — changes PENDING → REJECTED, reason required, sends client notification
+- [X] T035 [US2] Add 400 response when session not in PENDING status
+- [X] T036 [US2] Add 403 response when professional does not own the session
+- [X] T037 [US2] Create pending requests component in `src/components/session/pending-requests.tsx` for professional dashboard
+- [X] T038 [US2] Create professional sessions page at `src/app/(dashboard)/professional/sessions/page.tsx`
+- [X] T039 [US2] Add integration test in `tests/integration/session/approve-reject.test.ts` covering approve, reject, invalid status, unauthorized
+- [X] T040 [US2] Verify approval propagation to calendar within 5 seconds (SC-002)
 
 ---
 
@@ -102,11 +102,11 @@
 
 ### Implementation
 
-- [ ] T041 [US3] Implement staff booking path in POST /sessions — creates BOOKED session directly (createdBy = receptionist), sends confirmation
-- [ ] T042 [US3] Detect staff booking vs client booking from JWT role: if RECEPTIONIST/CLINIC_ADMIN/SUPER_ADMIN → BOOKED; else → PENDING
-- [ ] T043 [US3] Create session booking form in `src/components/session/session-form.tsx` with client, professional, service, date, time selectors
-- [ ] T044 [US3] Add integration test in `tests/integration/session/staff-booking.test.ts` covering direct BOOKED creation and double-booking rejection
-- [ ] T045 [US3] Verify double-booking check returns 409 within 1 second (SC-003)
+- [X] T041 [US3] Implement staff booking path in POST /sessions — creates BOOKED session directly (createdBy = receptionist), sends confirmation
+- [X] T042 [US3] Detect staff booking vs client booking from JWT role: if RECEPTIONIST/CLINIC_ADMIN/SUPER_ADMIN → BOOKED; else → PENDING
+- [X] T043 [US3] Create session booking form in `src/components/session/session-form.tsx` with client, professional, service, date, time selectors
+- [X] T044 [US3] Add integration test in `tests/integration/session/staff-booking.test.ts` covering direct BOOKED creation and double-booking rejection
+- [X] T045 [US3] Verify double-booking check returns 409 within 1 second (SC-003)
 
 ---
 
@@ -118,12 +118,12 @@
 
 ### Implementation
 
-- [ ] T046 [US4] Implement check-in in POST /check-in — changes BOOKED → CHECK_IN, logs checkedInAt timestamp
-- [ ] T047 [US4] Implement check-out in POST /check-out — changes CHECK_IN → CHECK_OUT, logs checkedOutAt timestamp
-- [ ] T048 [US4] Add 400 response when session not in correct status for transition
-- [ ] T049 [US4] Create status badges in `src/components/session/status-badge.tsx` with color coding (PENDING=yellow, BOOKED=green, CHECK_IN=blue, CHECK_OUT=purple, COMPLETED=gray, REJECTED=red, CANCELLED=gray)
-- [ ] T050 [US4] Add integration test in `tests/integration/session/check-in-out.test.ts` covering check-in, check-out, invalid transition rejection
-- [ ] T051 [US4] Verify status transitions reflect immediately in calendar (SC-004)
+- [X] T046 [US4] Implement check-in in POST /check-in — changes BOOKED → CHECK_IN, logs checkedInAt timestamp
+- [X] T047 [US4] Implement check-out in POST /check-out — changes CHECK_IN → CHECK_OUT, logs checkedOutAt timestamp
+- [X] T048 [US4] Add 400 response when session not in correct status for transition
+- [X] T049 [US4] Create status badges in `src/components/session/status-badge.tsx` with color coding (PENDING=yellow, BOOKED=green, CHECK_IN=blue, CHECK_OUT=purple, COMPLETED=gray, REJECTED=red, CANCELLED=gray)
+- [X] T050 [US4] Add integration test in `tests/integration/session/check-in-out.test.ts` covering check-in, check-out, invalid transition rejection
+- [X] T051 [US4] Verify status transitions reflect immediately in calendar (SC-004)
 
 ---
 
@@ -135,11 +135,11 @@
 
 ### Implementation
 
-- [ ] T052 [US5] Implement cancel in POST /cancel — changes PENDING/BOOKED → CANCELLED, optional reason, notifies professional
-- [ ] T053 [US5] Add 400 response when session is in CHECK_IN or later status (cannot cancel in-progress)
-- [ ] T054 [US5] Add 403 response when client tries to cancel another client's session
-- [ ] T055 [US5] Add integration test in `tests/integration/session/cancel.test.ts` covering cancel from PENDING, cancel from BOOKED, cancel from CHECK_IN (rejected)
-- [ ] T056 [US5] Verify cancellation reflects immediately in calendar (SC-004)
+- [X] T052 [US5] Implement cancel in POST /cancel — changes PENDING/BOOKED → CANCELLED, optional reason, notifies professional
+- [X] T053 [US5] Add 400 response when session is in CHECK_IN or later status (cannot cancel in-progress)
+- [X] T054 [US5] Add 403 response when client tries to cancel another client's session
+- [X] T055 [US5] Add integration test in `tests/integration/session/cancel.test.ts` covering cancel from PENDING, cancel from BOOKED, cancel from CHECK_IN (rejected)
+- [X] T056 [US5] Verify cancellation reflects immediately in calendar (SC-004)
 
 ---
 
@@ -151,11 +151,11 @@
 
 ### Implementation
 
-- [ ] T057 [US6] Implement calendar endpoint with day/week/month views and session grouping
-- [ ] T058 [US6] Create calendar component in `src/components/session/session-calendar.tsx` with day/week/month view switching
-- [ ] T059 [US6] Create admin sessions calendar page at `src/app/(dashboard)/admin/sessions/page.tsx`
-- [ ] T060 [US6] Add URL-based view persistence (view=day|week|month, date=YYYY-MM-DD)
-- [ ] T061 [US6] Verify calendar renders 50 sessions within 2 seconds (SC-006)
+- [X] T057 [US6] Implement calendar endpoint with day/week/month views and session grouping
+- [X] T058 [US6] Create calendar component in `src/components/session/session-calendar.tsx` with day/week/month view switching
+- [X] T059 [US6] Create admin sessions calendar page at `src/app/(dashboard)/admin/sessions/page.tsx`
+- [X] T060 [US6] Add URL-based view persistence (view=day|week|month, date=YYYY-MM-DD)
+- [X] T061 [US6] Verify calendar renders 50 sessions within 2 seconds (SC-006)
 
 ---
 
@@ -167,9 +167,9 @@
 
 ### Implementation
 
-- [ ] T062 [US7] Create session detail panel in `src/components/session/session-detail-panel.tsx` showing: client name/contact, professional name, service/duration, slot times, status timestamp, notes link
-- [ ] T063 [US7] Add "No session selected" empty state
-- [ ] T064 [US7] Integrate detail panel into calendar page as a slide-over or modal
+- [X] T062 [US7] Create session detail panel in `src/components/session/session-detail-panel.tsx` showing: client name/contact, professional name, service/duration, slot times, status timestamp, notes link
+- [X] T063 [US7] Add "No session selected" empty state
+- [X] T064 [US7] Integrate detail panel into calendar page as a slide-over or modal
 
 ---
 
@@ -181,9 +181,9 @@
 
 ### Implementation
 
-- [ ] T065 [US8] Create session filters component in `src/components/session/filters.tsx` with status chips, date range picker, professional select, client select, service select
-- [ ] T066 [US8] Add URL-based filter persistence in session list page
-- [ ] T067 [US8] Verify filters work on both list view and calendar view
+- [X] T065 [US8] Create session filters component in `src/components/session/filters.tsx` with status chips, date range picker, professional select, client select, service select
+- [X] T066 [US8] Add URL-based filter persistence in session list page
+- [X] T067 [US8] Verify filters work on both list view and calendar view
 
 ---
 
@@ -191,17 +191,17 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T068 [P] Create E2E test plan markdown at `docs/testing/session-mgmt-e2e-plan.md` covering: client booking, approval workflow, staff booking, check-in/out, cancel, calendar view
-- [ ] T069 [P] Add OPENAPI 3.0 spec entries for all session endpoints in `docs/api/openapi.yaml`
-- [ ] T070 Create auto-completion background job in `jobs/session-auto-complete.ts` — runs hourly, marks CHECK_OUT sessions > 24h as COMPLETED
-- [ ] T070b [P] [US4] Add integration test in `tests/integration/session/auto-complete.test.ts` verifying CHECK_OUT sessions older than 24 hours are marked COMPLETED by the auto-completion job (FR-008, SC-007)
-- [ ] T071 Verify all AUDIT events are logged: session.created, session.status_changed, session.cancelled, session.rejected
-- [ ] T072 Implement professional off-day invalidation: when off-day updated (feature 002), auto-cancel PENDING sessions on affected dates
-- [ ] T073 Run ESLint and Prettier on all new files
-- [ ] T074 Run TypeScript strict mode check: `npx tsc --strict`
-- [ ] T075 Run full test suite: `npm test`
-- [ ] T076 Run production build: `npm run build`
-- [ ] T077 Create PR to main with feature description and checklist of completed items
+- [X] T068 [P] Create E2E test plan markdown at `docs/testing/session-mgmt-e2e-plan.md` covering: client booking, approval workflow, staff booking, check-in/out, cancel, calendar view
+- [X] T069 [P] Add OPENAPI 3.0 spec entries for all session endpoints in `docs/api/openapi.yaml`
+- [X] T070 Create auto-completion background job in `jobs/session-auto-complete.ts` — runs hourly, marks CHECK_OUT sessions > 24h as COMPLETED
+- [X] T070b [P] [US4] Add integration test in `tests/integration/session/auto-complete.test.ts` verifying CHECK_OUT sessions older than 24 hours are marked COMPLETED by the auto-completion job (FR-008, SC-007)
+- [X] T071 Verify all AUDIT events are logged: session.created, session.status_changed, session.cancelled, session.rejected
+- [X] T072 Implement professional off-day invalidation: when off-day updated (feature 002), auto-cancel PENDING sessions on affected dates
+- [X] T073 Run ESLint and Prettier on all new files
+- [X] T074 Run TypeScript strict mode check: `npx tsc --strict`
+- [X] T075 Run full test suite: `npm test`
+- [X] T076 Run production build: `npm run build`
+- [X] T077 Create PR to main with feature description and checklist of completed items
 
 ---
 

@@ -82,7 +82,7 @@ export async function cancel(options: CancelJobOptions): Promise<void> {
   await fetch(WP_ENDPOINT_JOBS, {
     method: 'DELETE',
     headers: {
-      'Content-Type: application/json',
+      'Content-Type': 'application/json',
       'X-PraktiQU-Service-Token': WP_SERVICE_TOKEN,
     },
     body: JSON.stringify({ hook: options.hook, args: options.args ?? {} }),

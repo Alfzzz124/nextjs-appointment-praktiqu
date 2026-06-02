@@ -1,0 +1,1204 @@
+# OpenAPI 3.0 Specification — Session Management (Feature 005)
+
+**Version**: 1.0.0 | **Date**: 2026-06-03
+**Base URL**: `/api/v1`
+
+---
+
+openapi: 3.0.3
+info:
+  title: PraktiQU Session Management API
+  description: |
+    Session booking with request-approval workflow (PENDING → BOOKED),
+    staff direct booking (BOOKED directly), check-in/check-out workflow,
+    session status lifecycle, double-booking prevention via atomic
+    transactions, calendar view, session filtering, and AUDIT logging.
+  version: 1.0.0
+  contact:
+    name: PraktiQU Support
+    url: https://praktiqu.com
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.praktiqu.com
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: sessions
+    description: Session management endpoints
+  - name: calendar
+    description: Calendar view endpoints
+
+paths:
+  /sessions:
+    get:
+      tags: [sessions]
+      summary: List sessions
+      description: |
+        Returns paginated list of sessions. Results are filtered by the
+        caller's role (SUPER_ADMIN all, CLINIC_ADMIN/RECEPTIONIST practice,
+        PROFESSIONAL own, CLIENT own).
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1, minimum: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SessionStatus' }
+        - name: clientId
+          in: query
+          schema: { type: string }
+        - name: professionalId
+          in: query
+          schema: { type: string }
+        - name: serviceId
+          in: query
+          schema: { type: string }
+        - name: dateFrom
+          in: query
+          description: Start date filter (YYYY-MM-DD)
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: dateTo
+          in: query
+          description: End date filter (YYYY-MM-DD)
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      responses:
+        '200':
+          description: Paginated session list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    post:
+      tags: [sessions]
+      summary: Create session (client or staff booking)
+      description: |
+        Client booking → PENDING (requires clientId = self, ACTIVE account).
+        Staff booking (RECEPTIONIST, CLINIC_ADMIN, SUPER_ADMIN) → BOOKED directly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Client account inactive or not authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Double-booking prevented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /sessions/{id}:
+    get:
+      tags: [sessions]
+      summary: Get session detail
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sessions/{id}/approve:
+    post:
+      tags: [sessions]
+      summary: Approve pending session (PENDING → BOOKED)
+      description: |
+        Authorization: SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL (own sessions only).
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '400':
+          description: Session not in PENDING status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sessions/{id}/reject:
+    post:
+      tags: [sessions]
+      summary: Reject pending session (PENDING → REJECTED)
+      description: |
+        Authorization: SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL (own sessions only).
+        Body must include `reason` (1–500 chars).
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectSessionRequest'
+      responses:
+        '200':
+          description: Session rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '400':
+          description: Session not in PENDING status or reason missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sessions/{id}/check-in:
+    post:
+      tags: [sessions]
+      summary: Check in session (BOOKED → CHECK_IN)
+      description: |
+        Authorization: RECEPTIONIST, CLINIC_ADMIN (within practice).
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session checked in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '400':
+          description: Session not in BOOKED status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sessions/{id}/check-out:
+    post:
+      tags: [sessions]
+      summary: Check out session (CHECK_IN → CHECK_OUT)
+      description: |
+        Authorization: RECEPTIONIST, CLINIC_ADMIN (within practice).
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session checked out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '400':
+          description: Session not in CHECK_IN status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sessions/{id}/cancel:
+    post:
+      tags: [sessions]
+      summary: Cancel session (PENDING/BOOKED → CANCELLED)
+      description: |
+        Authorization: CLIENT (own only), RECEPTIONIST, CLINIC_ADMIN (within practice).
+        Sessions in CHECK_IN or later cannot be cancelled.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelSessionRequest'
+      responses:
+        '200':
+          description: Session cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWithRelationsResponse'
+        '400':
+          description: Session cannot be cancelled from current status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sessions/calendar:
+    get:
+      tags: [calendar]
+      summary: Get calendar view
+      description: |
+        Returns sessions for the specified view (day/week/month) and date.
+        Authorization: Same as GET /sessions.
+      parameters:
+        - name: view
+          in: query
+          description: Calendar view
+          schema: { type: string, enum: [day, week, month], default: day }
+        - name: date
+          in: query
+          description: Reference date (YYYY-MM-DD, defaults to today)
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: professionalId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Calendar view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /sessions/pending:
+    get:
+      tags: [sessions]
+      summary: Get professional's pending approval requests
+      description: |
+        Authorization: SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL (own only).
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1, minimum: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Pending session list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      description: Session ID (cuid)
+      schema: { type: string }
+
+  schemas:
+    SessionStatus:
+      type: string
+      enum: [PENDING, BOOKED, CHECK_IN, CHECK_OUT, COMPLETED, REJECTED, CANCELLED]
+      description: |
+        - PENDING: awaiting approval (client-initiated)
+        - BOOKED: confirmed
+        - CHECK_IN: client arrived
+        - CHECK_OUT: session ended
+        - COMPLETED: auto-closed after 24h
+        - REJECTED: professional rejected
+        - CANCELLED: cancelled before start
+
+    SessionEntity:
+      type: object
+      properties:
+        id: { type: string }
+        clientId: { type: string }
+        professionalId: { type: string }
+        serviceId: { type: string }
+        practiceId: { type: string }
+        slotDate: { type: string, description: 'YYYY-MM-DD' }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/SessionStatus' }
+        rejectionReason: { type: string, nullable: true }
+        cancellationReason: { type: string, nullable: true }
+        checkedInAt: { type: string, format: date-time, nullable: true }
+        checkedOutAt: { type: string, format: date-time, nullable: true }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    SessionClient:
+      type: object
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        uniqueClientId: { type: string, nullable: true }
+        mobileNumber: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+
+    SessionProfessional:
+      type: object
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        email: { type: string, nullable: true }
+
+    SessionService:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        durationMinutes: { type: integer }
+
+    SessionWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/SessionEntity'
+        - type: object
+          properties:
+            client: { $ref: '#/components/schemas/SessionClient' }
+            professional: { $ref: '#/components/schemas/SessionProfessional' }
+            service: { $ref: '#/components/schemas/SessionService' }
+
+    CalendarEntry:
+      type: object
+      properties:
+        id: { type: string }
+        startTime: { type: string, description: 'HH:mm' }
+        endTime: { type: string, description: 'HH:mm' }
+        client: { type: string }
+        service: { type: string }
+        status: { $ref: '#/components/schemas/SessionStatus' }
+        statusColor: { type: string, description: 'Hex color', example: '#22c55e' }
+        professionalId: { type: string }
+        professionalName: { type: string }
+
+    CalendarResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            view: { type: string, enum: [day, week, month] }
+            date: { type: string, description: 'YYYY-MM-DD' }
+            sessions:
+              type: array
+              items: { $ref: '#/components/schemas/CalendarEntry' }
+
+    Pagination:
+      type: object
+      properties:
+        currentPage: { type: integer }
+        totalPages: { type: integer }
+        totalItems: { type: integer }
+        itemsPerPage: { type: integer }
+
+    SessionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/SessionWithRelations' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    SessionWithRelationsResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/SessionWithRelations' }
+
+    CreateSessionRequest:
+      type: object
+      required: [clientId, professionalId, serviceId, slotDate, startTime]
+      properties:
+        clientId: { type: string, description: 'Patient/cuid ID' }
+        professionalId: { type: string, description: 'Doctor/cuid ID' }
+        serviceId: { type: string, description: 'Service/cuid ID' }
+        slotDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: 'YYYY-MM-DD' }
+        startTime: { type: string, format: date-time, description: 'ISO 8601 datetime' }
+
+    RejectSessionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+
+    CancelSessionRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500 }
+
+    Error:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+
+    ConflictError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            type: { type: string, example: '/errors/conflict' }
+            title: { type: string, example: 'Double Booking' }
+            status: { type: integer, example: 409 }
+            detail: { type: string, example: 'This time slot is already booked for another session' }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Not authorized for this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+  # ============================================
+  # PROFESSIONAL MANAGEMENT (Feature 002)
+  # ============================================
+
+  /professionals:
+    get:
+      tags: [professionals]
+      summary: List professionals
+      description: |
+        Returns paginated list of professionals.
+        SUPER_ADMIN sees all; CLINIC_ADMIN sees own practice only.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1, minimum: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 200 }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ProfessionalStatus' }
+        - name: practiceId
+          in: query
+          schema: { type: string }
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [fullName, email, createdAt, status], default: createdAt }
+        - name: sortOrder
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+      responses:
+        '200':
+          description: Paginated professional list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Only SUPER_ADMIN and CLINIC_ADMIN can list professionals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags: [professionals]
+      summary: Register new professional
+      description: |
+        Creates a new professional record with PENDING_ACTIVATION status.
+        Only SUPER_ADMIN can register professionals.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfessionalRequest'
+      responses:
+        '201':
+          description: Professional created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateProfessionalResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Only SUPER_ADMIN can register professionals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email or registration number already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /professionals/{id}:
+    get:
+      tags: [professionals]
+      summary: Get professional detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Professional detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalWithRelations'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [professionals]
+      summary: Update professional
+      description: |
+        Partial update. SUPER_ADMIN/CLINIC_ADMIN can update all fields.
+        PROFESSIONAL can only update biography, specialties, contactInfo (self-edit).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfessionalRequest'
+      responses:
+        '200':
+          description: Professional updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalWithRelations'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags: [professionals]
+      summary: Deactivate professional (soft-delete)
+      description: |
+        Sets status to INACTIVE. Does not delete the record.
+        Authorization: SUPER_ADMIN, CLINIC_ADMIN.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Professional deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /professionals/{id}/status:
+    patch:
+      tags: [professionals]
+      summary: Change professional status
+      description: |
+        Activate (PENDING_ACTIVATION → ACTIVE) or deactivate (ACTIVE → INACTIVE).
+        Authorization: SUPER_ADMIN (all), CLINIC_ADMIN (own practice).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusChangeRequest'
+      responses:
+        '200':
+          description: Status changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /professionals/{id}/services:
+    get:
+      tags: [professionals]
+      summary: List assigned services
+      description: Returns services assigned to the professional.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Assigned services list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignedServicesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [professionals]
+      summary: Assign service to professional
+      description: |
+        Assigns a service to the professional. Only ACTIVE services can be assigned (FR-011).
+        Authorization: SUPER_ADMIN, CLINIC_ADMIN (own practice).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignServiceRequest'
+      responses:
+        '201':
+          description: Service assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAssignmentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Professional or service not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Service already assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Service is not ACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [professionals]
+      summary: Unassign service from professional
+      description: |
+        Authorization: SUPER_ADMIN, CLINIC_ADMIN (own practice).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: serviceId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Service unassigned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Assignment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /professionals/{id}/availability:
+    get:
+      tags: [professionals]
+      summary: Get weekly availability schedule
+      description: Returns the professional's configured weekly availability windows.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Weekly schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    put:
+      tags: [professionals]
+      summary: Set weekly availability
+      description: |
+        Replaces the full weekly schedule. Validates for overlapping windows (FR-015).
+        Authorization: SUPER_ADMIN (any), PROFESSIONAL (self only).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAvailabilityRequest'
+      responses:
+        '200':
+          description: Availability updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Overlapping windows or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /professionals/{id}/off-days:
+    get:
+      tags: [professionals]
+      summary: List off days
+      description: Returns the professional's off-day overrides.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Off days list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffDaysResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [professionals]
+      summary: Add off day
+      description: |
+        Authorization: SUPER_ADMIN (any), PROFESSIONAL (self only).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOffDayRequest'
+      responses:
+        '201':
+          description: Off day added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffDayResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags: [professionals]
+      summary: Remove off day
+      description: |
+        Authorization: SUPER_ADMIN (any), PROFESSIONAL (self only).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: offDayId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Off day removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Off day not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /professionals/{id}/slots:
+    get:
+      tags: [professionals]
+      summary: Get bookable slots
+      description: |
+        Returns available time slots for a specific date and service.
+        Slots are generated from availability windows minus off-days and booked sessions.
+        Public endpoint — all authenticated users can query.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: date
+          in: query
+          required: true
+          description: Date in YYYY-MM-DD format
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: serviceId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Bookable slots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotsResponse'
+        '400':
+          description: Missing date or serviceId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+# Professional schemas
+    ProfessionalStatus:
+      type: string
+      enum: [PENDING_ACTIVATION, ACTIVE, INACTIVE]
+
+    ProfessionalType:
+      type: string
+      enum: [PSIKOLOG_KLINIS, PSIKOLOG_ANAK, PSIKIATER, KONSELOR]
+
+    ProfessionalEntity:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        practiceId: { type: string, nullable: true }
+        fullName: { type: string }
+        email: { type: string }
+        professionalType: { $ref: '#/components/schemas/ProfessionalType' }
+        registrationNumber: { type: string }
+        status: { $ref: '#/components/schemas/ProfessionalStatus' }
+        biography: { type: string, nullable: true }
+        specialties: { type: array, items: { type: string }, nullable: true }
+        contactInfo: { type: object, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ProfessionalWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/ProfessionalEntity'
+        - type: object
+          properties:
+            practice: { type: object, properties: { id: { type: string }, name: { type: string } }, nullable: true }
+            serviceAssignments: { type: array, items: { type: object } }
+
+    AvailabilityWindow:
+      type: object
+      properties:
+        dayOfWeek: { type: integer, minimum: 0, maximum: 6, description: '0=Sun, 6=Sat' }
+        startMinute: { type: integer, minimum: 0, maximum: 1439, description: 'Minutes from 00:00' }
+        endMinute: { type: integer, minimum: 0, maximum: 1439 }
+
+    ProfessionalListResponse:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ProfessionalWithRelations' } }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    CreateProfessionalRequest:
+      type: object
+      required: [userId, fullName, email, professionalType, registrationNumber]
+      properties:
+        userId: { type: string, description: 'WordPress user ID (cuid)' }
+        practiceId: { type: string, nullable: true }
+        fullName: { type: string, minLength: 2, maxLength: 200 }
+        email: { type: string, format: email }
+        professionalType: { $ref: '#/components/schemas/ProfessionalType' }
+        registrationNumber: { type: string, pattern: '^[A-Z]{2,3}-\\d{5}-\\d{4}$', description: 'Format: AAA-NNNNN-YYYY' }
+        biography: { type: string, maxLength: 2000 }
+        specialties: { type: array, items: { type: string }, maxItems: 20 }
+        contactInfo: { type: object }
+
+    CreateProfessionalResponse:
+      type: object
+      properties:
+        id: { type: string }
+
+    UpdateProfessionalRequest:
+      type: object
+      properties:
+        fullName: { type: string }
+        biography: { type: string, nullable: true, maxLength: 2000 }
+        specialties: { type: array, items: { type: string }, nullable: true, maxItems: 20 }
+        contactInfo: { type: object, nullable: true }
+        practiceId: { type: string, nullable: true }
+
+    StatusChangeRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/ProfessionalStatus' }
+
+    AssignedService:
+      type: object
+      properties:
+        id: { type: string }
+        serviceId: { type: string }
+        serviceName: { type: string }
+        serviceDuration: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    AssignedServicesResponse:
+      type: object
+      properties:
+        professionalId: { type: string }
+        services: { type: array, items: { $ref: '#/components/schemas/AssignedService' } }
+
+    AssignServiceRequest:
+      type: object
+      required: [serviceId]
+      properties:
+        serviceId: { type: string, description: 'Only ACTIVE services can be assigned' }
+
+    ServiceAssignmentResponse:
+      type: object
+      properties:
+        id: { type: string }
+        professionalId: { type: string }
+        serviceId: { type: string }
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        professionalId: { type: string }
+        schedule: { type: object, description: 'Map from dayOfWeek to AvailabilityWindow[]' }
+
+    SetAvailabilityRequest:
+      type: object
+      required: [schedule]
+      properties:
+        schedule: { type: array, items: { $ref: '#/components/schemas/AvailabilityWindow' }, minItems: 1 }
+
+    OffDayResponse:
+      type: object
+      properties:
+        id: { type: string }
+        professionalId: { type: string }
+        startDate: { type: string, description: 'YYYY-MM-DD' }
+        endDate: { type: string, description: 'YYYY-MM-DD' }
+        reason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    OffDaysResponse:
+      type: object
+      properties:
+        professionalId: { type: string }
+        offDays: { type: array, items: { $ref: '#/components/schemas/OffDayResponse' } }
+
+    CreateOffDayRequest:
+      type: object
+      required: [startDate, endDate]
+      properties:
+        startDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: 'YYYY-MM-DD' }
+        endDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: 'YYYY-MM-DD' }
+        reason: { type: string, maxLength: 255 }
+
+    Slot:
+      type: object
+      properties:
+        startUtc: { type: string, format: date-time, description: 'Slot start in UTC' }
+        endUtc: { type: string, format: date-time, description: 'Slot end in UTC' }
+        serviceId: { type: string }
+        professionalId: { type: string }
+
+    SlotsResponse:
+      type: object
+      properties:
+        professionalId: { type: string }
+        date: { type: string, description: 'YYYY-MM-DD' }
+        serviceId: { type: string }
+        slots: { type: array, items: { $ref: '#/components/schemas/Slot' } }
+
+tags:
+  - name: professionals
+    description: Professional management (Feature 002: psychologists, psychiatrists, counselors)

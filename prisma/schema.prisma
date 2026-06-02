@@ -37,6 +37,43 @@ enum UserRole {
   CLIENT          // WP role: "kiviCare_patient"
 }
 
+enum AuditEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  TOKEN_REFRESH
+  TOKEN_REVOKE
+  PASSWORD_CHANGE
+  PASSWORD_RESET_REQUEST
+  PASSWORD_RESET_COMPLETE
+  ROLE_CHANGE
+  REGISTER
+  WEBHOOK_RECEIVED
+  EMAIL_DELIVERY_FAILED
+  OAUTH_LINK
+}
+
+enum RefreshTokenStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+enum WebhookEventName {
+  PASSWORD_CHANGED
+  USER_DEACTIVATED
+  USER_REACTIVATED
+  USER_DELETED
+  USER_ROLE_CHANGED
+  LOGIN_FAILED
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -60,11 +97,20 @@ model User {
   patient       Patient?
   sessions      AuthSession[]
   logEntries    LogEntry[]
+  consentSignatures ConsentSignature[]
+  refreshTokens RefreshToken[]
+  passwordResets PasswordResetToken[]
+  googleIdentity GoogleIdentity?
+
+  // Audit (actor = person performing action; target = affected user)
+  auditsAsActor  AuditLog[] @relation("ActorAudits")
+  auditsAsTarget AuditLog[] @relation("TargetAudits")
 
   // Role assignments
   doctorClinics       DoctorClinicMapping[]
   receptionistClinics ReceptionistClinicMapping[]
   patientClinics      PatientClinicMapping[]
+  professional        Professional?                @relation("UserProfessional")
 
   // Meta data
   basicData     Json?    // mobile_number, dob, gender, blood_group, address, etc.
@@ -90,6 +136,126 @@ model AuthSession {
 }
 
 // ============================================
+// REFRESH TOKENS — JWT refresh-token tracking
+// ============================================
+// Stores SHA-256 hashes of refresh tokens; the raw token is never persisted.
+// Family ID groups all tokens in a single lineage so a replay attack can
+// revoke the entire family per FR-015.
+
+model RefreshToken {
+  id            String             @id @default(cuid())
+  userId        String
+  tokenHash     String             @unique // SHA-256 of raw token
+  familyId      String             // groups tokens in the same login lineage
+  status        RefreshTokenStatus @default(ACTIVE)
+  userAgent     String?            @db.Text
+  ipAddress     String?
+  issuedAt      DateTime           @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  replacedById  String?            @unique
+  parentId      String?            @unique // previous token in the rotation chain
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy   RefreshToken? @relation("RotationChild", fields: [replacedById], references: [id])
+  parent       RefreshToken? @relation("RotationParent", fields: [parentId], references: [id])
+  replacedTokens RefreshToken[] @relation("RotationParent")
+  childTokens  RefreshToken[] @relation("RotationChild")
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// PASSWORD RESET TOKENS
+// ============================================
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique // SHA-256 of raw token
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  ipAddress  String?
+  userAgent  String?   @db.Text
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ============================================
+// OAUTH LINKAGE — Google account → PraktiQU user
+// ============================================
+
+model GoogleIdentity {
+  id           String   @id @default(cuid())
+  userId       String
+  googleSub    String   @unique // Google subject identifier
+  email        String
+  linkedAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([email])
+  @@map("google_identities")
+}
+
+// ============================================
+// AUDIT LOG — security events (FR-010/011/012/022)
+// ============================================
+
+model AuditLog {
+  id          String         @id @default(cuid())
+  eventType   AuditEventType
+  actorId     String?
+  targetId    String?
+  ip          String?
+  userAgent   String?        @db.Text
+  metadata    Json?
+  occurredAt  DateTime       @default(now())
+
+  actor  User? @relation("ActorAudits", fields: [actorId], references: [id], onDelete: SetNull)
+  target User? @relation("TargetAudits", fields: [targetId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([targetId, occurredAt])
+  @@index([occurredAt])
+  @@map("audit_logs")
+}
+
+// ============================================
+// WORDPRESS WEBHOOK EVENTS — idempotency + replay protection
+// ============================================
+
+model WordpressWebhookEvent {
+  id            String              @id @default(cuid())
+  eventId       String              // id supplied by the WP plugin (unique per event)
+  eventName     WebhookEventName
+  wpUserId      BigInt?
+  payload       Json
+  signature     String?
+  receivedAt    DateTime            @default(now())
+  processedAt   DateTime?
+  status        WebhookEventStatus  @default(RECEIVED)
+  failureReason String?             @db.Text
+
+  @@unique([eventId])
+  @@index([eventName, receivedAt])
+  @@index([wpUserId])
+  @@index([status])
+  @@map("wordpress_webhook_events")
+}
+
+// ============================================
 // CLINIC MANAGEMENT
 // ============================================
 
@@ -111,6 +277,10 @@ model Clinic {
   clinicLogo         Int?
   profileImage       Int?
   extra              Json?    // currency settings, custom config
+  // Invoice numbering (011-billing)
+  code               String?  @unique // 2-4 char alphanumeric slug, e.g. "JKT", "BDG"
+  billSequence       Int      @default(0) // next sequence number
+  billSequenceYear   Int?     // year the sequence applies to (for year rollover)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -127,6 +297,7 @@ model Clinic {
   receptionists    ReceptionistClinicMapping[]
   patients         PatientClinicMapping[]
   clinicServices   ClinicServicePrice[]
+  professionals    Professional[]             @relation("ClinicProfessionals")
 
   @@map("clinics")
 }
@@ -152,6 +323,7 @@ model Doctor {
   services      DoctorServiceMapping[]
   specialtiesRef Specialty[]
   appointments  Appointment[]
+  sessions      Session[]                @relation("SessionProfessional")
   encounters   Encounter[]
   prescriptions Prescription[]
   schedules    DoctorSession[]
@@ -203,7 +375,52 @@ model DoctorSession {
 }
 
 // ============================================
-// PATIENT MANAGEMENT
+// CLIENT MANAGEMENT (Feature 004)
+// ============================================
+// A Client is the practice's end-user record. Distinct from the legacy
+// `Patient` model (which mirrors KiviCare's clinical record). One Client
+// belongs to exactly one Practice in v1, links one-to-one to a WordPress
+// user, and has a human-readable `CLT-YYYY-NNNNN` unique ID per practice.
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ClientStatus {
+  ACTIVE    // can book
+  INACTIVE  // paused / departed
+  ARCHIVED  // soft-deleted (history preserved)
+}
+
+model Client {
+  id               String       @id @default(cuid())
+  userId           String       @unique          // WordPress user link
+  practiceId       String                        // FK to Clinic
+  uniqueClientId   String                        // e.g. CLT-2026-00001
+  fullName         String       @db.VarChar(100)
+  email            String       @db.VarChar(255)
+  mobileNumber     String       @db.VarChar(20)
+  dateOfBirth      DateTime
+  gender           Gender
+  address          String?      @db.Text
+  emergencyContact String?      @db.VarChar(100)
+  notes            String?      @db.Text
+  status           ClientStatus @default(ACTIVE)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([practiceId, uniqueClientId])
+  @@unique([practiceId, email])
+  @@index([practiceId, status])
+  @@index([fullName])
+  @@index([mobileNumber])
+  @@map("clients")
+}
+
+// ============================================
+// PATIENT MANAGEMENT (legacy KiviCare clinical record)
 // ============================================
 
 model Patient {
@@ -224,6 +441,7 @@ model Patient {
   addedBy       Doctor?                    @relation("PatientAddedBy", fields: [addedById], references: [id])
   addedById     String?
   appointments  Appointment[]
+  sessions      Session[]                  @relation("SessionClient")
   encounters    Encounter[]
   medicalHistory MedicalHistory[]
   prescriptions Prescription[]
@@ -280,27 +498,103 @@ model MedicalProblem {
 // ============================================
 // SERVICE CATALOG
 // ============================================
+// Service catalog management (spec 003-service-mgmt).
+//   - ServiceType/ServiceStatus enums drive UI/API strict types
+//   - durationMinutes is the primary input to slot generation (002 FR-007)
+//   - name uniqueness is enforced per clinic (FR-002, SC-006)
+//   - durationMinutes restricted to {30, 60, 90, 120, 150, 180} (FR-003)
+//   - price is a non-negative integer in the smallest currency unit (FR-014)
+//   - physical deletion requires INACTIVE + zero assignments + zero bookings (FR-009)
+
+enum ServiceType {
+  KONSELING
+  ASESMEN
+  WORKSHOP
+}
+
+enum ServiceStatus {
+  ACTIVE
+  INACTIVE
+}
 
 model Service {
-  id          String    @id @default(cuid())
-  clinicId    String?
-  type        String?
-  name        String
-  description String?   @db.Text
-  price       Decimal   @db.Decimal(10, 2)
-  duration    Int       @default(30) // in minutes
-  isPrivate   Boolean   @default(false)
-  status      Int       @default(1)
-  imageUrl    String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String        @id @default(cuid())
+  clinicId        String?
+  type            String?
+  name            String
+  description     String?       @db.Text
+  price           Decimal       @db.Decimal(10, 2)
+  duration        Int           @default(30) // legacy free-form minutes
+  durationMinutes Int           @default(60) // canonical for spec 003 — 30/60/90/120/150/180
+  serviceType     ServiceType   @default(KONSELING)
+  status          ServiceStatus @default(ACTIVE)
+  isPrivate       Boolean       @default(false)
+  legacyStatus    Int           @default(1) // mirrors `status` for legacy int-based callers
+  imageUrl        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   clinic       Clinic?                @relation(fields: [clinicId], references: [id])
   doctors      DoctorServiceMapping[]
   appointments AppointmentServiceMapping[]
+  sessions     Session[]                @relation("SessionService")
   billItems    BillItem[]
+  clinicServices ClinicServicePrice[]
 
+  @@unique([clinicId, name])
+  @@index([clinicId, status])
+  @@index([serviceType])
   @@map("services")
+}
+
+// ============================================
+// SESSION MANAGEMENT (Feature 005)
+// ============================================
+// Session: a booked session between a client and professional.
+// Status lifecycle: PENDING -> BOOKED -> CHECK_IN -> CHECK_OUT -> COMPLETED.
+// Terminal: REJECTED, CANCELLED.
+// See: specs/005-session-mgmt/data-model.md
+
+enum SessionStatus {
+  PENDING     // awaiting professional approval (client-initiated booking)
+  BOOKED      // confirmed (professional approved or staff booked directly)
+  CHECK_IN    // client has arrived
+  CHECK_OUT   // session ended
+  COMPLETED   // auto-closed after 24h
+  REJECTED    // professional rejected
+  CANCELLED   // cancelled before start
+}
+
+model Session {
+  id               String        @id @default(cuid())
+  clientId         String
+  professionalId   String
+  serviceId        String
+  practiceId       String
+  slotDate         DateTime      @db.Date
+  startTime        DateTime
+  endTime          DateTime
+  status           SessionStatus @default(PENDING)
+  rejectionReason  String?       @db.Text
+  cancellationReason String?     @db.Text
+  checkedInAt      DateTime?
+  checkedOutAt     DateTime?
+  createdBy        String        // userId of creator (client or receptionist)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relations
+  client         Patient    @relation("SessionClient", fields: [clientId], references: [id])
+  professional   Doctor     @relation("SessionProfessional", fields: [professionalId], references: [id])
+  service        Service    @relation("SessionService", fields: [serviceId], references: [id])
+
+  @@index([professionalId, slotDate, status])
+  @@index([clientId, slotDate])
+  @@index([practiceId, slotDate])
+  @@index([status])
+  @@index([slotDate, status])
+  @@index([status, checkedOutAt])
+  @@map("sessions_booking")
 }
 
 model ClinicServicePrice {
@@ -354,9 +648,9 @@ model Appointment {
   doctorId              String
   patientId             String
   appointmentStartDate  DateTime          @db.Date
-  appointmentStartTime String            @db.Time
+  appointmentStartTime DateTime          @db.Time
   appointmentEndDate    DateTime?         @db.Date
-  appointmentEndTime   String?           @db.Time
+  appointmentEndTime   DateTime?         @db.Time
   appointmentStartUtc   DateTime          @db.DateTime
   appointmentEndUtc     DateTime?
   appointmentTimezone   String            @default("UTC")
@@ -461,6 +755,7 @@ model Prescription {
 
   encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   patient   Patient   @relation(fields: [patientId], references: [id])
+  doctor    Doctor    @relation(fields: [doctorId], references: [id])
 
   @@map("prescriptions")
 }
@@ -515,8 +810,8 @@ model ClinicSession {
   clinicId     String
   doctorId     String?
   sessionDate  DateTime @db.Date
-  startTime    String   @db.Time
-  endTime      String   @db.Time
+  startTime    DateTime @db.Time
+  endTime      DateTime @db.Time
   slotDuration Int      @default(30)
   isAvailable  Int      @default(1)
   createdAt    DateTime @default(now())
@@ -536,8 +831,8 @@ model Holiday {
   startDate  DateTime @db.Date
   endDate    DateTime @db.Date
   isAllDay   Boolean  @default(true)
-  startTime  String?  @db.Time
-  endTime    String?  @db.Time
+  startTime  DateTime? @db.Time
+  endTime    DateTime? @db.Time
   createdAt  DateTime @default(now())
 
   clinic Clinic? @relation(fields: [moduleId], references: [id], map: "holiday_clinic_fk")
@@ -564,41 +859,80 @@ model Bill {
   notes         String? @db.Text
   dueDate       DateTime?
   paidAt        DateTime?
+  // 011-billing additions
+  billNumber    String?  @unique // INV-{clinicCode}-{YYYY}-{NNNNN}
+  status        String   @default("DRAFT") // DRAFT|ISSUED|PAID|PARTIAL|VOID|REFUNDED
+  paidAmount    Decimal  @default(0) @db.Decimal(10, 2)
+  balanceDue    Decimal  @default(0) @db.Decimal(10, 2)
+  voidedAt      DateTime?
+  voidedBy      String?
+  voidReason    String?  @db.Text
+  disputedAt    DateTime?
+  disputeReason String?  @db.Text
+  professionalId String?
+  createdBy     String?
+  metadata      Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  encounter Encounter? @relation(fields: [encounterId], references: [id])
-  clinic   Clinic     @relation(fields: [clinicId], references: [id])
-  items    BillItem[]
+  encounter     Encounter?    @relation(fields: [encounterId], references: [id])
+  clinic        Clinic        @relation(fields: [clinicId], references: [id])
+  items         BillItem[]
+  payments      Payment[]
 
+  @@index([clinicId, status])
+  @@index([patientId])
+  @@index([paymentStatus])
+  @@index([createdAt])
   @@map("bills")
 }
 
 model BillItem {
-  id        String   @id @default(cuid())
-  billId    String
-  serviceId String?
-  itemName  String
-  price     Decimal  @db.Decimal(10, 2)
-  quantity  Int      @default(1)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  billId      String
+  serviceId   String?
+  itemName    String
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(10, 2)
+  quantity    Int      @default(1)
+  // 011-billing additions
+  type        String   @default("SERVICE") // SERVICE|DISCOUNT|OTHER
+  discount    Decimal  @default(0) @db.Decimal(10, 2)
+  unitPrice   Decimal? @db.Decimal(10, 2)
+  lineTotal   Decimal? @db.Decimal(10, 2)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
 
-  bill    Bill    @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill    Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
   service Service? @relation(fields: [serviceId], references: [id])
 
+  @@index([billId])
   @@map("bill_items")
 }
 
 model Payment {
-  id            String   @id @default(cuid())
-  billId        String
-  amount        Decimal  @db.Decimal(10, 2)
-  paymentMethod String
-  transactionId String?
-  status        String   @default("completed")
-  metadata      Json?
-  createdAt     DateTime @default(now())
+  id                    String   @id @default(cuid())
+  billId                String
+  amount                Decimal  @db.Decimal(10, 2)
+  paymentMethod         String
+  transactionId         String?
+  status                String   @default("completed")
+  // 011-billing additions
+  stripePaymentIntentId String?  @unique
+  refundedPaymentId     String?
+  notes                 String?  @db.Text
+  paidAt                DateTime?
+  createdBy             String?
+  metadata              Json?
+  createdAt             DateTime @default(now())
 
+  bill               Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  refundedPayment    Payment? @relation("RefundLink", fields: [refundedPaymentId], references: [id])
+  refunds            Payment[] @relation("RefundLink")
+  appointmentMappings PaymentAppointmentMapping[]
+
+  @@index([billId])
+  @@index([status])
   @@map("payments")
 }
 
@@ -680,15 +1014,17 @@ model Setting {
 }
 
 model EmailTemplate {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  subject   String
-  body      String   @db.Text
-  variables Json?
-  type      String   @default("email")
-  status    Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?  @db.Text
+  subject     String
+  body        String   @db.Text
+  variables   Json?
+  type        String   @default("email")
+  status      Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("email_templates")
 }
@@ -828,4 +1164,270 @@ model LogEntry {
   @@index([requestId])
   @@index([occurredAt])
   @@map("log_entries")
+}
+
+// ============================================
+// INTERVENTION PLAN (Feature 009)
+// ============================================
+// A professional creates an intervention plan after a session. The plan is
+// linked to a single session (one plan per session) and contains one or more
+// recommendation items (activities / exercises the client should follow).
+//
+// The plan is visible to:
+//   - The Professional who created it
+//   - The Client it belongs to
+//   - Receptionist / Admin (read-only)
+//
+// Status lifecycle:
+//   PlanStatus     ACTIVE → COMPLETED
+//   ItemStatus     ACTIVE → COMPLETED  (set by the client, never by professional)
+//
+// FR-004: plan creation and item completion emit AUDIT log entries.
+// FR-005: plan summary is exposed for feature 014 (progress tracking).
+
+enum PlanStatus {
+  ACTIVE
+  COMPLETED
+}
+
+enum ItemStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model InterventionPlan {
+  id              String        @id @default(cuid())
+  sessionId       String        @unique
+  professionalId  String
+  clientId        String
+  status          PlanStatus    @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items RecommendationItem[]
+
+  @@index([professionalId])
+  @@index([clientId])
+  @@index([status])
+  @@map("intervention_plans")
+}
+
+model RecommendationItem {
+  id                  String     @id @default(cuid())
+  interventionPlanId  String
+  description         String     @db.Text
+  frequency           String?
+  durationDays        Int?
+  instructions        String?    @db.Text
+  status              ItemStatus @default(ACTIVE)
+  completedAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  plan InterventionPlan @relation(fields: [interventionPlanId], references: [id], onDelete: Cascade)
+
+  @@index([interventionPlanId])
+  @@index([status])
+  @@map("recommendation_items")
+}
+
+// ============================================
+// SESSION NOTES (Feature 008)
+// ============================================
+// Source of truth: specs/008-session-notes/plan.md
+// One note per session. Notes are locked when the session reaches
+// COMPLETED or when the professional manually closes them.
+// `summary` holds the first 200 characters of `content` for feature
+// 014 (client progress tracking) to read without touching content.
+
+enum NoteStatus {
+  OPEN
+  CLOSED
+}
+
+model SessionNote {
+  id             String     @id @default(cuid())
+  sessionId      String     @unique
+  professionalId String
+  summary        String     @db.VarChar(200)
+  content        String     @db.Text
+  status         NoteStatus @default(OPEN)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  closedAt       DateTime?
+
+  @@index([professionalId])
+  @@index([status])
+  @@index([sessionId])
+  @@map("session_notes")
+}
+
+// ============================================
+// INFORMED CONSENT (Feature 010)
+// ============================================
+// Consent forms are clinic-scoped templates; signatures are per-form/per-client
+// captures with timestamp + IP for evidentiary purposes (FR-02, FR-03).
+//
+// ConsentForm.status lifecycle:
+//   DRAFT     → being authored (not yet sent)
+//   SENT      → sent to client for signature (has at least one pending sig)
+//   SIGNED    → client has signed (active consent on file)
+//   WITHDRAWN → client or admin revoked consent after signing (FR-05)
+//   ARCHIVED  → retired template; not used for new requests
+//
+// ConsentSignature.status:
+//   PENDING  → signature request sent, awaiting client action
+//   SIGNED   → client signed (signedAt + ipAddress + userAgent captured)
+//   DECLINED → client explicitly declined
+//   EXPIRED  → sentAt + 30d passed without action (enforced by background job)
+
+enum ConsentFormStatus {
+  DRAFT
+  SENT
+  SIGNED
+  WITHDRAWN
+  ARCHIVED
+}
+
+enum ConsentSignatureStatus {
+  PENDING
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+model ConsentForm {
+  id          String            @id @default(cuid())
+  practiceId  String            // Clinic.id — multi-tenant scoping
+  name        String            // Template display name (e.g. "Telehealth Consent")
+  content     String            @db.LongText // Dynamic content (HTML/markdown body the client will see)
+  status      ConsentFormStatus @default(DRAFT)
+  version     Int               @default(1) // Bumped on each substantive edit
+  createdById String            // User.id (CLINIC_ADMIN or PROFESSIONAL) who authored
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  signatures ConsentSignature[]
+
+  @@index([practiceId, status])
+  @@index([createdById])
+  @@index([status])
+  @@map("consent_forms")
+}
+
+model ConsentSignature {
+  id            String                @id @default(cuid())
+  formId        String
+  clientId      String                // User.id (CLIENT) who is being asked to sign
+  status        ConsentSignatureStatus @default(PENDING)
+  signedAt      DateTime?
+  ipAddress     String?               @db.VarChar(64) // IPv4 or IPv6 at signature time
+  userAgent     String?               @db.VarChar(512)
+  signatureSvg  String?               @db.LongText // SVG path data of the captured signature
+  signatureText String?               // Typed name (alternative to drawn signature)
+  declineReason String?               @db.Text
+  sentAt        DateTime              @default(now())
+  expiresAt     DateTime              // sentAt + 30d
+  withdrawnAt   DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  form   ConsentForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  client User        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, clientId]) // One active signature request per (form, client)
+  @@index([clientId, status])
+  @@index([formId, status])
+  @@index([status, expiresAt])
+  @@map("consent_signatures")
+}
+// ============================================
+// PROFESSIONAL MANAGEMENT (Feature 002)
+// ============================================
+// Professional is the canonical entity for psychologists/psychiatrists
+// providing sessions. It links to a WordPress User (1:1) and to a single
+// Practice (n:1) for v1.
+
+enum ProfessionalType {
+  PSIKOLOG_KLINIS
+  PSIKOLOG_ANAK
+  PSIKIATER
+  KONSELOR
+}
+
+enum ProfessionalStatus {
+  PENDING_ACTIVATION
+  ACTIVE
+  INACTIVE
+}
+
+model Professional {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  practiceId         String?
+  fullName           String
+  email              String             @unique
+  professionalType   ProfessionalType
+  registrationNumber String             @unique
+  status             ProfessionalStatus @default(PENDING_ACTIVATION)
+  biography          String?            @db.Text
+  specialties        Json?
+  contactInfo        Json?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user                User                          @relation("UserProfessional", fields: [userId], references: [id], onDelete: Cascade)
+  practice            Clinic?                       @relation("ClinicProfessionals", fields: [practiceId], references: [id])
+  availability        ProfessionalAvailability[]
+  offDays             ProfessionalOffDay[]
+  serviceAssignments  ProfessionalServiceAssignment[]
+
+  @@index([practiceId, status])
+  @@index([status])
+  @@map("professionals")
+}
+
+model ProfessionalAvailability {
+  id              String   @id @default(cuid())
+  professionalId  String
+  dayOfWeek       Int
+  startMinute     Int
+  endMinute       Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([professionalId, dayOfWeek, startMinute])
+  @@index([professionalId, dayOfWeek])
+  @@map("professional_availability")
+}
+
+model ProfessionalOffDay {
+  id              String   @id @default(cuid())
+  professionalId  String
+  startDate       DateTime @db.Date
+  endDate         DateTime @db.Date
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId, startDate, endDate])
+  @@map("professional_off_days")
+}
+
+model ProfessionalServiceAssignment {
+  id              String   @id @default(cuid())
+  professionalId  String
+  serviceId       String
+  createdAt       DateTime @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@unique([professionalId, serviceId])
+  @@index([professionalId])
+  @@map("professional_service_assignments")
 }

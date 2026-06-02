@@ -1,0 +1,20 @@
+/* src/app/(dashboard)/intervention-plans/[id]/print/styles.css */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  a { color: inherit; text-decoration: none; }
+}
+
+@media screen {
+  body {
+    background: #f3f4f6;
+    padding: 24px 0;
+  }
+  .print-page {
+    max-width: 800px;
+    margin: 0 auto;
+    background: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    padding: 32px;
+  }
+}

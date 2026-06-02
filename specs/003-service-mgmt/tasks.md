@@ -18,11 +18,11 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Add Service model, ServiceType enum, ServiceStatus enum to `prisma/schema.prisma` (see plan.md data model section)
-- [ ] T002 Generate Prisma migration: `npx prisma migrate dev --name add_service_management`
-- [ ] T003 Generate Prisma client: `npx prisma generate`
-- [ ] T004 [P] Create TypeScript types for Service entity in `src/types/service.ts`
-- [ ] T005 [P] Create Zod validation schemas in `src/services/service/validation.ts` (name (max 100), description (max 500), price (>=0), durationMinutes in {30,60,90,120,150,180}, serviceType enum, status enum)
+- [X] T001 Add Service model, ServiceType enum, ServiceStatus enum to `prisma/schema.prisma` (see plan.md data model section)
+- [X] T002 Generate Prisma migration: `npx prisma migrate dev --name add_service_management`
+- [X] T003 Generate Prisma client: `npx prisma generate`
+- [X] T004 [P] Create TypeScript types for Service entity in `src/types/service.ts`
+- [X] T005 [P] Create Zod validation schemas in `src/services/service/validation.ts` (name (max 100), description (max 500), price (>=0), durationMinutes in {30,60,90,120,150,180}, serviceType enum, status enum)
 
 ---
 
@@ -32,19 +32,19 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Create `src/services/service/service.service.ts` with create, read, update, list, deactivate, reactivate, canDelete() methods
-- [ ] T007 Add AUDIT logging to service.service.ts for all state changes (create, update, deactivate, reactivate, delete)
-- [ ] T008 Create `GET /api/v1/services` endpoint in `src/app/api/v1/services/route.ts` with pagination, search, serviceType filter, status filter
-- [ ] T009 Create `POST /api/v1/services` endpoint for creating new service in `src/app/api/v1/services/route.ts`
-- [ ] T010 Create `GET /api/v1/services/[id]` endpoint in `src/app/api/v1/services/[id]/route.ts`
-- [ ] T011 Create `PATCH /api/v1/services/[id]` endpoint for partial updates in `src/app/api/v1/services/[id]/route.ts`
-- [ ] T012 Create `DELETE /api/v1/services/[id]` endpoint in `src/app/api/v1/services/[id]/route.ts` with INACTIVE + no bookings + no assignments preconditions
-- [ ] T013 Create `PATCH /api/v1/services/[id]/status` endpoint in `src/app/api/v1/services/[id]/status/route.ts`
-- [ ] T014 Create `GET /api/v1/services/public` endpoint in `src/app/api/v1/services/public/route.ts` (public, ACTIVE services only, no auth)
-- [ ] T015 Add RBAC authorization checks to all service endpoints using existing auth helpers from auth-foundation (001)
-- [ ] T016 Add name uniqueness validation per practice in `service.service.ts` create() and update()
-- [ ] T017 Write unit tests in `tests/unit/service/service.service.test.ts` covering create, read, update, list, deactivate, reactivate, delete preconditions
-- [ ] T018 Write unit tests in `tests/unit/service/validation.test.ts` covering all Zod schemas (duration, price, name length, description length)
+- [X] T006 Create `src/services/service/service.service.ts` with create, read, update, list, deactivate, reactivate, canDelete() methods
+- [X] T007 Add AUDIT logging to service.service.ts for all state changes (create, update, deactivate, reactivate, delete)
+- [X] T008 Create `GET /api/v1/services` endpoint in `src/app/api/v1/services/route.ts` with pagination, search, serviceType filter, status filter
+- [X] T009 Create `POST /api/v1/services` endpoint for creating new service in `src/app/api/v1/services/route.ts`
+- [X] T010 Create `GET /api/v1/services/[id]` endpoint in `src/app/api/v1/services/[id]/route.ts`
+- [X] T011 Create `PATCH /api/v1/services/[id]` endpoint for partial updates in `src/app/api/v1/services/[id]/route.ts`
+- [X] T012 Create `DELETE /api/v1/services/[id]` endpoint in `src/app/api/v1/services/[id]/route.ts` with INACTIVE + no bookings + no assignments preconditions
+- [X] T013 Create `PATCH /api/v1/services/[id]/status` endpoint in `src/app/api/v1/services/[id]/status/route.ts`
+- [X] T014 Create `GET /api/v1/services/public` endpoint in `src/app/api/v1/services/public/route.ts` (public, ACTIVE services only, no auth)
+- [X] T015 Add RBAC authorization checks to all service endpoints using existing auth helpers from auth-foundation (001)
+- [X] T016 Add name uniqueness validation per practice in `service.service.ts` create() and update()
+- [X] T017 Write unit tests in `tests/unit/service/service.service.test.ts` covering create, read, update, list, deactivate, reactivate, delete preconditions
+- [X] T018 Write unit tests in `tests/unit/service/validation.test.ts` covering all Zod schemas (duration, price, name length, description length)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -58,15 +58,15 @@
 
 ### Implementation
 
-- [ ] T019 [US1] Implement practiceId injection from authenticated user context in `service.service.ts` create() method
-- [ ] T020 [US1] Add 409 conflict response for duplicate name per practice in `POST /api/v1/services` endpoint
-- [ ] T021 [US1] Add 422 field-level validation error response in `POST /api/v1/services` endpoint (invalid duration, negative price, name too long)
-- [ ] T022 [US1] Create service form component in `src/components/service/service-form.tsx` with all fields: name, description, price, durationMinutes (select), serviceType (select)
-- [ ] T023 [US1] Create duration select component in `src/components/service/duration-select.tsx` with allowed values {30, 60, 90, 120, 150, 180}
-- [ ] T024 [US1] Create service type select component in `src/components/service/service-type-select.tsx` with options KONSELING, ASESMEN, WORKSHOP
-- [ ] T025 [US1] Create admin service list page at `src/app/(dashboard)/admin/services/page.tsx`
-- [ ] T026 [US1] Add integration test in `tests/integration/service/create.test.ts` covering happy path, name conflict, invalid duration, negative price
-- [ ] T027 [US1] Verify service appears in list within 5 seconds of submission (SC-001)
+- [X] T019 [US1] Implement practiceId injection from authenticated user context in `service.service.ts` create() method
+- [X] T020 [US1] Add 409 conflict response for duplicate name per practice in `POST /api/v1/services` endpoint
+- [X] T021 [US1] Add 422 field-level validation error response in `POST /api/v1/services` endpoint (invalid duration, negative price, name too long)
+- [X] T022 [US1] Create service form component in `src/components/service/service-form.tsx` with all fields: name, description, price, durationMinutes (select), serviceType (select)
+- [X] T023 [US1] Create duration select component in `src/components/service/duration-select.tsx` with allowed values {30, 60, 90, 120, 150, 180}
+- [X] T024 [US1] Create service type select component in `src/components/service/service-type-select.tsx` with options KONSELING, ASESMEN, WORKSHOP
+- [X] T025 [US1] Create admin service list page at `src/app/(dashboard)/admin/services/page.tsx`
+- [X] T026 [US1] Add integration test in `tests/integration/service/create.test.ts` covering happy path, name conflict, invalid duration, negative price
+- [X] T027 [US1] Verify service appears in list within 5 seconds of submission (SC-001)
 
 ---
 
@@ -78,12 +78,12 @@
 
 ### Implementation
 
-- [ ] T028 [US2] Implement duration-change warning logic in `service.service.ts` update() — check for existing BOOKED sessions before duration change and return warning flag
-- [ ] T029 [US2] Implement name conflict check in `service.service.ts` update() — reject if new name conflicts with another service in same practice
-- [ ] T030 [US2] Create edit view in `service-form.tsx` with pre-filled values and save behavior
-- [ ] T031 [US2] Add warning dialog component in `src/components/service/duration-change-warning.tsx` shown before duration save on service with bookings
-- [ ] T032 [US2] Add integration test in `tests/integration/service/update.test.ts` covering happy path, name conflict, duration change warning
-- [ ] T033 [US2] Verify updated duration is reflected in slot generation immediately (SC-002)
+- [X] T028 [US2] Implement duration-change warning logic in `service.service.ts` update() — check for existing BOOKED sessions before duration change and return warning flag
+- [X] T029 [US2] Implement name conflict check in `service.service.ts` update() — reject if new name conflicts with another service in same practice
+- [X] T030 [US2] Create edit view in `service-form.tsx` with pre-filled values and save behavior
+- [X] T031 [US2] Add warning dialog component in `src/components/service/duration-change-warning.tsx` shown before duration save on service with bookings
+- [X] T032 [US2] Add integration test in `tests/integration/service/update.test.ts` covering happy path, name conflict, duration change warning
+- [X] T033 [US2] Verify updated duration is reflected in slot generation immediately (SC-002)
 
 ---
 
@@ -95,12 +95,12 @@
 
 ### Implementation
 
-- [ ] T034 [US3] Implement case-insensitive name search in `service.service.ts` list() method
-- [ ] T035 [US3] Implement serviceType and status filters in `service.service.ts` list() method
-- [ ] T036 [US3] Create service list component in `src/components/service/service-list.tsx` with table view, pagination controls, search input, type filter chips
-- [ ] T037 [US3] Add URL-based filter persistence (page, limit, search, serviceType, status) in service list page
-- [ ] T038 [US3] Add integration test in `tests/integration/service/list.test.ts` covering pagination, search, type filter, status filter
-- [ ] T039 [US3] Verify list returns 100 services within 1 second (SC-004)
+- [X] T034 [US3] Implement case-insensitive name search in `service.service.ts` list() method
+- [X] T035 [US3] Implement serviceType and status filters in `service.service.ts` list() method
+- [X] T036 [US3] Create service list component in `src/components/service/service-list.tsx` with table view, pagination controls, search input, type filter chips
+- [X] T037 [US3] Add URL-based filter persistence (page, limit, search, serviceType, status) in service list page
+- [X] T038 [US3] Add integration test in `tests/integration/service/list.test.ts` covering pagination, search, type filter, status filter
+- [X] T039 [US3] Verify list returns 100 services within 1 second (SC-004)
 
 ---
 
@@ -112,13 +112,13 @@
 
 ### Implementation
 
-- [ ] T040 [US4] Implement deactivate/reactivate in `service.service.ts` setStatus() method — status transition ACTIVE ↔ INACTIVE
-- [ ] T041 [US4] Implement delete preconditions check in `service.service.ts` canDelete() — returns error if not INACTIVE, has assignments, or has bookings
-- [ ] T042 [US4] Create status toggle in service list row actions in `src/components/service/service-list.tsx`
-- [ ] T043 [US4] Create confirmation dialog for delete action in `src/components/service/delete-confirmation.tsx` showing blockers if any
-- [ ] T044 [US4] Add integration test in `tests/integration/service/deactivate.test.ts` covering deactivate, reactivate, delete preconditions
-- [ ] T044b [US4] [P] Add integration test in `tests/integration/service/public-endpoint.test.ts` covering: no-auth access returns ACTIVE services, practiceId filter works, INACTIVE services excluded (FR-012)
-- [ ] T045 [US4] Verify deactivated service disappears from slot results within 5 seconds (SC-003)
+- [X] T040 [US4] Implement deactivate/reactivate in `service.service.ts` setStatus() method — status transition ACTIVE ↔ INACTIVE
+- [X] T041 [US4] Implement delete preconditions check in `service.service.ts` canDelete() — returns error if not INACTIVE, has assignments, or has bookings
+- [X] T042 [US4] Create status toggle in service list row actions in `src/components/service/service-list.tsx`
+- [X] T043 [US4] Create confirmation dialog for delete action in `src/components/service/delete-confirmation.tsx` showing blockers if any
+- [X] T044 [US4] Add integration test in `tests/integration/service/deactivate.test.ts` covering deactivate, reactivate, delete preconditions
+- [X] T044b [US4] [P] Add integration test in `tests/integration/service/public-endpoint.test.ts` covering: no-auth access returns ACTIVE services, practiceId filter works, INACTIVE services excluded (FR-012)
+- [X] T045 [US4] Verify deactivated service disappears from slot results within 5 seconds (SC-003)
 
 ---
 
@@ -130,9 +130,9 @@
 
 ### Implementation
 
-- [ ] T046 [US5] Add assignedProfessionalCount to service detail response in `GET /api/v1/services/[id]` by counting ProfessionalServiceAssignment records
-- [ ] T047 [US5] Create service detail page at `src/app/(dashboard)/admin/services/[id]/page.tsx` showing all fields and assigned professional count
-- [ ] T048 [US5] Add "No professionals assigned yet" empty state in detail page
+- [X] T046 [US5] Add assignedProfessionalCount to service detail response in `GET /api/v1/services/[id]` by counting ProfessionalServiceAssignment records
+- [X] T047 [US5] Create service detail page at `src/app/(dashboard)/admin/services/[id]/page.tsx` showing all fields and assigned professional count
+- [X] T048 [US5] Add "No professionals assigned yet" empty state in detail page
 
 ---
 
@@ -140,14 +140,14 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T049 [P] Create E2E test plan markdown at `docs/testing/service-mgmt-e2e-plan.md` covering: create service, update service, list with filters, deactivate, delete
-- [ ] T050 [P] Add OPENAPI 3.0 spec entries for all service endpoints in `docs/api/openapi.yaml`
-- [ ] T051 Verify all AUDIT events are logged: service.created, service.updated, service.status_changed, service.deleted
-- [ ] T052 Run ESLint and Prettier on all new files
-- [ ] T053 Run TypeScript strict mode check: `npx tsc --strict`
-- [ ] T054 Run full test suite: `npm test`
-- [ ] T055 Run production build: `npm run build`
-- [ ] T056 Create PR to main with feature description and checklist of completed items
+- [X] T049 [P] Create E2E test plan markdown at `docs/testing/service-mgmt-e2e-plan.md` covering: create service, update service, list with filters, deactivate, delete
+- [X] T050 [P] Add OPENAPI 3.0 spec entries for all service endpoints in `docs/api/openapi.yaml`
+- [X] T051 Verify all AUDIT events are logged: service.created, service.updated, service.status_changed, service.deleted
+- [X] T052 Run ESLint and Prettier on all new files
+- [X] T053 Run TypeScript strict mode check: `npx tsc --strict`
+- [X] T054 Run full test suite: `npm test`
+- [X] T055 Run production build: `npm run build`
+- [X] T056 Create PR to main with feature description and checklist of completed items
 
 ---
 

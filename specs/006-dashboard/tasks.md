@@ -18,13 +18,13 @@
 
 **Purpose**: Dashboard service layer and API routes that all user stories depend on
 
-- [ ] T001 Create `src/services/dashboard/dashboard.service.ts` with aggregation methods: getTodaySessions(role, userId), getPendingApprovals(role, userId), getActiveClients(role, userId), getUpcomingSessions(userId), getRecentHistory(userId)
-- [ ] T002 Create `src/services/dashboard/stats.service.ts` with: getWeeklyStats(practiceId), getMonthlyStats(practiceId), getActiveClientsCount(practiceId), getNewClientsCount(practiceId)
-- [ ] T003 Create `GET /api/v1/dashboard` endpoint in `src/app/api/v1/dashboard/route.ts` returning role-scoped widget data
-- [ ] T004 Create `GET /api/v1/dashboard/stats` endpoint in `src/app/api/v1/dashboard/stats/route.ts` for Admin/Super Admin statistics
-- [ ] T005 Add RBAC authorization checks: determine role from JWT, scope data accordingly
-- [ ] T006 Write unit tests in `tests/unit/dashboard/dashboard.service.test.ts` covering all aggregation methods
-- [ ] T007 Write unit tests in `tests/unit/dashboard/stats.service.test.ts` covering all stats methods
+- [X] T001 Create `src/services/dashboard/dashboard.service.ts` with aggregation methods: getTodaySessions(role, userId), getPendingApprovals(role, userId), getActiveClients(role, userId), getUpcomingSessions(userId), getRecentHistory(userId)
+- [X] T002 Create `src/services/dashboard/stats.service.ts` with: getWeeklyStats(practiceId), getMonthlyStats(practiceId), getActiveClientsCount(practiceId), getNewClientsCount(practiceId)
+- [X] T003 Create `GET /api/v1/dashboard` endpoint in `src/app/api/v1/dashboard/route.ts` returning role-scoped widget data
+- [X] T004 Create `GET /api/v1/dashboard/stats` endpoint in `src/app/api/v1/dashboard/stats/route.ts` for Admin/Super Admin statistics
+- [X] T005 Add RBAC authorization checks: determine role from JWT, scope data accordingly
+- [X] T006 Write unit tests in `tests/unit/dashboard/dashboard.service.test.ts` covering all aggregation methods
+- [X] T007 Write unit tests in `tests/unit/dashboard/stats.service.test.ts` covering all stats methods
 
 **Checkpoint**: Foundation ready - widget implementation can now begin
 
@@ -34,10 +34,10 @@
 
 **Purpose**: Reusable widget and shared components used by all dashboard pages
 
-- [ ] T008 [P] Create `src/components/dashboard/shared/stat-card.tsx` reusable card component with title, value, change indicator, and optional trend
-- [ ] T009 [P] Create `src/components/dashboard/shared/session-list-item.tsx` for displaying session in a list
-- [ ] T010 [P] Create `src/components/dashboard/widgets/skeleton-loader.tsx` loading skeleton for widget placeholder
-- [ ] T011 Create `src/components/dashboard/shared/quick-actions.tsx` with role-appropriate action links
+- [X] T008 [P] Create `src/components/dashboard/shared/stat-card.tsx` reusable card component with title, value, change indicator, and optional trend
+- [X] T009 [P] Create `src/components/dashboard/shared/session-list-item.tsx` for displaying session in a list
+- [X] T010 [P] Create `src/components/dashboard/widgets/skeleton-loader.tsx` loading skeleton for widget placeholder
+- [X] T011 Create `src/components/dashboard/shared/quick-actions.tsx` with role-appropriate action links
 
 ---
 
@@ -49,20 +49,20 @@
 
 ### Implementation
 
-- [ ] T012 [US1] Create `src/app/(dashboard)/dashboard/page.tsx` root dashboard page that redirects to role-specific view
-- [ ] T013 [US1] Create `src/app/(dashboard)/admin/dashboard/page.tsx` for Receptionist and Clinic Admin
-- [ ] T014 [US1] Create `src/app/(dashboard)/professional/dashboard/page.tsx` for Professional
-- [ ] T015 [US1] Create `src/app/(dashboard)/client/dashboard/page.tsx` for Client
-- [ ] T016 [US1] Create `src/components/dashboard/dashboard-layout.tsx` base layout with header and role-specific sidebar
-- [ ] T017 [US1] Create `src/components/dashboard/widgets/today-sessions.tsx` widget for Receptionist/Admin/Professional
-- [ ] T018 [US1] Create `src/components/dashboard/widgets/pending-approvals.tsx` widget for Professional/Admin
-- [ ] T019 [US1] Create `src/components/dashboard/widgets/active-clients.tsx` widget for Professional
-- [ ] T020 [US1] Create `src/components/dashboard/widgets/statistics.tsx` widget for Clinic Admin
-- [ ] T021 [US1] Create `src/components/dashboard/widgets/upcoming-sessions.tsx` widget for Client
-- [ ] T022 [US1] Create `src/components/dashboard/widgets/recent-history.tsx` widget for Client
-- [ ] T023 [US1] Create `src/components/dashboard/widgets/quick-actions.tsx` widget with role-appropriate CTAs
-- [ ] T024 [US1] Add integration test in `tests/integration/dashboard/admin-dashboard.test.ts` verifying admin widgets, Super Admin cross-practice aggregation, data scoping, and role-specific widget inclusion
-- [ ] T025 [US1] Verify dashboard loads within 3 seconds (SC-001)
+- [X] T012 [US1] Create `src/app/(dashboard)/dashboard/page.tsx` root dashboard page that redirects to role-specific view
+- [X] T013 [US1] Create `src/app/(dashboard)/admin/dashboard/page.tsx` for Receptionist and Clinic Admin
+- [X] T014 [US1] Create `src/app/(dashboard)/professional/dashboard/page.tsx` for Professional
+- [X] T015 [US1] Create `src/app/(dashboard)/client/dashboard/page.tsx` for Client
+- [X] T016 [US1] Create `src/components/dashboard/dashboard-layout.tsx` base layout with header and role-specific sidebar
+- [X] T017 [US1] Create `src/components/dashboard/widgets/today-sessions.tsx` widget for Receptionist/Admin/Professional
+- [X] T018 [US1] Create `src/components/dashboard/widgets/pending-approvals.tsx` widget for Professional/Admin
+- [X] T019 [US1] Create `src/components/dashboard/widgets/active-clients.tsx` widget for Professional
+- [X] T020 [US1] Create `src/components/dashboard/widgets/statistics.tsx` widget for Clinic Admin
+- [X] T021 [US1] Create `src/components/dashboard/widgets/upcoming-sessions.tsx` widget for Client
+- [X] T022 [US1] Create `src/components/dashboard/widgets/recent-history.tsx` widget for Client
+- [X] T023 [US1] Create `src/components/dashboard/widgets/quick-actions.tsx` widget with role-appropriate CTAs
+- [X] T024 [US1] Add integration test in `tests/integration/dashboard/admin-dashboard.test.ts` verifying admin widgets, Super Admin cross-practice aggregation, data scoping, and role-specific widget inclusion
+- [X] T025 [US1] Verify dashboard loads within 3 seconds (SC-001)
 
 ---
 
@@ -70,13 +70,13 @@
 
 **Purpose**: E2E testing and final validation
 
-- [ ] T026 [P] Create E2E test plan markdown at `docs/testing/dashboard-e2e-plan.md` covering: login as each role, verify correct widgets, data scoping verification
-- [ ] T027 [P] Add OPENAPI 3.0 spec entries for dashboard endpoints in `docs/api/openapi.yaml`
-- [ ] T028 Run ESLint and Prettier on all new files
-- [ ] T029 Run TypeScript strict mode check: `npx tsc --strict`
-- [ ] T030 Run full test suite: `npm test`
-- [ ] T031 Run production build: `npm run build`
-- [ ] T032 Create PR to main with feature description and checklist of completed items
+- [X] T026 [P] Create E2E test plan markdown at `docs/testing/dashboard-e2e-plan.md` covering: login as each role, verify correct widgets, data scoping verification
+- [X] T027 [P] Add OPENAPI 3.0 spec entries for dashboard endpoints in `docs/api/openapi.yaml`
+- [X] T028 Run ESLint and Prettier on all new files
+- [X] T029 Run TypeScript strict mode check: `npx tsc --strict`
+- [X] T030 Run full test suite: `npm test`
+- [X] T031 Run production build: `npm run build`
+- [X] T032 Create PR to main with feature description and checklist of completed items
 
 ---
 
