@@ -1,36 +1,141 @@
 version: '3.8'
 
 services:
+  # ── MySQL 8 — shared database server ──────────────────────────
+  # Two schemas on one MySQL instance:
+  #   - `praktiqu`  → owned by PraktiQU (Prisma-managed tables)
+  #   - `wordpress` → owned by WordPress (`wp_*` tables)
+  # Cross-schema reads are allowed; neither side writes the other's tables.
   db:
-    image: postgres:15-alpine
-    container_name: praktiqu-postgres
+    image: mysql:8.0
+    container_name: praktiqu-mysql
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: praktiqu
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: praktiqu
+      MYSQL_USER: praktiqu
+      MYSQL_PASSWORD: praktiqu
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Optional: Redis for caching (future use)
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: praktiqu-redis
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
+  # ── WordPress — sibling service ──────────────────────────────
+  # Owns the `wordpress` schema (`wp_*` tables). Used for:
+  #   - Identity: PraktiQU reads `wp_users` / `wp_usermeta` via a custom REST endpoint
+  #     registered by a PraktiQU WordPress plugin (planned).
+  #   - Content: legacy posts, pages, media uploads (out of MVP scope).
+  #   - SMTP: WP can route mail through MailHog via the WP Mail SMTP plugin.
+  # PraktiQU does NOT write to `wp_*` tables. WordPress does NOT write to PraktiQU tables.
+  wordpress:
+    image: wordpress:6-php8.2-apache
+    container_name: praktiqu-wordpress
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: praktiqu
+      WORDPRESS_DB_PASSWORD: praktiqu
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_TABLE_PREFIX: wp_
+      WORDPRESS_DEBUG: "1"
+    ports:
+      - "9001:80"
+    volumes:
+      - wp_data:/var/www/html
+    networks:
+      - default
+
+  # ── PraktiQU — Next.js app (primary backend) ────────────────
+  # Reads from both schemas: its own (`praktiqu.*`) and WordPress's (`wordpress.wp_*`).
+  # All client-facing traffic terminates here.
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: praktiqu-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      mail:
+        condition: service_started
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: mysql://praktiqu:praktiqu@db:3306/praktiqu
+      WORDPRESS_DATABASE_URL: mysql://praktiqu:praktiqu@db:3306/wordpress
+      WORDPRESS_URL: http://wordpress:80
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
+      AUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+      EMAIL_HOST: mail
+      EMAIL_PORT: "1025"
+      EMAIL_SECURE: "false"
+      EMAIL_FROM: noreply@praktiqu.local
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_WINDOW_MS: "60000"
+      RATE_LIMIT_MAX_REQUESTS: "100"
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+
+  # ── MailHog — DEV-ONLY SMTP mail catcher ─────────────────────
+  # Used only in local development to mimic the production cPanel SMTP.
+  # Production: PraktiQU and WordPress both send through the cPanel SMTP server
+  # (configured via SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD in .env).
+  # Web UI: http://localhost:8025
+  # SMTP:   localhost:1025
+  mail:
+    image: mailhog/mailhog:latest
+    container_name: praktiqu-mail
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP server (use this in WP SMTP plugin / PraktiQU .env)
+      - "8025:8025"   # Web UI
+
+  # ── Redis — cache + job queue ──────────────────────────────
+  # Used by PraktiQU for:
+  #   - Idempotency-key storage (per C10)
+  #   - Slot-generation cache (per M10)
+  #   - Background job queue (per C8) when BullMQ or similar is chosen
+  redis:
+    image: redis:7-alpine
+    container_name: praktiqu-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+networks:
+  default:
+    name: praktiqu-network
 
 volumes:
-  postgres_data:
+  mysql_data:
     driver: local
-  # redis_data:
-  #   driver: local
+  wp_data:
+    driver: local
+  redis_data:
+    driver: local

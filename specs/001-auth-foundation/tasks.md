@@ -148,6 +148,34 @@ description: "Task list for 001-auth-foundation feature implementation"
 
 ---
 
+## Phase 6.5: PraktiQU Webhook Receiver (Priority: P1)
+
+**Purpose**: Receive and act on signed state-change events from the `praktiqu-endpoint` WordPress plugin. Addresses FR-023…FR-027 (credential staleness gap from C4).
+
+**Goal**: PraktiQU can react to WP-side changes (password reset, role change, deactivation, deletion) within the 60-second propagation SLO without polling.
+
+- [ ] TW01 [P] Write tests for webhook receiver — cases: (a) valid signature → 200 + action triggered, (b) missing signature → 401 RFC7807, (c) invalid signature → 401, (d) replayed payload (same event ID) → 200 + idempotent no-op, (e) `password.changed` → all tokens revoked + cache cleared, (f) `user.deactivated` → tokens revoked + audit logged, (g) `user.role_changed` → role cache invalidated, (h) `user.deleted` → User.status=0 + tokens revoked, (i) `login.failed` → audit event appended, (j) WP down → 503 from our side if we ever call them upstream (not now; they're the callee)
+- [ ] TW02 [P] Write tests: idempotency — same `event`+`wpUserId`+`issuedAt` (within 5s window) must not trigger double revocation
+- [ ] TW03 Create `POST /api/v1/webhooks/wordpress` endpoint
+- [ ] TW04 Implement HMAC-SHA256 signature verification (constant-time `crypto.timingSafeEqual`) per FR-025; reject missing or invalid with 401 RFC7807
+- [ ] TW05 Store `eventId` in idempotency table (`WordpressWebhookEvent` model); skip if already `received` or `processed` within 5-second window
+- [ ] TW06 Implement `password.changed` handler: revoke all refresh tokens for user; delete cached WP identity
+- [ ] TW07 Implement `user.deactivated` handler: revoke all refresh tokens; next refresh returns `account_inactive` error
+- [ ] TW08 Implement `user.deleted` handler: set `User.status = 0`; revoke all tokens
+- [ ] TW09 Implement `user.role_changed` handler: invalidate role cache for user; next access-token refresh reads fresh role from database
+- [ ] TW10 Implement `login.failed` handler: append audit event `login.failure` with `reason: 'wp_reported'`
+- [ ] TW11 Implement `user.reactivated` handler: no automatic action; log event; new logins allowed (no fresh tokens needed)
+- [ ] TW12 Log all received events to audit (`eventType: 'webhook.received'`) per FR-026 before processing
+- [ ] TW13 Add `WordpressWebhookEvent` Prisma model for idempotency + replay protection
+- [ ] TW14 Write E2E test plan for webhook end-to-end (WP side triggers → PraktiQU receives → tokens revoked) — coordinate with WP plugin author
+- [ ] TW15 Run full CI/CD pipeline verification
+
+**Dependencies**: Phase 1 (rate limiting, RFC 7807 helpers, Redis); Phase 4.5 (RBAC middleware)
+
+**Checkpoint**: WP-side password reset causes PraktiQU session to end on next request within 60 seconds
+
+---
+
 ## Phase 7: Polish & Cross-Cutting
 
 **Purpose**: Improvements that affect multiple user stories.

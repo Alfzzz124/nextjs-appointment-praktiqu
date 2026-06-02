@@ -15,10 +15,12 @@
 
 ## Database Integration
 
-PraktiQU extends an existing WordPress MySQL database:
-- Prisma schema maps to existing WordPress tables
-- Custom tables added for: clients, professionals, sessions, bookings
-- WP tables: users, usermeta (reused for professionals)
+PraktiQU is a **standalone Next.js backend** that shares a single MySQL instance with WordPress. The two systems are siblings, not parent-child.
+
+- **PraktiQU owns** its own tables: `users`, `doctors`, `patients`, `clinics`, `sessions`, `appointments`, `services`, etc. (Prisma schema)
+- **WordPress owns** its own tables: `wp_users`, `wp_usermeta`, `wp_posts`, etc.
+- **Identity flow**: PraktiQU reads `wp_users` / `wp_usermeta` to look up user identity and roles; it does not write to those tables. User provisioning can go through either side, but credentials live in WordPress (the source of truth for passwords via PHPASS) and PraktiQU issues its own JWTs for application access.
+- **Prisma's `@@map`** preserves the KiviCare-style table names on the PraktiQU side for compatibility with existing scripts and tooling, but PraktiQU is not "extending" the WP database — it has its own schema living next to WP's.
 
 ## Application Architecture
 
@@ -94,6 +96,7 @@ Environment variables in `.env.local`:
 
 ## Integration Points
 
-- **WordPress DB**: Users, authentication via WP cookies
+- **WordPress (sibling service)**: Owns `wp_*` tables on the shared MySQL instance. PraktiQU authenticates by calling a custom WP REST endpoint (see `001-auth-foundation/spec.md`); not via WP cookies.
+- **SMTP**: Single MailHog (dev) / SMTP relay (prod) shared by both PraktiQU and WordPress.
 - **Stitch Designs**: `stitch_praktiqu_clinic_dashboard/` folder
 - **Prisma**: Database schema at `prisma/schema.prisma`

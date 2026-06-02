@@ -219,7 +219,7 @@ praktiQU/
 | Framework | Next.js 14+ (App Router) |
 | Language | TypeScript (strict mode) |
 | Styling | Tailwind CSS + Inter font |
-| Database | MySQL (WordPress existing DB) + Prisma |
+| Database | MySQL 8 (shared MySQL instance — PraktiQU tables + WordPress tables coexist) |
 | Auth | NextAuth.js v5 |
 | State | React Server Components + Zustand |
 | Testing | Vitest + agent-browser |
@@ -272,7 +272,35 @@ praktiQU/
 
 ---
 
-**Version**: 2.0.0 | **Ratified**: 2026-05-30 | **Last Amended**: 2026-05-31
+**Version**: 2.1.0 | **Ratified**: 2026-05-30 | **Last Amended**: 2026-06-02
+
+---
+
+## WordPress Sibling Model
+
+PraktiQU and WordPress share a single MySQL instance as **sibling services**:
+
+- **PraktiQU** owns its own tables (`praktiqu.*` schema) managed by Prisma.
+- **WordPress** owns its own tables (`wordpress.wp_*` schema).
+- PraktiQU reads `wp_users`/`wp_usermeta` for identity; it does not write to `wp_*` tables.
+- WordPress does not write to PraktiQU tables.
+- Prisma's `@@map` preserves KiviCare-style table names on the PraktiQU side for tooling compatibility.
+
+---
+
+## Role Taxonomy
+
+Canonical role names and the full action × role matrix are defined in `docs/architecture/role-taxonomy.md`. All other documents (PRD, BRD, feature specs) must use the canonical names from that document.
+
+| PraktiQU Role | WordPress Role Slug |
+| --- | --- |
+| SUPER_ADMIN | `administrator` |
+| CLINIC_ADMIN | `kiviCare_clinic_admin` |
+| PROFESSIONAL | `kiviCare_doctor` |
+| RECEPTIONIST | `kiviCare_receptionist` |
+| CLIENT | `kiviCare_patient` |
+
+Role constants and WP ↔ PraktiQU mapping live in `src/lib/auth/role-mapping.ts`.
 
 ---
 

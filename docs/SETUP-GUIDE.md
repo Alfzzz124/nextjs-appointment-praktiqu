@@ -10,7 +10,7 @@ This guide will help you set up the PraktiQU project after cloning from GitHub.
 
 - Node.js 20.x or higher
 - pnpm 8.x or npm 9.x
-- PostgreSQL 14+ (or Docker for local development)
+- MySQL 8+ (or Docker for local development)
 - GitHub account with SSH key configured
 
 ---
@@ -42,7 +42,7 @@ cp .env.example .env.local
 
 ```env
 # Database
-DATABASE_URL="postgresql://user:password@localhost:5432/praktiqu"
+DATABASE_URL="mysql://user:password@localhost:3306/praktiqu"
 
 # NextAuth.js
 NEXTAUTH_SECRET="your-secret-key-here-generate-with-openssl-rand-base64-32"
@@ -70,7 +70,7 @@ pnpm prisma db seed
 #### Option B: Using Docker
 
 ```bash
-# Start PostgreSQL container
+# Start MySQL container
 docker-compose up -d db
 
 # Run migrations

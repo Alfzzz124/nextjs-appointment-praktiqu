@@ -4,7 +4,7 @@
 
 ## Summary
 
-Implement authentication foundation for PraktiQu using NextAuth.js v5, with WordPress as the credential source of truth. Users authenticate via WordPress, then Next.js issues its own JWT tokens for application access. Supports five roles aligned with FR-008: SUPER_ADMIN, ADMIN, PROFESSIONAL, RECEPTIONIST, CLIENT.
+Implement authentication foundation for PraktiQu using NextAuth.js v5, with WordPress as the credential source of truth. Users authenticate via WordPress, then Next.js issues its own JWT tokens for application access. Supports five canonical PraktiQU roles aligned with FR-008: SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL, RECEPTIONIST, CLIENT. WordPress role slugs are mapped to PraktiQU canonical roles via `src/lib/auth/role-mapping.ts` (see `docs/architecture/role-taxonomy.md` for the full source of truth).
 
 ## Technical Context
 

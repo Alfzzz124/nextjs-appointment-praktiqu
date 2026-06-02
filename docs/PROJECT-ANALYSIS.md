@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document captures the project to clone/recreate the KiviCare WordPress plugin as a standalone Next.js application, **adapted for Psychology Practice Management**.
+This document captures the project to rebuild KiviCare (originally a WordPress plugin) as a Next.js application **adapted for Psychology Practice Management**, while coexisting with WordPress on a shared MySQL instance. PraktiQU is the primary backend; WordPress remains a sibling service for identity, legacy content, and SMTP.
 
 **Source**: KiviCare Clinic & Patient Management System (EHR) v4.4.0
 **Target**: PraktiQU - Next.js Psychology Practice Management System

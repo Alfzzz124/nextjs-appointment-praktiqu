@@ -17,7 +17,7 @@
 | #1 | Initialize Next.js 14+ project with App Router | P0 | `enhancement`, `priority:high` |
 | #2 | Configure TypeScript with strict mode | P0 | `enhancement` |
 | #3 | Set up Tailwind CSS with design system | P0 | `enhancement` |
-| #4 | Configure Prisma with PostgreSQL | P0 | `enhancement`, `priority:high` |
+| #4 | Configure Prisma with MySQL | P0 | `enhancement`, `priority:high` |
 | #5 | Set up NextAuth.js with credentials provider | P0 | `enhancement`, `priority:high` |
 | #6 | Configure ESLint and Prettier | P1 | `enhancement` |
 | #7 | Set up environment configuration | P1 | `enhancement` |

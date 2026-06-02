@@ -9,7 +9,11 @@
 
 ## Overview
 
-This document maps KiviCare WordPress database table names to PraktiQU entity names (code/UI). Since PraktiQU will use the **existing KiviCare database**, we need to maintain backward compatibility while providing a clean mapping for the new application code.
+This document maps KiviCare WordPress database table names to PraktiQU entity names (code/UI).
+
+**Architecture note**: PraktiQU does **not** share tables with WordPress. Both systems live on the **same MySQL instance** but use **separate schemas** (`praktiQU` and `wordpress`). Prisma declares its own tables under PraktiQU's schema, and the KiviCare-style table names are preserved via `@@map` for compatibility with existing scripts and tooling. This is a *naming-mapping* document, not a *data-migration* document — there is no plan to copy data out of `wp_*` tables into PraktiQU's own tables.
+
+For cross-system identity flow, PraktiQU reads `wp_users` and `wp_usermeta` directly (WordPress remains the source of truth for credentials and identity); PraktiQU's own `users` table stores a `wpUserId` foreign reference, role mapping, and any PraktiQU-specific fields.
 
 ---
 

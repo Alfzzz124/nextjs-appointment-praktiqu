@@ -165,7 +165,7 @@ Authenticated users need to maintain their session across requests, handle token
 
 - **FR-007**: System MUST support Google OAuth2 login flow, redirecting to Google for authentication, handling the callback, and issuing JWT tokens upon successful authentication.
 
-- **FR-008**: System MUST implement Role-Based Access Control (RBAC) with the following roles: SUPER_ADMIN, ADMIN, PROFESSIONAL, RECEPTIONIST, CLIENT.
+- **FR-008**: System MUST implement Role-Based Access Control (RBAC) with the following canonical PraktiQU roles: SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL, RECEPTIONIST, CLIENT. (Source of truth: `docs/architecture/role-taxonomy.md`. Prisma `UserRole` enum.)
 
 - **FR-009**: System MUST enforce role-based access on all protected endpoints, returning 403 Forbidden when a user lacks required role permissions.
 
@@ -202,28 +202,37 @@ Authenticated users need to maintain their session across requests, handle token
 
 - **FR-019**: System MUST implement rate limiting on authentication endpoints keyed on `(IP, email)` tuple using a sliding 15-minute window. After 5 failed attempts within the window: 30-second progressive delay. After 10 failed attempts within the window: 5-minute hard lockout with HTTP 429 + RFC 7807 `Retry-After`. Successful authentication MUST reset the counter for that `(IP, email)` tuple.
 
+- **FR-023**: System MUST provide `POST /api/v1/webhooks/wordpress` to receive signed state-change notifications from the `praktiqu-endpoint` WordPress plugin. The receiver MUST verify the `X-PraktiQU-Webhook-Signature` header against HMAC-SHA256 of the raw request body using `WORDPRESS_WEBHOOK_SECRET`, and MUST reject requests with missing or invalid signatures (HTTP 401). End-to-end propagation SLO: 60 seconds (state visible in PraktiQU within 60s of the WP-side event).
+
+- **FR-024**: System MUST handle the following webhook events from the `praktiqu-endpoint` plugin:
+  - `password.changed` → revoke ALL refresh tokens for the affected user (per FR-006) and invalidate any cached WP identity for that user.
+  - `user.deactivated` → revoke ALL refresh tokens for the affected user; reject the next access-token refresh with `account_inactive` and force re-auth.
+  - `user.reactivated` → no automatic action; new logins are allowed.
+  - `user.deleted` → mark the PraktiQU `User.status = 0`, revoke ALL refresh tokens.
+  - `user.role_changed` → invalidate the role cache for the affected user; new role takes effect on the next access-token refresh.
+  - `login.failed` → append a `login.failure` audit event with the supplied username, IP (from webhook metadata if present), and `reason: 'wp_reported'`.
+
+- **FR-025**: System MUST reject any webhook request that lacks a valid signature, regardless of payload content. The response MUST be HTTP 401 with RFC 7807 body and MUST NOT process any side effects.
+
+- **FR-026**: System MUST log every received webhook event to the audit log (regardless of action taken) with `eventType: 'webhook.received'`, the original event name in `metadata.event`, the wpUserId, and the request's source IP.
+
+- **FR-027**: System MUST treat the WordPress user as the SOLE source of truth for credentials. The PraktiQU `User` row MUST NOT have a `password` column. Self-registration (FR-022) creates the WP user first (via the `praktiqu-endpoint` plugin's planned `POST /wp-json/praktiqu/v1/users` endpoint) and then the PraktiQU `User` row; password is never duplicated to the PraktiQU side.
+
 ### Key Entities
 
 - **User**: Represents an authenticated user in the system. Attributes include: unique identifier, email address, display name, role, account status (active/inactive/blocked), WordPress user ID, Google linking status, created timestamp, last login timestamp.
 
-- **Role**: Represents a security role defining what a user can access. Roles include: SUPER_ADMIN (full system access), ADMIN (administrative functions), PROFESSIONAL (professional-specific features), RECEPTIONIST (front-desk operations), CLIENT (client portal access).
+- **Role**: Represents a security role defining what a user can access. Roles include: SUPER_ADMIN (full system access), CLINIC_ADMIN (administrative functions), PROFESSIONAL (professional-specific features), RECEPTIONIST (front-desk operations), CLIENT (client portal access). Source of truth: `docs/architecture/role-taxonomy.md`.
 
-- **Role Capabilities**:
-  | Action | SUPER_ADMIN | ADMIN | PROFESSIONAL | RECEPTIONIST | CLIENT |
-  |--------|:-----------:|:-----:|:------------:|:------------:|:------:|
-  | user.create | ✓ | ✓ | | | |
-  | user.changeRole | ✓ | | | | |
-  | session.create | ✓ | ✓ | ✓ | ✓ | |
-  | session.approve | ✓ | ✓ | ✓ | | |
-  | billing.configure | ✓ | ✓ | | | |
-  | ownProfile.update | ✓ | ✓ | ✓ | ✓ | ✓ |
-  | appointment.book | ✓ | ✓ | ✓ | ✓ | ✓ |
+- **Role Capabilities**: see the full action × role matrix in `docs/architecture/role-taxonomy.md`. The auth foundation implements the framework; per-feature specs extend with their own actions.
 
 - **RefreshToken**: { id: string, userId: string, tokenHash: string (SHA-256 of raw token), issuedAt: timestamp, expiresAt: timestamp, revokedAt: timestamp|null, replacedById: string|null, deviceInfo: { userAgent, ip } }
 
 - **AuditLog**: { id: string, eventType: enum, actorId: string|null, targetId: string|null, timestamp: ISO8601, ip: string, userAgent: string, metadata: JSON }
 
 - **PasswordResetToken**: { id: string, userId: string, tokenHash: string (SHA-256 of raw token), issuedAt: timestamp, expiresAt: timestamp (issuedAt + 30min), usedAt: timestamp|null }
+
+- **WordpressWebhookEvent**: { id, eventType, wpUserId, payload (JSON), signature, receivedAt, processedAt, status: 'received'|'processed'|'failed' } — used for idempotency and replay protection on the receiver side. Stored for 30 days.
 
 ## Success Criteria
 
@@ -254,21 +263,38 @@ Authenticated users need to maintain their session across requests, handle token
 - **WordPress Integration**: WordPress serves as the identity provider and user management source of truth. A custom WordPress REST API authentication endpoint is responsible for credential verification and user identity lookup. WordPress handles password verification internally using PHPASS hash. Next.js handles all JWT token issuance, session management, and application authorization after successful WordPress authentication. This separation keeps WordPress as the identity provider while giving Next.js full control over application authentication and session management.
 
 - **WordPress Auth Endpoint Contract**:
-  - `POST /wp-json/praktiqu/v1/authenticate` (custom route registered in WP plugin)
-  - Request: `{ email: string, password: string }`
-  - Response 200: `{ wpUserId: number, email: string, displayName: string, roles: string[] }`
-  - Response 401: `{ code: 'invalid_credentials' }`
-  - Response 403: `{ code: 'inactive' | 'blocked' }`
+  - The custom WordPress plugin `praktiqu-endpoint` (path: `Wordpress-Plugin/praktiqu-endpoint/`) implements the REST contract.
+  - All endpoints require `X-PraktiQU-Service-Token` header (token defined as `PRAKTIQU_SERVICE_TOKEN` constant in `wp-config.php`, mirrored in PraktiQU's `.env` as `WORDPRESS_SERVICE_TOKEN`).
+  - `POST /wp-json/praktiqu/v1/authenticate`
+    - Request: `{ email: string, password: string }`
+    - Response 200: `{ wpUserId, email, username, displayName, firstName, lastName, roles, status, passwordChangedAt, registeredAt }`
+    - Response 401: `{ code: 'invalid_credentials' }`
+    - Response 403: `{ code: 'inactive' | 'blocked' }`
+  - `GET  /wp-json/praktiqu/v1/users/{id}` — identity by WP user ID
+  - `POST /wp-json/praktiqu/v1/users/lookup` — identity by email
+  - `POST /wp-json/praktiqu/v1/users/{id}/change-password` — change password
+  - `GET  /wp-json/praktiqu/v1/health` — liveness probe
   - Network errors MUST be treated as 503 by Next.js.
 
-- **WordPress → PraktiQu Role Mapping** (configurable in `prisma/role-mapping.ts`):
-  | WP Role | PraktiQu Role |
+- **WordPress → PraktiQU Webhook (closes the C4 staleness gap)**:
+  - The `praktiqu-endpoint` plugin emits HMAC-SHA256-signed POSTs to a configurable URL when WP-side state changes.
+  - Target endpoint: `POST /api/v1/webhooks/wordpress` on the PraktiQU Next.js app.
+  - Signature header: `X-PraktiQU-Webhook-Signature` (hex HMAC over JSON body).
+  - Events: `password.changed`, `user.deactivated`, `user.reactivated`, `user.deleted`, `user.role_changed`, `login.failed`.
+  - On `password.changed`: PraktiQU MUST revoke all refresh tokens for the user (per FR-006) and bump the password-changed cache stamp.
+  - On `user.deactivated` / `user.deleted`: PraktiQU MUST revoke all refresh tokens and force re-auth on next request.
+  - On `user.role_changed`: PraktiQU MUST clear the role-cache entry for the user; the new role takes effect on the next access-token refresh.
+
+- **WordPress → PraktiQu Role Mapping** (configurable in `src/lib/auth/role-mapping.ts`):
+  | WP Role Slug (as stored in `wp_users.roles`) | PraktiQu Role |
   |---------|---------------|
   | `administrator` | `SUPER_ADMIN` |
-  | `praktiqu_admin` | `ADMIN` |
-  | `praktiqu_professional` | `PROFESSIONAL` |
-  | `praktiqu_receptionist` | `RECEPTIONIST` |
-  | `subscriber` (default for new Google users) | `CLIENT` |
+  | `kiviCare_clinic_admin` | `CLINIC_ADMIN` |
+  | `kiviCare_doctor` | `PROFESSIONAL` |
+  | `kiviCare_receptionist` | `RECEPTIONIST` |
+  | `kiviCare_patient` (default for new Google users) | `CLIENT` |
+
+  The Prisma `User.role` column stores the PraktiQU canonical role. The raw WP slug is mirrored in `User.wpRole` for cross-system lookups, audit logging, and KiviCare-plugin compatibility.
 
 - **Auth Library**: NextAuth.js v5 used for OAuth flow orchestration (FR-007). Custom JWT issuance/rotation still implemented directly via `jose` per FR-001/FR-015 to maintain control over token lifecycle.
 

@@ -12,31 +12,42 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 // ============================================
 // USER & AUTHENTICATION
 // ============================================
+// PraktiQU and WordPress share a single MySQL instance (sibling model).
+// WordPress is the SOLE source of truth for credentials. There is NO password
+// column on the PraktiQU User — passwords live in wp_users.user_pass (PHPASS).
+// PraktiQU verifies passwords by calling the praktiqu-auth WP plugin's REST
+// endpoint: POST /wp-json/praktiqu/v1/authenticate
+//
+// Identity + credential staleness is addressed via signed webhooks emitted by
+// the praktiqu-auth plugin (password.changed, user.deactivated, etc.).
+// See: src/lib/auth/role-mapping.ts and docs/architecture/role-taxonomy.md.
 
 enum UserRole {
-  SUPER_ADMIN    // administrator
-  CLINIC_ADMIN   // kiviCare_clinic_admin
-  DOCTOR         // kiviCare_doctor
-  RECEPTIONIST   // kiviCare_receptionist
-  PATIENT        // kiviCare_patient
+  SUPER_ADMIN     // WP role: "administrator" (core WP)
+  CLINIC_ADMIN    // WP role: "kiviCare_clinic_admin"
+  PROFESSIONAL    // WP role: "kiviCare_doctor"
+  RECEPTIONIST    // WP role: "kiviCare_receptionist"
+  CLIENT          // WP role: "kiviCare_patient"
 }
 
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
   username      String    @unique
-  password      String
   firstName     String
   lastName      String
   displayName   String
-  role          UserRole  @default(PATIENT)
+  role          UserRole  @default(CLIENT)
+  // NOTE: No password column — WP owns credentials. See block comment above.
+  wpRole        String?   // raw WordPress role slug (e.g. "kiviCare_doctor"); null if provisioned outside WP
+  wpUserId      BigInt?   @unique // WordPress user ID (wp_users.ID) for cross-system lookups
   status        Int       @default(1) // 0 = inactive, 1 = active
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
@@ -48,6 +59,7 @@ model User {
   receptionist  Receptionist?
   patient       Patient?
   sessions      AuthSession[]
+  logEntries    LogEntry[]
 
   // Role assignments
   doctorClinics       DoctorClinicMapping[]
@@ -58,6 +70,8 @@ model User {
   basicData     Json?    // mobile_number, dob, gender, blood_group, address, etc.
   timezone      String?
 
+  @@index([wpUserId])
+  @@index([wpRole])
   @@map("users")
 }
 
@@ -743,4 +757,75 @@ model Media {
   createdAt    DateTime @default(now())
 
   @@map("media")
+}
+
+// ============================================
+// LOGGING — user activity + errors
+// ============================================
+// Source of truth: docs/architecture/logging.md
+// Constitution §Logging & Monitoring mandates database-backed structured
+// logging. This is the single table for all log records; the `level` and
+// `category` fields determine retention (see logging.md).
+//
+// Conventions:
+//   - ACTIVITY entries: every meaningful user action (login, booking, edit).
+//   - ERROR entries: unhandled exceptions, 5xx responses, integration failures.
+//   - SYSTEM entries: background jobs, cron, scheduled tasks.
+//   - AUTH events (login success/failure, password change) ALSO go here with
+//     category=ACTIVITY and level=INFO/WARN. The auth-foundation spec's
+//     AuditLog is a query view over this table filtered by action prefix.
+//
+// Access: SUPER_ADMIN read via GET /api/v1/admin/logs (paginated).
+// Retention (per constitution):
+//   DEBUG, TRACE  → 7 days
+//   INFO, WARN    → 30 days
+//   ERROR         → 30 days
+//   AUDIT         → 90 days
+//   PERF          → 7 days (aggregated; deferred)
+// A scheduled job (C8) purges entries older than the retention window.
+
+enum LogLevel {
+  DEBUG
+  TRACE
+  INFO
+  WARN
+  ERROR
+  AUDIT
+  PERF
+}
+
+enum LogCategory {
+  ACTIVITY // user-facing actions
+  ERROR    // unhandled exceptions, integration failures
+  SYSTEM   // background jobs, scheduled tasks, server lifecycle
+}
+
+model LogEntry {
+  id         String      @id @default(cuid())
+  level      LogLevel    @default(INFO)
+  category   LogCategory @default(ACTIVITY)
+  message    String      @db.Text
+  userId     String?     // null for anonymous / system events
+  action     String?     // dotted path: "user.login", "session.book", "client.create"
+  resource   String?     // entity affected: "session", "client", "bill"
+  resourceId String?
+  ip         String?
+  userAgent  String?     @db.Text
+  requestId  String?     // correlate across handlers in one request
+  path       String?     // request path (e.g. "/api/v1/sessions")
+  method     String?     // HTTP method
+  statusCode Int?        // response status (for API-request entries)
+  errorStack String?     @db.Text // populated when an Error object is passed
+  metadata   Json?       // free-form context (sanitized request body, before/after values, etc.)
+  occurredAt DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([level, occurredAt])
+  @@index([category, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([action, occurredAt])
+  @@index([requestId])
+  @@index([occurredAt])
+  @@map("log_entries")
 }
