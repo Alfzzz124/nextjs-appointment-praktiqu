@@ -54,3 +54,5 @@ logs/
 
 # MCP Config (contains secrets)
 .mcp.json
+# Added by code-review-graph
+.code-review-graph/

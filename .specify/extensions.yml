@@ -1,5 +1,9 @@
 installed:
 - git
+- memory-md
+- preview
+- qa
+- verify
 settings:
   auto_execute_hooks: true
 hooks:
@@ -19,6 +23,13 @@ hooks:
     prompt: Execute speckit.git.feature?
     description: Create feature branch before specification
     condition: null
+  - extension: memory-md
+    command: speckit.memory-md.specify
+    enabled: true
+    optional: false
+    prompt: Would you like to prepare memory context before writing this spec?
+    description: ''
+    condition: null
   before_clarify:
   - extension: git
     command: speckit.git.commit
@@ -34,6 +45,13 @@ hooks:
     optional: true
     prompt: Commit outstanding changes before planning?
     description: Auto-commit before implementation planning
+    condition: null
+  - extension: memory-md
+    command: speckit.memory-md.plan-with-memory
+    enabled: true
+    optional: false
+    prompt: Would you like to synthesize project memory before planning?
+    description: ''
     condition: null
   before_tasks:
   - extension: git
@@ -122,6 +140,29 @@ hooks:
     optional: true
     prompt: Commit implementation changes?
     description: Auto-commit after implementation
+    condition: null
+  - extension: qa
+    command: speckit.qa.run
+    enabled: true
+    optional: true
+    prompt: Run QA testing?
+    description: Validates acceptance criteria through browser-driven or CLI-based
+      testing
+    condition: null
+  - extension: verify
+    command: speckit.verify.run
+    enabled: true
+    optional: true
+    prompt: Run verify to validate implementation against specification?
+    description: Post-implementation verification gate
+    condition: null
+  - extension: memory-md
+    command: speckit.memory-md.capture
+    enabled: true
+    optional: false
+    prompt: Would you like to capture durable lessons from this feature into project
+      memory?
+    description: ''
     condition: null
   after_checklist:
   - extension: git

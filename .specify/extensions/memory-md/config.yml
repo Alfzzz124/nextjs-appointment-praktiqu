@@ -1,0 +1,14 @@
+# Spec Kit Memory Configuration
+# Override default values in this file to customize paths for this project
+
+# Root directory for durable project memory
+memory_root: docs/memory
+
+# Root directory for feature specs
+specs_root: specs
+
+# Template for feature memory filenames per feature folder
+memory_filename: memory.md
+
+# Synthesis filename generated from feature memory
+memory_synthesis_filename: memory-synthesis.md
