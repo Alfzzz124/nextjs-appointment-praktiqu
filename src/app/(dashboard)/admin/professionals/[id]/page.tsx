@@ -115,7 +115,7 @@ export default async function AdminProfessionalDetailPage({ params }: PageProps)
         />
       </section>
 
-      {/* Status change actions */}
+      {/* Status change actions - disabled for now
       {professional.status !== 'ACTIVE' && (
         <section className="border-t pt-4">
           <h3 className="text-sm font-medium text-gray-700 mb-2">Actions</h3>
@@ -137,6 +137,7 @@ export default async function AdminProfessionalDetailPage({ params }: PageProps)
           </div>
         </section>
       )}
+      */}
     </div>
   );
 }

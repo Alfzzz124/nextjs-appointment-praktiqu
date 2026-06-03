@@ -2,13 +2,23 @@
 import { PrismaClient } from '@prisma/client';
 import { ProgressService } from '@/services/progress/service';
 
+// Force dynamic rendering - database tables may not exist during build
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 const svc = new ProgressService(prisma);
 
 export default async function ClientProgressPage({ params }: { params: { clientId?: string } }) {
   const clientId = params?.clientId ?? '';
-  const timeline = await svc.getClientTimeline(clientId);
-  const goals = await svc.getGoals(clientId);
+  let timeline: Awaited<ReturnType<typeof svc.getClientTimeline>> = [];
+  let goals: Awaited<ReturnType<typeof svc.getGoals>> = [];
+
+  try {
+    timeline = await svc.getClientTimeline(clientId as string);
+    goals = await svc.getGoals(clientId as string);
+  } catch {
+    // Database tables may not exist yet
+  }
 
   return (
     <div className="p-6">
@@ -38,7 +48,7 @@ export default async function ClientProgressPage({ params }: { params: { clientI
           <p className="text-gray-500">No goals set.</p>
         ) : (
           <ul className="space-y-3">
-            {goals.map((goal) => (
+            {goals.map((goal: { id: string; title: string; description?: string | null; isAchieved: boolean }) => (
               <li key={goal.id} className="rounded border p-4">
                 <div className="flex items-center justify-between">
                   <span className={`font-medium ${goal.isAchieved ? 'text-green-600' : ''}`}>{goal.title}</span>

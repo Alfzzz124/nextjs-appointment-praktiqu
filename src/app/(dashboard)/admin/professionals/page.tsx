@@ -5,20 +5,12 @@
  * T028: admin page mounting professional-list and create form
  */
 
+import { Suspense } from 'react';
 import { ProfessionalList } from '@/components/professional/professional-list';
 import { ProfessionalForm } from '@/components/professional/professional-form';
 import type { FormData } from '@/components/professional/professional-form';
 
-export default async function AdminProfessionalsPage() {
-  // Fetch initial data server-side for SSR
-  let initialData = null;
-  try {
-    // In a real implementation, we'd call the service directly here
-    // For now we let the client component fetch via API
-  } catch {
-    // ignore
-  }
-
+export default function AdminProfessionalsPage() {
   async function handleCreate(data: FormData) {
     'use server';
     const res = await fetch('/api/v1/professionals', {
@@ -48,7 +40,9 @@ export default async function AdminProfessionalsPage() {
       {/* List */}
       <section>
         <h2 className="text-lg font-semibold text-gray-800 mb-4">All Professionals</h2>
-        <ProfessionalList initialData={initialData ?? undefined} />
+        <Suspense fallback={<div className="text-gray-500">Loading...</div>}>
+          <ProfessionalList />
+        </Suspense>
       </section>
     </div>
   );

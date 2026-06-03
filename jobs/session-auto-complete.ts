@@ -39,16 +39,17 @@ export async function runSessionAutoComplete(): Promise<{ completed: number; dur
         { metadata: { count: updated, elapsedMs: elapsed } },
       );
 
-      // Optionally enqueue WP follow-up job for billing trigger.
-      await jobs.enqueue({
-        hook: 'praktiqu_session_billing_trigger',
-        runAt: new Date(),
-        args: { count: updated },
-      }).catch((err) => {
-        logging.warn('session_auto_complete: failed to enqueue billing trigger job', {
-          metadata: { error: err instanceof Error ? err.message : String(err) },
-        });
-      });
+      // Note: WP billing trigger job enqueue is disabled
+      // To enable: add 'praktiqu_session_billing_trigger' to JobHook type and uncomment below
+      // await jobs.enqueue({
+      //   hook: 'praktiqu_session_billing_trigger',
+      //   runAt: new Date(),
+      //   args: { count: updated },
+      // }).catch((err) => {
+      //   logging.warn('session_auto_complete: failed to enqueue billing trigger job', {
+      //     metadata: { error: err instanceof Error ? err.message : String(err) },
+      //   });
+      // });
     } else {
       logging.system('session_auto_complete: no sessions to complete', 'INFO');
     }
@@ -75,5 +76,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-
-export { runSessionAutoComplete };

@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PendingRequests } from '@/components/session/pending-requests';
 import { SessionCalendar } from '@/components/session/session-calendar';
@@ -21,7 +21,7 @@ const MOCK_CALENDAR: CalendarResponse = {
   sessions: [],
 };
 
-export default function ProfessionalSessionsPage() {
+function SessionsContent() {
   const searchParams = useSearchParams();
   const [pending, setPending] = useState<SessionWithRelations[]>(MOCK_PENDING);
   const view = (searchParams.get('view') as 'day' | 'week' | 'month') ?? 'day';
@@ -31,6 +31,30 @@ export default function ProfessionalSessionsPage() {
   };
 
   return (
+    <>
+      {/* Pending requests */}
+      <section>
+        <h2 className="mb-4 text-base font-semibold text-gray-700">Pending Requests</h2>
+        <PendingRequests
+          sessions={pending}
+          onApprove={refresh}
+          onReject={refresh}
+        />
+      </section>
+
+      {/* Calendar */}
+      <section>
+        <h2 className="mb-4 text-base font-semibold text-gray-700">Calendar</h2>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <SessionCalendar initialData={MOCK_CALENDAR} onSessionClick={() => {}} />
+        </div>
+      </section>
+    </>
+  );
+}
+
+export default function ProfessionalSessionsPage() {
+  return (
     <main className="min-h-screen bg-gray-50 px-6 py-8">
       <div className="mx-auto max-w-5xl space-y-8">
         {/* Header */}
@@ -39,23 +63,9 @@ export default function ProfessionalSessionsPage() {
           <p className="mt-1 text-sm text-gray-500">Review pending requests and manage your schedule</p>
         </div>
 
-        {/* Pending requests */}
-        <section>
-          <h2 className="mb-4 text-base font-semibold text-gray-700">Pending Requests</h2>
-          <PendingRequests
-            sessions={pending}
-            onApprove={refresh}
-            onReject={refresh}
-          />
-        </section>
-
-        {/* Calendar */}
-        <section>
-          <h2 className="mb-4 text-base font-semibold text-gray-700">Calendar</h2>
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <SessionCalendar initialData={MOCK_CALENDAR} onSessionClick={() => {}} />
-          </div>
-        </section>
+        <Suspense fallback={<div className="text-gray-500">Loading...</div>}>
+          <SessionsContent />
+        </Suspense>
       </div>
     </main>
   );

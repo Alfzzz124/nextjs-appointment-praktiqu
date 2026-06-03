@@ -22,6 +22,7 @@ interface KiviCareDoctor {
 interface KiviCareService {
   id: string;
   name: string;
+  type: string | null;
   category: string | null;
   price: number;
   duration: number | null;
@@ -181,6 +182,16 @@ const SERVICE_TYPE_ICONS: Record<string, string> = {
   system_service: '🌐',
 };
 
+// Types for professional data
+type ProfessionalData = {
+  id: string;
+  displayName: string;
+  type?: string;
+  specialties: string[];
+  description: string | null;
+  clinicName: string;
+};
+
 export default async function LandingPage() {
   const [wpProfessionals, wpServices] = await Promise.all([
     getWordPressProfessionals(),
@@ -188,24 +199,36 @@ export default async function LandingPage() {
   ]);
 
   // Use WordPress data if available, fallback to static
-  const proList = wpProfessionals.length > 0 ? wpProfessionals : PROFESSIONALS_STATIC.map((p, idx) => ({
+  const proList: ProfessionalData[] = wpProfessionals.length > 0 ? wpProfessionals.map(p => ({
+    id: p.doctorId,
+    displayName: p.displayName,
+    type: '',
+    specialties: p.specialties,
+    description: p.description,
+    clinicName: p.clinicName,
+  })) : PROFESSIONALS_STATIC.map((p, idx) => ({
     id: String(idx),
     displayName: p.name,
     type: p.type,
     specialties: [p.spec],
     description: null,
     clinicName: '',
-    doctorId: '0',
-    clinicId: '0',
-    clinicEmail: '',
-    firstName: '',
-    lastName: '',
   }));
 
-  const svcList = wpServices.length > 0 ? wpServices : SERVICES_STATIC.map((s, idx) => ({
+  const svcList = wpServices.length > 0 ? wpServices.map(s => ({
+    id: s.id,
+    name: s.name,
+    type: s.type || 'default',
+    category: s.category || '',
+    price: s.price || 0,
+    duration: s.duration || 60,
+    telemedService: s.telemedService || false,
+    clinicId: s.clinicId || '0',
+    clinicName: s.clinicName || '',
+  })) : SERVICES_STATIC.map((s, idx) => ({
     ...s,
     id: s.title || String(idx),
-    serviceNameAlias: s.title,
+    name: s.title,
     type: 'default',
     category: s.desc,
     price: 0,
@@ -248,31 +271,24 @@ export default async function LandingPage() {
             </div>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {proList.map((p, idx) => {
-                // Handle both WordPress and static data formats
-                const displayName = 'displayName' in p ? p.displayName : ('name' in p ? p.name : 'Professional');
-                const type = 'type' in p ? p.type : ('spec' in p ? p.spec : '');
-                const specialties = 'specialties' in p ? p.specialties as string[] : ('spec' in p ? [p.spec] : []);
-                const clinicName = 'clinicName' in p ? p.clinicName : '';
-                const description = 'description' in p ? p.description : null;
-
                 return (
                   <div key={p.id || idx} className="card">
                     <div className="flex items-center gap-4">
                       <div className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-primary-700 to-primary-600 text-lg font-semibold text-white">
-                        {displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                        {p.displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                       </div>
                       <div className="flex-1">
-                        <div className="font-semibold text-on-surface">{displayName}</div>
-                        <div className="text-xs text-on-surface-variant">{type || clinicName}</div>
+                        <div className="font-semibold text-on-surface">{p.displayName}</div>
+                        <div className="text-xs text-on-surface-variant">{p.type || p.clinicName}</div>
                       </div>
                     </div>
-                    {specialties.length > 0 && (
+                    {p.specialties.length > 0 && (
                       <div className="mt-4 space-y-2 text-sm">
-                        <div><span className="text-outline">Spesialisasi:</span>{' '}<span className="text-on-surface">{specialties.slice(0, 2).map((s: any) => typeof s === 'object' ? s.label : s).join(', ')}</span></div>
+                        <div><span className="text-outline">Spesialisasi:</span>{' '}<span className="text-on-surface">{p.specialties.slice(0, 2).map((s: any) => typeof s === 'object' ? s.label : s).join(', ')}</span></div>
                       </div>
                     )}
-                    {description && (
-                      <p className="mt-2 text-xs text-on-surface-variant line-clamp-2">{description}</p>
+                    {p.description && (
+                      <p className="mt-2 text-xs text-on-surface-variant line-clamp-2">{p.description}</p>
                     )}
                     <Link href="/book" className="btn-secondary mt-4 w-full">Lihat Jadwal</Link>
                   </div>
@@ -293,25 +309,17 @@ export default async function LandingPage() {
               <p className="mt-2 text-on-surface-variant">Berbagai pilihan layanan sesuai kebutuhan Anda.</p>
             </div>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {svcList.map((s, idx) => {
-                // Handle both WordPress and static data formats
-                const title = 'title' in s ? s.title : ('name' in s ? s.name : 'Layanan');
-                const desc = 'desc' in s ? s.desc : ('category' in s ? s.category : '');
-                const duration = 'duration' in s ? s.duration : ('telemedService' in s && s.telemedService ? '60 menit' : '60 menit');
-                const icon = 'icon' in s ? s.icon : (SERVICE_TYPE_ICONS[(s as any).type] || '✨');
-                const price = 'price' in s ? s.price : 0;
-                const serviceId = 'id' in s ? s.id : idx.toString();
-
+              {svcList.map((s) => {
                 return (
-                  <div key={serviceId} className="card group transition-shadow hover:shadow-md">
-                    <div className="text-3xl">{icon}</div>
-                    <h3 className="mt-3 text-base font-semibold text-on-surface">{title}</h3>
-                    <p className="mt-1 text-sm text-on-surface-variant">{desc}</p>
+                  <div key={s.id} className="card group transition-shadow hover:shadow-md">
+                    <div className="text-3xl">{SERVICE_TYPE_ICONS[s.type] || '✨'}</div>
+                    <h3 className="mt-3 text-base font-semibold text-on-surface">{s.name}</h3>
+                    <p className="mt-1 text-sm text-on-surface-variant">{s.category}</p>
                     <div className="mt-4 flex items-center justify-between text-xs">
-                      <span className="text-outline">⏱ {typeof duration === 'number' ? `${duration} menit` : duration}</span>
-                      {typeof price === 'number' && price > 0 && (
+                      <span className="text-outline">⏱ {s.duration} menit</span>
+                      {s.price > 0 && (
                         <span className="font-semibold text-primary-700">
-                          {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(price)}
+                          {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(s.price)}
                         </span>
                       )}
                     </div>

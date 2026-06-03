@@ -1,4 +1,5 @@
 // src/app/api/v1/public/professionals/[id]/services/route.ts
+// This API is deprecated - services are now fetched directly in pages via WordPress tables
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
@@ -11,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       include: { service: true },
     });
     const items = services
-      .filter((m) => m.service.status === 1)
+      .filter((m) => String(m.service.status) === '1')
       .map((m) => ({
         id: m.service.id,
         name: m.service.name,

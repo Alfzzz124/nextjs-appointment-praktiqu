@@ -12,7 +12,7 @@ import { getCalendar } from '@/services/session/session.service';
 
 const calendarQuerySchema = z.object({
   view: z.enum(['day', 'week', 'month']).default('day'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   professionalId: z.string().optional(),
 });
 

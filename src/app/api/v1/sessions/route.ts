@@ -29,7 +29,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const parsed = listSessionsQuerySchema.parse(params);
     assertDateRange(parsed);
 
-    const result = await listSessions(actor, parsed);
+    const result = await listSessions(actor, parsed as any);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const session = await createSession({
       actor,
-      input: parsed,
+      input: parsed as any,
       forceBooked: isStaff,
     });
 

@@ -15,6 +15,7 @@ import {
   createProfessional,
   isServiceError,
 } from '@/services/professional/professional.service';
+import type { ProfessionalStatus } from '@/types/professional';
 import {
   professionalListQuerySchema,
 } from '@/services/professional/validation';
@@ -36,16 +37,16 @@ export const GET = withAuth(async (req, ctx) => {
   }
 
   const params = {
-    page: searchParams.get('page') ?? undefined,
-    pageSize: searchParams.get('pageSize') ?? undefined,
+    page: searchParams.get('page') ? parseInt(searchParams.get('page')!) : undefined,
+    pageSize: searchParams.get('pageSize') ? parseInt(searchParams.get('pageSize')!) : undefined,
     search: searchParams.get('search') ?? undefined,
-    status: searchParams.get('status') ?? undefined,
+    status: (searchParams.get('status') ?? undefined) as ProfessionalStatus | undefined,
     practiceId: searchParams.get('practiceId') ?? undefined,
-    sortBy: searchParams.get('sortBy') ?? undefined,
+    sortBy: (searchParams.get('sortBy') ?? undefined) as 'status' | 'email' | 'createdAt' | 'fullName' | undefined,
     sortOrder: searchParams.get('sortOrder') ?? undefined,
   };
 
-  const result = await listProfessionals(params, actor.practiceId);
+  const result = await listProfessionals(params as any, actor.practiceId);
 
   return NextResponse.json(result);
 });
@@ -76,7 +77,7 @@ export const POST = withAuth(async (req, ctx) => {
   }
 
   try {
-    const result = await createProfessional(body, actor.id);
+    const result = await createProfessional(body as any, actor.id);
     return NextResponse.json({ id: result.id }, { status: 201 });
   } catch (err) {
     if (isServiceError(err)) {

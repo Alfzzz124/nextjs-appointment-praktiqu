@@ -16,6 +16,7 @@ import { extractPlaceholders, htmlToText, renderTemplate } from '@/services/emai
 import type {
   CreateEmailTemplateInput,
   EmailTemplateDTO,
+  RenderedTemplate,
 } from '@/types/email-template';
 
 interface TemplateEditorProps {
@@ -98,6 +99,7 @@ export function TemplateEditor({ initial, onSave, saving = false }: TemplateEdit
     }
 
     const payload: CreateEmailTemplateInput = {
+      status: 'active',
       key: key.trim(),
       name: name.trim(),
       description: description.trim() || undefined,

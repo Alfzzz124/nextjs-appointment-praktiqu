@@ -45,7 +45,7 @@ async function checkPage() {
   console.log('Body font-family:', fontFamily);
 
   // Check network requests for CSS
-  const cssRequests = [];
+  const cssRequests: string[] = [];
   page.on('request', req => {
     if (req.url().includes('.css')) {
       cssRequests.push(req.url());

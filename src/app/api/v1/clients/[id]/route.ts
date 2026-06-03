@@ -6,9 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getActor } from '@/lib/auth';
-import { getClient, updateClient, archiveClient } from '@/services/client/client.service';
+import { getClient, updateClient, archiveClient, ClientServiceError } from '@/services/client/client.service';
 import { updateClientSchema, formatFieldErrors } from '@/services/client/validation';
-import type { ClientServiceError } from '@/services/client/client.service';
 
 export const dynamic = 'force-dynamic';
 

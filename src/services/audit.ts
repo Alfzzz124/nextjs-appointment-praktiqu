@@ -6,7 +6,7 @@
  * the canonical typed entry point and the API for the admin list endpoint.
  */
 
-import { AuditEventType, type AuditLog, type Prisma } from '@prisma/client';
+import { AuditEventType, type AuditLog, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 
 export interface AuditWriteInput {

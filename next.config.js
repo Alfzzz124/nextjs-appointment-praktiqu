@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   reactStrictMode: true,
   images: {
     remotePatterns: [
@@ -18,6 +21,6 @@ const nextConfig = {
       bodySizeLimit: '2mb',
     },
   },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

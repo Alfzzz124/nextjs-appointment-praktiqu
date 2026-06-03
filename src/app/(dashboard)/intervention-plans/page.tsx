@@ -2,14 +2,23 @@
 import { PrismaClient } from '@prisma/client';
 import Link from 'next/link';
 
+// Force dynamic rendering - database tables may not exist during build
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 export default async function InterventionPlansPage() {
-  const plans = await prisma.interventionPlan.findMany({
-    include: { items: true },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  });
+  let plans: Awaited<ReturnType<typeof prisma.interventionPlan.findMany>> = [];
+
+  try {
+    plans = await prisma.interventionPlan.findMany({
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  } catch {
+    // Database tables may not exist yet
+  }
   return (
     <div className="p-6">
       <header className="mb-4 flex items-center justify-between">

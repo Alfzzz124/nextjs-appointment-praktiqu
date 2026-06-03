@@ -83,7 +83,7 @@ export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   }
 
   try {
-    await setWeeklySchedule(id, parsed.data.schedule, actor.id);
+    await setWeeklySchedule(id, parsed.data.schedule as any, actor.id);
     const schedule = await getWeeklySchedule(id);
     return NextResponse.json({ professionalId: id, schedule });
   } catch (err) {

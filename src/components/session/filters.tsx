@@ -65,7 +65,6 @@ export function SessionFilters({ status, dateFrom, dateTo, professionalId, clien
                 ? opt.color
                 : `${opt.color}20`,
               color: status === opt.value || (!status && opt.value === 'ALL') ? '#fff' : opt.color,
-              ringColor: opt.color,
             }}
           >
             {opt.label}

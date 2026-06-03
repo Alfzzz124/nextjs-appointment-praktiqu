@@ -11,6 +11,7 @@
 
 import { format, parseISO } from 'date-fns';
 import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
+import type { FormatOptions } from 'date-fns';
 
 /** Default timezone for new practices (Indonesia Western Time = WIB). */
 export const DEFAULT_TIMEZONE = 'Asia/Jakarta';
@@ -123,8 +124,8 @@ export function isTodayInTz(
 ): boolean {
   const d = typeof utcDate === 'string' ? parseISO(utcDate) : utcDate;
   const now = new Date();
-  const todayZoned = format(now, 'yyyy-MM-dd', { timeZone: tz });
-  const dateZoned = format(d, 'yyyy-MM-dd', { timeZone: tz });
+  const todayZoned = formatInTimeZone(now, tz, 'yyyy-MM-dd');
+  const dateZoned = formatInTimeZone(d, tz, 'yyyy-MM-dd');
   return todayZoned === dateZoned;
 }
 
@@ -133,5 +134,5 @@ export function isTodayInTz(
  * Useful for comparing @db.Date fields.
  */
 export function todayInTz(tz: string = DEFAULT_TIMEZONE): string {
-  return format(new Date(), 'yyyy-MM-dd', { timeZone: tz });
+  return formatInTimeZone(new Date(), tz, 'yyyy-MM-dd');
 }
