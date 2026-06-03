@@ -6,24 +6,133 @@ import { BookingWizardSteps } from '@/components/booking/wizard-step-indicator';
 
 export const dynamic = 'force-dynamic';
 
-async function getLandingData() {
+// Types for WordPress/KiviCare data
+interface KiviCareDoctor {
+  doctorId: string;
+  clinicId: string;
+  clinicName: string;
+  clinicEmail: string;
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  specialties: string[];
+  description: string | null;
+}
+
+interface KiviCareService {
+  id: string;
+  name: string;
+  category: string | null;
+  price: number;
+  duration: number | null;
+  telemedService: boolean;
+  clinicId: string;
+  clinicName: string;
+}
+
+// Fetch professionals from WordPress KiviCare tables
+async function getWordPressProfessionals(): Promise<KiviCareDoctor[]> {
   try {
-    const [professionals, services] = await Promise.all([
-      prisma.professional.findMany({
-        where: { status: 'ACTIVE' as any },
-        take: 6,
-        orderBy: { createdAt: 'desc' },
-        include: { user: true },
-      }).catch(() => []),
-      prisma.service.findMany({
-        where: { status: 1 },
-        take: 8,
-        orderBy: { name: 'asc' },
-      }).catch(() => []),
-    ]);
-    return { professionals, services };
-  } catch {
-    return { professionals: [] as typeof [], services: [] as typeof [] };
+    // Get doctors from doctor_clinic_mapping joined with clinics
+    const mappings = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT DISTINCT
+        dcm.doctor_id,
+        dcm.clinic_id,
+        c.name as clinicName,
+        c.email as clinicEmail,
+        u.display_name as displayName,
+        u.user_email as email,
+        c.specialties
+      FROM wp_kc_doctor_clinic_mappings dcm
+      JOIN wp_kc_clinics c ON dcm.clinic_id = c.id
+      JOIN wp_users u ON dcm.doctor_id = u.ID
+      WHERE c.status = 1
+      ORDER BY c.name
+      LIMIT 6
+    `);
+
+    // Get additional meta data in separate queries
+    const result: KiviCareDoctor[] = [];
+    for (const m of mappings) {
+      const userId = Number(m.doctor_id);
+
+      // Get first_name and last_name
+      const metaResult = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT meta_key, meta_value FROM wp_usermeta
+        WHERE user_id = ${userId} AND meta_key IN ('first_name', 'last_name', 'doctor_description')
+      `);
+
+      const metaMap: Record<string, string> = {};
+      metaResult.forEach(r => { metaMap[r.meta_key] = r.meta_value; });
+
+      result.push({
+        doctorId: String(m.doctor_id),
+        clinicId: String(m.clinic_id),
+        clinicName: m.clinicName || '',
+        clinicEmail: m.clinicEmail || '',
+        displayName: m.displayName || `${metaMap['first_name'] || ''} ${metaMap['last_name'] || ''}`.trim() || 'Professional',
+        firstName: metaMap['first_name'] || '',
+        lastName: metaMap['last_name'] || '',
+        specialties: m.specialties ? JSON.parse(m.specialties) : [],
+        description: metaMap['doctor_description'] || null,
+      });
+    }
+
+    return result;
+  } catch (err) {
+    console.error('Error fetching WordPress professionals:', err);
+    return [];
+  }
+}
+
+// Fetch services from WordPress KiviCare tables
+async function getWordPressServices(): Promise<KiviCareService[]> {
+  try {
+    // Get distinct services with their info (no GROUP BY needed)
+    const services = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT
+        s.id,
+        s.name,
+        s.type,
+        s.category,
+        s.price,
+        sdm.charges,
+        sdm.duration,
+        sdm.telemed_service,
+        sdm.service_name_alias,
+        c.id as clinic_id,
+        c.name as clinicName
+      FROM wp_kc_service_doctor_mapping sdm
+      JOIN wp_kc_services s ON sdm.service_id = s.id
+      JOIN wp_kc_clinics c ON sdm.clinic_id = c.id
+      WHERE sdm.status = 1 AND s.status = 1 AND c.status = 1
+      ORDER BY s.name
+      LIMIT 8
+    `);
+
+    // Deduplicate by service id
+    const seen = new Set<number>();
+    const uniqueServices = services.filter(s => {
+      const id = Number(s.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    return uniqueServices.map((s: any) => ({
+      id: String(s.id),
+      name: s.service_name_alias || s.name,
+      type: s.type,
+      category: s.category,
+      price: parseFloat(s.charges || s.price || '0'),
+      duration: s.duration || 60,
+      telemedService: s.telemed_service === 'yes',
+      clinicId: String(s.clinic_id),
+      clinicName: s.clinicName,
+    }));
+  } catch (err) {
+    console.error('Error fetching WordPress services:', err);
+    return [];
   }
 }
 
@@ -61,10 +170,50 @@ const TESTIMONIALS_STATIC = [
   { name: 'Linda W.', text: 'Telekonsultasi-nya sangat membantu. Tidak perlu ke klinik, bisa dari rumah.' },
 ];
 
+// Service type to icon mapping
+const SERVICE_TYPE_ICONS: Record<string, string> = {
+  konseling: '💬',
+  asesmen: '🧪',
+  psikoterapi: '🔮',
+  terapi: '💆',
+  test_cbt: '🧠',
+  general_dentistry: '🦷',
+  system_service: '🌐',
+};
+
 export default async function LandingPage() {
-  const { professionals, services } = await getLandingData();
-  const proList = professionals.length > 0 ? professionals : PROFESSIONALS_STATIC.map((p) => ({ ...p, id: p.name }));
-  const svcList = services.length > 0 ? services : SERVICES_STATIC.map((s) => ({ ...s, id: s.title }));
+  const [wpProfessionals, wpServices] = await Promise.all([
+    getWordPressProfessionals(),
+    getWordPressServices(),
+  ]);
+
+  // Use WordPress data if available, fallback to static
+  const proList = wpProfessionals.length > 0 ? wpProfessionals : PROFESSIONALS_STATIC.map((p, idx) => ({
+    id: String(idx),
+    displayName: p.name,
+    type: p.type,
+    specialties: [p.spec],
+    description: null,
+    clinicName: '',
+    doctorId: '0',
+    clinicId: '0',
+    clinicEmail: '',
+    firstName: '',
+    lastName: '',
+  }));
+
+  const svcList = wpServices.length > 0 ? wpServices : SERVICES_STATIC.map((s, idx) => ({
+    ...s,
+    id: s.title || String(idx),
+    serviceNameAlias: s.title,
+    type: 'default',
+    category: s.desc,
+    price: 0,
+    duration: 60,
+    telemedService: false,
+    clinicId: '0',
+    clinicName: '',
+  }));
 
   return (
     <>
@@ -76,203 +225,101 @@ export default async function LandingPage() {
             PraktiQU
           </Link>
           <div className="hidden items-center gap-6 md:flex">
-            <Link href="#layanan" className="text-sm font-medium text-on-surface-variant hover:text-primary-700">Layanan</Link>
-            <Link href="#profesional" className="text-sm font-medium text-on-surface-variant hover:text-primary-700">Profesional</Link>
-            <Link href="#alur" className="text-sm font-medium text-on-surface-variant hover:text-primary-700">Cara Booking</Link>
-            <Link href="#faq" className="text-sm font-medium text-on-surface-variant hover:text-primary-700">FAQ</Link>
+            <Link href="#profesional" className="text-sm font-medium text-on-surface-variant hover:text-primary-700">Pilih Profesional</Link>
+            <Link href="#layanan" className="text-sm font-medium text-on-surface-variant hover:text-primary-700">Pilih Layanan</Link>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/login" className="btn-ghost">Masuk</Link>
+            <Link href="/login" className="btn-ghost">Masuk / Daftar</Link>
             <Link href="/book" className="btn-primary">Booking Sekarang</Link>
           </div>
         </nav>
       </header>
 
-      <main>
-        {/* HERO */}
-        <section className="relative overflow-hidden bg-gradient-to-br from-primary-50 via-surface to-white py-20">
-          <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 lg:grid-cols-2">
-            <div>
-              <span className="chip mb-4">🧠 Klinik Psikologi Modern</span>
-              <h1 className="text-4xl font-bold tracking-tight text-on-surface md:text-5xl">
-                Booking Sesi dengan{' '}
-                <span className="text-primary-700">Profesional Tepercaya</span>
-              </h1>
-              <p className="mt-6 text-lg text-on-surface-variant">
-                PraktiQU memudahkan Anda menemukan psikolog, psikiater, dan konselor berpengalaman.
-                Pilih jadwal, lakukan booking, dan mulai perjalanan kesehatan mental Anda hari ini.
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/book" className="btn-primary px-8 py-3">Mulai Booking</Link>
-                <Link href="#layanan" className="btn-secondary px-8 py-3">Lihat Layanan</Link>
+      <main className="py-12 space-y-16">
+        {/* PROFESIONAL */}
+        <section id="profesional">
+          <div className="mx-auto max-w-7xl px-6">
+            <div className="flex items-end justify-between mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-on-surface md:text-4xl">Temukan Profesional Anda</h1>
+                <p className="mt-2 text-on-surface-variant">Pilih psikolog atau psikiater terbaik untuk perjalanan kesehatan mental Anda.</p>
               </div>
-              <div className="mt-10 grid grid-cols-3 gap-6 border-t border-surface-container-high pt-6">
-                <div><div className="text-2xl font-bold text-primary-700">50+</div><div className="text-xs text-on-surface-variant">Profesional Aktif</div></div>
-                <div><div className="text-2xl font-bold text-primary-700">1.2K+</div><div className="text-xs text-on-surface-variant">Klien Puas</div></div>
-                <div><div className="text-2xl font-bold text-primary-700">4.9★</div><div className="text-xs text-on-surface-variant">Rating Rata-rata</div></div>
-              </div>
+              <Link href="/book" className="hidden text-sm font-semibold text-primary-700 hover:underline md:block">Lihat Semua Jadwal →</Link>
             </div>
-            <div>
-              <div className="card space-y-4 p-8">
-                <div className="flex items-center gap-3 border-b border-surface-container-high pb-4">
-                  <div className="grid h-12 w-12 place-items-center rounded-full bg-primary-700 text-lg font-semibold text-white">DR</div>
-                  <div>
-                    <div className="font-semibold text-on-surface">Dr. Ratna, M.Psi</div>
-                    <div className="text-xs text-on-surface-variant">Psikolog Klinis • 12 thn pengalaman</div>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Slot Tersedia Hari Ini</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['09:00', '10:30', '13:00', '14:30', '16:00', '19:00'].map((t) => (
-                      <div key={t} className="rounded-lg border border-outline-variant px-3 py-2 text-center text-sm font-medium text-on-surface">
-                        {t}
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {proList.map((p, idx) => {
+                // Handle both WordPress and static data formats
+                const displayName = 'displayName' in p ? p.displayName : ('name' in p ? p.name : 'Professional');
+                const type = 'type' in p ? p.type : ('spec' in p ? p.spec : '');
+                const specialties = 'specialties' in p ? p.specialties as string[] : ('spec' in p ? [p.spec] : []);
+                const clinicName = 'clinicName' in p ? p.clinicName : '';
+                const description = 'description' in p ? p.description : null;
+
+                return (
+                  <div key={p.id || idx} className="card">
+                    <div className="flex items-center gap-4">
+                      <div className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-primary-700 to-primary-600 text-lg font-semibold text-white">
+                        {displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                       </div>
-                    ))}
+                      <div className="flex-1">
+                        <div className="font-semibold text-on-surface">{displayName}</div>
+                        <div className="text-xs text-on-surface-variant">{type || clinicName}</div>
+                      </div>
+                    </div>
+                    {specialties.length > 0 && (
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div><span className="text-outline">Spesialisasi:</span>{' '}<span className="text-on-surface">{specialties.slice(0, 2).map((s: any) => typeof s === 'object' ? s.label : s).join(', ')}</span></div>
+                      </div>
+                    )}
+                    {description && (
+                      <p className="mt-2 text-xs text-on-surface-variant line-clamp-2">{description}</p>
+                    )}
+                    <Link href="/book" className="btn-secondary mt-4 w-full">Lihat Jadwal</Link>
                   </div>
-                </div>
-                <div className="rounded-lg bg-surface-container-low p-3 text-xs text-primary-700">
-                  ✓ Booking terverifikasi • Pembatalan gratis H-24
-                </div>
-              </div>
+                );
+              })}
+            </div>
+            <div className="mt-6 text-center md:hidden">
+              <Link href="/book" className="text-sm font-semibold text-primary-700 hover:underline">Lihat Semua Jadwal →</Link>
             </div>
           </div>
         </section>
 
         {/* LAYANAN */}
-        <section id="layanan" className="bg-white py-20">
+        <section id="layanan" className="bg-surface py-16">
           <div className="mx-auto max-w-7xl px-6">
-            <div className="mx-auto max-w-2xl text-center">
-              <span className="chip mb-3">Layanan</span>
-              <h2 className="text-3xl font-bold text-on-surface md:text-4xl">Pilih Layanan yang Anda Butuhkan</h2>
-              <p className="mt-3 text-on-surface-variant">Dari konseling individu hingga asesmen psikologis komprehensif</p>
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-on-surface md:text-4xl">Layanan Yang Tersedia</h2>
+              <p className="mt-2 text-on-surface-variant">Berbagai pilihan layanan sesuai kebutuhan Anda.</p>
             </div>
-            <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {(svcList as typeof SERVICES_STATIC).map((s) => (
-                <div key={s.id} className="card group transition-shadow hover:shadow-md">
-                  <div className="text-3xl">{s.icon}</div>
-                  <h3 className="mt-3 text-base font-semibold text-on-surface">{s.title}</h3>
-                  <p className="mt-1 text-sm text-on-surface-variant">{s.desc}</p>
-                  <div className="mt-4 flex items-center justify-between text-xs">
-                    <span className="text-outline">⏱ {s.duration}</span>
-                    <Link href="/book" className="font-semibold text-primary-700 group-hover:underline">Booking →</Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {svcList.map((s, idx) => {
+                // Handle both WordPress and static data formats
+                const title = 'title' in s ? s.title : ('name' in s ? s.name : 'Layanan');
+                const desc = 'desc' in s ? s.desc : ('category' in s ? s.category : '');
+                const duration = 'duration' in s ? s.duration : ('telemedService' in s && s.telemedService ? '60 menit' : '60 menit');
+                const icon = 'icon' in s ? s.icon : (SERVICE_TYPE_ICONS[(s as any).type] || '✨');
+                const price = 'price' in s ? s.price : 0;
+                const serviceId = 'id' in s ? s.id : idx.toString();
 
-        {/* PROFESIONAL */}
-        <section id="profesional" className="bg-surface py-20">
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="mx-auto max-w-2xl text-center">
-              <span className="chip mb-3">Tim Profesional</span>
-              <h2 className="text-3xl font-bold text-on-surface md:text-4xl">Psikolog & Psikiater Bersertifikat</h2>
-              <p className="mt-3 text-on-surface-variant">Tim klinis kami memiliki lisensi HIMPSI dan pengalaman minimal 5 tahun</p>
-            </div>
-            <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {PROFESSIONALS_STATIC.map((p) => (
-                <div key={p.name} className="card">
-                  <div className="flex items-center gap-4">
-                    <div className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-primary-700 to-primary-600 text-lg font-semibold text-white">
-                      {p.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                return (
+                  <div key={serviceId} className="card group transition-shadow hover:shadow-md">
+                    <div className="text-3xl">{icon}</div>
+                    <h3 className="mt-3 text-base font-semibold text-on-surface">{title}</h3>
+                    <p className="mt-1 text-sm text-on-surface-variant">{desc}</p>
+                    <div className="mt-4 flex items-center justify-between text-xs">
+                      <span className="text-outline">⏱ {typeof duration === 'number' ? `${duration} menit` : duration}</span>
+                      {typeof price === 'number' && price > 0 && (
+                        <span className="font-semibold text-primary-700">
+                          {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(price)}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-on-surface">{p.name}</div>
-                      <div className="text-xs text-on-surface-variant">{p.type}</div>
-                    </div>
+                    <Link href="/book" className="mt-3 block text-center text-sm font-semibold text-primary-700 group-hover:underline">Booking →</Link>
                   </div>
-                  <div className="mt-4 space-y-2 text-sm">
-                    <div><span className="text-outline">Spesialisasi:</span>{' '}<span className="text-on-surface">{p.spec}</span></div>
-                    <div><span className="text-outline">Pengalaman:</span>{' '}<span className="text-on-surface">{p.exp}</span></div>
-                  </div>
-                  <Link href="/book" className="btn-secondary mt-4 w-full">Lihat Jadwal</Link>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
-        </section>
-
-        {/* ALUR */}
-        <section id="alur" className="bg-white py-20">
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="mx-auto max-w-2xl text-center">
-              <span className="chip mb-3">Cara Booking</span>
-              <h2 className="text-3xl font-bold text-on-surface md:text-4xl">5 Langkah Mudah Booking Sesi</h2>
-            </div>
-            <div className="mt-12">
-              <BookingWizardSteps currentStep={1} />
-            </div>
-            <div className="mt-12 grid gap-6 md:grid-cols-5">
-              {[
-                { n: 1, t: 'Pilih Profesional', d: 'Lihat profil dan spesialisasi' },
-                { n: 2, t: 'Pilih Layanan', d: 'Konseling, asesmen, atau telekonsultasi' },
-                { n: 3, t: 'Pilih Jadwal', d: 'Pilih tanggal dan waktu yang tersedia' },
-                { n: 4, t: 'Data Diri', d: 'Login jika punya akun, atau daftar baru' },
-                { n: 5, t: 'Konfirmasi', d: 'Terima konfirmasi dan detail via email' },
-              ].map((s) => (
-                <div key={s.n} className="text-center">
-                  <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary-700 text-lg font-semibold text-white">{s.n}</div>
-                  <h3 className="mt-3 text-sm font-semibold text-on-surface">{s.t}</h3>
-                  <p className="mt-1 text-xs text-on-surface-variant">{s.d}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-12 text-center">
-              <Link href="/book" className="btn-primary px-8 py-3 text-base">Mulai Sekarang →</Link>
-            </div>
-          </div>
-        </section>
-
-        {/* TESTIMONI */}
-        <section className="bg-surface py-20">
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="mx-auto max-w-2xl text-center">
-              <span className="chip mb-3">Testimoni</span>
-              <h2 className="text-3xl font-bold text-on-surface md:text-4xl">Apa Kata Klien Kami</h2>
-            </div>
-            <div className="mt-12 grid gap-6 md:grid-cols-3">
-              {TESTIMONIALS_STATIC.map((t) => (
-                <div key={t.name} className="card">
-                  <div className="flex gap-1 text-primary-700">★★★★★</div>
-                  <p className="mt-3 text-sm text-on-surface">"{t.text}"</p>
-                  <div className="mt-4 text-sm font-semibold text-on-surface-variant">— {t.name}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ */}
-        <section id="faq" className="bg-white py-20">
-          <div className="mx-auto max-w-3xl px-6">
-            <div className="text-center">
-              <span className="chip mb-3">FAQ</span>
-              <h2 className="text-3xl font-bold text-on-surface md:text-4xl">Pertanyaan yang Sering Diajukan</h2>
-            </div>
-            <div className="mt-12 space-y-3">
-              {FAQ_STATIC.map((f, i) => (
-                <details key={i} className="card cursor-pointer">
-                  <summary className="flex items-center justify-between font-semibold text-on-surface">
-                    {f.q}
-                    <span className="text-primary-700">+</span>
-                  </summary>
-                  <p className="mt-3 text-sm text-on-surface-variant">{f.a}</p>
-                </details>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* CTA */}
-        <section className="bg-primary-700 py-16">
-          <div className="mx-auto max-w-3xl px-6 text-center text-white">
-            <h2 className="text-3xl font-bold md:text-4xl">Siap Memulai Perjalanan Anda?</h2>
-            <p className="mt-3 text-lg text-primary-200">Booking sesi pertama Anda hari ini. Konsultasi awal gratis 30 menit.</p>
-            <Link href="/book" className="mt-8 inline-flex items-center justify-center rounded-lg bg-white px-8 py-3 text-base font-semibold text-primary-700 transition-colors hover:bg-primary-50">
-              Booking Sesi Pertama →
-            </Link>
           </div>
         </section>
       </main>

@@ -8,14 +8,55 @@ import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
+interface ServiceInfo {
+  id: string;
+  name: string;
+  duration: number;
+}
+
+interface ProfessionalInfo {
+  id: string;
+  fullName: string;
+}
+
 async function getData(professionalId: string, serviceId: string) {
   try {
-    const [professional, service] = await Promise.all([
-      prisma.professional.findUnique({ where: { id: professionalId } }),
-      prisma.service.findUnique({ where: { id: serviceId } }),
-    ]);
+    // Get professional info
+    const userResult = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT ID, display_name FROM wp_users WHERE ID = ${parseInt(professionalId)} LIMIT 1
+    `);
+
+    if (!userResult || userResult.length === 0) {
+      return { professional: null, service: null };
+    }
+
+    const professional: ProfessionalInfo = {
+      id: String(userResult[0].ID),
+      fullName: userResult[0].display_name || 'Professional',
+    };
+
+    // Get service info
+    const serviceResult = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT s.id, s.name, COALESCE(sdm.duration, 60) as duration
+      FROM wp_kc_services s
+      LEFT JOIN wp_kc_service_doctor_mapping sdm ON s.id = sdm.service_id AND sdm.doctor_id = ${parseInt(professionalId)}
+      WHERE s.id = ${parseInt(serviceId)}
+      LIMIT 1
+    `);
+
+    if (!serviceResult || serviceResult.length === 0) {
+      return { professional, service: null };
+    }
+
+    const service: ServiceInfo = {
+      id: String(serviceResult[0].id),
+      name: serviceResult[0].name || 'Service',
+      duration: serviceResult[0].duration || 60,
+    };
+
     return { professional, service };
-  } catch {
+  } catch (err) {
+    console.error('Error in getData:', err);
     return { professional: null, service: null };
   }
 }
@@ -37,6 +78,7 @@ export default async function BookStep4Page({
       </WizardLayout>
     );
   }
+
   if (!holdKey || !date || !startTime) {
     return (
       <WizardLayout currentStep={4}>

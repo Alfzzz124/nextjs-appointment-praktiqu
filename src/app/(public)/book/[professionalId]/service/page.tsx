@@ -7,26 +7,79 @@ import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
+interface ServiceData {
+  id: string;
+  name: string;
+  description: string | null;
+  duration: number;
+  price: any;
+}
+
+interface ProfessionalData {
+  id: string;
+  fullName: string;
+}
+
 async function getData(professionalId: string) {
   try {
-    const [professional, mappings] = await Promise.all([
-      prisma.professional.findUnique({
-        where: { id: professionalId },
-        include: { user: { select: { displayName: true } } },
-      }),
-      prisma.doctorServiceMapping.findMany({
-        where: { doctorId: professionalId },
-        include: { service: true },
-      }),
-    ]);
-    return { professional, services: mappings.filter((m) => m.service.status === 1).map((m) => ({
-      id: m.service.id,
-      name: m.service.name,
-      description: m.service.description,
-      duration: m.service.duration,
-      price: m.price ?? m.service.price,
-    })) };
-  } catch {
+    // Get professional info from WordPress
+    const userResult = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT u.ID, u.display_name, c.name as clinic_name
+      FROM wp_users u
+      JOIN wp_kc_doctor_clinic_mappings dcm ON u.ID = dcm.doctor_id
+      JOIN wp_kc_clinics c ON dcm.clinic_id = c.id
+      WHERE u.ID = ${parseInt(professionalId)}
+      LIMIT 1
+    `);
+
+    if (!userResult || userResult.length === 0) {
+      return { professional: null, services: [] };
+    }
+
+    const professional: ProfessionalData = {
+      id: String(userResult[0].ID),
+      fullName: userResult[0].display_name || 'Professional',
+    };
+
+    // Get services from WordPress
+    const servicesRaw = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT
+        s.id,
+        s.name,
+        s.type,
+        s.category,
+        s.price,
+        sdm.charges,
+        sdm.duration,
+        sdm.telemed_service,
+        sdm.service_name_alias
+      FROM wp_kc_service_doctor_mapping sdm
+      JOIN wp_kc_services s ON sdm.service_id = s.id
+      WHERE sdm.doctor_id = ${parseInt(professionalId)}
+        AND sdm.status = 1
+        AND s.status = 1
+      ORDER BY s.name
+    `);
+
+    // Deduplicate by service id
+    const seen = new Set<number>();
+    const services: ServiceData[] = [];
+    for (const s of servicesRaw) {
+      if (seen.has(Number(s.id))) continue;
+      seen.add(Number(s.id));
+
+      services.push({
+        id: String(s.id),
+        name: s.service_name_alias || s.name,
+        description: s.category || null,
+        duration: s.duration || 60,
+        price: s.charges || s.price || '0',
+      });
+    }
+
+    return { professional, services };
+  } catch (err) {
+    console.error('Error in getData:', err);
     return { professional: null, services: [] };
   }
 }

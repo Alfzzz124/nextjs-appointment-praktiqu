@@ -2,7 +2,6 @@
 // Step 1: Browse professionals
 import { WizardLayout } from '@/components/booking/wizard-layout';
 import { prisma } from '@/lib/prisma';
-import { generateSlots } from '@/services/booking/slot-generator';
 import { ProfessionalCard } from '@/components/booking/professional-card';
 import { SpecialtyFilter } from '@/components/booking/specialty-filter';
 
@@ -12,68 +11,99 @@ interface SearchParams {
   specialty?: string;
 }
 
-async function getProfessionals(specialty?: string) {
-  try {
-    const professionals = await prisma.professional.findMany({
-      where: {
-        status: 'ACTIVE' as any,
-        ...(specialty ? { specialties: { array_contains: specialty } as any } : {}),
-      },
-      include: {
-        user: { select: { id: true, displayName: true, firstName: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+interface ProfessionalData {
+  id: string;
+  fullName: string;
+  professionalType: string | null;
+  biography: string | null;
+  specialties: string[];
+  nextSlot: string | null;
+  nextDate: string | null;
+}
 
-    // Compute next available
-    const now = new Date();
-    return Promise.all(
-      professionals.map(async (p) => {
-        let nextSlot: string | null = null;
-        let nextDate: string | null = null;
+async function getWordPressProfessionals(specialty?: string): Promise<ProfessionalData[]> {
+  try {
+    // Get doctors from WordPress KiviCare tables
+    let query = `
+      SELECT DISTINCT
+        dcm.doctor_id,
+        dcm.clinic_id,
+        c.name as clinicName,
+        c.email as clinicEmail,
+        u.display_name as displayName,
+        c.specialties
+      FROM wp_kc_doctor_clinic_mappings dcm
+      JOIN wp_kc_clinics c ON dcm.clinic_id = c.id
+      JOIN wp_users u ON dcm.doctor_id = u.ID
+      WHERE c.status = 1
+      ORDER BY c.name
+    `;
+
+    const mappings = await prisma.$queryRawUnsafe<any[]>(query);
+
+    // Get meta data for each doctor
+    const result: ProfessionalData[] = [];
+    for (const m of mappings.slice(0, 50)) {
+      const userId = Number(m.doctor_id);
+
+      const metaResult = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT meta_key, meta_value FROM wp_usermeta
+        WHERE user_id = ${userId} AND meta_key IN ('first_name', 'last_name', 'doctor_description', 'basic_data')
+      `);
+
+      const metaMap: Record<string, string> = {};
+      metaResult.forEach(r => { metaMap[r.meta_key] = r.meta_value; });
+
+      let specialties: string[] = [];
+      if (m.specialties) {
         try {
-          const availability = await prisma.professionalAvailability.findMany({
-            where: { professionalId: p.id },
-          });
-          for (let i = 0; i < 14 && !nextSlot; i++) {
-            const d = new Date(now);
-            d.setDate(d.getDate() + i);
-            d.setHours(0, 0, 0, 0);
-            const slots = generateSlots({
-              date: d,
-              duration: 60,
-              availability: availability.map((a) => ({
-                dayOfWeek: a.dayOfWeek,
-                startMinute: a.startMinute,
-                endMinute: a.endMinute,
-              })),
-              existingBookings: [],
-            });
-            if (slots.length > 0) {
-              nextSlot = slots[0].startTime;
-              nextDate = d.toISOString().slice(0, 10);
-            }
-          }
+          specialties = JSON.parse(m.specialties).map((s: any) => s.label || s);
         } catch {}
-        return {
-          id: p.id,
-          fullName: p.fullName,
-          professionalType: p.professionalType,
-          biography: p.biography,
-          specialties: (p.specialties as string[] | null) ?? [],
-          nextSlot,
-          nextDate,
-        };
-      }),
-    );
-  } catch {
+      }
+
+      // Filter by specialty if specified
+      if (specialty && specialties.length > 0) {
+        const hasSpecialty = specialties.some((s: string) =>
+          s.toLowerCase().includes(specialty.toLowerCase())
+        );
+        if (!hasSpecialty) continue;
+      }
+
+      const fullName = m.displayName ||
+        `${metaMap['first_name'] || ''} ${metaMap['last_name'] || ''}`.trim() ||
+        'Professional';
+
+      // Parse basic_data for additional info
+      let biography: string | null = null;
+      if (metaMap['doctor_description']) {
+        biography = metaMap['doctor_description'];
+      } else if (metaMap['basic_data']) {
+        try {
+          const basicData = JSON.parse(metaMap['basic_data']);
+          biography = basicData.specialties?.join(', ') || null;
+        } catch {}
+      }
+
+      result.push({
+        id: String(m.doctor_id),
+        fullName,
+        professionalType: null,
+        biography,
+        specialties,
+        nextSlot: null,
+        nextDate: null,
+      });
+    }
+
+    return result;
+  } catch (err) {
+    console.error('Error fetching professionals:', err);
     return [];
   }
 }
 
 export default async function BookStep1Page({ searchParams }: { searchParams: SearchParams }) {
-  const professionals = await getProfessionals(searchParams.specialty);
+  const professionals = await getWordPressProfessionals(searchParams.specialty);
 
   return (
     <WizardLayout currentStep={1}>

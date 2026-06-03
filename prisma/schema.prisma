@@ -1430,3 +1430,120 @@ model ProfessionalServiceAssignment {
   @@index([professionalId])
   @@map("professional_service_assignments")
 }
+
+// ============================================
+// KIVICARE WORDPRESS VIEWS (Read-Only)
+// ============================================
+// These models provide a Prisma-compatible view over WordPress KiviCare tables
+// They use BigInt IDs to match WordPress schema and are read-only
+
+model KcClinic {
+  id             BigInt   @id
+  name           String?
+  email          String?
+  telephoneNo    String?  @map("telephone_no")
+  specialties    String?  @db.LongText
+  address        String?  @db.Text
+  city           String?
+  state          String?
+  country        String?
+  postalCode     String?  @map("postal_code")
+  status         Int      @default(0)
+  clinicAdminId  BigInt   @map("clinic_admin_id")
+  clinicLogo     BigInt   @map("clinic_logo")
+  profileImage   BigInt?  @map("profile_image")
+  extra          String?  @db.LongText
+  countryCode    String?  @map("country_code")
+  createdAt      DateTime @map("created_at")
+  countryCallingCode String? @map("country_calling_code")
+
+  @@map("wp_kc_clinics")
+}
+
+model KcService {
+  id         BigInt    @id
+  type       String?
+  category   String?   @db.LongText
+  name       String
+  price      String?
+  status     Int       @default(1)
+  createdAt  DateTime  @map("created_at")
+
+  @@map("wp_kc_services")
+}
+
+model KcServiceDoctorMapping {
+  id             BigInt    @id
+  serviceId      BigInt    @map("service_id")
+  doctorId       BigInt    @map("doctor_id")
+  clinicId       BigInt    @map("clinic_id")
+  charges        String?
+  extra          String?   @db.LongText
+  status         Int       @default(1)
+  isPublic       Int       @default(1) @map("is_public")
+  createdAt      DateTime  @map("created_at")
+  telemedService String?   @map("telemed_service")
+  duration       Int?
+  serviceNameAlias String? @map("service_name_alias")
+  multiple       String?   @map("multiple")
+  image          BigInt?
+
+  @@map("wp_kc_service_doctor_mapping")
+}
+
+model KcDoctorClinicMapping {
+  id        BigInt   @id
+  doctorId  BigInt   @map("doctor_id")
+  clinicId  BigInt   @map("clinic_id")
+  owner     Int      @default(0)
+  createdAt DateTime @map("created_at")
+
+  @@map("wp_kc_doctor_clinic_mappings")
+}
+
+model KcClinicSession {
+  id          BigInt   @id
+  clinicId    BigInt   @map("clinic_id")
+  doctorId    BigInt?  @map("doctor_id")
+  day         String?
+  startTime   DateTime @map("start_time") @db.Time
+  endTime     DateTime @map("end_time") @db.Time
+  slotDuration Int     @map("time_slot") @default(5)
+  parentId    BigInt?  @map("parent_id")
+  createdAt   DateTime @map("created_at")
+
+  @@map("wp_kc_clinic_sessions")
+}
+
+model KcServiceSession {
+  id        BigInt   @id
+  mappingId BigInt   @map("mapping_id")
+  day       String?
+  startTime DateTime @map("start_time") @db.Time
+  endTime   DateTime @map("end_time") @db.Time
+  parentId  BigInt?  @map("parent_id")
+
+  @@map("wp_kc_service_sessions")
+}
+
+model KcAppointment {
+  id                   BigInt    @id
+  clinicId             BigInt    @map("clinic_id")
+  doctorId             BigInt    @map("doctor_id")
+  patientId            BigInt    @map("patient_id")
+  appointmentStartDate DateTime? @map("appointment_start_date") @db.Date
+  appointmentStartTime DateTime  @map("appointment_start_time") @db.Time
+  appointmentEndDate   DateTime? @map("appointment_end_date") @db.Date
+  appointmentEndTime   DateTime? @map("appointment_end_time") @db.Time
+  appointmentStartUtc  DateTime? @map("appointment_start_utc")
+  appointmentEndUtc    DateTime? @map("appointment_end_utc")
+  appointmentTimezone  String    @map("appointment_timezone") @default("UTC")
+  visitType            String?   @map("visit_type")
+  description          String?   @db.Text
+  status               Int       @default(0)
+  createdAt            DateTime  @map("created_at")
+  createdAtUtc         DateTime? @map("created_at_utc")
+  appointmentReport    String?   @map("appointment_report") @db.LongText
+
+  @@map("wp_kc_appointments")
+}
