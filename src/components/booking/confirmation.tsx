@@ -46,52 +46,52 @@ export function Confirmation(props: ConfirmationProps) {
       .toISOString()
       .replace(/[-:]/g, '')
       .replace(/\.\d{3}/, '');
-    const end = new Date(new Date(`${props.date}T${props.startTime}:00`).getTime() + 60 * 60_000)
+    const endDate = new Date(new Date(`${props.date}T${props.startTime}:00`).getTime() + 60 * 60_000)
       .toISOString()
       .replace(/[-:]/g, '')
       .replace(/\.\d{3}/, '');
     const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
       `${props.serviceName} - PraktiQU`,
-    )}&dates=${start}/${end}&details=${encodeURIComponent('Sesi konseling Anda di PraktiQU')}`;
+    )}&dates=${start}/${endDate}&details=${encodeURIComponent('Sesi konseling Anda di PraktiQU')}`;
     window.open(url, '_blank');
   }
 
   return (
     <div className="mx-auto max-w-2xl text-center">
-      <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#f0ecf9] text-3xl">
+      <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-surface-container text-3xl">
         ✓
       </div>
-      <h1 className="mt-6 text-3xl font-bold text-[#1b1b24]">Booking Berhasil!</h1>
-      <p className="mt-2 text-sm text-[#464555]">
+      <h1 className="mt-6 text-3xl font-bold text-on-surface">Booking Berhasil!</h1>
+      <p className="mt-2 text-sm text-on-surface-variant">
         Sesi Anda telah dikonfirmasi. Kami telah mengirim detailnya ke email Anda.
       </p>
 
       <div className="card mt-8 text-left">
-        <h3 className="text-sm font-semibold text-[#1b1b24]">Detail Sesi</h3>
+        <h3 className="text-sm font-semibold text-on-surface">Detail Sesi</h3>
         <dl className="mt-4 space-y-3 text-sm">
-          <div className="flex justify-between border-b border-[#e4e1ee] pb-2">
-            <dt className="text-[#777587]">ID Booking</dt>
-            <dd className="font-mono text-xs text-[#1b1b24]">{props.bookingId}</dd>
+          <div className="flex justify-between border-b border-surface-container-high pb-2">
+            <dt className="text-outline">ID Booking</dt>
+            <dd className="font-mono text-xs text-on-surface">{props.bookingId}</dd>
           </div>
-          <div className="flex justify-between border-b border-[#e4e1ee] pb-2">
-            <dt className="text-[#777587]">Status</dt>
+          <div className="flex justify-between border-b border-surface-container-high pb-2">
+            <dt className="text-outline">Status</dt>
             <dd>
-              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
                 PENDING
               </span>
             </dd>
           </div>
-          <div className="flex justify-between border-b border-[#e4e1ee] pb-2">
-            <dt className="text-[#777587]">Layanan</dt>
-            <dd className="font-medium text-[#1b1b24]">{props.serviceName}</dd>
+          <div className="flex justify-between border-b border-surface-container-high pb-2">
+            <dt className="text-outline">Layanan</dt>
+            <dd className="font-medium text-on-surface">{props.serviceName}</dd>
           </div>
-          <div className="flex justify-between border-b border-[#e4e1ee] pb-2">
-            <dt className="text-[#777587]">Profesional</dt>
-            <dd className="font-medium text-[#1b1b24]">{props.professionalName}</dd>
+          <div className="flex justify-between border-b border-surface-container-high pb-2">
+            <dt className="text-outline">Profesional</dt>
+            <dd className="font-medium text-on-surface">{props.professionalName}</dd>
           </div>
-          <div className="flex justify-between border-b border-[#e4e1ee] pb-2">
-            <dt className="text-[#777587]">Tanggal</dt>
-            <dd className="font-medium text-[#1b1b24]">
+          <div className="flex justify-between border-b border-surface-container-high pb-2">
+            <dt className="text-outline">Tanggal</dt>
+            <dd className="font-medium text-on-surface">
               {new Date(props.date).toLocaleDateString('id-ID', {
                 weekday: 'long',
                 day: 'numeric',
@@ -101,8 +101,8 @@ export function Confirmation(props: ConfirmationProps) {
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-[#777587]">Waktu</dt>
-            <dd className="font-medium text-[#1b1b24]">{props.startTime} WIB</dd>
+            <dt className="text-outline">Waktu</dt>
+            <dd className="font-medium text-on-surface">{props.startTime} WIB</dd>
           </div>
         </dl>
       </div>
@@ -116,9 +116,9 @@ export function Confirmation(props: ConfirmationProps) {
         </button>
       </div>
 
-      <div className="mt-8 rounded-lg bg-[#f6f2ff] p-4 text-left text-sm">
-        <h4 className="font-semibold text-[#3625cd]">Apa selanjutnya?</h4>
-        <ul className="mt-2 space-y-1 text-[#464555]">
+      <div className="mt-8 rounded-lg bg-surface-container p-4 text-left text-sm">
+        <h4 className="font-semibold text-primary-700">Apa selanjutnya?</h4>
+        <ul className="mt-2 space-y-1 text-on-surface-variant">
           <li>✓ Profesional akan menerima notifikasi dan mengkonfirmasi dalam 1×24 jam</li>
           <li>✓ Anda akan menerima reminder H-1 via email & WhatsApp</li>
           <li>✓ Pembayaran dilakukan di klinik sebelum sesi</li>

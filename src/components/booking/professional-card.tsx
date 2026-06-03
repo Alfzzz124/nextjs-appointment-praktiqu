@@ -37,12 +37,12 @@ export function ProfessionalCard({ professional }: { professional: ProfessionalC
       className="card flex flex-col gap-3 transition-shadow hover:shadow-md"
     >
       <div className="flex items-start gap-3">
-        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#3625cd] to-[#5046e5] text-lg font-semibold text-white">
+        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary-700 to-primary-600 text-lg font-semibold text-white">
           {initials}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold text-[#1b1b24]">{professional.fullName}</div>
-          <div className="text-xs text-[#464555]">{typeLabel}</div>
+          <div className="truncate font-semibold text-on-surface">{professional.fullName}</div>
+          <div className="text-xs text-on-surface-variant">{typeLabel}</div>
         </div>
       </div>
       {professional.specialties.length > 0 && (
@@ -55,12 +55,12 @@ export function ProfessionalCard({ professional }: { professional: ProfessionalC
         </div>
       )}
       {professional.biography && (
-        <p className="line-clamp-2 text-sm text-[#464555]">{professional.biography}</p>
+        <p className="line-clamp-2 text-sm text-on-surface-variant">{professional.biography}</p>
       )}
-      <div className="mt-auto flex items-center justify-between border-t border-[#e4e1ee] pt-3 text-sm">
+      <div className="mt-auto flex items-center justify-between border-t border-surface-container-high pt-3 text-sm">
         <div>
-          <div className="text-xs text-[#777587]">Slot berikutnya</div>
-          <div className="font-semibold text-[#1b1b24]">
+          <div className="text-xs text-outline">Slot berikutnya</div>
+          <div className="font-semibold text-on-surface">
             {professional.nextSlot && professional.nextDate
               ? `${professional.nextSlot} • ${new Date(professional.nextDate).toLocaleDateString('id-ID', {
                   day: 'numeric',
@@ -69,7 +69,7 @@ export function ProfessionalCard({ professional }: { professional: ProfessionalC
               : 'Belum tersedia'}
           </div>
         </div>
-        <span className="text-sm font-semibold text-[#3625cd]">Pilih →</span>
+        <span className="text-sm font-semibold text-primary-700">Pilih →</span>
       </div>
     </Link>
   );

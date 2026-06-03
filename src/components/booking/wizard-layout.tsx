@@ -10,14 +10,14 @@ export interface WizardLayoutProps {
 
 export function WizardLayout({ currentStep, children }: WizardLayoutProps) {
   return (
-    <div className="min-h-screen bg-[#fcf8ff]">
-      <header className="border-b border-[#e4e1ee] bg-white">
+    <div className="min-h-screen bg-surface">
+      <header className="border-b border-surface-container-high bg-white">
         <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2 text-lg font-bold text-[#3625cd]">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#3625cd] text-white">P</span>
+          <Link href="/" className="flex items-center gap-2 text-lg font-bold text-primary-700">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary-700 text-white">P</span>
             PraktiQU
           </Link>
-          <Link href="/" className="text-sm text-[#464555] hover:text-[#3625cd]">
+          <Link href="/" className="text-sm text-on-surface-variant hover:text-primary-700">
             ← Kembali ke beranda
           </Link>
         </nav>

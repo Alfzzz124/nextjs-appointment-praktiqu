@@ -61,7 +61,7 @@ export function SlotPicker({ professionalId, serviceId, days }: SlotPickerProps)
 
   return (
     <div>
-      {/* Date picker */}
+      {/* Date strip */}
       <div className="mb-6 overflow-x-auto">
         <div className="flex gap-2">
           {days.map((d) => {
@@ -78,10 +78,10 @@ export function SlotPicker({ professionalId, serviceId, days }: SlotPickerProps)
                 disabled={!hasSlots}
                 className={`flex min-w-[68px] flex-col items-center rounded-lg border px-3 py-2 text-sm transition-colors ${
                   isActive
-                    ? 'border-[#3625cd] bg-[#3625cd] text-white'
+                    ? 'border-primary-700 bg-primary-700 text-white'
                     : hasSlots
-                    ? 'border-[#c7c4d8] bg-white text-[#1b1b24] hover:border-[#3625cd]'
-                    : 'border-[#e4e1ee] bg-[#f6f2ff] text-[#777587] opacity-50'
+                    ? 'border-outline-variant bg-white text-on-surface hover:border-primary-700'
+                    : 'border-surface-container-high bg-surface-container-low text-outline opacity-50'
                 }`}
               >
                 <span className="text-xs font-medium uppercase">{DAYS_ID[dt.getDay()]}</span>
@@ -98,7 +98,7 @@ export function SlotPicker({ professionalId, serviceId, days }: SlotPickerProps)
       {/* Slot grid */}
       {activeDay && activeDay.slots.length > 0 ? (
         <>
-          <h3 className="mb-3 text-sm font-semibold text-[#1b1b24]">
+          <h3 className="mb-3 text-sm font-semibold text-on-surface">
             Slot tersedia pada{' '}
             {new Date(activeDay.date).toLocaleDateString('id-ID', {
               weekday: 'long',
@@ -115,8 +115,8 @@ export function SlotPicker({ professionalId, serviceId, days }: SlotPickerProps)
                   onClick={() => setSelectedSlot(slot)}
                   className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                     isActive
-                      ? 'border-[#3625cd] bg-[#3625cd] text-white'
-                      : 'border-[#c7c4d8] bg-white text-[#1b1b24] hover:border-[#3625cd]'
+                      ? 'border-primary-700 bg-primary-700 text-white'
+                      : 'border-outline-variant bg-white text-on-surface hover:border-primary-700'
                   }`}
                 >
                   {slot.startTime}
@@ -126,7 +126,7 @@ export function SlotPicker({ professionalId, serviceId, days }: SlotPickerProps)
           </div>
         </>
       ) : (
-        <div className="rounded-lg bg-[#f6f2ff] p-4 text-center text-sm text-[#464555]">
+        <div className="rounded-lg bg-surface-container-low p-4 text-center text-sm text-on-surface-variant">
           Tidak ada slot tersedia untuk tanggal ini.
         </div>
       )}

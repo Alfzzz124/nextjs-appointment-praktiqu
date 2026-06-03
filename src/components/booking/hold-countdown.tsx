@@ -11,25 +11,17 @@ export function HoldCountdown({ holdKey, startTime, endTime }: { holdKey: string
     async function tick() {
       try {
         const res = await fetch(`/api/v1/public/booking/hold?key=${encodeURIComponent(holdKey)}`);
-        if (!res.ok) {
-          if (active) setExpired(true);
-          return;
-        }
+        if (!res.ok) { if (active) setExpired(true); return; }
         const data = await res.json();
         if (active) {
           setRemaining(data.remainingSec);
           if (data.remainingSec <= 0) setExpired(true);
         }
-      } catch {
-        if (active) setExpired(true);
-      }
+      } catch { if (active) setExpired(true); }
     }
     tick();
-    const interval = setInterval(tick, 30_000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
+    const id = setInterval(tick, 30_000);
+    return () => { active = false; clearInterval(id); };
   }, [holdKey]);
 
   if (expired) {
@@ -39,7 +31,6 @@ export function HoldCountdown({ holdKey, startTime, endTime }: { holdKey: string
       </div>
     );
   }
-
   if (remaining == null) return null;
 
   const minutes = Math.floor(remaining / 60);
@@ -47,13 +38,11 @@ export function HoldCountdown({ holdKey, startTime, endTime }: { holdKey: string
   const warning = remaining < 5 * 60;
 
   return (
-    <div
-      className={`mb-6 rounded-lg p-3 text-sm ${
-        warning
-          ? 'border border-amber-300 bg-amber-50 text-amber-800'
-          : 'border border-[#e4e1ee] bg-[#f6f2ff] text-[#3625cd]'
-      }`}
-    >
+    <div className={`mb-6 rounded-lg p-3 text-sm ${
+      warning
+        ? 'border border-amber-300 bg-amber-50 text-amber-800'
+        : 'border border-surface-container-high bg-surface-container-low text-primary-700'
+    }`}>
       <span className="font-semibold">Slot di-hold untuk Anda:</span>{' '}
       {startTime}{endTime ? `–${endTime}` : ''} • Sisa waktu{' '}
       <strong>

@@ -46,20 +46,16 @@ export function BookingForm(props: BookingFormProps) {
       });
       const data = await res.json();
       if (res.status === 410) {
-        setError('Slot hold sudah berakhir. Silakan pilih jadwal lain.');
-        return;
+        return setError('Slot hold sudah berakhir. Silakan pilih jadwal lain.');
       }
       if (res.status === 409) {
-        setError('Slot sudah diambil orang lain. Silakan pilih jadwal lain.');
-        return;
+        return setError('Slot sudah diambil orang lain. Silakan pilih jadwal lain.');
       }
       if (res.status === 403) {
-        setError('Akun Anda tidak aktif. Hubungi klinik.');
-        return;
+        return setError('Akun Anda tidak aktif. Hubungi klinik.');
       }
       if (!res.ok) {
-        setError(data.title ?? 'Gagal membuat booking');
-        return;
+        return setError(data.title ?? 'Gagal membuat booking');
       }
       const params = new URLSearchParams({
         id: data.id,
@@ -69,8 +65,8 @@ export function BookingForm(props: BookingFormProps) {
         startTime: props.startTime,
       });
       router.push(`/book/confirmation?${params.toString()}`);
-    } catch (e: any) {
-      setError(e?.message ?? 'Terjadi kesalahan');
+    } catch (err: any) {
+      setError(err?.message ?? 'Terjadi kesalahan');
     } finally {
       setSubmitting(false);
     }
@@ -80,12 +76,7 @@ export function BookingForm(props: BookingFormProps) {
     <form onSubmit={handleSubmit} className="card space-y-4">
       <div>
         <label className="label-base">Nama Lengkap *</label>
-        <input
-          className="input-base"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
+        <input className="input-base" value={name} onChange={(e) => setName(e.target.value)} required />
       </div>
       <div>
         <label className="label-base">Email *</label>
@@ -122,18 +113,13 @@ export function BookingForm(props: BookingFormProps) {
           {error}
         </div>
       )}
-      <div className="flex items-start gap-2 rounded-lg bg-[#f6f2ff] p-3 text-xs text-[#3625cd]">
+      <div className="flex items-start gap-2 rounded-lg bg-surface-container p-3 text-xs text-primary-700">
         <span>🔒</span>
         <p>
-          Dengan melanjutkan, Anda menyetujui pembuatan akun otomatis di PraktiQU
-          dan menerima email konfirmasi booking.
+          Dengan melanjutkan, Anda menyetujui pembuatan akun otomatis di PraktiQU dan menerima email konfirmasi booking.
         </p>
       </div>
-      <button
-        type="submit"
-        disabled={submitting}
-        className="btn-primary w-full py-3 text-base"
-      >
+      <button type="submit" disabled={submitting} className="btn-primary w-full py-3 text-base">
         {submitting ? 'Memproses…' : 'Konfirmasi Booking'}
       </button>
     </form>

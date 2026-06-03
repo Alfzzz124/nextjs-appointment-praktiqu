@@ -24,17 +24,17 @@ export function BookingWizardSteps({
               <div
                 className={`grid h-9 w-9 place-items-center rounded-full text-sm font-semibold ${
                   isActive
-                    ? 'bg-[#3625cd] text-white ring-4 ring-[#3625cd]/20'
+                    ? 'bg-primary-700 text-white ring-4 ring-primary-700/20'
                     : isComplete
-                    ? 'bg-[#3625cd] text-white'
-                    : 'border-2 border-[#c7c4d8] text-[#777587]'
+                    ? 'bg-primary-700 text-white'
+                    : 'border-2 border-outline-variant text-outline'
                 }`}
               >
                 {isComplete ? '✓' : stepNum}
               </div>
               <span
                 className={`mt-2 text-xs font-medium ${
-                  isActive ? 'text-[#3625cd]' : 'text-[#464555]'
+                  isActive ? 'text-primary-700' : 'text-on-surface-variant'
                 }`}
               >
                 {label}
@@ -43,7 +43,7 @@ export function BookingWizardSteps({
             {idx < steps.length - 1 && (
               <div
                 className={`mx-2 h-0.5 flex-1 ${
-                  stepNum < currentStep ? 'bg-[#3625cd]' : 'bg-[#e4e1ee]'
+                  stepNum < currentStep ? 'bg-primary-700' : 'bg-surface-container-high'
                 }`}
               />
             )}

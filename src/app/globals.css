@@ -1,28 +1,6 @@
-/* src/app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-:root {
-  /* PraktiQU design system tokens */
-  --color-surface: #fcf8ff;
-  --color-surface-container-low: #f6f2ff;
-  --color-surface-container: #f0ecf9;
-  --color-surface-container-high: #eae6f4;
-  --color-on-surface: #1b1b24;
-  --color-on-surface-variant: #464555;
-  --color-outline: #777587;
-  --color-primary: #3625cd;
-  --color-primary-container: #5046e5;
-  --color-on-primary: #ffffff;
-  --color-on-primary-container: #dbd8ff;
-  --color-secondary: #4953bc;
-  --color-secondary-container: #8792fe;
-  --color-on-secondary: #ffffff;
-  --color-tertiary: #7e3000;
-  --color-tertiary-container: #a54100;
-  --color-on-tertiary: #ffffff;
-}
 
 @layer base {
   html {
@@ -32,48 +10,45 @@
   }
 
   body {
-    background-color: var(--color-surface);
-    color: var(--color-on-surface);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    @apply bg-surface text-on-surface font-sans;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    color: var(--color-on-surface);
-    letter-spacing: -0.01em;
+    @apply text-on-surface tracking-tight;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg bg-[#3625cd] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#2a1da6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3625cd] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-[#777587] bg-white px-5 py-2.5 text-sm font-semibold text-[#1b1b24] shadow-sm transition-colors hover:bg-[#f6f2ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3625cd] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-outline bg-white px-5 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-[#464555] transition-colors hover:bg-[#f0ecf9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3625cd];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
   }
 
   .card {
-    @apply rounded-xl border border-[#e4e1ee] bg-white p-6 shadow-sm;
+    @apply rounded-xl border border-surface-container-highest bg-white p-6 shadow-sm;
   }
 
   .input-base {
-    @apply block w-full rounded-lg border border-[#c7c4d8] bg-white px-3 py-2.5 text-sm text-[#1b1b24] placeholder:text-[#777587] focus:border-[#3625cd] focus:outline-none focus:ring-2 focus:ring-[#3625cd]/20;
+    @apply block w-full rounded-lg border border-outline-variant bg-white px-3 py-2.5 text-sm text-on-surface placeholder:text-outline focus:border-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-700/20;
   }
 
   .label-base {
-    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#464555];
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-on-surface-variant;
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full bg-[#f0ecf9] px-3 py-1 text-xs font-medium text-[#3625cd];
+    @apply inline-flex items-center gap-1.5 rounded-full bg-surface-container px-3 py-1 text-xs font-medium text-primary-700;
   }
 
   .chip-active {
-    @apply inline-flex items-center gap-1.5 rounded-full bg-[#3625cd] px-3 py-1 text-xs font-medium text-white;
+    @apply inline-flex items-center gap-1.5 rounded-full bg-primary-700 px-3 py-1 text-xs font-medium text-white;
   }
 }
 
@@ -86,9 +61,9 @@
 
 /* Step indicator connector */
 .step-connector {
-  @apply flex-1 border-t-2 border-[#e4e1ee];
+  @apply flex-1 border-t-2 border-surface-container-high;
 }
 
 .step-connector-active {
-  @apply flex-1 border-t-2 border-[#3625cd];
+  @apply flex-1 border-t-2 border-primary-700;
 }
