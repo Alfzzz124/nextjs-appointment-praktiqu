@@ -30,11 +30,11 @@ datasource db {
 // See: src/lib/auth/role-mapping.ts and docs/architecture/role-taxonomy.md.
 
 enum UserRole {
-  SUPER_ADMIN     // WP role: "administrator" (core WP)
-  CLINIC_ADMIN    // WP role: "kiviCare_clinic_admin"
-  PROFESSIONAL    // WP role: "kiviCare_doctor"
-  RECEPTIONIST    // WP role: "kiviCare_receptionist"
-  CLIENT          // WP role: "kiviCare_patient"
+  SUPER_ADMIN // WP role: "administrator" (core WP)
+  CLINIC_ADMIN // WP role: "kiviCare_clinic_admin"
+  PROFESSIONAL // WP role: "kiviCare_doctor"
+  RECEPTIONIST // WP role: "kiviCare_receptionist"
+  CLIENT // WP role: "kiviCare_patient"
 }
 
 enum AuditEventType {
@@ -83,7 +83,7 @@ model User {
   displayName   String
   role          UserRole  @default(CLIENT)
   // NOTE: No password column — WP owns credentials. See block comment above.
-  wpRole        String?   // raw WordPress role slug (e.g. "kiviCare_doctor"); null if provisioned outside WP
+  wpRole        String? // raw WordPress role slug (e.g. "kiviCare_doctor"); null if provisioned outside WP
   wpUserId      BigInt?   @unique // WordPress user ID (wp_users.ID) for cross-system lookups
   status        Int       @default(1) // 0 = inactive, 1 = active
   emailVerified DateTime?
@@ -91,30 +91,27 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  clinicAdmin   Clinic?               @relation("ClinicAdmin")
-  doctor        Doctor?
-  receptionist  Receptionist?
-  patient       Patient?
-  sessions      AuthSession[]
-  logEntries    LogEntry[]
+  clinicAdmin       Clinic?              @relation("ClinicAdmin")
+  doctor            Doctor?
+  receptionist      Receptionist?
+  patient           Patient?
+  sessions          AuthSession[]
+  logEntries        LogEntry[]
   consentSignatures ConsentSignature[]
-  refreshTokens RefreshToken[]
-  passwordResets PasswordResetToken[]
-  googleIdentity GoogleIdentity?
+  refreshTokens     RefreshToken[]
+  passwordResets    PasswordResetToken[]
+  googleIdentity    GoogleIdentity?
 
   // Audit (actor = person performing action; target = affected user)
   auditsAsActor  AuditLog[] @relation("ActorAudits")
   auditsAsTarget AuditLog[] @relation("TargetAudits")
 
-  // Role assignments
-  doctorClinics       DoctorClinicMapping[]
-  receptionistClinics ReceptionistClinicMapping[]
-  patientClinics      PatientClinicMapping[]
-  professional        Professional?                @relation("UserProfessional")
-
   // Meta data
-  basicData     Json?    // mobile_number, dob, gender, blood_group, address, etc.
-  timezone      String?
+  basicData Json? // mobile_number, dob, gender, blood_group, address, etc.
+  timezone  String?
+
+  // Professional link (for PROFESSIONAL role users)
+  professional Professional? @relation("UserProfessional")
 
   @@index([wpUserId])
   @@index([wpRole])
@@ -122,13 +119,13 @@ model User {
 }
 
 model AuthSession {
-  id           String   @id @default(cuid())
-  userId       String
-  expires      DateTime
-  token        String   @unique
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  expires   DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -143,24 +140,24 @@ model AuthSession {
 // revoke the entire family per FR-015.
 
 model RefreshToken {
-  id            String             @id @default(cuid())
-  userId        String
-  tokenHash     String             @unique // SHA-256 of raw token
-  familyId      String             // groups tokens in the same login lineage
-  status        RefreshTokenStatus @default(ACTIVE)
-  userAgent     String?            @db.Text
-  ipAddress     String?
-  issuedAt      DateTime           @default(now())
-  expiresAt     DateTime
-  revokedAt     DateTime?
-  replacedById  String?            @unique
-  parentId      String?            @unique // previous token in the rotation chain
+  id           String             @id @default(cuid())
+  userId       String
+  tokenHash    String             @unique // SHA-256 of raw token
+  familyId     String // groups tokens in the same login lineage
+  status       RefreshTokenStatus @default(ACTIVE)
+  userAgent    String?            @db.Text
+  ipAddress    String?
+  issuedAt     DateTime           @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?            @unique
+  parentId     String?            @unique // previous token in the rotation chain
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  replacedBy   RefreshToken? @relation("RotationChild", fields: [replacedById], references: [id])
-  parent       RefreshToken? @relation("RotationParent", fields: [parentId], references: [id])
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy     RefreshToken?  @relation("RotationChild", fields: [replacedById], references: [id])
+  parent         RefreshToken?  @relation("RotationParent", fields: [parentId], references: [id])
   replacedTokens RefreshToken[] @relation("RotationParent")
-  childTokens  RefreshToken[] @relation("RotationChild")
+  childTokens    RefreshToken[] @relation("RotationChild")
 
   @@index([userId])
   @@index([familyId])
@@ -174,14 +171,14 @@ model RefreshToken {
 // ============================================
 
 model PasswordResetToken {
-  id         String    @id @default(cuid())
-  userId     String
-  tokenHash  String    @unique // SHA-256 of raw token
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime  @default(now())
-  ipAddress  String?
-  userAgent  String?   @db.Text
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique // SHA-256 of raw token
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  ipAddress String?
+  userAgent String?   @db.Text
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -195,13 +192,13 @@ model PasswordResetToken {
 // ============================================
 
 model GoogleIdentity {
-  id           String   @id @default(cuid())
-  userId       String
-  googleSub    String   @unique // Google subject identifier
-  email        String
-  linkedAt     DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  googleSub String   @unique // Google subject identifier
+  email     String
+  linkedAt  DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([email])
@@ -213,16 +210,16 @@ model GoogleIdentity {
 // ============================================
 
 model AuditLog {
-  id          String         @id @default(cuid())
-  eventType   AuditEventType
-  actorId     String?
-  targetId    String?
-  ip          String?
-  userAgent   String?        @db.Text
-  metadata    Json?
-  occurredAt  DateTime       @default(now())
+  id         String         @id @default(cuid())
+  eventType  AuditEventType
+  actorId    String?
+  targetId   String?
+  ip         String?
+  userAgent  String?        @db.Text
+  metadata   Json?
+  occurredAt DateTime       @default(now())
 
-  actor  User? @relation("ActorAudits", fields: [actorId], references: [id], onDelete: SetNull)
+  user   User? @relation("ActorAudits", fields: [actorId], references: [id], onDelete: SetNull)
   target User? @relation("TargetAudits", fields: [targetId], references: [id], onDelete: SetNull)
 
   @@index([eventType, occurredAt])
@@ -237,16 +234,16 @@ model AuditLog {
 // ============================================
 
 model WordpressWebhookEvent {
-  id            String              @id @default(cuid())
-  eventId       String              // id supplied by the WP plugin (unique per event)
+  id            String             @id @default(cuid())
+  eventId       String // id supplied by the WP plugin (unique per event)
   eventName     WebhookEventName
   wpUserId      BigInt?
   payload       Json
   signature     String?
-  receivedAt    DateTime            @default(now())
+  receivedAt    DateTime           @default(now())
   processedAt   DateTime?
-  status        WebhookEventStatus  @default(RECEIVED)
-  failureReason String?             @db.Text
+  status        WebhookEventStatus @default(RECEIVED)
+  failureReason String?            @db.Text
 
   @@unique([eventId])
   @@index([eventName, receivedAt])
@@ -264,7 +261,7 @@ model Clinic {
   name               String
   email              String?
   telephoneNo        String?
-  specialties        Json?    // Array of specialty IDs/names
+  specialties        Json? // Array of specialty IDs/names
   address            String?
   city               String?
   state              String?
@@ -276,28 +273,28 @@ model Clinic {
   clinicAdminId      String?  @unique
   clinicLogo         Int?
   profileImage       Int?
-  extra              Json?    // currency settings, custom config
+  extra              Json? // currency settings, custom config
   // Invoice numbering (011-billing)
   code               String?  @unique // 2-4 char alphanumeric slug, e.g. "JKT", "BDG"
   billSequence       Int      @default(0) // next sequence number
-  billSequenceYear   Int?     // year the sequence applies to (for year rollover)
+  billSequenceYear   Int? // year the sequence applies to (for year rollover)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   // Relations
-  clinicAdmin      User?                      @relation("ClinicAdmin", fields: [clinicAdminId], references: [id])
+  clinicAdmin     User?                       @relation("ClinicAdmin", fields: [clinicAdminId], references: [id])
   appointments    Appointment[]
-  encounters       Encounter[]
-  bills            Bill[]
-  clinicSessions   ClinicSession[]
-  clinicSchedules  ClinicSchedule[]
-  holidays         Holiday[]
-  services         Service[]
-  doctors          DoctorClinicMapping[]
-  receptionists    ReceptionistClinicMapping[]
-  patients         PatientClinicMapping[]
-  clinicServices   ClinicServicePrice[]
-  professionals    Professional[]             @relation("ClinicProfessionals")
+  encounters      Encounter[]
+  bills           Bill[]
+  clinicSessions  ClinicSession[]
+  clinicSchedules ClinicSchedule[]
+  holidays        Holiday[]
+  services        Service[]
+  doctors         DoctorClinicMapping[]
+  receptionists   ReceptionistClinicMapping[]
+  patients        PatientClinicMapping[]
+  clinicServices  ClinicServicePrice[]
+  professionals   Professional[]              @relation("ClinicProfessionals")
 
   @@map("clinics")
 }
@@ -307,27 +304,27 @@ model Clinic {
 // ============================================
 
 model Doctor {
-  id               String    @id @default(cuid())
-  userId           String    @unique
-  specialties      Json?     // Array of specialty IDs
-  consultationFee  Decimal?  @db.Decimal(10, 2)
-  about            String?   @db.Text
-  signature        Int?      // Media ID for digital signature
-  status           Int       @default(1)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  specialties     Json? // Array of specialty IDs
+  consultationFee Decimal? @db.Decimal(10, 2)
+  about           String?  @db.Text
+  signature       Int? // Media ID for digital signature
+  status          Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // Relations
-  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinics       DoctorClinicMapping[]
-  services      DoctorServiceMapping[]
-  specialtiesRef Specialty[]
-  appointments  Appointment[]
-  sessions      Session[]                @relation("SessionProfessional")
-  encounters   Encounter[]
-  prescriptions Prescription[]
-  schedules    DoctorSession[]
-  patientAddedPatients Patient[] @relation("PatientAddedBy")
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinics              DoctorClinicMapping[]
+  services             DoctorServiceMapping[]
+  specialtiesRef       Specialty[]
+  appointments         Appointment[]
+  sessions             Session[]              @relation("SessionProfessional")
+  encounters           Encounter[]
+  prescriptions        Prescription[]
+  schedules            DoctorSession[]
+  patientAddedPatients Patient[]              @relation("PatientAddedBy")
 
   @@map("doctors")
 }
@@ -345,10 +342,10 @@ model Specialty {
 }
 
 model DoctorClinicMapping {
-  id            String   @id @default(cuid())
-  doctorId      String
-  clinicId      String
-  createdAt     DateTime @default(now())
+  id        String   @id @default(cuid())
+  doctorId  String
+  clinicId  String
+  createdAt DateTime @default(now())
 
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
@@ -358,16 +355,16 @@ model DoctorClinicMapping {
 }
 
 model DoctorSession {
-  id            String   @id @default(cuid())
-  doctorId      String
-  clinicId      String
-  dayOfWeek     Int      // 0-6 (Sunday-Saturday)
-  startTime     String   // HH:mm format
-  endTime       String   // HH:mm format
-  slotDuration  Int      @default(30) // in minutes
-  status        Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  doctorId     String
+  clinicId     String
+  dayOfWeek    Int // 0-6 (Sunday-Saturday)
+  startTime    String // HH:mm format
+  endTime      String // HH:mm format
+  slotDuration Int      @default(30) // in minutes
+  status       Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
@@ -389,16 +386,16 @@ enum Gender {
 }
 
 enum ClientStatus {
-  ACTIVE    // can book
-  INACTIVE  // paused / departed
-  ARCHIVED  // soft-deleted (history preserved)
+  ACTIVE // can book
+  INACTIVE // paused / departed
+  ARCHIVED // soft-deleted (history preserved)
 }
 
 model Client {
   id               String       @id @default(cuid())
-  userId           String       @unique          // WordPress user link
-  practiceId       String                        // FK to Clinic
-  uniqueClientId   String                        // e.g. CLT-2026-00001
+  userId           String       @unique // WordPress user link
+  practiceId       String // FK to Clinic
+  uniqueClientId   String // e.g. CLT-2026-00001
   fullName         String       @db.VarChar(100)
   email            String       @db.VarChar(255)
   mobileNumber     String       @db.VarChar(20)
@@ -424,37 +421,37 @@ model Client {
 // ============================================
 
 model Patient {
-  id               String    @id @default(cuid())
-  userId           String    @unique
-  patientUniqueId  String?   @unique
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  patientUniqueId  String?  @unique
   bloodGroup       String?
-  emergencyContact  String?
-  emergencyPhone    String?
-  status           Int       @default(1)
-  registeredAt     DateTime  @default(now())
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  emergencyContact String?
+  emergencyPhone   String?
+  status           Int      @default(1)
+  registeredAt     DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   // Relations
-  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinics       PatientClinicMapping[]
-  addedBy       Doctor?                    @relation("PatientAddedBy", fields: [addedById], references: [id])
-  addedById     String?
-  appointments  Appointment[]
-  sessions      Session[]                  @relation("SessionClient")
-  encounters    Encounter[]
-  medicalHistory MedicalHistory[]
-  prescriptions Prescription[]
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinics         PatientClinicMapping[]
+  addedBy         Doctor?                @relation("PatientAddedBy", fields: [addedById], references: [id])
+  addedById       String?
+  appointments    Appointment[]
+  sessions        Session[]              @relation("SessionClient")
+  encounters      Encounter[]
+  medicalHistory  MedicalHistory[]
+  prescriptions   Prescription[]
   medicalProblems MedicalProblem[]
 
   @@map("patients")
 }
 
 model PatientClinicMapping {
-  id         String   @id @default(cuid())
-  patientId  String
-  clinicId   String
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  patientId String
+  clinicId  String
+  createdAt DateTime @default(now())
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
   clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
@@ -464,14 +461,14 @@ model PatientClinicMapping {
 }
 
 model MedicalHistory {
-  id           String   @id @default(cuid())
-  patientId    String
-  doctorId     String?
-  title        String
+  id          String   @id @default(cuid())
+  patientId   String
+  doctorId    String?
+  title       String
   description String?  @db.Text
-  moduleType   String?
-  moduleId     String?
-  createdAt    DateTime @default(now())
+  moduleType  String?
+  moduleId    String?
+  createdAt   DateTime @default(now())
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
@@ -479,16 +476,16 @@ model MedicalHistory {
 }
 
 model MedicalProblem {
-  id           String    @id @default(cuid())
-  patientId    String
-  problemName  String
+  id          String    @id @default(cuid())
+  patientId   String
+  problemName String
   diagnosis   String?   @db.Text
-  severity     String?
-  status       String?
-  diagnosedAt  DateTime?
-  notes        String?   @db.Text
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  severity    String?
+  status      String?
+  diagnosedAt DateTime?
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
@@ -534,12 +531,13 @@ model Service {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  clinic       Clinic?                @relation(fields: [clinicId], references: [id])
-  doctors      DoctorServiceMapping[]
-  appointments AppointmentServiceMapping[]
-  sessions     Session[]                @relation("SessionService")
-  billItems    BillItem[]
-  clinicServices ClinicServicePrice[]
+  clinic             Clinic?                         @relation(fields: [clinicId], references: [id])
+  doctors            DoctorServiceMapping[]
+  appointments       AppointmentServiceMapping[]
+  sessions           Session[]                       @relation("SessionService")
+  billItems          BillItem[]
+  clinicServices     ClinicServicePrice[]
+  serviceAssignments ProfessionalServiceAssignment[]
 
   @@unique([clinicId, name])
   @@index([clinicId, status])
@@ -556,37 +554,37 @@ model Service {
 // See: specs/005-session-mgmt/data-model.md
 
 enum SessionStatus {
-  PENDING     // awaiting professional approval (client-initiated booking)
-  BOOKED      // confirmed (professional approved or staff booked directly)
-  CHECK_IN    // client has arrived
-  CHECK_OUT   // session ended
-  COMPLETED   // auto-closed after 24h
-  REJECTED    // professional rejected
-  CANCELLED   // cancelled before start
+  PENDING // awaiting professional approval (client-initiated booking)
+  BOOKED // confirmed (professional approved or staff booked directly)
+  CHECK_IN // client has arrived
+  CHECK_OUT // session ended
+  COMPLETED // auto-closed after 24h
+  REJECTED // professional rejected
+  CANCELLED // cancelled before start
 }
 
 model Session {
-  id               String        @id @default(cuid())
-  clientId         String
-  professionalId   String
-  serviceId        String
-  practiceId       String
-  slotDate         DateTime      @db.Date
-  startTime        DateTime
-  endTime          DateTime
-  status           SessionStatus @default(PENDING)
-  rejectionReason  String?       @db.Text
-  cancellationReason String?     @db.Text
-  checkedInAt      DateTime?
-  checkedOutAt     DateTime?
-  createdBy        String        // userId of creator (client or receptionist)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  clientId           String
+  professionalId     String
+  serviceId          String
+  practiceId         String
+  slotDate           DateTime      @db.Date
+  startTime          DateTime
+  endTime            DateTime
+  status             SessionStatus @default(PENDING)
+  rejectionReason    String?       @db.Text
+  cancellationReason String?       @db.Text
+  checkedInAt        DateTime?
+  checkedOutAt       DateTime?
+  createdBy          String // userId of creator (client or receptionist)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   // Relations
-  client         Patient    @relation("SessionClient", fields: [clientId], references: [id])
-  professional   Doctor     @relation("SessionProfessional", fields: [professionalId], references: [id])
-  service        Service    @relation("SessionService", fields: [serviceId], references: [id])
+  client       Patient @relation("SessionClient", fields: [clientId], references: [id])
+  professional Doctor  @relation("SessionProfessional", fields: [professionalId], references: [id])
+  service      Service @relation("SessionService", fields: [serviceId], references: [id])
 
   @@index([professionalId, slotDate, status])
   @@index([clientId, slotDate])
@@ -598,11 +596,11 @@ model Session {
 }
 
 model ClinicServicePrice {
-  id         String   @id @default(cuid())
-  clinicId   String
-  serviceId  String
-  price      Decimal  @db.Decimal(10, 2)
-  status     Int      @default(1)
+  id        String  @id @default(cuid())
+  clinicId  String
+  serviceId String
+  price     Decimal @db.Decimal(10, 2)
+  status    Int     @default(1)
 
   clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -612,11 +610,11 @@ model ClinicServicePrice {
 }
 
 model DoctorServiceMapping {
-  id            String   @id @default(cuid())
-  doctorId      String
-  serviceId     String
-  price         Decimal? @db.Decimal(10, 2)
-  createdAt     DateTime @default(now())
+  id        String   @id @default(cuid())
+  doctorId  String
+  serviceId String
+  price     Decimal? @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
 
   doctor  Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -630,11 +628,11 @@ model DoctorServiceMapping {
 // ============================================
 
 enum AppointmentStatus {
-  CANCELLED  // 0
-  BOOKED     // 1
-  PENDING    // 2
-  CHECK_OUT  // 3
-  CHECK_IN   // 4
+  CANCELLED // 0
+  BOOKED // 1
+  PENDING // 2
+  CHECK_OUT // 3
+  CHECK_IN // 4
 }
 
 enum VisitType {
@@ -643,32 +641,32 @@ enum VisitType {
 }
 
 model Appointment {
-  id                    String            @id @default(cuid())
-  clinicId              String
-  doctorId              String
-  patientId             String
-  appointmentStartDate  DateTime          @db.Date
+  id                   String            @id @default(cuid())
+  clinicId             String
+  doctorId             String
+  patientId            String
+  appointmentStartDate DateTime          @db.Date
   appointmentStartTime DateTime          @db.Time
-  appointmentEndDate    DateTime?         @db.Date
+  appointmentEndDate   DateTime?         @db.Date
   appointmentEndTime   DateTime?         @db.Time
-  appointmentStartUtc   DateTime          @db.DateTime
-  appointmentEndUtc     DateTime?
-  appointmentTimezone   String            @default("UTC")
-  visitType             VisitType         @default(IN_PERSON)
-  description           String?           @db.Text
-  status                AppointmentStatus @default(PENDING)
+  appointmentStartUtc  DateTime          @db.DateTime
+  appointmentEndUtc    DateTime?
+  appointmentTimezone  String            @default("UTC")
+  visitType            VisitType         @default(IN_PERSON)
+  description          String?           @db.Text
+  status               AppointmentStatus @default(PENDING)
   appointmentReport    String?           @db.Text
-  createdAt             DateTime          @default(now())
-  createdAtUtc          DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  createdAt            DateTime          @default(now())
+  createdAtUtc         DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   // Relations
-  clinic       Clinic?                    @relation(fields: [clinicId], references: [id])
-  doctor       Doctor?                    @relation(fields: [doctorId], references: [id])
-  patient      Patient?                   @relation(fields: [patientId], references: [id])
-  services     AppointmentServiceMapping[]
-  encounter    Encounter?
-  reminders    AppointmentReminder[]
+  clinic          Clinic?                     @relation(fields: [clinicId], references: [id])
+  doctor          Doctor?                     @relation(fields: [doctorId], references: [id])
+  patient         Patient?                    @relation(fields: [patientId], references: [id])
+  services        AppointmentServiceMapping[]
+  encounter       Encounter?
+  reminders       AppointmentReminder[]
   paymentMappings PaymentAppointmentMapping[]
 
   @@index([clinicId])
@@ -680,11 +678,11 @@ model Appointment {
 }
 
 model AppointmentServiceMapping {
-  id            String      @id @default(cuid())
+  id            String   @id @default(cuid())
   appointmentId String
   serviceId     String
-  price         Decimal     @db.Decimal(10, 2)
-  createdAt     DateTime    @default(now())
+  price         Decimal  @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
 
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   service     Service     @relation(fields: [serviceId], references: [id])
@@ -694,13 +692,13 @@ model AppointmentServiceMapping {
 }
 
 model AppointmentReminder {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   appointmentId String
   reminderType  String
-  scheduledFor DateTime
+  scheduledFor  DateTime
   sentAt        DateTime?
-  status        String   @default("pending")
-  createdAt     DateTime @default(now())
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now())
 
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
@@ -725,10 +723,10 @@ model Encounter {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  appointment  Appointment?  @relation(fields: [appointmentId], references: [id])
-  patient      Patient       @relation(fields: [patientId], references: [id])
-  doctor       Doctor        @relation(fields: [doctorId], references: [id])
-  clinic       Clinic       @relation(fields: [clinicId], references: [id])
+  appointment   Appointment?   @relation(fields: [appointmentId], references: [id])
+  patient       Patient        @relation(fields: [patientId], references: [id])
+  doctor        Doctor         @relation(fields: [doctorId], references: [id])
+  clinic        Clinic         @relation(fields: [clinicId], references: [id])
   prescriptions Prescription[]
   bills         Bill[]
   vitalSigns    VitalSign[]
@@ -741,17 +739,17 @@ model Encounter {
 // ============================================
 
 model Prescription {
-  id            String   @id @default(cuid())
-  encounterId   String
-  patientId     String
-  doctorId      String
-  medicineName  String
-  dosage        String
-  frequency     String
-  duration      String
-  instructions  String?  @db.Text
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  encounterId  String
+  patientId    String
+  doctorId     String
+  medicineName String
+  dosage       String
+  frequency    String
+  duration     String
+  instructions String?  @db.Text
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   patient   Patient   @relation(fields: [patientId], references: [id])
@@ -761,12 +759,12 @@ model Prescription {
 }
 
 model VitalSign {
-  id           String   @id @default(cuid())
-  encounterId  String
-  vitalType    String
-  vitalValue   String
-  vitalUnit    String?
-  recordedAt   DateTime @default(now())
+  id          String   @id @default(cuid())
+  encounterId String
+  vitalType   String
+  vitalValue  String
+  vitalUnit   String?
+  recordedAt  DateTime @default(now())
 
   encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
 
@@ -824,16 +822,16 @@ model ClinicSession {
 }
 
 model Holiday {
-  id         String   @id @default(cuid())
-  moduleType  String
+  id         String    @id @default(cuid())
+  moduleType String
   moduleId   String
   title      String
-  startDate  DateTime @db.Date
-  endDate    DateTime @db.Date
-  isAllDay   Boolean  @default(true)
+  startDate  DateTime  @db.Date
+  endDate    DateTime  @db.Date
+  isAllDay   Boolean   @default(true)
   startTime  DateTime? @db.Time
   endTime    DateTime? @db.Time
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   clinic Clinic? @relation(fields: [moduleId], references: [id], map: "holiday_clinic_fk")
 
@@ -846,39 +844,39 @@ model Holiday {
 // ============================================
 
 model Bill {
-  id            String   @id @default(cuid())
-  encounterId   String?
-  clinicId      String
-  patientId    String
-  totalAmount  Decimal  @db.Decimal(10, 2)
-  discount     Decimal  @default(0) @db.Decimal(10, 2)
-  taxAmount    Decimal  @default(0) @db.Decimal(10, 2)
-  actualAmount Decimal  @db.Decimal(10, 2)
-  paymentStatus String  @default("pending")
-  paymentMethod String?
-  notes         String? @db.Text
-  dueDate       DateTime?
-  paidAt        DateTime?
+  id             String    @id @default(cuid())
+  encounterId    String?
+  clinicId       String
+  patientId      String
+  totalAmount    Decimal   @db.Decimal(10, 2)
+  discount       Decimal   @default(0) @db.Decimal(10, 2)
+  taxAmount      Decimal   @default(0) @db.Decimal(10, 2)
+  actualAmount   Decimal   @db.Decimal(10, 2)
+  paymentStatus  String    @default("pending")
+  paymentMethod  String?
+  notes          String?   @db.Text
+  dueDate        DateTime?
+  paidAt         DateTime?
   // 011-billing additions
-  billNumber    String?  @unique // INV-{clinicCode}-{YYYY}-{NNNNN}
-  status        String   @default("DRAFT") // DRAFT|ISSUED|PAID|PARTIAL|VOID|REFUNDED
-  paidAmount    Decimal  @default(0) @db.Decimal(10, 2)
-  balanceDue    Decimal  @default(0) @db.Decimal(10, 2)
-  voidedAt      DateTime?
-  voidedBy      String?
-  voidReason    String?  @db.Text
-  disputedAt    DateTime?
-  disputeReason String?  @db.Text
+  billNumber     String?   @unique // INV-{clinicCode}-{YYYY}-{NNNNN}
+  status         String    @default("DRAFT") // DRAFT|ISSUED|PAID|PARTIAL|VOID|REFUNDED
+  paidAmount     Decimal   @default(0) @db.Decimal(10, 2)
+  balanceDue     Decimal   @default(0) @db.Decimal(10, 2)
+  voidedAt       DateTime?
+  voidedBy       String?
+  voidReason     String?   @db.Text
+  disputedAt     DateTime?
+  disputeReason  String?   @db.Text
   professionalId String?
-  createdBy     String?
-  metadata      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdBy      String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  encounter     Encounter?    @relation(fields: [encounterId], references: [id])
-  clinic        Clinic        @relation(fields: [clinicId], references: [id])
-  items         BillItem[]
-  payments      Payment[]
+  encounter Encounter? @relation(fields: [encounterId], references: [id])
+  clinic    Clinic     @relation(fields: [clinicId], references: [id])
+  items     BillItem[]
+  payments  Payment[]
 
   @@index([clinicId, status])
   @@index([patientId])
@@ -911,24 +909,24 @@ model BillItem {
 }
 
 model Payment {
-  id                    String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   billId                String
-  amount                Decimal  @db.Decimal(10, 2)
+  amount                Decimal   @db.Decimal(10, 2)
   paymentMethod         String
   transactionId         String?
-  status                String   @default("completed")
+  status                String    @default("completed")
   // 011-billing additions
-  stripePaymentIntentId String?  @unique
+  stripePaymentIntentId String?   @unique
   refundedPaymentId     String?
-  notes                 String?  @db.Text
+  notes                 String?   @db.Text
   paidAt                DateTime?
   createdBy             String?
   metadata              Json?
-  createdAt             DateTime @default(now())
+  createdAt             DateTime  @default(now())
 
-  bill               Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
-  refundedPayment    Payment? @relation("RefundLink", fields: [refundedPaymentId], references: [id])
-  refunds            Payment[] @relation("RefundLink")
+  bill                Bill                        @relation(fields: [billId], references: [id], onDelete: Cascade)
+  refundedPayment     Payment?                    @relation("RefundLink", fields: [refundedPaymentId], references: [id])
+  refunds             Payment[]                   @relation("RefundLink")
   appointmentMappings PaymentAppointmentMapping[]
 
   @@index([billId])
@@ -943,7 +941,7 @@ model PaymentAppointmentMapping {
   amount        Decimal  @db.Decimal(10, 2)
   createdAt     DateTime @default(now())
 
-  payment     Payment      @relation(fields: [paymentId], references: [id])
+  payment     Payment     @relation(fields: [paymentId], references: [id])
   appointment Appointment @relation(fields: [appointmentId], references: [id])
 
   @@map("payment_appointment_mappings")
@@ -983,13 +981,13 @@ model CustomField {
 }
 
 model CustomFieldData {
-  id          String   @id @default(cuid())
-  moduleType  String
-  moduleId    String
-  fieldId     String
-  fieldValue  Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  moduleType String
+  moduleId   String
+  fieldId    String
+  fieldValue Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   field CustomField @relation(fields: [fieldId], references: [id])
 
@@ -1040,7 +1038,7 @@ model Receptionist {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   clinics ReceptionistClinicMapping[]
 
   @@map("receptionists")
@@ -1132,8 +1130,8 @@ enum LogLevel {
 
 enum LogCategory {
   ACTIVITY // user-facing actions
-  ERROR    // unhandled exceptions, integration failures
-  SYSTEM   // background jobs, scheduled tasks, server lifecycle
+  ERROR // unhandled exceptions, integration failures
+  SYSTEM // background jobs, scheduled tasks, server lifecycle
 }
 
 model LogEntry {
@@ -1141,18 +1139,18 @@ model LogEntry {
   level      LogLevel    @default(INFO)
   category   LogCategory @default(ACTIVITY)
   message    String      @db.Text
-  userId     String?     // null for anonymous / system events
-  action     String?     // dotted path: "user.login", "session.book", "client.create"
-  resource   String?     // entity affected: "session", "client", "bill"
+  userId     String? // null for anonymous / system events
+  action     String? // dotted path: "user.login", "session.book", "client.create"
+  resource   String? // entity affected: "session", "client", "bill"
   resourceId String?
   ip         String?
   userAgent  String?     @db.Text
-  requestId  String?     // correlate across handlers in one request
-  path       String?     // request path (e.g. "/api/v1/sessions")
-  method     String?     // HTTP method
-  statusCode Int?        // response status (for API-request entries)
+  requestId  String? // correlate across handlers in one request
+  path       String? // request path (e.g. "/api/v1/sessions")
+  method     String? // HTTP method
+  statusCode Int? // response status (for API-request entries)
   errorStack String?     @db.Text // populated when an Error object is passed
-  metadata   Json?       // free-form context (sanitized request body, before/after values, etc.)
+  metadata   Json? // free-form context (sanitized request body, before/after values, etc.)
   occurredAt DateTime    @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -1196,13 +1194,13 @@ enum ItemStatus {
 }
 
 model InterventionPlan {
-  id              String        @id @default(cuid())
-  sessionId       String        @unique
-  professionalId  String
-  clientId        String
-  status          PlanStatus    @default(ACTIVE)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String     @id @default(cuid())
+  sessionId      String     @unique
+  professionalId String
+  clientId       String
+  status         PlanStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   items RecommendationItem[]
 
@@ -1213,16 +1211,16 @@ model InterventionPlan {
 }
 
 model RecommendationItem {
-  id                  String     @id @default(cuid())
-  interventionPlanId  String
-  description         String     @db.Text
-  frequency           String?
-  durationDays        Int?
-  instructions        String?    @db.Text
-  status              ItemStatus @default(ACTIVE)
-  completedAt         DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  id                 String     @id @default(cuid())
+  interventionPlanId String
+  description        String     @db.Text
+  frequency          String?
+  durationDays       Int?
+  instructions       String?    @db.Text
+  status             ItemStatus @default(ACTIVE)
+  completedAt        DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   plan InterventionPlan @relation(fields: [interventionPlanId], references: [id], onDelete: Cascade)
 
@@ -1298,12 +1296,12 @@ enum ConsentSignatureStatus {
 
 model ConsentForm {
   id          String            @id @default(cuid())
-  practiceId  String            // Clinic.id — multi-tenant scoping
-  name        String            // Template display name (e.g. "Telehealth Consent")
+  practiceId  String // Clinic.id — multi-tenant scoping
+  name        String // Template display name (e.g. "Telehealth Consent")
   content     String            @db.LongText // Dynamic content (HTML/markdown body the client will see)
   status      ConsentFormStatus @default(DRAFT)
   version     Int               @default(1) // Bumped on each substantive edit
-  createdById String            // User.id (CLINIC_ADMIN or PROFESSIONAL) who authored
+  createdById String // User.id (CLINIC_ADMIN or PROFESSIONAL) who authored
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -1316,21 +1314,21 @@ model ConsentForm {
 }
 
 model ConsentSignature {
-  id            String                @id @default(cuid())
+  id            String                 @id @default(cuid())
   formId        String
-  clientId      String                // User.id (CLIENT) who is being asked to sign
+  clientId      String // User.id (CLIENT) who is being asked to sign
   status        ConsentSignatureStatus @default(PENDING)
   signedAt      DateTime?
-  ipAddress     String?               @db.VarChar(64) // IPv4 or IPv6 at signature time
-  userAgent     String?               @db.VarChar(512)
-  signatureSvg  String?               @db.LongText // SVG path data of the captured signature
-  signatureText String?               // Typed name (alternative to drawn signature)
-  declineReason String?               @db.Text
-  sentAt        DateTime              @default(now())
-  expiresAt     DateTime              // sentAt + 30d
+  ipAddress     String?                @db.VarChar(64) // IPv4 or IPv6 at signature time
+  userAgent     String?                @db.VarChar(512)
+  signatureSvg  String?                @db.LongText // SVG path data of the captured signature
+  signatureText String? // Typed name (alternative to drawn signature)
+  declineReason String?                @db.Text
+  sentAt        DateTime               @default(now())
+  expiresAt     DateTime // sentAt + 30d
   withdrawnAt   DateTime?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
   form   ConsentForm @relation(fields: [formId], references: [id], onDelete: Cascade)
   client User        @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -1341,6 +1339,7 @@ model ConsentSignature {
   @@index([status, expiresAt])
   @@map("consent_signatures")
 }
+
 // ============================================
 // PROFESSIONAL MANAGEMENT (Feature 002)
 // ============================================
@@ -1376,11 +1375,11 @@ model Professional {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  user                User                          @relation("UserProfessional", fields: [userId], references: [id], onDelete: Cascade)
-  practice            Clinic?                       @relation("ClinicProfessionals", fields: [practiceId], references: [id])
-  availability        ProfessionalAvailability[]
-  offDays             ProfessionalOffDay[]
-  serviceAssignments  ProfessionalServiceAssignment[]
+  user               User                            @relation("UserProfessional", fields: [userId], references: [id], onDelete: Cascade)
+  practice           Clinic?                         @relation("ClinicProfessionals", fields: [practiceId], references: [id])
+  availability       ProfessionalAvailability[]
+  offDays            ProfessionalOffDay[]
+  serviceAssignments ProfessionalServiceAssignment[]
 
   @@index([practiceId, status])
   @@index([status])
@@ -1388,13 +1387,13 @@ model Professional {
 }
 
 model ProfessionalAvailability {
-  id              String   @id @default(cuid())
-  professionalId  String
-  dayOfWeek       Int
-  startMinute     Int
-  endMinute       Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  professionalId String
+  dayOfWeek      Int
+  startMinute    Int
+  endMinute      Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
@@ -1404,12 +1403,12 @@ model ProfessionalAvailability {
 }
 
 model ProfessionalOffDay {
-  id              String   @id @default(cuid())
-  professionalId  String
-  startDate       DateTime @db.Date
-  endDate         DateTime @db.Date
-  reason          String?
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  professionalId String
+  startDate      DateTime @db.Date
+  endDate        DateTime @db.Date
+  reason         String?
+  createdAt      DateTime @default(now())
 
   professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
@@ -1418,16 +1417,16 @@ model ProfessionalOffDay {
 }
 
 model ProfessionalServiceAssignment {
-  id              String   @id @default(cuid())
-  professionalId  String
-  serviceId       String
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  professionalId String
+  serviceId      String
+  createdAt      DateTime @default(now())
 
   professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
   service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
-  @@index([serviceId])
   @@unique([professionalId, serviceId])
+  @@index([serviceId])
   @@index([professionalId])
   @@map("professional_service_assignments")
 }
