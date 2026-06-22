@@ -76,18 +76,16 @@ function SessionsContent() {
 
 export default function AdminSessionsPage() {
   return (
-    <main className="min-h-screen bg-gray-50 px-6 py-8">
-      <div className="mx-auto max-w-6xl">
-        {/* Page header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Sessions</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage client sessions and schedules</p>
-        </div>
-
-        <Suspense fallback={<div className="text-gray-500">Loading...</div>}>
-          <SessionsContent />
-        </Suspense>
+    <div className="max-w-6xl mx-auto space-y-6">
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Sessions</h1>
+        <p className="text-sm text-gray-500 mt-1">Manage client sessions and schedules</p>
       </div>
-    </main>
+
+      <Suspense fallback={<div className="text-gray-500">Loading...</div>}>
+        <SessionsContent />
+      </Suspense>
+    </div>
   );
 }

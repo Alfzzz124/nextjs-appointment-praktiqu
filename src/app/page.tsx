@@ -310,11 +310,16 @@ export default async function LandingPage() {
             </div>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               {svcList.map((s) => {
+                console.log(s);
                 return (
                   <div key={s.id} className="card group transition-shadow hover:shadow-md">
                     <div className="text-3xl">{SERVICE_TYPE_ICONS[s.type] || '✨'}</div>
                     <h3 className="mt-3 text-base font-semibold text-on-surface">{s.name}</h3>
-                    <p className="mt-1 text-sm text-on-surface-variant">{s.category}</p>
+                    <p className="mt-1 text-sm text-on-surface-variant">
+                      {typeof s.category === 'string' && s.category.includes('{') 
+                        ? JSON.parse(s.category).label 
+                        : s.category}
+                    </p>
                     <div className="mt-4 flex items-center justify-between text-xs">
                       <span className="text-outline">⏱ {s.duration} menit</span>
                       {s.price > 0 && (
