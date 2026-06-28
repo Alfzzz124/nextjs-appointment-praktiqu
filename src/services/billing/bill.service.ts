@@ -61,3 +61,67 @@ export async function calculateTax(input: { clinic_id?: number; doctor_id?: numb
   calc.calculate('exclude');
   return { total_tax: calc.getTotalTax(), calculated_taxes: calc.getCalculatedTaxes() };
 }
+
+export interface BillRef { id: number; appointmentId?: number }
+export interface BillCreateInput {
+  serviceItems: any[]; taxItems: any[]; discount: number; discountEnabled?: boolean;
+  status: 'paid' | 'unpaid'; clinic: BillRef; doctor: BillRef; patient: BillRef;
+  patientEncounter: BillRef; service_total: number; total_amount: number; checkout?: boolean;
+}
+
+export async function createBill(input: BillCreateInput): Promise<{ id: number }> {
+  const encounterId = BigInt(input.patientEncounter.id);
+
+  const existing = await prisma.kcBill.findFirst({ where: { encounterId }, select: { id: true } });
+  if (existing) throw new KcError('A bill already exists for this encounter', 409);
+
+  const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: encounterId } });
+  if (!encounter) throw new KcError('Encounter not found', 404);
+
+  const items = normalizeItems(input.serviceItems);
+
+  const billId = await prisma.$transaction(async (tx) => {
+    const bill = await tx.kcBill.create({
+      data: {
+        encounterId,
+        appointmentId: input.patientEncounter.appointmentId ? BigInt(input.patientEncounter.appointmentId) : null,
+        totalAmount: String(input.total_amount),
+        discount: String(input.discount ?? 0),
+        actualAmount: String(input.total_amount),
+        status: 0n,
+        paymentStatus: input.status,
+        clinicId: BigInt(input.clinic.id),
+        createdAt: new Date(),
+      },
+      select: { id: true },
+    });
+
+    for (const it of items) {
+      let serviceId = it.serviceId;
+      // Auto-create a service if the line references none.
+      if (!serviceId) {
+        const svc = await tx.kcService.create({ data: { type: 'bill_service', name: it.name || 'Service', price: String(it.price), status: 1, createdAt: new Date() } as any, select: { id: true } });
+        serviceId = Number(svc.id);
+      }
+      await tx.kcBillItem.create({ data: { billId: bill.id, itemId: BigInt(serviceId), qty: it.qty, price: String(it.price), createdAt: new Date() } });
+    }
+
+    // Persist applied taxes to wp_kc_tax_data (module_type='encounter').
+    await tx.kcTaxData.deleteMany({ where: { moduleType: 'encounter', moduleId: encounterId } });
+    for (const t of input.taxItems ?? []) {
+      await tx.kcTaxData.create({ data: { moduleType: 'encounter', moduleId: encounterId, name: t.tax_name ?? '', charges: String(t.tax_amount ?? 0), taxValue: String(t.tax_value ?? 0), taxType: t.tax_type ?? 'percentage' } });
+    }
+
+    // Status side effects.
+    if (input.status === 'paid') {
+      await tx.kcPatientEncounter.update({ where: { id: encounterId }, data: { status: 0 } });
+      if (encounter.appointmentId) await tx.kcAppointment.update({ where: { id: encounter.appointmentId }, data: { status: 3 } as any });
+      // TODO(followup-slice): fire kc_appointment_updated hook + Google Calendar sync
+    } else {
+      await tx.kcPatientEncounter.update({ where: { id: encounterId }, data: { status: 1 } });
+    }
+    return bill.id;
+  });
+
+  return { id: Number(billId) };
+}
