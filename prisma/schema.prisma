@@ -1547,3 +1547,103 @@ model KcAppointment {
 
   @@map("wp_kc_appointments")
 }
+
+// ---- Billing + Taxes (read/write) ----
+
+model KcBill {
+  id            BigInt   @id @default(autoincrement())
+  encounterId   BigInt   @map("encounter_id")
+  appointmentId BigInt?  @map("appointment_id")
+  title         String?
+  totalAmount   String?  @map("total_amount")
+  discount      String?
+  actualAmount  String?  @map("actual_amount")
+  status        BigInt   @default(0)
+  paymentStatus String?  @map("payment_status")
+  createdAt     DateTime @map("created_at")
+  clinicId      BigInt?  @map("clinic_id")
+
+  @@map("wp_kc_bills")
+}
+
+model KcBillItem {
+  id        BigInt   @id @default(autoincrement())
+  billId    BigInt   @map("bill_id")
+  itemId    BigInt   @map("item_id")
+  qty       Int
+  price     String?
+  createdAt DateTime @map("created_at")
+
+  @@map("wp_kc_bill_items")
+}
+
+model KcTax {
+  id        BigInt   @id @default(autoincrement())
+  name      String?
+  taxType   String?  @map("tax_type")
+  taxValue  String?  @map("tax_value")
+  clinicId  BigInt?  @map("clinic_id")
+  doctorId  BigInt?  @map("doctor_id")
+  serviceId BigInt?  @map("service_id")
+  addedBy   BigInt?  @map("added_by")
+  status    Int      @default(0)
+  createdAt DateTime @map("created_at")
+
+  @@map("wp_kc_taxes")
+}
+
+model KcTaxData {
+  id         BigInt  @id @default(autoincrement())
+  moduleType String? @map("module_type")
+  moduleId   BigInt? @map("module_id")
+  name       String?
+  charges    String?
+  taxValue   String? @map("tax_value")
+  taxType    String? @map("tax_type")
+
+  @@map("wp_kc_tax_data")
+}
+
+model KcPatientEncounter {
+  id            BigInt    @id @default(autoincrement())
+  encounterDate DateTime? @map("encounter_date") @db.Date
+  clinicId      BigInt    @map("clinic_id")
+  doctorId      BigInt    @map("doctor_id")
+  patientId     BigInt    @map("patient_id")
+  appointmentId BigInt?   @map("appointment_id")
+  description   String?   @db.Text
+  status        Int       @default(0)
+  addedBy       BigInt    @map("added_by")
+  createdAt     DateTime? @map("created_at")
+  templateId    BigInt?   @map("template_id")
+
+  @@map("wp_kc_patient_encounters")
+}
+
+model KcUser {
+  id             BigInt   @id @default(autoincrement())
+  userLogin      String   @map("user_login")
+  userEmail      String   @map("user_email")
+  displayName    String   @map("display_name")
+  userRegistered DateTime @map("user_registered")
+
+  @@map("wp_users")
+}
+
+model KcUserMeta {
+  umetaId   BigInt  @id @default(autoincrement()) @map("umeta_id")
+  userId    BigInt  @map("user_id")
+  metaKey   String? @map("meta_key")
+  metaValue String? @map("meta_value") @db.LongText
+
+  @@index([userId])
+  @@map("wp_usermeta")
+}
+
+model KcOption {
+  optionId    BigInt @id @default(autoincrement()) @map("option_id")
+  optionName  String @map("option_name")
+  optionValue String @map("option_value") @db.LongText
+
+  @@map("wp_options")
+}
