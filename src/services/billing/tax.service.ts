@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
+import { toNum } from '@/lib/kc-num';
 import { taxRowToApi, type TaxApi } from './mappers';
 
 const SORT_COLUMNS: Record<string, string> = {
@@ -132,4 +133,64 @@ export async function createTax(input: TaxCreateInput, currentUserId: number): P
     ids.push(Number(created.id));
   }
   return { ids, created_count: ids.length, skipped_count: skipped };
+}
+
+export async function updateTax(id: number, input: Partial<TaxCreateInput>): Promise<void> {
+  if (input.rateValue !== undefined && !(input.rateValue > 0)) throw new KcError('Tax rate must be greater than 0', 400);
+  const existing = await prisma.kcTax.findUnique({ where: { id: BigInt(id) } });
+  if (!existing) throw new KcError('Tax not found', 404);
+  await prisma.kcTax.update({
+    where: { id: BigInt(id) },
+    data: {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.rateType !== undefined ? { taxType: input.rateType } : {}),
+      ...(input.rateValue !== undefined ? { taxValue: String(input.rateValue) } : {}),
+      ...(input.clinic !== undefined ? { clinicId: BigInt(input.clinic) } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+    },
+  });
+}
+
+export async function deleteTax(id: number): Promise<void> {
+  const existing = await prisma.kcTax.findUnique({ where: { id: BigInt(id) } });
+  if (!existing) throw new KcError('Tax not found', 404);
+  await prisma.kcTax.delete({ where: { id: BigInt(id) } });
+}
+
+export async function setTaxStatus(id: number, status: number): Promise<void> {
+  if (status !== 0 && status !== 1) throw new KcError('Invalid status', 400);
+  const existing = await prisma.kcTax.findUnique({ where: { id: BigInt(id) } });
+  if (!existing) throw new KcError('Tax not found', 404);
+  await prisma.kcTax.update({ where: { id: BigInt(id) }, data: { status } });
+}
+
+export async function bulkSetTaxStatus(ids: number[], status: number): Promise<number> {
+  if (status !== 0 && status !== 1) throw new KcError('Invalid status', 400);
+  const r = await prisma.kcTax.updateMany({ where: { id: { in: ids.map(BigInt) } }, data: { status } });
+  return r.count;
+}
+
+export async function bulkDeleteTaxes(ids: number[]): Promise<number> {
+  const r = await prisma.kcTax.deleteMany({ where: { id: { in: ids.map(BigInt) } } });
+  return r.count;
+}
+
+export interface TaxExportRow {
+  id: number; tax_name: string; tax_rate: string; clinic_name: string;
+  doctor_name: string; service_name: string; status: string; actual_service_id: number | null;
+}
+
+export async function exportTaxes(p: TaxListParams, scope: { clinicId: bigint } | null): Promise<{ taxes: TaxExportRow[] }> {
+  const list = await listTaxes({ ...p, perPage: 'all' }, scope);
+  const taxes: TaxExportRow[] = list.taxes.map((t) => ({
+    id: t.id,
+    tax_name: t.name,
+    tax_rate: t.taxType === 'percentage' ? `${toNum(t.taxValue)}%` : `Fixed ${toNum(t.taxValue)}`,
+    clinic_name: t.clinicId === -1 || t.clinicId === null ? 'All Clinics' : String(t.clinicId),
+    doctor_name: t.doctorId === -1 || t.doctorId === null ? 'All Doctors' : String(t.doctorId),
+    service_name: t.serviceName ?? (t.serviceId === -1 ? 'All Services' : ''),
+    status: t.status === 1 ? 'Active' : 'Inactive',
+    actual_service_id: t.actual_service_id,
+  }));
+  return { taxes };
 }
