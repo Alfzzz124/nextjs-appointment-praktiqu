@@ -79,3 +79,57 @@ export async function getTax(id: number): Promise<TaxApi> {
     { actual_service_id: r.actual_service_id ? Number(r.actual_service_id) : null, serviceName: r.service_name ?? null },
   );
 }
+
+export interface TaxCreateInput {
+  name: string; rateType: 'percentage' | 'fixed'; rateValue: number;
+  clinic: number; doctor: number[]; service: number[]; status?: number; addedBy?: number;
+}
+
+export interface TaxCreateResult { ids: number[]; created_count: number; skipped_count: number; }
+
+export async function createTax(input: TaxCreateInput, currentUserId: number): Promise<TaxCreateResult> {
+  if (!(input.rateValue > 0)) throw new KcError('Tax rate must be greater than 0', 400);
+
+  const clinicId = input.clinic ?? -1;
+  const doctors = input.doctor.length ? input.doctor : [-1];
+  const services = input.service.length ? input.service : [-1];
+
+  // If both specific doctor and service: resolve to service-doctor-mapping ids (status=1).
+  const combos: { doctorId: number; serviceId: number }[] = [];
+  for (const d of doctors) {
+    for (const s of services) {
+      if (d !== -1 && s !== -1) {
+        const map = await prisma.kcServiceDoctorMapping.findFirst({
+          where: { doctorId: BigInt(d), serviceId: BigInt(s), status: 1 }, select: { id: true },
+        });
+        if (map) combos.push({ doctorId: d, serviceId: Number(map.id) });
+        else combos.push({ doctorId: d, serviceId: s }); // fall back to raw service id
+      } else {
+        combos.push({ doctorId: d, serviceId: s });
+      }
+    }
+  }
+
+  const ids: number[] = [];
+  let skipped = 0;
+  for (const c of combos) {
+    const dup = await prisma.kcTax.findFirst({
+      where: {
+        name: input.name, taxType: input.rateType,
+        clinicId: BigInt(clinicId), doctorId: BigInt(c.doctorId), serviceId: BigInt(c.serviceId),
+      },
+      select: { id: true },
+    });
+    if (dup) { skipped++; continue; }
+    const created = await prisma.kcTax.create({
+      data: {
+        name: input.name, taxType: input.rateType, taxValue: String(input.rateValue),
+        clinicId: BigInt(clinicId), doctorId: BigInt(c.doctorId), serviceId: BigInt(c.serviceId),
+        addedBy: BigInt(input.addedBy ?? currentUserId), status: input.status ?? 1, createdAt: new Date(),
+      },
+      select: { id: true },
+    });
+    ids.push(Number(created.id));
+  }
+  return { ids, created_count: ids.length, skipped_count: skipped };
+}
