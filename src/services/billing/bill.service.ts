@@ -242,7 +242,9 @@ export interface BillScope { clinicId?: bigint; doctorId?: bigint; patientId?: b
 export interface BillListParams {
   search?: string; status?: string; date_from?: string; date_to?: string;
   page: number; perPage: number | 'all'; orderBy?: string; order?: string;
-  id?: number; encounter_id?: number; doctorName?: string; clinicName?: string; patientName?: string; serviceName?: string;
+  id?: number; encounter_id?: number;
+  // These filters are declared for API compatibility but not yet wired into the SQL query
+  doctorName?: string; clinicName?: string; patientName?: string; serviceName?: string;
 }
 
 const BILL_SORT: Record<string, string> = {
@@ -277,7 +279,9 @@ export async function listBills(p: BillListParams, scope: BillScope | null) {
 
   const orderCol = BILL_SORT[p.orderBy ?? 'id'] ?? 'bills.id';
   const orderDir = (p.order ?? 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-  const perPage = p.perPage === 'all' ? total || 1 : (p.perPage as number);
+  const rawPerPage = p.perPage === 'all' ? total || 1 : (p.perPage as number);
+  const safePerPage = typeof rawPerPage === 'number' ? Math.max(1, rawPerPage) : rawPerPage;
+  const perPage = safePerPage;
   const limitSql = p.perPage === 'all' ? '' : `LIMIT ${perPage} OFFSET ${(p.page - 1) * perPage}`;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(
@@ -298,6 +302,7 @@ export async function listBills(p: BillListParams, scope: BillScope | null) {
   const billings = rows.map((r) => ({
     id: Number(r.id), invoiceId: Number(r.id), encounter_id: Number(r.encounter_id), date: r.created_at,
     status: r.payment_status ?? 'unpaid',
+    patient_id: Number(r.patient_id ?? 0),
     patient: { name: r.patient_name ?? '', email: r.patient_email ?? '' },
     clinic: { id: Number(r.clinic_id ?? 0), name: r.clinic_name ?? '', email: r.clinic_email ?? '' },
     doctor: { id: Number(r.doctor_id ?? 0), name: r.doctor_name ?? '', email: r.doctor_email ?? '' },
@@ -332,7 +337,7 @@ export async function exportBills(p: BillListParams, scope: BillScope | null) {
   const list = await listBills({ ...p, perPage: 'all' }, scope);
   const bills = list.billings.map((b) => ({
     id: b.id, total_amount: b.total_amount, discount: b.discount || '-', actual_amount: b.actual_amount,
-    encounter_id: b.encounter_id, clinic_id: b.clinic.id, doctor_id: b.doctor.id, patient_id: 0,
+    encounter_id: b.encounter_id, clinic_id: b.clinic.id, doctor_id: b.doctor.id, patient_id: b.patient_id ?? 0,
     status: b.status, doctor_name: b.doctor.name, patient_name: b.patient.name, clinic_name: b.clinic.name, service_name: b.services,
   }));
   return { bills };
