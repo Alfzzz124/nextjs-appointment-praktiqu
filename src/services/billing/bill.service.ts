@@ -144,6 +144,8 @@ export async function getBill(id: number): Promise<BillDetail> {
   const bill = await prisma.kcBill.findUnique({ where: { id: BigInt(id) } });
   if (!bill) throw new KcError('Bill not found', 404);
 
+  const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: bill.encounterId }, select: { doctorId: true, patientId: true } });
+
   const items = await prisma.kcBillItem.findMany({ where: { billId: bill.id } });
   const serviceIds = items.map((i) => i.itemId);
   const services = await prisma.kcService.findMany({ where: { id: { in: serviceIds } }, select: { id: true, name: true } });
@@ -162,14 +164,23 @@ export async function getBill(id: number): Promise<BillDetail> {
 
   return {
     id: Number(bill.id), invoiceId: Number(bill.id), date: bill.createdAt, status: bill.paymentStatus ?? 'unpaid',
-    clinic: { id: Number(bill.clinicId ?? 0) }, doctor: { id: 0 }, patient: { id: 0 },
+    clinic: { id: Number(bill.clinicId ?? 0) }, doctor: { id: Number(encounter?.doctorId ?? 0) }, patient: { id: Number(encounter?.patientId ?? 0) },
     patientEncounter: { id: Number(bill.encounterId), appointmentId: bill.appointmentId ? Number(bill.appointmentId) : null },
     serviceItems, service_total, discount, totalTax, taxItems,
-    total_amount: toMoney(service_total + totalTax - discount), actual_amount: toNum(bill.actualAmount),
+    total_amount: toNum(bill.totalAmount), actual_amount: toNum(bill.actualAmount),
   };
 }
 
-export async function getBillByEncounter(encounterId: number): Promise<{ status: string } | BillDetail> {
+interface BillSkeleton {
+  status: string;
+  clinic: { id: number };
+  patient: { id: number };
+  doctor: { id: number };
+  patientEncounter: { id: number; appointmentId: number | null };
+  serviceItems: BillServiceItem[];
+}
+
+export async function getBillByEncounter(encounterId: number): Promise<{ status: string } | BillDetail | BillSkeleton> {
   const bill = await prisma.kcBill.findFirst({ where: { encounterId: BigInt(encounterId) }, select: { id: true } });
   if (bill) return getBill(Number(bill.id));
   const enc = await prisma.kcPatientEncounter.findUnique({ where: { id: BigInt(encounterId) } });
@@ -177,7 +188,6 @@ export async function getBillByEncounter(encounterId: number): Promise<{ status:
   return {
     // skeleton mirrors KiviCare's "Bill not found for this encounter" payload
     status: 'unpaid',
-    // @ts-expect-error partial skeleton is intentional and matches KiviCare
     clinic: { id: Number(enc.clinicId) }, patient: { id: Number(enc.patientId) }, doctor: { id: Number(enc.doctorId) },
     patientEncounter: { id: Number(enc.id), appointmentId: enc.appointmentId ? Number(enc.appointmentId) : null }, serviceItems: [],
   };

@@ -80,6 +80,19 @@ describe('bill.service get', () => {
     expect(bill.serviceItems.length).toBeGreaterThanOrEqual(1);
     expect(bill).toHaveProperty('total_amount');
     expect(bill).toHaveProperty('taxItems');
+    expect(bill.doctor.id).toBeGreaterThan(0);
+    expect(bill.patient.id).toBeGreaterThan(0);
+  });
+
+  it('throws 404 KcError for a non-existent bill id', async () => {
+    await expect(getBill(9999999)).rejects.toMatchObject({ httpStatus: 404 });
+  });
+
+  it('by-encounter returns full BillDetail when a bill exists', async () => {
+    const res = await getBillByEncounter(9000400);
+    expect(res).toHaveProperty('serviceItems');
+    expect(Array.isArray((res as any).serviceItems)).toBe(true);
+    expect(res).toHaveProperty('total_amount');
   });
 
   it('by-encounter returns a skeleton when no bill exists', async () => {
