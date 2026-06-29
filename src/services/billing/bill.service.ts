@@ -1,9 +1,19 @@
 import { prisma } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import { KcError } from '@/lib/kc-response';
 import { toNum, toMoney } from '@/lib/kc-num';
 import { TaxCalculator } from './tax-calculator';
 
 interface NormItem { serviceId: number; name: string; price: number; qty: number }
+
+async function ensureServiceId(tx: Prisma.TransactionClient, it: NormItem): Promise<number> {
+  if (it.serviceId) return it.serviceId;
+  const svc = await tx.kcService.create({
+    data: { type: 'bill_service', name: it.name || 'Service', price: String(it.price), status: 1, createdAt: new Date() } as any,
+    select: { id: true },
+  });
+  return Number(svc.id);
+}
 
 function normalizeItems(items: any[]): NormItem[] {
   return items.map((it) => ({
@@ -97,12 +107,8 @@ export async function createBill(input: BillCreateInput): Promise<{ id: number }
     });
 
     for (const it of items) {
-      let serviceId = it.serviceId;
       // Auto-create a service if the line references none.
-      if (!serviceId) {
-        const svc = await tx.kcService.create({ data: { type: 'bill_service', name: it.name || 'Service', price: String(it.price), status: 1, createdAt: new Date() } as any, select: { id: true } });
-        serviceId = Number(svc.id);
-      }
+      const serviceId = await ensureServiceId(tx, it);
       await tx.kcBillItem.create({ data: { billId: bill.id, itemId: BigInt(serviceId), qty: it.qty, price: String(it.price), createdAt: new Date() } });
     }
 
@@ -200,17 +206,16 @@ export async function updateBill(id: number, input: BillCreateInput): Promise<{ 
   await prisma.$transaction(async (tx) => {
     await tx.kcBill.update({
       where: { id: BigInt(id) },
-      data: { totalAmount: String(input.total_amount), discount: String(input.discount ?? 0), actualAmount: String(input.total_amount), paymentStatus: input.status },
+      data: { totalAmount: String(input.total_amount), discount: String(input.discount ?? 0), actualAmount: input.total_amount !== undefined ? String(input.total_amount) : undefined, paymentStatus: input.status },
     });
     await tx.kcBillItem.deleteMany({ where: { billId: BigInt(id) } });
     for (const it of items) {
-      let serviceId = it.serviceId;
-      if (!serviceId) { const svc = await tx.kcService.create({ data: { type: 'bill_service', name: it.name || 'Service', price: String(it.price), status: 1, createdAt: new Date() } as any, select: { id: true } }); serviceId = Number(svc.id); }
+      const serviceId = await ensureServiceId(tx, it);
       await tx.kcBillItem.create({ data: { billId: BigInt(id), itemId: BigInt(serviceId), qty: it.qty, price: String(it.price), createdAt: new Date() } });
     }
     await tx.kcTaxData.deleteMany({ where: { moduleType: 'encounter', moduleId: bill.encounterId } });
     for (const t of input.taxItems ?? []) await tx.kcTaxData.create({ data: { moduleType: 'encounter', moduleId: bill.encounterId, name: t.tax_name ?? '', charges: String(t.tax_amount ?? 0), taxValue: String(t.tax_value ?? 0), taxType: t.tax_type ?? 'percentage' } });
-    if ((input.checkout || input.status === 'paid')) {
+    if (input.checkout || input.status === 'paid') {
       await tx.kcPatientEncounter.update({ where: { id: bill.encounterId }, data: { status: 0 } });
       if (bill.appointmentId) await tx.kcAppointment.update({ where: { id: bill.appointmentId }, data: { status: 3 } as any });
     }
