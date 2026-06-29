@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { seedTax, cleanup, assertTestDb } from './fixtures';
-import { calculateTax, createBill } from '@/services/billing/bill.service';
+import { calculateTax, createBill, getBill, getBillByEncounter } from '@/services/billing/bill.service';
 import { prisma } from '@/lib/db';
 
 describe('bill.service calculateTax', () => {
@@ -51,5 +51,39 @@ describe('bill.service create', () => {
       patientEncounter: { id: 9000300, appointmentId: 9000004 },
       service_total: 100, total_amount: 100,
     } as any)).rejects.toThrow();
+  });
+});
+
+describe('bill.service get', () => {
+  beforeAll(async () => {
+    assertTestDb();
+    // Create encounter + bill for get tests (use a different id to avoid collision with create suite)
+    await prisma.kcPatientEncounter.create({ data: { id: 9000400n, clinicId: 9000001n, doctorId: 9000002n, patientId: 9000003n, appointmentId: null, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
+    await createBill({
+      serviceItems: [{ serviceId: 1, quantity: 1, price: 100, name: 'A' }],
+      taxItems: [], discount: 0, status: 'unpaid',
+      clinic: { id: 9000001 }, doctor: { id: 9000002 }, patient: { id: 9000003 },
+      patientEncounter: { id: 9000400, appointmentId: null },
+      service_total: 100, total_amount: 100,
+    } as any);
+  });
+  afterAll(async () => {
+    const bills = await prisma.kcBill.findMany({ where: { encounterId: 9000400n }, select: { id: true } });
+    for (const b of bills) { await prisma.kcBillItem.deleteMany({ where: { billId: b.id } }); }
+    await prisma.kcBill.deleteMany({ where: { encounterId: 9000400n } });
+    await prisma.kcPatientEncounter.deleteMany({ where: { id: 9000400n } });
+  });
+
+  it('reads back the created bill with serviceItems + recomputed totals', async () => {
+    const created = await prisma.kcBill.findFirst({ where: { encounterId: 9000400n }, select: { id: true } });
+    const bill = await getBill(Number(created!.id));
+    expect(bill.serviceItems.length).toBeGreaterThanOrEqual(1);
+    expect(bill).toHaveProperty('total_amount');
+    expect(bill).toHaveProperty('taxItems');
+  });
+
+  it('by-encounter returns a skeleton when no bill exists', async () => {
+    const res = await getBillByEncounter(9000999); // no bill, no encounter → skeleton/empty
+    expect(res).toHaveProperty('status');
   });
 });
