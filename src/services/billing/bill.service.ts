@@ -236,3 +236,104 @@ export async function deleteBillItem(itemId: number): Promise<{ id: number }> {
   await prisma.kcBillItem.delete({ where: { id: BigInt(itemId) } });
   return { id: itemId };
 }
+
+export interface BillScope { clinicId?: bigint; doctorId?: bigint; patientId?: bigint }
+
+export interface BillListParams {
+  search?: string; status?: string; date_from?: string; date_to?: string;
+  page: number; perPage: number | 'all'; orderBy?: string; order?: string;
+  id?: number; encounter_id?: number; doctorName?: string; clinicName?: string; patientName?: string; serviceName?: string;
+}
+
+const BILL_SORT: Record<string, string> = {
+  invoiceId: 'bills.id', id: 'bills.id', encounter_id: 'bills.encounter_id',
+  total_amount: 'CAST(bills.total_amount AS DECIMAL(10,2))', discount: 'CAST(bills.discount AS DECIMAL(10,2))',
+  actual_amount: 'CAST(bills.actual_amount AS DECIMAL(10,2))', date: 'bills.created_at', status: 'bills.payment_status',
+};
+
+export async function listBills(p: BillListParams, scope: BillScope | null) {
+  const where: string[] = ['1=1']; const args: any[] = [];
+  if (p.id) { where.push('bills.id = ?'); args.push(p.id); }
+  if (p.encounter_id) { where.push('bills.encounter_id = ?'); args.push(p.encounter_id); }
+  if (p.status) { where.push('bills.payment_status = ?'); args.push(p.status); }
+  if (p.date_from) { where.push('DATE(bills.created_at) >= ?'); args.push(p.date_from); }
+  if (p.date_to) { where.push('DATE(bills.created_at) <= ?'); args.push(p.date_to); }
+  if (scope?.clinicId !== undefined) { where.push('bills.clinic_id = ?'); args.push(Number(scope.clinicId)); }
+  if (scope?.doctorId !== undefined) { where.push('pe.doctor_id = ?'); args.push(Number(scope.doctorId)); }
+  if (scope?.patientId !== undefined) { where.push('pe.patient_id = ?'); args.push(Number(scope.patientId)); }
+  if (p.search) {
+    where.push('(bills.id LIKE ? OR clinics.name LIKE ? OR bills.payment_status LIKE ?)');
+    args.push(`%${p.search}%`, `%${p.search}%`, `%${p.search}%`);
+  }
+  const whereSql = where.join(' AND ');
+
+  const countRows = await prisma.$queryRawUnsafe<{ c: bigint }[]>(
+    `SELECT COUNT(DISTINCT bills.id) c
+     FROM wp_kc_bills bills
+     LEFT JOIN wp_kc_patient_encounters pe ON bills.encounter_id = pe.id
+     LEFT JOIN wp_kc_clinics clinics ON bills.clinic_id = clinics.id
+     WHERE ${whereSql}`, ...args);
+  const total = Number(countRows[0]?.c ?? 0);
+
+  const orderCol = BILL_SORT[p.orderBy ?? 'id'] ?? 'bills.id';
+  const orderDir = (p.order ?? 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  const perPage = p.perPage === 'all' ? total || 1 : (p.perPage as number);
+  const limitSql = p.perPage === 'all' ? '' : `LIMIT ${perPage} OFFSET ${(p.page - 1) * perPage}`;
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT bills.*, pe.doctor_id, pe.patient_id, pe.appointment_id,
+            clinics.name AS clinic_name, clinics.email AS clinic_email,
+            d.display_name AS doctor_name, d.user_email AS doctor_email,
+            pt.display_name AS patient_name, pt.user_email AS patient_email
+     FROM wp_kc_bills bills
+     LEFT JOIN wp_kc_patient_encounters pe ON bills.encounter_id = pe.id
+     LEFT JOIN wp_kc_clinics clinics ON bills.clinic_id = clinics.id
+     LEFT JOIN wp_users d ON pe.doctor_id = d.ID
+     LEFT JOIN wp_users pt ON pe.patient_id = pt.ID
+     WHERE ${whereSql}
+     GROUP BY bills.id
+     ORDER BY ${orderCol} ${orderDir}
+     ${limitSql}`, ...args);
+
+  const billings = rows.map((r) => ({
+    id: Number(r.id), invoiceId: Number(r.id), encounter_id: Number(r.encounter_id), date: r.created_at,
+    status: r.payment_status ?? 'unpaid',
+    patient: { name: r.patient_name ?? '', email: r.patient_email ?? '' },
+    clinic: { id: Number(r.clinic_id ?? 0), name: r.clinic_name ?? '', email: r.clinic_email ?? '' },
+    doctor: { id: Number(r.doctor_id ?? 0), name: r.doctor_name ?? '', email: r.doctor_email ?? '' },
+    services: '', discount: toNum(r.discount), total_amount: toNum(r.total_amount), actual_amount: toNum(r.actual_amount),
+  }));
+
+  return { billings, pagination: { total, perPage, currentPage: p.page, lastPage: Math.max(1, Math.ceil(total / perPage)) } };
+}
+
+export async function encountersWithoutBill(scope: BillScope | null) {
+  const where: string[] = ['pe.id NOT IN (SELECT encounter_id FROM wp_kc_bills WHERE encounter_id IS NOT NULL)'];
+  const args: any[] = [];
+  if (scope?.clinicId !== undefined) { where.push('pe.clinic_id = ?'); args.push(Number(scope.clinicId)); }
+  if (scope?.doctorId !== undefined) { where.push('pe.doctor_id = ?'); args.push(Number(scope.doctorId)); }
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT pe.*, c.name AS clinic_name, d.display_name AS doctor_name, pt.display_name AS patient_name
+     FROM wp_kc_patient_encounters pe
+     LEFT JOIN wp_kc_clinics c ON pe.clinic_id = c.id
+     LEFT JOIN wp_users d ON pe.doctor_id = d.ID
+     LEFT JOIN wp_users pt ON pe.patient_id = pt.ID
+     WHERE ${where.join(' AND ')}
+     ORDER BY pe.id DESC`, ...args);
+  const encounters = rows.map((r) => ({
+    id: Number(r.id), encounterDate: r.encounter_date, patientId: Number(r.patient_id), clinicId: Number(r.clinic_id),
+    doctorId: Number(r.doctor_id), status: r.status, description: r.description ?? '', appointmentId: r.appointment_id ? Number(r.appointment_id) : null,
+    patientName: r.patient_name ?? '', clinicName: r.clinic_name ?? '', doctorName: r.doctor_name ?? '',
+  }));
+  return { encounters, count: encounters.length };
+}
+
+export async function exportBills(p: BillListParams, scope: BillScope | null) {
+  const list = await listBills({ ...p, perPage: 'all' }, scope);
+  const bills = list.billings.map((b) => ({
+    id: b.id, total_amount: b.total_amount, discount: b.discount || '-', actual_amount: b.actual_amount,
+    encounter_id: b.encounter_id, clinic_id: b.clinic.id, doctor_id: b.doctor.id, patient_id: 0,
+    status: b.status, doctor_name: b.doctor.name, patient_name: b.patient.name, clinic_name: b.clinic.name, service_name: b.services,
+  }));
+  return { bills };
+}

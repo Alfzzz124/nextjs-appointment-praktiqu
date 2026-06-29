@@ -137,3 +137,23 @@ describe('bill.service update + items', () => {
     expect(await prisma.kcBillItem.findUnique({ where: { id: item.id } })).toBeNull();
   });
 });
+
+import { listBills, encountersWithoutBill, exportBills } from '@/services/billing/bill.service';
+
+describe('bill.service list', () => {
+  it('lists bills with pagination meta and role scope (superadmin = all)', async () => {
+    const res = await listBills({ page: 1, perPage: 10 } as any, null);
+    expect(res.pagination).toHaveProperty('total');
+    expect(Array.isArray(res.billings)).toBe(true);
+  });
+
+  it('lists encounters without a bill', async () => {
+    const res = await encountersWithoutBill(null);
+    expect(res).toHaveProperty('count');
+  });
+
+  it('exports bills as shaped rows', async () => {
+    const res = await exportBills({ page: 1, perPage: 'all' } as any, null);
+    expect(Array.isArray(res.bills)).toBe(true);
+  });
+});
