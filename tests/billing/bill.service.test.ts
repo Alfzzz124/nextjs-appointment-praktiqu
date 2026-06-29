@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { seedTax, cleanup, assertTestDb } from './fixtures';
-import { calculateTax, createBill, getBill, getBillByEncounter } from '@/services/billing/bill.service';
+import { calculateTax, createBill, getBill, getBillByEncounter, updateBill, updateBillItem, deleteBillItem } from '@/services/billing/bill.service';
 import { prisma } from '@/lib/db';
 
 describe('bill.service calculateTax', () => {
@@ -98,5 +98,42 @@ describe('bill.service get', () => {
   it('by-encounter returns a skeleton when no bill exists', async () => {
     const res = await getBillByEncounter(9000999); // no bill, no encounter → skeleton/empty
     expect(res).toHaveProperty('status');
+  });
+});
+
+describe('bill.service update + items', () => {
+  beforeAll(async () => {
+    assertTestDb();
+    await prisma.kcPatientEncounter.create({ data: { id: 9000500n, clinicId: 9000001n, doctorId: 9000002n, patientId: 9000003n, appointmentId: null, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
+    await createBill({
+      serviceItems: [{ serviceId: 1, quantity: 2, price: 75, name: 'B' }],
+      taxItems: [], discount: 0, status: 'unpaid',
+      clinic: { id: 9000001 }, doctor: { id: 9000002 }, patient: { id: 9000003 },
+      patientEncounter: { id: 9000500, appointmentId: null },
+      service_total: 150, total_amount: 150,
+    } as any);
+  });
+  afterAll(async () => {
+    const bills = await prisma.kcBill.findMany({ where: { encounterId: 9000500n }, select: { id: true } });
+    for (const b of bills) { await prisma.kcBillItem.deleteMany({ where: { billId: b.id } }); }
+    await prisma.kcBill.deleteMany({ where: { encounterId: 9000500n } });
+    await prisma.kcPatientEncounter.deleteMany({ where: { id: 9000500n } });
+  });
+
+  it('updates a bill item', async () => {
+    const created = await prisma.kcBill.findFirst({ where: { encounterId: 9000500n } });
+    const item = await prisma.kcBillItem.findFirst({ where: { billId: created!.id } });
+    const r = await updateBillItem(Number(item!.id), { serviceId: 2, quantity: 3, price: 50 });
+    expect(r.id).toBe(Number(item!.id));
+    const after = await prisma.kcBillItem.findUnique({ where: { id: item!.id } });
+    expect(after!.qty).toBe(3);
+  });
+
+  it('deletes a bill item', async () => {
+    const created = await prisma.kcBill.findFirst({ where: { encounterId: 9000500n } });
+    const item = await prisma.kcBillItem.create({ data: { billId: created!.id, itemId: 5n, qty: 1, price: '10', createdAt: new Date() } });
+    const r = await deleteBillItem(Number(item.id));
+    expect(r.id).toBe(Number(item.id));
+    expect(await prisma.kcBillItem.findUnique({ where: { id: item.id } })).toBeNull();
   });
 });
