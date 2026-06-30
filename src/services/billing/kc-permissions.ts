@@ -48,3 +48,18 @@ export async function assertBillingEnabled(): Promise<void> {
     // Non-JSON / unknown shape → treat as enabled.
   }
 }
+
+import type { KcActor } from './kc-actor';
+import type { BillScope } from './bill.service';
+
+/** Translate a KcActor into a bill query scope (null = unrestricted). */
+export function billScopeFor(kc: KcActor): BillScope | null {
+  switch (kc.actor.role) {
+    case 'SUPER_ADMIN': return null;
+    case 'CLINIC_ADMIN':
+    case 'RECEPTIONIST': return { clinicId: kc.clinicId ?? -1n };
+    case 'PROFESSIONAL': return { doctorId: kc.wpUserId };
+    case 'CLIENT': return { patientId: kc.wpUserId };
+    default: return { clinicId: -1n };
+  }
+}
