@@ -76,11 +76,15 @@ async function getWordPressProfessionals(specialty?: string): Promise<Profession
       // Parse basic_data for additional info
       let biography: string | null = null;
       if (metaMap['doctor_description']) {
-        biography = metaMap['doctor_description'];
+        // Remove HTML tags from the description
+        biography = metaMap['doctor_description'].replace(/<[^>]*>?/gm, '').trim();
       } else if (metaMap['basic_data']) {
         try {
           const basicData = JSON.parse(metaMap['basic_data']);
-          biography = basicData.specialties?.join(', ') || null;
+          if (Array.isArray(basicData.specialties)) {
+            // Extract label if it's an object, otherwise use the string directly
+            biography = basicData.specialties.map((s: any) => s.label || s).join(', ');
+          }
         } catch {}
       }
 

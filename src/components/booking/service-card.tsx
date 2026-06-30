@@ -34,6 +34,21 @@ function formatPrice(price: any): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
 }
 
+function parseDescription(desc: string | null | undefined): string | null {
+  if (!desc) return null;
+  try {
+    if (desc.trim().startsWith('{')) {
+      const parsed = JSON.parse(desc);
+      if (parsed && parsed.label) {
+        return parsed.label;
+      }
+    }
+  } catch (e) {
+    // Ignore and fallback to returning the original string
+  }
+  return desc;
+}
+
 export function ServiceCard({ service, professionalId }: { service: ServiceCardData; professionalId: string }) {
   return (
     <Link
@@ -50,7 +65,9 @@ export function ServiceCard({ service, professionalId }: { service: ServiceCardD
         </div>
       </div>
       {service.description && (
-        <p className="line-clamp-3 text-sm text-on-surface-variant">{service.description}</p>
+        <p className="line-clamp-3 text-sm text-on-surface-variant">
+          {parseDescription(service.description)}
+        </p>
       )}
       <div className="mt-auto flex items-center justify-between border-t border-surface-container-high pt-3">
         <div className="text-base font-semibold text-primary-700">{formatPrice(service.price)}</div>

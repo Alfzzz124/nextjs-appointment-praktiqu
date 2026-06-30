@@ -1,0 +1,29 @@
+import { describe, it, expect } from 'vitest';
+import { can } from '@/services/billing/kc-permissions';
+import type { Actor } from '@/lib/auth';
+
+const a = (role: Actor['role']): Actor => ({ id: 'x', role, practiceId: null });
+
+describe('kc-permissions.can', () => {
+  it('tax_manage allowed for admins only', () => {
+    expect(can(a('SUPER_ADMIN'), 'tax_manage')).toBe(true);
+    expect(can(a('CLINIC_ADMIN'), 'tax_manage')).toBe(true);
+    expect(can(a('PROFESSIONAL'), 'tax_manage')).toBe(false);
+    expect(can(a('RECEPTIONIST'), 'tax_manage')).toBe(false);
+  });
+
+  it('patient_bill_add denied for CLIENT', () => {
+    expect(can(a('CLIENT'), 'patient_bill_add')).toBe(false);
+    expect(can(a('RECEPTIONIST'), 'patient_bill_add')).toBe(true);
+  });
+
+  it('patient_bill_delete denied for PROFESSIONAL', () => {
+    expect(can(a('PROFESSIONAL'), 'patient_bill_delete')).toBe(false);
+    expect(can(a('CLINIC_ADMIN'), 'patient_bill_delete')).toBe(true);
+  });
+
+  it('tax read allowed for staff, denied for client', () => {
+    expect(can(a('PROFESSIONAL'), 'tax_read')).toBe(true);
+    expect(can(a('CLIENT'), 'tax_read')).toBe(false);
+  });
+});

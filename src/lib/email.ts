@@ -15,6 +15,7 @@ export interface SendEmailInput {
   html: string;
   text?: string;
   template?: string;
+  attachments?: { filename: string; content: string }[];
 }
 
 export interface SendEmailResult {
@@ -56,6 +57,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         subject: input.subject,
         html: input.html,
         text: input.text ?? '',
+        attachments: input.attachments ?? undefined,
       }),
     });
     if (!res.ok) {

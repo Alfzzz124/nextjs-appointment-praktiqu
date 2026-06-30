@@ -30,7 +30,6 @@ export function ProfessionalCard({ professional }: { professional: ProfessionalC
   const typeLabel = professional.professionalType
     ? TYPE_LABELS[professional.professionalType] ?? professional.professionalType
     : '';
-
   return (
     <Link
       href={`/book/${professional.id}/service`}
