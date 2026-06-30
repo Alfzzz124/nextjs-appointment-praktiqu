@@ -85,10 +85,9 @@ export async function emailBill(billId: number, to: string): Promise<boolean> {
 
   const result = await sendEmail({
     to,
-    subject: `Invoice #${bill.invoiceId} from ${bill.clinic.name ?? 'your clinic'}`,
-    html: `<p>Dear ${bill.patient.name ?? 'patient'},</p><p>Please find your invoice #${bill.invoiceId} attached.</p>`,
+    subject: `Invoice #${bill.invoiceId} from ${(bill.clinic as any).name ?? 'your clinic'}`,
+    html: `<p>Dear ${(bill.patient as any).name ?? 'patient'},</p><p>Please find your invoice #${bill.invoiceId} attached.</p>`,
     template: 'kivicare_patient_invoice',
-    // @ts-expect-error attachments is an optional extension to SendEmailInput
     attachments: [{ filename: `bill_${bill.invoiceId}.pdf`, content: pdf.toString('base64') }],
   });
   if (!result.ok) throw new KcError('Failed to send bill email', 502);
