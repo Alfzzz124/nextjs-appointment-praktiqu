@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db';
 import { getBill, type BillDetail } from './bill.service';
+import { sendEmail } from '@/lib/email';
+import { KcError } from '@/lib/kc-response';
 
 export interface CurrencyFmt { currencyPrefix: string; currencyPostfix: string }
 
@@ -73,4 +75,22 @@ export async function generateBillPdf(billId: number): Promise<Buffer> {
   } finally {
     await browser.close();
   }
+}
+
+/** Email a bill PDF to the given recipient. `to` defaults to the bill's patient email when omitted. */
+export async function emailBill(billId: number, to: string): Promise<boolean> {
+  if (!to) throw new KcError('Recipient email is required', 400);
+  const bill = await getBill(billId);
+  const pdf = await generateBillPdf(billId);
+
+  const result = await sendEmail({
+    to,
+    subject: `Invoice #${bill.invoiceId} from ${bill.clinic.name ?? 'your clinic'}`,
+    html: `<p>Dear ${bill.patient.name ?? 'patient'},</p><p>Please find your invoice #${bill.invoiceId} attached.</p>`,
+    template: 'kivicare_patient_invoice',
+    // @ts-expect-error attachments is an optional extension to SendEmailInput
+    attachments: [{ filename: `bill_${bill.invoiceId}.pdf`, content: pdf.toString('base64') }],
+  });
+  if (!result.ok) throw new KcError('Failed to send bill email', 502);
+  return true;
 }
