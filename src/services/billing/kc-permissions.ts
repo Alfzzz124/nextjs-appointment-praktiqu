@@ -1,6 +1,8 @@
 import type { Actor } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
+import type { KcActor } from './kc-actor';
+import type { BillScope } from './bill.service';
 
 export type Capability =
   | 'patient_bill_list'
@@ -48,9 +50,6 @@ export async function assertBillingEnabled(): Promise<void> {
     // Non-JSON / unknown shape → treat as enabled.
   }
 }
-
-import type { KcActor } from './kc-actor';
-import type { BillScope } from './bill.service';
 
 /** Translate a KcActor into a bill query scope (null = unrestricted). */
 export function billScopeFor(kc: KcActor): BillScope | null {

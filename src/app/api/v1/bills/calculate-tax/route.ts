@@ -11,7 +11,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
     await assertBillingEnabled();
     assertCan(actor, 'patient_bill_view');
     const parsed = calculateTaxSchema.safeParse(await req.json().catch(() => ({})));
-    if (!parsed.success) return kcFail('Invalid input', 400);
+    if (!parsed.success) return kcFail(parsed.error.issues[0]?.message ?? 'Invalid input', 400);
     return kcOk(await calculateTax(parsed.data as any), 'Tax calculated successfully');
   }),
 );

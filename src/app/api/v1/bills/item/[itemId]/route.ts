@@ -11,7 +11,7 @@ export const PUT = withAuth(async (req: NextRequest, ctx) =>
     await assertBillingEnabled();
     assertCan(actor, 'patient_bill_add');
     const parsed = billItemUpdateSchema.safeParse(await req.json().catch(() => ({})));
-    if (!parsed.success) return kcFail('Invalid input', 400);
+    if (!parsed.success) return kcFail(parsed.error.issues[0]?.message ?? 'Invalid input', 400);
     return kcOk(await updateBillItem(Number(params.itemId), parsed.data as any), 'Bill item updated successfully');
   }),
 );
