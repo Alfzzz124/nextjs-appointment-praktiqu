@@ -7,13 +7,22 @@ function money(n: number, c: CurrencyFmt): string {
   return `${c.currencyPrefix}${n.toFixed(2)}${c.currencyPostfix}`;
 }
 
+function escapeHtml(s: string | number | null | undefined): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Pure HTML render of the invoice — ported from KCBillPrintTemplate.php. */
 export function renderInvoiceHtml(bill: BillDetail, c: CurrencyFmt): string {
   const rows = bill.serviceItems
-    .map((s) => `<tr><td>${s.service_name}</td><td>${s.quantity}</td><td>${money(s.price, c)}</td><td>${money(s.total, c)}</td></tr>`)
+    .map((s) => `<tr><td>${escapeHtml(s.service_name)}</td><td>${escapeHtml(s.quantity)}</td><td>${escapeHtml(money(s.price, c))}</td><td>${escapeHtml(money(s.total, c))}</td></tr>`)
     .join('');
   const taxRows = bill.taxItems
-    .map((t) => `<tr><td colspan="3">${t.tax_name} (${t.tax_type === 'percentage' ? `${t.tax_value}%` : 'fixed'})</td><td>${money(t.tax_amount, c)}</td></tr>`)
+    .map((t) => `<tr><td colspan="3">${escapeHtml(t.tax_name)} (${t.tax_type === 'percentage' ? `${escapeHtml(t.tax_value)}%` : 'fixed'})</td><td>${escapeHtml(money(t.tax_amount, c))}</td></tr>`)
     .join('');
   const clinic = bill.clinic as any;
   return `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -22,16 +31,16 @@ export function renderInvoiceHtml(bill: BillDetail, c: CurrencyFmt): string {
     th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}
     .totals td{font-weight:bold}
   </style></head><body>
-    <h1>Invoice #${bill.invoiceId}</h1>
-    <p><strong>${clinic.name ?? ''}</strong> ${clinic.email ?? ''}</p>
-    <p>Patient: ${(bill.patient as any).name ?? ''} &middot; Doctor: ${(bill.doctor as any).name ?? ''}</p>
-    <p>Date: ${new Date(bill.date).toISOString().slice(0, 10)} &middot; Status: ${bill.status}</p>
+    <h1>Invoice #${escapeHtml(bill.invoiceId)}</h1>
+    <p><strong>${escapeHtml(clinic.name)}</strong> ${escapeHtml(clinic.email)}</p>
+    <p>Patient: ${escapeHtml((bill.patient as any).name)} &middot; Doctor: ${escapeHtml((bill.doctor as any).name)}</p>
+    <p>Date: ${new Date(bill.date).toISOString().slice(0, 10)} &middot; Status: ${escapeHtml(bill.status)}</p>
     <table><thead><tr><th>Service</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
     <tbody>${rows}
-      <tr class="totals"><td colspan="3">Subtotal</td><td>${money(bill.service_total, c)}</td></tr>
+      <tr class="totals"><td colspan="3">Subtotal</td><td>${escapeHtml(money(bill.service_total, c))}</td></tr>
       ${taxRows}
-      <tr class="totals"><td colspan="3">Discount</td><td>${money(bill.discount, c)}</td></tr>
-      <tr class="totals"><td colspan="3">Total</td><td>${money(bill.total_amount, c)}</td></tr>
+      <tr class="totals"><td colspan="3">Discount</td><td>${escapeHtml(money(bill.discount, c))}</td></tr>
+      <tr class="totals"><td colspan="3">Total</td><td>${escapeHtml(money(bill.total_amount, c))}</td></tr>
     </tbody></table>
   </body></html>`;
 }
