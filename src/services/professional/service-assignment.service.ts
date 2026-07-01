@@ -137,6 +137,71 @@ export async function unassignService(
 // Error types
 // ============================================
 
+// ============================================
+// Bulk Delete (Task 10)
+// ============================================
+
+export async function bulkDeleteDoctorServices(
+  professionalId: string,
+  serviceIds: string[],
+): Promise<number> {
+  const result = await prisma.professionalServiceAssignment.deleteMany({
+    where: {
+      professionalId,
+      serviceId: { in: serviceIds },
+    },
+  });
+  return result.count;
+}
+
+// ============================================
+// Bulk Status Change (Task 10)
+// ProfessionalServiceAssignment has no status field — we model
+// "status" as active (keep) vs inactive (delete) for compatibility.
+// ============================================
+
+export async function bulkSetDoctorServiceStatus(
+  professionalId: string,
+  serviceIds: string[],
+  status: string,
+): Promise<number> {
+  if (status === 'inactive' || status === '0') {
+    return bulkDeleteDoctorServices(professionalId, serviceIds);
+  }
+  // For active status — assignments already exist, return count of matching ones
+  const result = await prisma.professionalServiceAssignment.count({
+    where: {
+      professionalId,
+      serviceId: { in: serviceIds },
+    },
+  });
+  return result;
+}
+
+// ============================================
+// Export (Task 10)
+// ============================================
+
+export async function exportDoctorServices(professionalId: string): Promise<unknown[]> {
+  const assignments = await prisma.professionalServiceAssignment.findMany({
+    where: { professionalId },
+    include: {
+      service: { select: { id: true, name: true, duration: true, status: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return assignments.map((a) => ({
+    id: a.id,
+    professionalId: a.professionalId,
+    serviceId: a.serviceId,
+    serviceName: a.service.name,
+    serviceDuration: a.service.duration,
+    serviceStatus: a.service.status,
+    createdAt: a.createdAt.toISOString(),
+  }));
+}
+
 export type ServiceAssignmentError =
   | { _tag: 'validation'; errors: Record<string, string[]> }
   | { _tag: 'not_found'; entity?: string }
