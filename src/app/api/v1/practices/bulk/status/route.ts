@@ -3,6 +3,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { withAuth } from '@/lib/auth';
+import { forbidden } from '@/lib/problem-details';
 import { bulkSetPracticeStatus } from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
@@ -11,7 +13,12 @@ const schema = z.object({
   status: z.union([z.literal(0), z.literal(1)]),
 });
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = withAuth(async (req: NextRequest, ctx) => {
+  const { actor } = ctx as any;
+  if (!['SUPER_ADMIN'].includes(actor.role)) {
+    return NextResponse.json(forbidden('Insufficient permissions'), { status: 403 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -48,4 +55,4 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 500 },
     );
   }
-}
+});

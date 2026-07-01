@@ -3,14 +3,20 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { withAuth } from '@/lib/auth';
+import { forbidden } from '@/lib/problem-details';
 import { changePracticeAdmin, PracticeNotFoundError } from '@/services/practice/service';
+import { prisma } from '@/lib/db';
 import { logging } from '@/lib/logging';
-
-type Params = { params: { id: string } };
 
 const schema = z.object({ newAdminId: z.string().min(1) });
 
-export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
+export const POST = withAuth(async (req: NextRequest, ctx) => {
+  const { actor, params } = ctx as any;
+  if (!['SUPER_ADMIN'].includes(actor.role)) {
+    return NextResponse.json(forbidden('Insufficient permissions'), { status: 403 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -34,6 +40,14 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     );
   }
 
+  const user = await prisma.user.findUnique({ where: { id: parsed.data.newAdminId } });
+  if (!user) {
+    return NextResponse.json(
+      { type: '/errors/not-found', title: 'User not found', status: 404 },
+      { status: 404 },
+    );
+  }
+
   try {
     await changePracticeAdmin(params.id, parsed.data.newAdminId);
     return NextResponse.json({ message: 'Practice admin updated' }, { status: 200 });
@@ -50,4 +64,4 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       { status: 500 },
     );
   }
-}
+});
