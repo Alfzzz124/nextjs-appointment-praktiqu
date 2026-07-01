@@ -101,4 +101,18 @@ export class ConsentService {
       data: { withdrawnAt: new Date(), status: 'WITHDRAWN' as any },
     });
   }
+
+  async deleteForm(id: string): Promise<void> {
+    const existing = await this.prisma.consentForm.findUnique({ where: { id } });
+    if (!existing) throw Object.assign(new Error('not_found'), { code: 'not_found' });
+    await this.prisma.consentForm.delete({ where: { id } });
+  }
+
+  async bulkSetConsentFormStatus(ids: string[], status: string): Promise<number> {
+    const result = await this.prisma.consentForm.updateMany({
+      where: { id: { in: ids } },
+      data: { status: status as any },
+    });
+    return result.count;
+  }
 }

@@ -305,6 +305,40 @@ export class CustomFieldService {
     return this.getValues(moduleType, moduleId);
   }
 
+  async bulkSetCustomFieldStatus(ids: string[], status: number): Promise<number> {
+    const result = await this.prisma.customField.updateMany({
+      where: { id: { in: ids } },
+      data: { status },
+    });
+    return result.count;
+  }
+
+  async saveCustomFieldData(
+    entityType: string,
+    entityId: string,
+    fieldId: string,
+    value: unknown,
+  ): Promise<void> {
+    await this.prisma.customFieldData.upsert({
+      where: {
+        moduleType_moduleId_fieldId: {
+          moduleType: entityType as ModuleType,
+          moduleId: entityId,
+          fieldId,
+        },
+      },
+      create: { moduleType: entityType as ModuleType, moduleId: entityId, fieldId, fieldValue: value as never },
+      update: { fieldValue: value as never },
+    });
+  }
+
+  async getCustomFieldData(entityType: string, entityId: string): Promise<unknown[]> {
+    return this.prisma.customFieldData.findMany({
+      where: { moduleType: entityType as ModuleType, moduleId: entityId },
+      include: { field: true },
+    });
+  }
+
   /** Validate a value against its field definition. Returns null on success or an error message. */
   validateValue(
     field: { fieldType: string; options: unknown; isRequired: boolean },

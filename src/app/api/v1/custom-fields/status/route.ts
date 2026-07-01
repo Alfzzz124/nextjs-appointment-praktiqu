@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { CustomFieldService } from '@/services/custom-fields/service';
+
+const prisma = new PrismaClient();
+const service = new CustomFieldService(prisma);
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { ids, status } = body;
+    if (!Array.isArray(ids) || status === undefined) {
+      return NextResponse.json({ type: 'about:blank', title: 'Bad Request', status: 400 }, { status: 400 });
+    }
+    const updated = await service.bulkSetCustomFieldStatus(ids, Number(status));
+    return NextResponse.json({ updated });
+  } catch {
+    return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
+  }
+}
