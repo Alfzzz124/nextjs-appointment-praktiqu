@@ -7,6 +7,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+// ── Auth mock ─────────────────────────────────────────────────────────────────
+vi.mock('@/lib/auth', () => ({
+  getActor: vi.fn().mockResolvedValue({ id: 'user-1', role: 'SUPER_ADMIN', practiceId: null }),
+  withAuth: (handler: Function) => (req: any, ctx: any) =>
+    handler(req, { actor: { id: 'user-1', role: 'SUPER_ADMIN', practiceId: null }, params: ctx }),
+  AuthError: class AuthError extends Error {
+    status: number;
+    constructor(message: string, status: number) { super(message); this.status = status; }
+  },
+}));
+
 // ── Prisma mock ──────────────────────────────────────────────────────────────
 vi.mock('@prisma/client', () => {
   const mockPrisma = {

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { CustomFieldService } from '@/services/custom-fields/service';
+import { withAuth } from '@/lib/auth';
 
 const prisma = new PrismaClient();
 const service = new CustomFieldService(prisma);
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req: NextRequest) => {
   try {
     const body = await req.json();
     const { entityType, entityId, fieldId, value } = body;
@@ -17,4 +18,4 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
   }
-}
+});

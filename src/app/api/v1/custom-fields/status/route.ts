@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { CustomFieldService } from '@/services/custom-fields/service';
+import { withAuth } from '@/lib/auth';
+import { forbidden } from '@/lib/problem-details';
 
 const prisma = new PrismaClient();
 const service = new CustomFieldService(prisma);
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req: NextRequest, ctx) => {
+  const { actor } = ctx as any;
+  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
+    return NextResponse.json(forbidden('Insufficient permissions'), { status: 403 });
+  }
   try {
     const body = await req.json();
     const { ids, status } = body;
@@ -17,4 +23,4 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
   }
-}
+});
