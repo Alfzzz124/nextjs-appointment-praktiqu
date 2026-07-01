@@ -165,7 +165,8 @@ export class CustomFieldService {
         409,
       );
     }
-    return this.prisma.customField.create({ data: parsed });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.prisma.customField.create({ data: parsed as any });
   }
 
   async updateField(id: string, data: CustomFieldUpdate) {
@@ -254,7 +255,8 @@ export class CustomFieldService {
           fieldId: parsed.fieldId,
         },
       },
-      create: parsed,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      create: parsed as any,
       update: { fieldValue: parsed.fieldValue as never },
     });
   }

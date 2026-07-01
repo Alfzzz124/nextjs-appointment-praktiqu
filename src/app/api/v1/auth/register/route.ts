@@ -53,7 +53,9 @@ export const POST = withAuth(async (req: NextRequest, ctx: AuthContext & { param
 
   try {
     const result = await registerAdminUser({
-      ...parsed.data,
+      email: parsed.data.email,
+      firstName: parsed.data.firstName,
+      lastName: parsed.data.lastName,
       role: parsed.data.role as UserRole,
     });
     return NextResponse.json({ data: result }, { status: 201 });

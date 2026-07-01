@@ -9,6 +9,7 @@
 import { prisma } from '@/lib/db';
 import { serviceAssignmentAudit } from '@/lib/audit';
 import { assignServiceInputSchema } from './validation';
+import { ServiceStatus } from '@prisma/client';
 import { z } from 'zod';
 
 // ============================================
@@ -38,7 +39,7 @@ export async function listAssignedServices(professionalId: string): Promise<Assi
   });
 
   return assignments
-    .filter((a) => a.service.status === 1) // Only ACTIVE services
+    .filter((a) => a.service.status === ServiceStatus.ACTIVE) // Only ACTIVE services
     .map((a) => ({
       id: a.id,
       professionalId: a.professionalId,
@@ -68,7 +69,7 @@ export async function assignService(
   if (!service) {
     throw { _tag: 'not_found' as const, entity: 'service' };
   }
-  if (service.status !== 1) {
+  if (service.status !== ServiceStatus.ACTIVE) {
     throw { _tag: 'validation' as const, errors: { serviceId: ['Only ACTIVE services can be assigned'] } };
   }
 
