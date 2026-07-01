@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getActor } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { getClientStatistics } from '@/services/client/client.service';
 
 export const dynamic = 'force-dynamic';
@@ -15,11 +16,15 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
     const actor = await getActor(req);
     const { id } = await params;
 
-    const canView =
-      ['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role) ||
-      (actor.role === 'CLIENT' && actor.id === id);
+    const client = await prisma.client.findUnique({ where: { id }, select: { userId: true } });
+    if (!client) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+    }
 
-    if (!canView) {
+    const isStaff = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role);
+    const isSelf = actor.role === 'CLIENT' && client.userId === actor.id;
+
+    if (!isStaff && !isSelf) {
       return NextResponse.json(
         { type: '/errors/forbidden', title: 'Forbidden', status: 403 },
         { status: 403 },

@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { SignJWT } from 'jose';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import {
   bulkArchiveClients,
@@ -6,7 +8,26 @@ import {
   exportClients,
   getClientStatistics,
 } from '@/services/client/client.service';
+import { GET as statisticsGet } from '@/app/api/v1/clients/[id]/statistics/route';
 import { ClientStatus, Gender } from '@prisma/client';
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.AUTH_SECRET ?? 'dev-secret-change-me',
+);
+
+async function makeToken(role: string, sub: string) {
+  return new SignJWT({ role })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(sub)
+    .setExpirationTime('1h')
+    .sign(JWT_SECRET);
+}
+
+function makeReq(jwt: string, clientId: string) {
+  return new NextRequest(`http://localhost/api/v1/clients/${clientId}/statistics`, {
+    headers: { authorization: `Bearer ${jwt}` },
+  });
+}
 
 let client1Id: string;
 let client2Id: string;
@@ -129,5 +150,35 @@ describe('getClientStatistics', () => {
   it('returns zero for a client with no patient record', async () => {
     const stats = await getClientStatistics(client1Id);
     expect(stats.lastSessionAt).toBeNull();
+  });
+});
+
+describe('GET /clients/:id/statistics — CLIENT self-access auth', () => {
+  it('returns 200 when CLIENT actor userId matches the client record', async () => {
+    // user1Id is the userId on client1's record
+    const jwt = await makeToken('CLIENT', user1Id);
+    const res = await statisticsGet(makeReq(jwt, client1Id), {
+      params: Promise.resolve({ id: client1Id }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toHaveProperty('data');
+  });
+
+  it('returns 403 when CLIENT actor userId does NOT match the client record', async () => {
+    // user2Id belongs to client2, not client1
+    const jwt = await makeToken('CLIENT', user2Id);
+    const res = await statisticsGet(makeReq(jwt, client1Id), {
+      params: Promise.resolve({ id: client1Id }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 200 for CLINIC_ADMIN accessing any client', async () => {
+    const jwt = await makeToken('CLINIC_ADMIN', 'admin-user-id');
+    const res = await statisticsGet(makeReq(jwt, client1Id), {
+      params: Promise.resolve({ id: client1Id }),
+    });
+    expect(res.status).toBe(200);
   });
 });
