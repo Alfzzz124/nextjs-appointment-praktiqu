@@ -323,3 +323,51 @@ export type ServiceError =
 export function isServiceError(err: unknown): err is ServiceError {
   return typeof err === 'object' && err !== null && '_tag' in err;
 }
+
+// ============================================
+// Bulk operations
+// ============================================
+
+export async function bulkDeleteProfessionals(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.professional.updateMany({
+    where: { id: { in: ids } },
+    data: { status: ProfessionalStatus.INACTIVE },
+  });
+  return result.count;
+}
+
+export async function bulkSetProfessionalStatus(
+  ids: string[],
+  status: ProfessionalStatus,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.professional.updateMany({
+    where: { id: { in: ids } },
+    data: { status },
+  });
+  return result.count;
+}
+
+// ============================================
+// Export
+// ============================================
+
+export interface ProfessionalExportParams {
+  practiceId?: string;
+  status?: ProfessionalStatus;
+}
+
+export async function exportProfessionals(
+  params: ProfessionalExportParams,
+): Promise<unknown[]> {
+  const where: Record<string, unknown> = {};
+  if (params.practiceId) where.practiceId = params.practiceId;
+  if (params.status) where.status = params.status;
+
+  return prisma.professional.findMany({
+    where,
+    include: { practice: { select: { id: true, name: true } } },
+    orderBy: { fullName: 'asc' },
+  });
+}
