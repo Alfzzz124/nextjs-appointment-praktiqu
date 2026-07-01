@@ -328,6 +328,10 @@ export function isServiceError(err: unknown): err is ServiceError {
 // Bulk operations
 // ============================================
 
+/**
+ * Soft-deletes professionals by setting status to INACTIVE.
+ * Named "delete" to match the KiviCare API convention (/doctors/bulk/delete).
+ */
 export async function bulkDeleteProfessionals(ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
   const result = await prisma.professional.updateMany({

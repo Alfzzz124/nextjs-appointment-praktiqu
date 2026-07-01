@@ -99,9 +99,11 @@ describe('bulkDeleteProfessionals', () => {
 });
 
 describe('bulkSetProfessionalStatus', () => {
-  it('sets status on multiple professionals', async () => {
+  it('sets status on multiple professionals and persists to DB', async () => {
     const n = await bulkSetProfessionalStatus([prof1Id, prof2Id], ProfessionalStatus.INACTIVE);
     expect(n).toBe(2);
+    const p = await prisma.professional.findUnique({ where: { id: prof2Id } });
+    expect(p?.status).toBe(ProfessionalStatus.INACTIVE);
   });
 });
 
