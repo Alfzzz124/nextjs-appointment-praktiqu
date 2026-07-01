@@ -645,3 +645,85 @@ export async function listClients(args: ListClientsArgs): Promise<PaginatedRespo
     },
   };
 }
+
+// ============================================
+// Bulk operations
+// ============================================
+
+/**
+ * Archives clients by setting status to ARCHIVED.
+ * Named "delete" to match KiviCare API convention (/patients/bulk/delete).
+ */
+export async function bulkArchiveClients(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.client.updateMany({
+    where: { id: { in: ids } },
+    data: { status: ClientStatus.ARCHIVED },
+  });
+  return result.count;
+}
+
+export async function bulkSetClientStatus(ids: string[], status: ClientStatus): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.client.updateMany({
+    where: { id: { in: ids } },
+    data: { status },
+  });
+  return result.count;
+}
+
+// ============================================
+// Export
+// ============================================
+
+export interface ClientExportParams {
+  practiceId?: string;
+  status?: ClientStatus;
+}
+
+export async function exportClients(params: ClientExportParams): Promise<unknown[]> {
+  const where: Record<string, unknown> = {};
+  if (params.practiceId) where.practiceId = params.practiceId;
+  if (params.status) where.status = params.status;
+  return prisma.client.findMany({ where, orderBy: { fullName: 'asc' } });
+}
+
+// ============================================
+// Statistics
+// ============================================
+
+export interface ClientStatistics {
+  totalSessions: number;
+  lastSessionAt: Date | null;
+}
+
+/**
+ * Returns session statistics for a Client.
+ * Sessions are linked via Patient (Client.userId → Patient.userId → Session.clientId).
+ */
+export async function getClientStatistics(clientId: string): Promise<ClientStatistics> {
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { userId: true },
+  });
+  if (!client) return { totalSessions: 0, lastSessionAt: null };
+
+  const patient = await prisma.patient.findUnique({
+    where: { userId: client.userId },
+    select: { id: true },
+  });
+  if (!patient) return { totalSessions: 0, lastSessionAt: null };
+
+  const [sessionCount, lastSession] = await Promise.all([
+    prisma.session.count({ where: { clientId: patient.id } }),
+    prisma.session.findFirst({
+      where: { clientId: patient.id },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    }),
+  ]);
+  return {
+    totalSessions: sessionCount,
+    lastSessionAt: lastSession?.createdAt ?? null,
+  };
+}
