@@ -314,6 +314,83 @@ export async function addHoliday(
   return toHolidayDTO(created);
 }
 
+// ============================================================
+// Bulk operations
+// ============================================================
+
+/** Soft-delete practices by setting status to 0 (inactive). */
+export async function bulkDeletePractices(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.clinic.updateMany({
+    where: { id: { in: ids } },
+    data: { status: 0 },
+  });
+  return result.count;
+}
+
+/** Set status on multiple practices at once. */
+export async function bulkSetPracticeStatus(ids: string[], status: number): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.clinic.updateMany({
+    where: { id: { in: ids } },
+    data: { status },
+  });
+  return result.count;
+}
+
+/** Export all practices (optionally filtered by status). */
+export async function exportPractices(params: { status?: number }): Promise<unknown[]> {
+  const where: { status?: number } = {};
+  if (typeof params.status === 'number') where.status = params.status;
+  return prisma.clinic.findMany({ where, orderBy: { name: 'asc' } });
+}
+
+/** List users associated with a practice via junction tables and ClinicAdmin. */
+export async function listPracticeUsers(practiceId: string): Promise<unknown[]> {
+  const [doctorMappings, receptionistMappings, patientMappings, admin] = await Promise.all([
+    prisma.doctorClinicMapping.findMany({
+      where: { clinicId: practiceId },
+      select: { doctor: { select: { user: { select: { id: true, email: true, role: true, createdAt: true } } } } },
+    }),
+    prisma.receptionistClinicMapping.findMany({
+      where: { clinicId: practiceId },
+      select: { receptionist: { select: { user: { select: { id: true, email: true, role: true, createdAt: true } } } } },
+    }),
+    prisma.patientClinicMapping.findMany({
+      where: { clinicId: practiceId },
+      select: { patient: { select: { user: { select: { id: true, email: true, role: true, createdAt: true } } } } },
+    }),
+    prisma.clinic.findUnique({
+      where: { id: practiceId },
+      select: { clinicAdmin: { select: { id: true, email: true, role: true, createdAt: true } } },
+    }),
+  ]);
+
+  const seen = new Set<string>();
+  const users: { id: string; email: string; role: string; createdAt: Date }[] = [];
+
+  const add = (u: { id: string; email: string; role: string; createdAt: Date } | null | undefined) => {
+    if (!u || seen.has(u.id)) return;
+    seen.add(u.id);
+    users.push(u);
+  };
+
+  doctorMappings.forEach((m) => add(m.doctor.user));
+  receptionistMappings.forEach((m) => add(m.receptionist.user));
+  patientMappings.forEach((m) => add(m.patient.user));
+  if (admin) add(admin.clinicAdmin);
+
+  return users;
+}
+
+/** Update the clinic admin for a practice. */
+export async function changePracticeAdmin(practiceId: string, newAdminId: string): Promise<void> {
+  await prisma.clinic.update({
+    where: { id: practiceId },
+    data: { clinicAdminId: newAdminId },
+  });
+}
+
 /** Remove a holiday by ID. Returns true if a row was deleted. */
 export async function removeHoliday(
   practiceId: string,
