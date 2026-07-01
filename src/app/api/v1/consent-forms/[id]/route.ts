@@ -27,7 +27,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export const DELETE = withAuth(async (req, ctx) => {
   const { actor } = ctx;
-  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) return forbidden() as any;
+  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
+    return NextResponse.json(forbidden(), { status: 403 });
+  }
   const { id } = (ctx as any).params;
   try {
     await service.deleteForm(id);

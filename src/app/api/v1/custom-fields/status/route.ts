@@ -7,10 +7,10 @@ import { forbidden } from '@/lib/problem-details';
 const prisma = new PrismaClient();
 const service = new CustomFieldService(prisma);
 
-export const POST = withAuth(async (req: NextRequest, ctx) => {
-  const { actor } = ctx as any;
+export const POST = withAuth(async (req, ctx) => {
+  const { actor } = ctx;
   if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
-    return NextResponse.json(forbidden('Insufficient permissions'), { status: 403 });
+    return NextResponse.json(forbidden(), { status: 403 });
   }
   try {
     const body = await req.json();

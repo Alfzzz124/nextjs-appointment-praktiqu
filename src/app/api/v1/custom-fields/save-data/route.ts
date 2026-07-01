@@ -6,7 +6,7 @@ import { withAuth } from '@/lib/auth';
 const prisma = new PrismaClient();
 const service = new CustomFieldService(prisma);
 
-export const POST = withAuth(async (req: NextRequest) => {
+export const POST = withAuth(async (req, _ctx) => {
   try {
     const body = await req.json();
     const { entityType, entityId, fieldId, value } = body;
