@@ -43,8 +43,29 @@ export async function seedTax(data: Partial<{ id: number; name: string; taxType:
   });
 }
 
+export async function seedEncounter(data: Partial<{
+  id: number; clinicId: number; doctorId: number; patientId: number;
+  status: number; description: string; encounterDate: Date;
+}>) {
+  assertTestDb();
+  return prisma.kcPatientEncounter.create({
+    data: {
+      id: BigInt(data.id ?? TEST_MARKER + 500),
+      clinicId: BigInt(data.clinicId ?? TEST_MARKER + 1),
+      doctorId: BigInt(data.doctorId ?? TEST_MARKER + 2),
+      patientId: BigInt(data.patientId ?? TEST_MARKER + 3),
+      status: data.status ?? 1,
+      description: data.description ?? 'Test encounter',
+      encounterDate: data.encounterDate ?? new Date('2026-01-15'),
+      addedBy: BigInt(TEST_MARKER + 2),
+      createdAt: new Date('2026-01-15'),
+    },
+  });
+}
+
 export async function cleanup() {
   assertTestDb();
+  await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcTax.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcBillItem.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcBill.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
