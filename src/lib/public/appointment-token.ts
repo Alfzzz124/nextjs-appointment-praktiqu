@@ -1,5 +1,9 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
+if (process.env.NODE_ENV === 'production' && !process.env.AUTH_SECRET) {
+  throw new Error('AUTH_SECRET must be set in production');
+}
+
 const SECRET = process.env.AUTH_SECRET ?? 'dev-secret-change-me';
 
 /**

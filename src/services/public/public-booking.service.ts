@@ -244,18 +244,22 @@ export class NotCancellableError extends Error {
   readonly code = 'NOT_CANCELLABLE';
 }
 
-// Raw wp_kc_appointments.status integers (matches Task 5 create path: INSERT status=2
-// for a new active appointment, status IN (1,2,4,5) treated as blocking a slot).
-const WP_STATUS_CANCELLED = 1;
-const WP_STATUS_BOOKED = 2; // active/booked/pending — the cancellable state
+// Raw wp_kc_appointments.status integers. Ground truth (Prisma AppointmentStatus
+// enum ordinals): CANCELLED=0, BOOKED=1, PENDING=2, CHECK_OUT=3, CHECK_IN=4.
+// Create path INSERTs status=2 (PENDING); double-booking check uses status IN (1,2,4,5).
+const WP_STATUS_CANCELLED = 0;
+const WP_STATUS_BOOKED = 1;
+const WP_STATUS_PENDING = 2;
 
 /** Map a raw WP appointment status integer to a readable string. */
 function mapWpStatus(status: number): string {
   switch (status) {
-    case 1:
+    case 0:
       return 'CANCELLED';
-    case 2:
+    case 1:
       return 'BOOKED';
+    case 2:
+      return 'PENDING';
     case 3:
       return 'CHECK_OUT';
     case 4:
@@ -314,8 +318,9 @@ export async function getPublicAppointmentById(
 }
 
 /**
- * Cancel a public appointment. Only appointments in the BOOKED/active state
- * (raw WP status = 2) may be cancelled; otherwise throws NotCancellableError.
+ * Cancel a public appointment. Only appointments in the BOOKED (1) or PENDING (2)
+ * state may be cancelled; the row is then set to CANCELLED (0). Otherwise throws
+ * NotCancellableError.
  */
 export async function cancelPublicAppointment(
   id: string,
@@ -330,7 +335,9 @@ export async function cancelPublicAppointment(
   if (!rows || rows.length === 0) throw new AppointmentNotFoundError();
 
   const currentStatus = Number(rows[0].status);
-  if (currentStatus !== WP_STATUS_BOOKED) throw new NotCancellableError();
+  if (![WP_STATUS_BOOKED, WP_STATUS_PENDING].includes(currentStatus)) {
+    throw new NotCancellableError();
+  }
 
   await prisma.$queryRawUnsafe(`
     UPDATE wp_kc_appointments SET status = ${WP_STATUS_CANCELLED} WHERE id = ${appointmentId}
