@@ -27,3 +27,13 @@ describe('kc-permissions.can', () => {
     expect(can(a('CLIENT'), 'tax_read')).toBe(false);
   });
 });
+
+describe('encounter capabilities', () => {
+  it('grants encounter_read to CLIENT and encounter_manage to PROFESSIONAL', () => {
+    expect(can({ id: 'x', role: 'CLIENT', practiceId: null }, 'encounter_read')).toBe(true);
+    expect(can({ id: 'x', role: 'PROFESSIONAL', practiceId: null }, 'encounter_manage')).toBe(true);
+  });
+  it('denies encounter_manage to CLIENT', () => {
+    expect(can({ id: 'x', role: 'CLIENT', practiceId: null }, 'encounter_manage')).toBe(false);
+  });
+});
