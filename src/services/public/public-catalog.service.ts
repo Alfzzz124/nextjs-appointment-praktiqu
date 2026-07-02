@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { ServiceStatus } from '@prisma/client';
 import { SLOT_HOLD_TTL_MS } from '@/services/booking/slot-hold.service';
+import { verifyAppointmentToken } from '@/lib/public/appointment-token';
+import { getPublicAppointmentById } from '@/services/public/public-booking.service';
 
 export interface PublicClinic {
   id: string; name: string; email: string | null; telephoneNo: string | null;
@@ -101,5 +103,36 @@ export function getPublicBookingConfig(): PublicBookingConfig {
     slotHoldTtlMs: SLOT_HOLD_TTL_MS,
     minBookingNoticeMinutes: 60,
     maxAdvanceDays: 60,
+  };
+}
+
+// ── Rating prompt read (Task 7) ──────────────────────────────────────────────
+
+export interface RatingPrompt {
+  appointmentId: string;
+  professionalName: string;
+  service: string;
+  canRate: boolean;
+  reason: string | null;
+}
+
+/**
+ * Given a signed appointment token, return the context a rating widget needs.
+ * There is no stored Rating model; `canRate` is derived from the appointment's
+ * finished state. `getPublicAppointmentById` maps raw WP status 3 to 'CHECK_OUT',
+ * which is the only "finished" status this system produces.
+ */
+export async function getRatingPrompt(token: string): Promise<RatingPrompt | null> {
+  const id = verifyAppointmentToken(token);
+  if (!id) return null;
+  const appt = await getPublicAppointmentById(id);
+  if (!appt) return null;
+  const finished = appt.status === 'CHECK_OUT';
+  return {
+    appointmentId: appt.id,
+    professionalName: appt.professionalName,
+    service: appt.service,
+    canRate: finished,
+    reason: finished ? null : 'Appointment is not yet completed',
   };
 }
