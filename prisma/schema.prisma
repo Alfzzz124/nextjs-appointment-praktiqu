@@ -1620,6 +1620,34 @@ model KcPatientEncounter {
   @@map("wp_kc_patient_encounters")
 }
 
+model KcPrescription {
+  id             BigInt    @id @default(autoincrement())
+  encounterId    BigInt    @map("encounter_id")
+  patientId      BigInt    @map("patient_id")
+  name           String?   @db.Text
+  frequency      String?   @db.VarChar(199)
+  duration       String?   @db.VarChar(199)
+  instruction    String?   @db.Text
+  addedBy        BigInt    @map("added_by")
+  createdAt      DateTime? @map("created_at")
+  isFromTemplate Int?      @default(0) @map("is_from_template") @db.TinyInt
+
+  @@map("wp_kc_prescription")
+}
+
+model KcMedicalHistory {
+  id             BigInt    @id @default(autoincrement())
+  encounterId    BigInt    @map("encounter_id")
+  patientId      BigInt    @map("patient_id")
+  type           String    @db.VarChar(191)
+  title          String?   @db.Text
+  addedBy        BigInt    @map("added_by")
+  createdAt      DateTime? @map("created_at")
+  isFromTemplate Int?      @default(0) @map("is_from_template") @db.TinyInt
+
+  @@map("wp_kc_medical_history")
+}
+
 model KcUser {
   id             BigInt   @id @default(autoincrement())
   userLogin      String   @map("user_login")

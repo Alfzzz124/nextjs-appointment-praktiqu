@@ -37,3 +37,18 @@ describe('encounter capabilities', () => {
     expect(can({ id: 'x', role: 'CLIENT', practiceId: null }, 'encounter_manage')).toBe(false);
   });
 });
+
+describe('prescription + medical_history capabilities', () => {
+  it('read granted to CLIENT, manage denied to CLIENT', () => {
+    const client = { id: 'x', role: 'CLIENT', practiceId: null } as const;
+    expect(can(client, 'prescription_read')).toBe(true);
+    expect(can(client, 'prescription_manage')).toBe(false);
+    expect(can(client, 'medical_history_read')).toBe(true);
+    expect(can(client, 'medical_history_manage')).toBe(false);
+  });
+  it('manage granted to PROFESSIONAL', () => {
+    const pro = { id: 'x', role: 'PROFESSIONAL', practiceId: null } as const;
+    expect(can(pro, 'prescription_manage')).toBe(true);
+    expect(can(pro, 'medical_history_manage')).toBe(true);
+  });
+});
