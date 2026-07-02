@@ -224,3 +224,119 @@ export async function createPublicAppointment(
     token: signAppointmentToken(String(appointmentId)),
   };
 }
+
+// ── Public appointment lookup + cancel (Task 6) ──────────────────────────────
+
+export interface PublicAppointmentView {
+  id: string;
+  status: string;
+  date: string;
+  startTime: string;
+  service: string;
+  professionalName: string;
+  clientName: string;
+}
+
+export class AppointmentNotFoundError extends Error {
+  readonly code = 'NOT_FOUND';
+}
+export class NotCancellableError extends Error {
+  readonly code = 'NOT_CANCELLABLE';
+}
+
+// Raw wp_kc_appointments.status integers (matches Task 5 create path: INSERT status=2
+// for a new active appointment, status IN (1,2,4,5) treated as blocking a slot).
+const WP_STATUS_CANCELLED = 1;
+const WP_STATUS_BOOKED = 2; // active/booked/pending — the cancellable state
+
+/** Map a raw WP appointment status integer to a readable string. */
+function mapWpStatus(status: number): string {
+  switch (status) {
+    case 1:
+      return 'CANCELLED';
+    case 2:
+      return 'BOOKED';
+    case 3:
+      return 'CHECK_OUT';
+    case 4:
+      return 'CHECK_IN';
+    default:
+      return 'PENDING';
+  }
+}
+
+/**
+ * Read a public appointment by its (numeric) id, resolving service + professional +
+ * client names via the same joins the create path uses. Returns null if no row.
+ */
+export async function getPublicAppointmentById(
+  id: string,
+): Promise<PublicAppointmentView | null> {
+  const appointmentId = parseInt(id, 10);
+  if (!Number.isFinite(appointmentId)) return null;
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      a.id,
+      a.status,
+      a.appointment_start_date AS date,
+      a.appointment_start_time AS start_time,
+      s.name AS service_name,
+      doc.display_name AS professional_name,
+      pat.display_name AS client_name
+    FROM wp_kc_appointments a
+    LEFT JOIN wp_kc_appointment_service_mapping asm ON asm.appointment_id = a.id
+    LEFT JOIN wp_kc_services s ON s.id = asm.service_id
+    LEFT JOIN wp_users doc ON doc.ID = a.doctor_id
+    LEFT JOIN wp_users pat ON pat.ID = a.patient_id
+    WHERE a.id = ${appointmentId}
+    LIMIT 1
+  `);
+
+  if (!rows || rows.length === 0) return null;
+  const row = rows[0];
+
+  const dateStr =
+    row.date instanceof Date
+      ? row.date.toISOString().slice(0, 10)
+      : String(row.date ?? '').slice(0, 10);
+  const startTimeStr = String(row.start_time ?? '').slice(0, 5);
+
+  return {
+    id: String(appointmentId),
+    status: mapWpStatus(Number(row.status)),
+    date: dateStr,
+    startTime: startTimeStr,
+    service: row.service_name || 'Service',
+    professionalName: row.professional_name || 'Professional',
+    clientName: row.client_name || 'Client',
+  };
+}
+
+/**
+ * Cancel a public appointment. Only appointments in the BOOKED/active state
+ * (raw WP status = 2) may be cancelled; otherwise throws NotCancellableError.
+ */
+export async function cancelPublicAppointment(
+  id: string,
+): Promise<PublicAppointmentView> {
+  const appointmentId = parseInt(id, 10);
+  if (!Number.isFinite(appointmentId)) throw new AppointmentNotFoundError();
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT id, status FROM wp_kc_appointments WHERE id = ${appointmentId} LIMIT 1
+  `);
+
+  if (!rows || rows.length === 0) throw new AppointmentNotFoundError();
+
+  const currentStatus = Number(rows[0].status);
+  if (currentStatus !== WP_STATUS_BOOKED) throw new NotCancellableError();
+
+  await prisma.$queryRawUnsafe(`
+    UPDATE wp_kc_appointments SET status = ${WP_STATUS_CANCELLED} WHERE id = ${appointmentId}
+  `);
+
+  const updated = await getPublicAppointmentById(id);
+  if (!updated) throw new AppointmentNotFoundError();
+  return updated;
+}
