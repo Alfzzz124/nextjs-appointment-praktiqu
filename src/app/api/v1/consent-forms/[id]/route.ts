@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { ConsentService } from '@/services/consent/service';
+import { withAuth } from '@/lib/auth';
+import { forbidden } from '@/lib/problem-details';
 
 const prisma = new PrismaClient();
 const service = new ConsentService(prisma);
@@ -22,3 +24,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
   }
 }
+
+export const DELETE = withAuth(async (req, ctx) => {
+  const { actor } = ctx;
+  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
+    return NextResponse.json(forbidden(), { status: 403 });
+  }
+  const { id } = (ctx as any).params;
+  try {
+    await service.deleteForm(id);
+    return NextResponse.json({ message: 'Deleted' });
+  } catch (err: any) {
+    if (err?.code === 'not_found') return NextResponse.json({ type: 'about:blank', title: 'Not Found', status: 404 }, { status: 404 });
+    return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
+  }
+});

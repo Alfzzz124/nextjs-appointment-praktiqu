@@ -820,3 +820,57 @@ function rangeForView(view: CalendarView, date: Date): { start: Date; end: Date 
 }
 
 export { assertCanMutate };
+
+// ============================================
+// Bulk operations
+// ============================================
+
+/**
+ * Cancels sessions by setting status to CANCELLED.
+ * Named "delete" to match the KiviCare API convention (/appointments/bulk/delete).
+ */
+export async function bulkDeleteSessions(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await prisma.session.updateMany({
+    where: { id: { in: ids } },
+    data: { status: SessionStatus.CANCELLED },
+  });
+  return result.count;
+}
+
+export interface SessionExportParams {
+  practiceId?: string;
+  status?: SessionStatus;
+  from?: Date;
+  to?: Date;
+}
+
+/**
+ * Returns all sessions matching filters as a flat array for export.
+ */
+export async function exportSessions(params: SessionExportParams): Promise<unknown[]> {
+  const where: Prisma.SessionWhereInput = {};
+  if (params.practiceId) where.practiceId = params.practiceId;
+  if (params.status) where.status = params.status;
+  if (params.from || params.to) {
+    const range: Prisma.DateTimeFilter = {};
+    if (params.from) range.gte = params.from;
+    if (params.to) range.lte = params.to;
+    where.slotDate = range;
+  }
+  return prisma.session.findMany({
+    where,
+    include: {
+      client: {
+        include: {
+          user: { select: { firstName: true, lastName: true, email: true } },
+        },
+      },
+      professional: {
+        include: { user: { select: { firstName: true, lastName: true } } },
+      },
+      service: { select: { id: true, name: true, duration: true } },
+    },
+    orderBy: { slotDate: 'desc' },
+  });
+}
