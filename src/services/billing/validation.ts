@@ -108,3 +108,30 @@ export const calculateTaxSchema = z.object({
   doctor_id: z.coerce.number().int().optional(),
   serviceItems: z.array(serviceItemSchema).min(1),
 });
+
+export const encounterListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  patientId: z.coerce.number().int().optional(),
+  doctorId: z.coerce.number().int().optional(),
+  clinicId: z.coerce.number().int().optional(),
+  status: z.coerce.number().int().min(0).max(1).optional(),
+  dateFrom: z.string().optional(),   // YYYY-MM-DD
+  dateTo: z.string().optional(),     // YYYY-MM-DD
+});
+
+export const encounterCreateSchema = z.object({
+  patientId: z.coerce.number().int(),
+  appointmentId: z.coerce.number().int().optional(),
+  clinicId: z.coerce.number().int().optional(),   // admins may set; else derived from actor
+  doctorId: z.coerce.number().int().optional(),   // admins may set; else derived from actor
+  encounterDate: z.string().optional(),           // YYYY-MM-DD; default today
+  description: z.string().max(5000).optional(),
+  templateId: z.coerce.number().int().optional(),
+});
+
+export const encounterUpdateSchema = z.object({
+  description: z.string().max(5000).optional(),
+  encounterDate: z.string().optional(),
+  status: z.coerce.number().int().min(0).max(1).optional(),
+}).strict();
