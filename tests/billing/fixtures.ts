@@ -103,9 +103,40 @@ export async function seedMedicalHistory(data: Partial<{
   });
 }
 
+export async function seedMedReport(data: Partial<{
+  id: number; patientId: number; name: string; uploadReport: string; date: Date;
+}>) {
+  assertTestDb();
+  return prisma.kcPatientMedicalReport.create({
+    data: {
+      id: BigInt(data.id ?? TEST_MARKER + 900),
+      patientId: BigInt(data.patientId ?? TEST_MARKER + 3),
+      name: data.name ?? 'Test report',
+      uploadReport: data.uploadReport ?? '0',
+      date: data.date ?? new Date('2026-01-15'),
+    },
+  });
+}
+
+/** Insert a patient→clinic mapping row so clinic-scoped reads can be exercised. */
+export async function seedPatientClinicMapping(data: Partial<{
+  id: number; patientId: number; clinicId: number;
+}>) {
+  assertTestDb();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_patient_clinic_mappings (id, patient_id, clinic_id, created_at) VALUES (?, ?, ?, ?)`,
+    data.id ?? TEST_MARKER + 950,
+    data.patientId ?? TEST_MARKER + 3,
+    data.clinicId ?? TEST_MARKER + 1,
+    new Date('2026-01-15'),
+  );
+}
+
 export async function cleanup() {
   assertTestDb();
   // FK-safe order: leaf tables reference encounters, so delete them first.
+  await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
