@@ -191,9 +191,95 @@ export async function seedClinicSession(data: Partial<{
   return { id };
 }
 
+/**
+ * Insert a clinic-schedule row (wp_kc_clinic_schedule) via raw SQL so date/time
+ * columns take plain 'YYYY-MM-DD' / 'HH:mm:ss' strings. Ids in TEST_MARKER range.
+ */
+export async function seedClinicSchedule(data: Partial<{
+  id: number; moduleType: string; moduleId: number; selectionMode: string;
+  startDate: string; endDate: string; selectedDates: string; timeSpecific: number;
+  startTime: string; endTime: string; timezone: string; description: string; status: number;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 300;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_clinic_schedule
+     (id, start_date, end_date, selection_mode, selected_dates, time_specific, start_time, end_time, timezone, module_type, module_id, description, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    id,
+    data.startDate ?? '2026-07-01',
+    data.endDate ?? '2026-07-05',
+    data.selectionMode ?? 'range',
+    data.selectedDates ?? null,
+    data.timeSpecific ?? 0,
+    data.startTime ?? null,
+    data.endTime ?? null,
+    data.timezone ?? 'Asia/Jakarta',
+    data.moduleType ?? 'clinic',
+    data.moduleId ?? TEST_MARKER + 1,
+    data.description ?? 'Test schedule',
+    data.status ?? 1,
+  );
+  return { id };
+}
+
+/**
+ * Insert an appointment row (wp_kc_appointments) via raw SQL. Provides sensible
+ * defaults for the NOT-NULL columns (appointment_start_time, appointment_timezone,
+ * status, created_at). Ids in TEST_MARKER range.
+ */
+export async function seedAppointment(data: Partial<{
+  id: number; clinicId: number; doctorId: number; patientId: number;
+  status: number; startDate: string; startTime: string;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 400;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_appointments
+     (id, clinic_id, doctor_id, patient_id, appointment_start_date, appointment_start_time, appointment_timezone, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    id,
+    data.clinicId ?? TEST_MARKER + 1,
+    data.doctorId ?? TEST_MARKER + 2,
+    data.patientId ?? TEST_MARKER + 3,
+    data.startDate ?? '2026-07-10',
+    data.startTime ?? '09:00:00',
+    'Asia/Jakarta',
+    data.status ?? 1,
+  );
+  return { id };
+}
+
+/**
+ * Insert a bill row (wp_kc_bills) via raw SQL. actual_amount is a varchar; status
+ * is bigint NOT NULL; created_at NOT NULL. Ids in TEST_MARKER range.
+ */
+export async function seedBill(data: Partial<{
+  id: number; clinicId: number; encounterId: number; actualAmount: string; createdAt: string;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 600;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_bills
+     (id, encounter_id, actual_amount, status, payment_status, created_at, clinic_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    data.encounterId ?? TEST_MARKER + 500,
+    data.actualAmount ?? '100.00',
+    1,
+    'paid',
+    data.createdAt ?? '2026-07-10 12:00:00',
+    data.clinicId ?? TEST_MARKER + 1,
+  );
+  return { id };
+}
+
 export async function cleanup() {
   assertTestDb();
   // FK-safe order: leaf tables reference encounters, so delete them first.
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER}`);
   await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
