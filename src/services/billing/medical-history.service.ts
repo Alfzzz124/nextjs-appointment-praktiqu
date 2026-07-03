@@ -62,10 +62,10 @@ export async function getMedicalHistory(id: number, scope: KcLeafScope | null) {
 
 export interface MedicalHistoryCreateInput { encounterId: number; patientId: number; type: string; title: string; }
 export async function createMedicalHistory(input: MedicalHistoryCreateInput, kc: KcActor): Promise<{ id: number }> {
-  await assertEncounterInScope(input.encounterId, kc);
+  const enc = await assertEncounterInScope(input.encounterId, kc);
   const created = await prisma.kcMedicalHistory.create({
     data: {
-      encounterId: BigInt(input.encounterId), patientId: BigInt(input.patientId),
+      encounterId: BigInt(input.encounterId), patientId: BigInt(enc.patient_id), // derived from encounter, not input
       type: input.type, title: input.title, addedBy: kc.wpUserId, createdAt: new Date(), isFromTemplate: 0,
     },
     select: { id: true },

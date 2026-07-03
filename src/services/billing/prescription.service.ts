@@ -80,11 +80,12 @@ export interface PrescriptionCreateInput {
 
 export async function createPrescription(input: PrescriptionCreateInput, kc: KcActor): Promise<{ id: number }> {
   // Scope guard: verify the target encounter is within the actor's scope before attaching.
-  await assertEncounterInScope(input.encounterId, kc);
+  const enc = await assertEncounterInScope(input.encounterId, kc);
   const created = await prisma.kcPrescription.create({
     data: {
       encounterId: BigInt(input.encounterId),
-      patientId: BigInt(input.patientId),
+      patientId: BigInt(enc.patient_id), // derived from encounter, not input
+
       name: input.name,
       frequency: input.frequency ?? null,
       duration: input.duration ?? null,
@@ -144,16 +145,26 @@ export async function exportPrescriptions(p: PrescriptionListParams, scope: KcLe
   };
 }
 
-/** Shared: throw 404 unless the encounter is visible under the actor's scope. */
-export async function assertEncounterInScope(encounterId: number, kc: KcActor): Promise<void> {
-  if (kc.actor.role === 'SUPER_ADMIN') return;
+/** Shared: throw 404 unless the encounter is visible under the actor's scope. Returns the encounter row so callers can derive server-trusted fields (e.g. patient_id). */
+export async function assertEncounterInScope(
+  encounterId: number,
+  kc: KcActor,
+): Promise<{ id: number; patient_id: number; doctor_id: number; clinic_id: number }> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT id, doctor_id, clinic_id, patient_id FROM wp_kc_patient_encounters WHERE id = ?`, encounterId,
   );
   const enc = rows[0];
   if (!enc) throw new KcError('Encounter not found', 404);
+  const row = {
+    id: Number(enc.id),
+    patient_id: Number(enc.patient_id),
+    doctor_id: Number(enc.doctor_id),
+    clinic_id: Number(enc.clinic_id),
+  };
+  if (kc.actor.role === 'SUPER_ADMIN') return row;
   const role = kc.actor.role;
   if ((role === 'CLINIC_ADMIN' || role === 'RECEPTIONIST') && BigInt(enc.clinic_id) !== (kc.clinicId ?? -1n)) throw new KcError('Encounter not found', 404);
   if (role === 'PROFESSIONAL' && BigInt(enc.doctor_id) !== kc.wpUserId) throw new KcError('Encounter not found', 404);
   if (role === 'CLIENT' && BigInt(enc.patient_id) !== kc.wpUserId) throw new KcError('Encounter not found', 404);
+  return row;
 }
