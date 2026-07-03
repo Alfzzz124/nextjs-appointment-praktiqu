@@ -132,11 +132,72 @@ export async function seedPatientClinicMapping(data: Partial<{
   );
 }
 
+/**
+ * Provision a receptionist directly: wp_users row + the receptionist capability
+ * meta (+ first/last name) + a clinic mapping. Ids are in the TEST_MARKER range.
+ */
+export async function seedReceptionist(data: Partial<{
+  id: number; email: string; name: string; clinicId: number; status: number;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 100;
+  const name = data.name ?? 'Test Receptionist';
+  const email = data.email ?? `recp${id}@test.local`;
+  const clinicId = data.clinicId ?? TEST_MARKER + 1;
+  const status = data.status ?? 0;
+  const login = email.split('@')[0].slice(0, 60);
+  const first = name.split(' ')[0];
+  const last = name.split(' ').slice(1).join(' ') || '-';
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_users (ID, user_login, user_pass, user_nicename, display_name, user_email, user_url, user_registered, user_activation_key, user_status)
+     VALUES (?, ?, '', ?, ?, ?, '', NOW(), '', ?)`,
+    id, login, login, name, email, status,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES
+     (?, 'first_name', ?), (?, 'last_name', ?),
+     (?, 'wp_capabilities', 'a:1:{s:21:"kiviCare_receptionist";b:1;}'),
+     (?, 'wp_user_level', '0')`,
+    id, first, id, last, id, id,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_receptionist_clinic_mappings (id, receptionist_id, clinic_id, created_at) VALUES (?, ?, ?, NOW())`,
+    id, id, clinicId,
+  );
+  return { id };
+}
+
+/**
+ * Insert a doctor session row (wp_kc_clinic_sessions) via raw SQL so TIME columns
+ * take plain 'HH:mm:ss' strings (avoids Prisma @db.Time DateTime conversion).
+ */
+export async function seedClinicSession(data: Partial<{
+  id: number; clinicId: number; doctorId: number; day: string;
+  startTime: string; endTime: string; timeSlot: number;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 200;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_clinic_sessions (id, clinic_id, doctor_id, day, start_time, end_time, time_slot, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+    id,
+    data.clinicId ?? TEST_MARKER + 1,
+    data.doctorId ?? TEST_MARKER + 2,
+    data.day ?? 'mon',
+    data.startTime ?? '09:00:00',
+    data.endTime ?? '17:00:00',
+    data.timeSlot ?? 30,
+  );
+  return { id };
+}
+
 export async function cleanup() {
   assertTestDb();
   // FK-safe order: leaf tables reference encounters, so delete them first.
   await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
