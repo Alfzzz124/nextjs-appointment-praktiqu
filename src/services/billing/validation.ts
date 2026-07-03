@@ -176,3 +176,16 @@ export const medicalHistoryUpdateSchema = z.object({
   type: z.string().min(1).max(191).optional(),
   title: z.string().min(1).max(5000).optional(),
 }).strict();
+
+export const medReportListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  patientId: z.coerce.number().int().optional(),
+  search: z.string().optional(),  // matches name
+});
+export const medReportCreateSchema = z.object({
+  patientId: z.coerce.number().int(),
+  name: z.string().min(1).max(2000),
+  uploadReport: z.string().min(1).max(20),   // existing WP media id
+  date: z.string().optional(),               // ISO / YYYY-MM-DD; default now
+});

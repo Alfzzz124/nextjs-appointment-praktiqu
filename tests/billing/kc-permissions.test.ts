@@ -52,3 +52,13 @@ describe('prescription + medical_history capabilities', () => {
     expect(can(pro, 'medical_history_manage')).toBe(true);
   });
 });
+
+describe('patient_report capabilities', () => {
+  it('read to CLIENT, manage denied to CLIENT, manage to RECEPTIONIST', () => {
+    const client = { id: 'x', role: 'CLIENT', practiceId: null } as const;
+    const recp = { id: 'x', role: 'RECEPTIONIST', practiceId: null } as const;
+    expect(can(client, 'patient_report_read')).toBe(true);
+    expect(can(client, 'patient_report_manage')).toBe(false);
+    expect(can(recp, 'patient_report_manage')).toBe(true);
+  });
+});
