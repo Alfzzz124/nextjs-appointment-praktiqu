@@ -1648,6 +1648,16 @@ model KcMedicalHistory {
   @@map("wp_kc_medical_history")
 }
 
+model KcPatientMedicalReport {
+  id           BigInt    @id @default(autoincrement())
+  name         String?   @db.Text
+  patientId    BigInt    @map("patient_id")
+  uploadReport String    @map("upload_report") @db.VarChar(20)
+  date         DateTime?
+
+  @@map("wp_kc_patient_medical_report")
+}
+
 model KcUser {
   id             BigInt   @id @default(autoincrement())
   userLogin      String   @map("user_login")
