@@ -76,3 +76,17 @@ describe('receptionist + doctor_session capabilities', () => {
     expect(can(recp, 'doctor_session_read')).toBe(true);
   });
 });
+
+describe('schedule + dashboard capabilities', () => {
+  it('gates correctly', () => {
+    const ca = { id:'x', role:'CLINIC_ADMIN', practiceId:null } as const;
+    const client = { id:'x', role:'CLIENT', practiceId:null } as const;
+    const recp = { id:'x', role:'RECEPTIONIST', practiceId:null } as const;
+    expect(can(ca, 'schedule_manage')).toBe(true);
+    expect(can(recp, 'schedule_manage')).toBe(false);
+    expect(can(recp, 'schedule_read')).toBe(true);
+    expect(can(recp, 'dashboard_read')).toBe(true);
+    expect(can(client, 'dashboard_read')).toBe(false);
+    expect(can(client, 'schedule_read')).toBe(false);
+  });
+});

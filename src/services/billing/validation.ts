@@ -228,3 +228,42 @@ export const doctorSessionUpdateSchema = z.object({
   endTime: z.string().regex(TIME_RE).optional(),
   timeSlot: z.coerce.number().int().min(1).max(240).optional(),
 }).strict();
+
+export const SCHEDULE_MODULE = ['clinic', 'doctor'] as const;
+export const SCHEDULE_SELECTION = ['single', 'range', 'multiple'] as const;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE2 = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+
+export const scheduleListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  moduleType: z.enum(SCHEDULE_MODULE).optional(),
+  moduleId: z.coerce.number().int().optional(),
+});
+export const scheduleCreateSchema = z.object({
+  moduleType: z.enum(SCHEDULE_MODULE),
+  moduleId: z.coerce.number().int(),
+  selectionMode: z.enum(SCHEDULE_SELECTION),
+  startDate: z.string().regex(DATE_RE).optional(),
+  endDate: z.string().regex(DATE_RE).optional(),
+  selectedDates: z.string().max(5000).optional(),  // CSV/JSON of dates for 'multiple'
+  timeSpecific: z.coerce.boolean().default(false),
+  startTime: z.string().regex(TIME_RE2).optional(),
+  endTime: z.string().regex(TIME_RE2).optional(),
+  timezone: z.string().max(64).optional(),
+  description: z.string().max(5000).optional(),
+  status: z.coerce.number().int().min(0).max(1).default(1),
+});
+export const scheduleUpdateSchema = scheduleCreateSchema.partial().omit({ moduleType: true, moduleId: true }).strict();
+export const unavailableScheduleSchema = z.object({
+  moduleType: z.enum(SCHEDULE_MODULE),
+  moduleId: z.coerce.number().int(),
+  startDate: z.string().regex(DATE_RE).optional(),
+  endDate: z.string().regex(DATE_RE).optional(),
+});
+export const dashboardQuerySchema = z.object({
+  dateFrom: z.string().regex(DATE_RE).optional(),
+  dateTo: z.string().regex(DATE_RE).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+  period: z.enum(['day', 'month']).default('month'),  // revenue-chart granularity
+});
