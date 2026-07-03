@@ -63,8 +63,51 @@ export async function seedEncounter(data: Partial<{
   });
 }
 
+export async function seedPrescription(data: Partial<{
+  id: number; encounterId: number; patientId: number;
+  name: string; frequency: string; duration: string; instruction: string; addedBy: number;
+}>) {
+  assertTestDb();
+  return prisma.kcPrescription.create({
+    data: {
+      id: BigInt(data.id ?? TEST_MARKER + 800),
+      encounterId: BigInt(data.encounterId ?? TEST_MARKER + 500),
+      patientId: BigInt(data.patientId ?? TEST_MARKER + 3),
+      name: data.name ?? 'Test medicine',
+      frequency: data.frequency ?? '1-0-1',
+      duration: data.duration ?? '5 days',
+      instruction: data.instruction ?? 'After meals',
+      addedBy: BigInt(data.addedBy ?? TEST_MARKER + 2),
+      createdAt: new Date('2026-01-15'),
+      isFromTemplate: 0,
+    },
+  });
+}
+
+export async function seedMedicalHistory(data: Partial<{
+  id: number; encounterId: number; patientId: number;
+  type: string; title: string; addedBy: number;
+}>) {
+  assertTestDb();
+  return prisma.kcMedicalHistory.create({
+    data: {
+      id: BigInt(data.id ?? TEST_MARKER + 850),
+      encounterId: BigInt(data.encounterId ?? TEST_MARKER + 500),
+      patientId: BigInt(data.patientId ?? TEST_MARKER + 3),
+      type: data.type ?? 'general',
+      title: data.title ?? 'Test condition',
+      addedBy: BigInt(data.addedBy ?? TEST_MARKER + 2),
+      createdAt: new Date('2026-01-15'),
+      isFromTemplate: 0,
+    },
+  });
+}
+
 export async function cleanup() {
   assertTestDb();
+  // FK-safe order: leaf tables reference encounters, so delete them first.
+  await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
+  await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcTax.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcBillItem.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });

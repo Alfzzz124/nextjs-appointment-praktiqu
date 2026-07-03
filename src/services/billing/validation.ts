@@ -135,3 +135,44 @@ export const encounterUpdateSchema = z.object({
   encounterDate: z.string().optional(),
   status: z.coerce.number().int().min(0).max(1).optional(),
 }).strict();
+
+export const prescriptionListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  patientId: z.coerce.number().int().optional(),
+  encounterId: z.coerce.number().int().optional(),
+  search: z.string().optional(),  // matches prescription.name
+});
+export const prescriptionCreateSchema = z.object({
+  encounterId: z.coerce.number().int(),
+  patientId: z.coerce.number().int(),
+  name: z.string().min(1).max(2000),
+  frequency: z.string().max(199).optional(),
+  duration: z.string().max(199).optional(),
+  instruction: z.string().max(5000).optional(),
+});
+export const prescriptionUpdateSchema = z.object({
+  name: z.string().min(1).max(2000).optional(),
+  frequency: z.string().max(199).optional(),
+  duration: z.string().max(199).optional(),
+  instruction: z.string().max(5000).optional(),
+}).strict();
+
+export const medicalHistoryListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  patientId: z.coerce.number().int().optional(),
+  encounterId: z.coerce.number().int().optional(),
+  type: z.string().optional(),
+  search: z.string().optional(),  // matches title
+});
+export const medicalHistoryCreateSchema = z.object({
+  encounterId: z.coerce.number().int(),
+  patientId: z.coerce.number().int(),
+  type: z.string().min(1).max(191).default('general'),
+  title: z.string().min(1).max(5000),
+});
+export const medicalHistoryUpdateSchema = z.object({
+  type: z.string().min(1).max(191).optional(),
+  title: z.string().min(1).max(5000).optional(),
+}).strict();
