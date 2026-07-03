@@ -1501,6 +1501,15 @@ model KcDoctorClinicMapping {
   @@map("wp_kc_doctor_clinic_mappings")
 }
 
+model KcReceptionistClinicMapping {
+  id             BigInt    @id @default(autoincrement())
+  receptionistId BigInt    @map("receptionist_id")
+  clinicId       BigInt    @map("clinic_id")
+  createdAt      DateTime? @map("created_at")
+
+  @@map("wp_kc_receptionist_clinic_mappings")
+}
+
 model KcClinicSession {
   id          BigInt   @id
   clinicId    BigInt   @map("clinic_id")

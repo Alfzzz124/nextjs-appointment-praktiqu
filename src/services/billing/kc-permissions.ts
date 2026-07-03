@@ -18,7 +18,11 @@ export type Capability =
   | 'medical_history_read'
   | 'medical_history_manage'
   | 'patient_report_read'
-  | 'patient_report_manage';
+  | 'patient_report_manage'
+  | 'receptionist_read'
+  | 'receptionist_manage'
+  | 'doctor_session_read'
+  | 'doctor_session_manage';
 
 type Role = Actor['role'];
 
@@ -37,6 +41,10 @@ const MATRIX: Record<Capability, Role[]> = {
   medical_history_manage: ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL'],
   patient_report_read:    ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST', 'CLIENT'],
   patient_report_manage:  ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'],
+  receptionist_read:     ['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'],
+  receptionist_manage:   ['SUPER_ADMIN', 'CLINIC_ADMIN'],
+  doctor_session_read:   ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'],
+  doctor_session_manage: ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL'],
 };
 
 export function can(actor: Actor, cap: Capability): boolean {

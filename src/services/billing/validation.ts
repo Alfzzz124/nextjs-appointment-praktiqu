@@ -189,3 +189,42 @@ export const medReportCreateSchema = z.object({
   uploadReport: z.string().min(1).max(20),   // existing WP media id
   date: z.string().optional(),               // ISO / YYYY-MM-DD; default now
 });
+
+export const receptionistListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  clinicId: z.coerce.number().int().optional(),
+  search: z.string().optional(),   // matches display_name / user_email
+});
+export const receptionistCreateSchema = z.object({
+  name: z.string().min(1).max(250),
+  email: z.string().email().max(100),
+  clinicId: z.coerce.number().int().optional(),  // SUPER_ADMIN sets; else derived from actor
+});
+export const receptionistUpdateSchema = z.object({
+  name: z.string().min(1).max(250).optional(),
+}).strict();   // email changes disallowed (WP-synced); clinic reassignment is a separate concern
+
+export const DAY_ENUM = ['mon','tue','wed','thu','fri','sat','sun'] as const;
+export const doctorSessionListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  clinicId: z.coerce.number().int().optional(),
+  doctorId: z.coerce.number().int().optional(),
+  day: z.enum(DAY_ENUM).optional(),
+});
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;   // HH:mm or HH:mm:ss
+export const doctorSessionCreateSchema = z.object({
+  clinicId: z.coerce.number().int().optional(),   // derived from actor for non-super
+  doctorId: z.coerce.number().int(),
+  day: z.enum(DAY_ENUM),
+  startTime: z.string().regex(TIME_RE),
+  endTime: z.string().regex(TIME_RE),
+  timeSlot: z.coerce.number().int().min(1).max(240).default(30),
+});
+export const doctorSessionUpdateSchema = z.object({
+  day: z.enum(DAY_ENUM).optional(),
+  startTime: z.string().regex(TIME_RE).optional(),
+  endTime: z.string().regex(TIME_RE).optional(),
+  timeSlot: z.coerce.number().int().min(1).max(240).optional(),
+}).strict();

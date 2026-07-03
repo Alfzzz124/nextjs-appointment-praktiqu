@@ -20,7 +20,7 @@ export async function resolveKcActor(actor: Actor): Promise<KcActor> {
   const wpUserId = user.wpUserId;
 
   let clinicId: bigint | null = null;
-  if (actor.role === 'CLINIC_ADMIN' || actor.role === 'PROFESSIONAL' || actor.role === 'RECEPTIONIST') {
+  if (actor.role === 'PROFESSIONAL' || actor.role === 'CLINIC_ADMIN') {
     const mapping = await prisma.kcDoctorClinicMapping.findFirst({
       where: { doctorId: wpUserId },
       select: { clinicId: true },
@@ -34,6 +34,12 @@ export async function resolveKcActor(actor: Actor): Promise<KcActor> {
       });
       clinicId = owned?.id ?? null;
     }
+  } else if (actor.role === 'RECEPTIONIST') {
+    const mapping = await prisma.kcReceptionistClinicMapping.findFirst({
+      where: { receptionistId: wpUserId },
+      select: { clinicId: true },
+    });
+    clinicId = mapping?.clinicId ?? null;
   }
   return { actor, wpUserId, clinicId };
 }
