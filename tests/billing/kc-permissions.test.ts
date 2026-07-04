@@ -86,6 +86,15 @@ describe('import capability', () => {
   });
 });
 
+describe('rating capabilities', () => {
+  it('read all roles; manage = admins + client', () => {
+    expect(can({id:'x',role:'CLIENT',practiceId:null}, 'rating_read')).toBe(true);
+    expect(can({id:'x',role:'CLIENT',practiceId:null}, 'rating_manage')).toBe(true);
+    expect(can({id:'x',role:'PROFESSIONAL',practiceId:null}, 'rating_manage')).toBe(false);
+    expect(can({id:'x',role:'PROFESSIONAL',practiceId:null}, 'rating_read')).toBe(true);
+  });
+});
+
 describe('schedule + dashboard capabilities', () => {
   it('gates correctly', () => {
     const ca = { id:'x', role:'CLINIC_ADMIN', practiceId:null } as const;

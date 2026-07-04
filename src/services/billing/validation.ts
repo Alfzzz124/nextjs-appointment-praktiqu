@@ -261,6 +261,19 @@ export const unavailableScheduleSchema = z.object({
   startDate: z.string().regex(DATE_RE).optional(),
   endDate: z.string().regex(DATE_RE).optional(),
 });
+export const ratingListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  doctorId: z.coerce.number().int().optional(),
+  patientId: z.coerce.number().int().optional(),
+});
+export const ratingCreateSchema = z.object({
+  doctorId: z.coerce.number().int(),
+  patientId: z.coerce.number().int().optional(),   // forced to actor for CLIENT
+  review: z.coerce.number().int().min(1).max(5),
+  reviewDescription: z.string().max(5000).optional(),
+});
+
 export const dashboardQuerySchema = z.object({
   dateFrom: z.string().regex(DATE_RE).optional(),
   dateTo: z.string().regex(DATE_RE).optional(),
