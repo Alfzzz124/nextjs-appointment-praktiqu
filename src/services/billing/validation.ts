@@ -348,3 +348,12 @@ export const dashboardQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10),
   period: z.enum(['day', 'month']).default('month'),  // revenue-chart granularity
 });
+
+// ---- GDPR (Slice 8b) ----
+export const gdprVersionListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10), consentType: z.string().max(100).optional(), activeOnly: z.coerce.boolean().optional() });
+export const gdprVersionCreateSchema = z.object({ consentType: z.string().min(1).max(100), title: z.string().min(1).max(255), bodyText: z.string().min(1), legalBasis: z.string().min(1).max(100), versionNumber: z.coerce.number().int().min(1).optional() });
+export const gdprConsentListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10), userId: z.coerce.number().int().optional(), consentType: z.string().max(100).optional(), status: z.string().max(50).optional() });
+export const gdprConsentCreateSchema = z.object({ userId: z.coerce.number().int().optional(), consentType: z.string().min(1).max(100), consentVersionId: z.string().min(1).max(50), method: z.string().max(100).optional() });
+export const gdprAuditListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(20), eventType: z.string().max(100).optional(), subjectUserId: z.coerce.number().int().optional(), action: z.string().max(50).optional(), dateFrom: z.string().optional(), dateTo: z.string().optional() });
+export const gdprExportSchema = z.object({ userId: z.coerce.number().int().optional() });   // CLIENT forced to self
+export const gdprDeleteSchema = z.object({ userId: z.coerce.number().int() });
