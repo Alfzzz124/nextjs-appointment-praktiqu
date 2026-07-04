@@ -30,7 +30,12 @@ export type Capability =
   | 'rating_read'
   | 'rating_manage'
   | 'followup_read'
-  | 'followup_manage';
+  | 'followup_manage'
+  | 'gdpr_read'
+  | 'gdpr_manage'
+  | 'gdpr_audit_read'
+  | 'gdpr_export'
+  | 'gdpr_delete';
 
 type Role = Actor['role'];
 
@@ -61,6 +66,11 @@ const MATRIX: Record<Capability, Role[]> = {
   rating_manage:         ['SUPER_ADMIN', 'CLINIC_ADMIN', 'CLIENT'],
   followup_read:         ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'],
   followup_manage:       ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL'],
+  gdpr_read:             ['SUPER_ADMIN', 'CLINIC_ADMIN', 'CLIENT'],
+  gdpr_manage:           ['SUPER_ADMIN', 'CLINIC_ADMIN', 'CLIENT'],
+  gdpr_audit_read:       ['SUPER_ADMIN', 'CLINIC_ADMIN'],
+  gdpr_export:           ['SUPER_ADMIN', 'CLINIC_ADMIN', 'CLIENT'],
+  gdpr_delete:           ['SUPER_ADMIN'],
 };
 
 export function can(actor: Actor, cap: Capability): boolean {

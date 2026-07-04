@@ -104,6 +104,22 @@ describe('followup capabilities', () => {
   });
 });
 
+describe('gdpr capabilities', () => {
+  it('gdpr_delete is SUPER_ADMIN only', () => {
+    expect(can({ id:'x', role:'SUPER_ADMIN', practiceId:null }, 'gdpr_delete')).toBe(true);
+    expect(can({ id:'x', role:'CLINIC_ADMIN', practiceId:null }, 'gdpr_delete')).toBe(false);
+    expect(can({ id:'x', role:'CLIENT', practiceId:null }, 'gdpr_delete')).toBe(false);
+  });
+  it('gdpr_audit_read excludes CLIENT', () => {
+    expect(can({ id:'x', role:'CLINIC_ADMIN', practiceId:null }, 'gdpr_audit_read')).toBe(true);
+    expect(can({ id:'x', role:'CLIENT', practiceId:null }, 'gdpr_audit_read')).toBe(false);
+  });
+  it('gdpr_read includes CLIENT', () => {
+    expect(can({ id:'x', role:'CLIENT', practiceId:null }, 'gdpr_read')).toBe(true);
+    expect(can({ id:'x', role:'SUPER_ADMIN', practiceId:null }, 'gdpr_read')).toBe(true);
+  });
+});
+
 describe('schedule + dashboard capabilities', () => {
   it('gates correctly', () => {
     const ca = { id:'x', role:'CLINIC_ADMIN', practiceId:null } as const;
