@@ -274,6 +274,74 @@ export const ratingCreateSchema = z.object({
   reviewDescription: z.string().max(5000).optional(),
 });
 
+export const FOLLOWUP_PRIORITY = ['routine', 'important', 'urgent'] as const;
+export const FOLLOWUP_STATUS = ['pending', 'scheduled', 'completed', 'missed', 'cancelled'] as const;
+export const CHAIN_STATUS = ['active', 'closed', 'on_hold'] as const;
+const DT = z.string().min(1); // ISO datetime or 'YYYY-MM-DD HH:mm:ss'
+
+export const chainListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  patientId: z.coerce.number().int().optional(),
+  doctorId: z.coerce.number().int().optional(),
+  status: z.enum(CHAIN_STATUS).optional(),
+});
+export const chainCreateSchema = z.object({
+  patientId: z.coerce.number().int(),
+  doctorId: z.coerce.number().int().optional(),
+  clinicId: z.coerce.number().int().optional(),
+  name: z.string().max(255).optional(),
+  diagnosisId: z.coerce.number().int().optional(),
+});
+export const chainUpdateSchema = z.object({
+  name: z.string().max(255).optional(),
+  status: z.enum(CHAIN_STATUS).optional(),
+}).strict();
+
+export const followupListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  chainId: z.coerce.number().int().optional(),
+  patientId: z.coerce.number().int().optional(),
+  doctorId: z.coerce.number().int().optional(),
+  status: z.enum(FOLLOWUP_STATUS).optional(),
+  priority: z.enum(FOLLOWUP_PRIORITY).optional(),
+});
+export const followupCreateSchema = z.object({
+  chainId: z.coerce.number().int(),
+  patientId: z.coerce.number().int(),
+  doctorId: z.coerce.number().int().optional(),
+  clinicId: z.coerce.number().int().optional(),
+  encounterId: z.coerce.number().int().optional(),
+  parentFollowupId: z.coerce.number().int().optional(),
+  reason: z.string().min(1).max(5000),
+  priority: z.enum(FOLLOWUP_PRIORITY).default('routine'),
+  suggestedDate: DT,
+  suggestedDeadline: DT,
+  metadata: z.string().max(5000).optional(),
+});
+export const followupUpdateSchema = z.object({
+  reason: z.string().min(1).max(5000).optional(),
+  priority: z.enum(FOLLOWUP_PRIORITY).optional(),
+  status: z.enum(FOLLOWUP_STATUS).optional(),
+  suggestedDate: DT.optional(),
+  suggestedDeadline: DT.optional(),
+}).strict();
+export const followupStatusSchema = z.object({
+  status: z.enum(FOLLOWUP_STATUS),
+  note: z.string().max(1000).optional(),
+});
+export const followupBulkStatusSchema = z.object({
+  ids: z.array(z.coerce.number().int()).min(1),
+  status: z.enum(FOLLOWUP_STATUS),
+  note: z.string().max(1000).optional(),
+});
+export const reminderCreateSchema = z.object({
+  reminderType: z.string().min(1).max(50),
+  offsetDays: z.coerce.number().int().min(0).max(365).default(0),
+  channel: z.enum(['sms', 'email', 'push']).default('email'),
+});
+
 export const dashboardQuerySchema = z.object({
   dateFrom: z.string().regex(DATE_RE).optional(),
   dateTo: z.string().regex(DATE_RE).optional(),
