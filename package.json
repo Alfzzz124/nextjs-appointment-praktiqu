@@ -21,6 +21,7 @@
     "jose": "^5.9.6",
     "next": "14.2.18",
     "next-auth": "5.0.0-beta.25",
+    "papaparse": "^5.5.4",
     "puppeteer": "^23.11.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^20.16.10",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitest/coverage-v8": "^2.1.5",

@@ -25,7 +25,8 @@ export type Capability =
   | 'doctor_session_manage'
   | 'schedule_read'
   | 'schedule_manage'
-  | 'dashboard_read';
+  | 'dashboard_read'
+  | 'import_manage';
 
 type Role = Actor['role'];
 
@@ -51,6 +52,7 @@ const MATRIX: Record<Capability, Role[]> = {
   schedule_read:         ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'],
   schedule_manage:       ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL'],
   dashboard_read:        ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'],
+  import_manage:         ['SUPER_ADMIN', 'CLINIC_ADMIN'],
 };
 
 export function can(actor: Actor, cap: Capability): boolean {

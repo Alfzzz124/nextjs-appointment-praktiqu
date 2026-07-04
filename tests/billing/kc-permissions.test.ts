@@ -77,6 +77,15 @@ describe('receptionist + doctor_session capabilities', () => {
   });
 });
 
+describe('import capability', () => {
+  it('import_manage: admins yes, others no', () => {
+    expect(can({ id:'x', role:'SUPER_ADMIN', practiceId:null }, 'import_manage')).toBe(true);
+    expect(can({ id:'x', role:'CLINIC_ADMIN', practiceId:null }, 'import_manage')).toBe(true);
+    expect(can({ id:'x', role:'PROFESSIONAL', practiceId:null }, 'import_manage')).toBe(false);
+    expect(can({ id:'x', role:'RECEPTIONIST', practiceId:null }, 'import_manage')).toBe(false);
+  });
+});
+
 describe('schedule + dashboard capabilities', () => {
   it('gates correctly', () => {
     const ca = { id:'x', role:'CLINIC_ADMIN', practiceId:null } as const;
