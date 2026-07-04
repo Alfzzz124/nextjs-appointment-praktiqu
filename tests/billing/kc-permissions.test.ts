@@ -95,6 +95,15 @@ describe('rating capabilities', () => {
   });
 });
 
+describe('followup capabilities', () => {
+  it('manage: PROFESSIONAL yes / RECEPTIONIST no; read: RECEPTIONIST yes / CLIENT no', () => {
+    expect(can({ id: 'x', role: 'PROFESSIONAL', practiceId: null }, 'followup_manage')).toBe(true);
+    expect(can({ id: 'x', role: 'RECEPTIONIST', practiceId: null }, 'followup_manage')).toBe(false);
+    expect(can({ id: 'x', role: 'RECEPTIONIST', practiceId: null }, 'followup_read')).toBe(true);
+    expect(can({ id: 'x', role: 'CLIENT', practiceId: null }, 'followup_read')).toBe(false);
+  });
+});
+
 describe('schedule + dashboard capabilities', () => {
   it('gates correctly', () => {
     const ca = { id:'x', role:'CLINIC_ADMIN', practiceId:null } as const;
