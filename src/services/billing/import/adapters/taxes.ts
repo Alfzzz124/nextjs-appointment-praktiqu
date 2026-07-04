@@ -1,13 +1,7 @@
 import { prisma } from '@/lib/db';
-import type { KcActor } from '@/services/billing/kc-actor';
 import { createTax } from '@/services/billing/tax.service';
 import type { ImportAdapter } from '../adapters';
-
-/** Resolve the clinic_id an actor may write. SUPER_ADMIN uses the row's; others are forced to their clinic. */
-function resolveClinicId(row: any, kc: KcActor): bigint {
-  if (kc.actor.role === 'SUPER_ADMIN') return BigInt(row.clinic_id ?? -1);
-  return kc.clinicId ?? -1n;
-}
+import { resolveClinicId } from '../clinic-scope';
 
 export const taxesAdapter: ImportAdapter = {
   async findExisting(row, kc) {

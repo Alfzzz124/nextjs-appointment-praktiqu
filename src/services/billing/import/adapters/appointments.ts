@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
-import type { KcActor } from '@/services/billing/kc-actor';
 import type { ImportAdapter } from '../adapters';
+import { requireClinicId } from '../clinic-scope';
 
 export const appointmentsAdapter: ImportAdapter = {
   // Appointments are never deduped — always insert.
@@ -8,8 +8,7 @@ export const appointmentsAdapter: ImportAdapter = {
     return null;
   },
   async insert(row, kc) {
-    const clinicId =
-      kc.actor.role === 'SUPER_ADMIN' ? BigInt(row.clinic_id) : (kc.clinicId ?? BigInt(row.clinic_id));
+    const clinicId = requireClinicId(row, kc);
     const timezone = row.timezone ?? 'Asia/Jakarta';
     // Build a local datetime string from date + time; store as-is for both local and UTC columns
     // (no offset conversion available here — same value keeps them consistent).
