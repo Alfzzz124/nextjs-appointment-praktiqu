@@ -276,6 +276,14 @@ export async function seedBill(data: Partial<{
 
 export async function cleanup() {
   assertTestDb();
+  // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
+  // are matched by their TEST_MARKER-range clinic scope / *.import.test email.
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER}`);
   // FK-safe order: leaf tables reference encounters, so delete them first.
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER}`);
