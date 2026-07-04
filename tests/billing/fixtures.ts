@@ -307,6 +307,60 @@ export async function seedRating(data: Partial<{
   return { id };
 }
 
+/**
+ * Insert a followup-chain row (wp_kc_followup_chains) via raw SQL. Provides
+ * defaults for NOT-NULL columns (clinic_id, patient_id, doctor_id, status,
+ * created_at_utc). Ids in TEST_MARKER range.
+ */
+export async function seedFollowupChain(data: Partial<{
+  id: number; clinicId: number; doctorId: number; patientId: number; status: string;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 1000;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_followup_chains
+     (id, clinic_id, patient_id, doctor_id, name, status, created_at_utc)
+     VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+    id,
+    data.clinicId ?? TEST_MARKER + 1,
+    data.patientId ?? TEST_MARKER + 3,
+    data.doctorId ?? TEST_MARKER + 2,
+    'Test chain',
+    data.status ?? 'active',
+  );
+  return { id };
+}
+
+/**
+ * Insert a followup row (wp_kc_followups) via raw SQL. Provides defaults for the
+ * NOT-NULL columns (clinic_id, doctor_id, patient_id, chain_id, reason,
+ * created_at_utc, suggested_date_utc, suggested_deadline_utc, status). Ids in
+ * TEST_MARKER range.
+ */
+export async function seedFollowup(data: Partial<{
+  id: number; chainId: number; clinicId: number; doctorId: number; patientId: number;
+  status: string; reason: string; suggestedDate: string; suggestedDeadline: string;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 1100;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_followups
+     (id, clinic_id, doctor_id, patient_id, chain_id, reason, priority, status,
+      created_at_utc, suggested_date_utc, suggested_deadline_utc)
+     VALUES (?, ?, ?, ?, ?, ?, 'routine', ?, UTC_TIMESTAMP(), ?, ?)`,
+    id,
+    data.clinicId ?? TEST_MARKER + 1,
+    data.doctorId ?? TEST_MARKER + 2,
+    data.patientId ?? TEST_MARKER + 3,
+    data.chainId ?? TEST_MARKER + 1000,
+    data.reason ?? 'Test followup reason',
+    data.status ?? 'pending',
+    data.suggestedDate ?? '2026-07-10 09:00:00',
+    data.suggestedDeadline ?? '2026-07-20 09:00:00',
+  );
+  return { id };
+}
+
 export async function cleanup() {
   assertTestDb();
   // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
@@ -326,6 +380,11 @@ export async function cleanup() {
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER}`);
+  // Followups: FK-safe order (activity log + reminders reference followups; followups reference chains).
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER}`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
