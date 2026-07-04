@@ -274,6 +274,39 @@ export async function seedBill(data: Partial<{
   return { id };
 }
 
+/** Insert a doctor→clinic mapping row so clinic-scoped rating reads can be exercised. */
+export async function seedDoctorClinicMapping(data: Partial<{
+  id: number; doctorId: number; clinicId: number;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 960;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_doctor_clinic_mappings (id, doctor_id, clinic_id, owner, created_at) VALUES (?, ?, ?, 0, NOW())`,
+    id,
+    data.doctorId ?? TEST_MARKER + 2,
+    data.clinicId ?? TEST_MARKER + 1,
+  );
+  return { id };
+}
+
+/** Insert a patient-review row (wp_kc_patient_review) via raw SQL. Ids in TEST_MARKER range. */
+export async function seedRating(data: Partial<{
+  id: number; review: number; reviewDescription: string; patientId: number; doctorId: number;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 970;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_patient_review (id, review, review_description, patient_id, doctor_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+    id,
+    data.review ?? 5,
+    data.reviewDescription ?? null,
+    data.patientId ?? TEST_MARKER + 3,
+    data.doctorId ?? TEST_MARKER + 2,
+  );
+  return { id };
+}
+
 export async function cleanup() {
   assertTestDb();
   // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
@@ -292,6 +325,7 @@ export async function cleanup() {
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER}`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
