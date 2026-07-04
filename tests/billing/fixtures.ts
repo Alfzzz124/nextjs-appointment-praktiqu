@@ -361,6 +361,53 @@ export async function seedFollowup(data: Partial<{
   return { id };
 }
 
+/**
+ * Insert a GDPR consent-version row (wp_kc_gdpr_consent_versions) via raw SQL.
+ * created_at via NOW(). Ids in TEST_MARKER range. NEVER touches the audit log.
+ */
+export async function seedConsentVersion(data: Partial<{
+  id: number; consentType: string; versionNumber: number; isActive: number;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 1200;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_gdpr_consent_versions
+     (id, consent_type, version_number, title, body_text, legal_basis, is_active, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    id,
+    data.consentType ?? 'marketing',
+    data.versionNumber ?? 1,
+    'Test consent notice',
+    'Test consent body text',
+    'consent',
+    data.isActive ?? 1,
+    TEST_MARKER + 3,
+  );
+  return { id };
+}
+
+/**
+ * Insert a GDPR consent row (wp_kc_gdpr_consents) via raw SQL. created_at via
+ * NOW(). Ids in TEST_MARKER range. NEVER touches the audit log.
+ */
+export async function seedConsent(data: Partial<{
+  id: number; userId: number; consentType: string; consentVersionId: string; status: string;
+}>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 1300;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_gdpr_consents
+     (id, user_id, consent_type, consent_version_id, status, granted_at, method, created_at)
+     VALUES (?, ?, ?, ?, ?, NOW(), 'api', NOW())`,
+    id,
+    data.userId ?? TEST_MARKER + 3,
+    data.consentType ?? 'marketing',
+    data.consentVersionId ?? String(TEST_MARKER + 1200),
+    data.status ?? 'granted',
+  );
+  return { id };
+}
+
 export async function cleanup() {
   assertTestDb();
   // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
@@ -385,6 +432,11 @@ export async function cleanup() {
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER}`);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER}`);
+  // GDPR: consents + consent-versions (TEST_MARKER-range). NEVER touch wp_kc_gdpr_audit_log (checksum chain).
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER}`);
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER}`);
+  // Soft-delete markers written by softDeleteSubject on TEST_MARKER-range subjects.
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
