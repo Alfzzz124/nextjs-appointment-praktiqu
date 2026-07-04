@@ -13,5 +13,22 @@ export interface ImportAdapter {
   update?(id: number, row: any, kc: KcActor): Promise<void>;
 }
 
-// Registry is assembled in Tasks 2-4. Import the per-entity adapters and map them:
-export const adapters: Record<ImportEntity, ImportAdapter> = {} as any;
+import { taxesAdapter } from './adapters/taxes';
+import { servicesAdapter } from './adapters/services';
+import { clinicsAdapter } from './adapters/clinics';
+import { appointmentsAdapter } from './adapters/appointments';
+import { encountersAdapter } from './adapters/encounters';
+import { prescriptionsAdapter } from './adapters/prescriptions';
+import { medicalHistoryAdapter } from './adapters/medical-history';
+
+// Registry assembled from the per-entity adapters (Tasks 3-4).
+// doctors + patients are registered in the WP-provisioning follow-up.
+export const adapters = {
+  taxes: taxesAdapter,
+  services: servicesAdapter,
+  clinics: clinicsAdapter,
+  appointments: appointmentsAdapter,
+  encounters: encountersAdapter,
+  prescriptions: prescriptionsAdapter,
+  'medical-history': medicalHistoryAdapter,
+} as Record<ImportEntity, ImportAdapter>;
