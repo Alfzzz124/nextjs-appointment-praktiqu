@@ -20,10 +20,11 @@ import { appointmentsAdapter } from './adapters/appointments';
 import { encountersAdapter } from './adapters/encounters';
 import { prescriptionsAdapter } from './adapters/prescriptions';
 import { medicalHistoryAdapter } from './adapters/medical-history';
+import { doctorsAdapter } from './adapters/doctors';
+import { patientsAdapter } from './adapters/patients';
 
 // Registry assembled from the per-entity adapters (Tasks 3-4).
-// doctors + patients are registered in the WP-provisioning follow-up.
-export const adapters = {
+export const adapters: Record<ImportEntity, ImportAdapter> = {
   taxes: taxesAdapter,
   services: servicesAdapter,
   clinics: clinicsAdapter,
@@ -31,4 +32,6 @@ export const adapters = {
   encounters: encountersAdapter,
   prescriptions: prescriptionsAdapter,
   'medical-history': medicalHistoryAdapter,
-} as Record<ImportEntity, ImportAdapter>;
+  doctors: doctorsAdapter,
+  patients: patientsAdapter,
+};
