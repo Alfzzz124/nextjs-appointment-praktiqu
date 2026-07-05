@@ -4,7 +4,7 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -40,7 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING: 'bg-yellow-100 text-yellow-700',
 };
 
-export default function AdminClientsPage() {
+function AdminClientsInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<ListResponse | null>(null);
@@ -239,5 +239,13 @@ export default function AdminClientsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AdminClientsPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminClientsInner />
+    </Suspense>
   );
 }
