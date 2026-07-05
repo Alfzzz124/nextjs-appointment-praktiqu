@@ -38,7 +38,17 @@ export class NoteTemplateService {
 
   async create(data: NoteTemplateCreate) {
     const parsed = noteTemplateCreateSchema.parse(data);
-    return this.prisma.noteTemplate.create({ data: parsed });
+    return this.prisma.noteTemplate.create({
+      data: {
+        name: parsed.name,
+        content: parsed.content,
+        description: parsed.description,
+        variables: parsed.variables ?? undefined,
+        category: parsed.category,
+        clinicId: parsed.clinicId,
+        ownerId: parsed.ownerId,
+      },
+    });
   }
 
   async update(id: string, data: NoteTemplateUpdate) {

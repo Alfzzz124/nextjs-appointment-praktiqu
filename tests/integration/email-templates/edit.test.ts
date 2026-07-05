@@ -246,8 +246,7 @@ describe('API route — request validation', () => {
 
 describe('service — rowToDTO transformation', () => {
   it('creates a valid EmailTemplateDTO shape from a stored row', async () => {
-    const typeModule = await import('@/types/email-template');
-    type EmailTemplateDTO = (typeof typeModule)['EmailTemplateDTO'];
+    type EmailTemplateDTO = import('@/types/email-template').EmailTemplateDTO;
     // Simulate what the service returns after rowToDTO
     const dto = {
       id: 'test-id-123',

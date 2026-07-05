@@ -126,9 +126,12 @@ function toHolidayDTO(record: {
   startDate: Date;
   endDate: Date;
   isAllDay: boolean;
-  startTime: string | null;
-  endTime: string | null;
+  startTime: Date | null;
+  endTime: Date | null;
 }): HolidayDTO {
+  // `@db.Time` values come back as Dates whose UTC time part is the stored HH:mm.
+  const toHHmm = (t: Date | null): string | null =>
+    t ? t.toISOString().slice(11, 16) : null;
   return {
     id: record.id,
     practiceId: record.moduleId,
@@ -136,8 +139,8 @@ function toHolidayDTO(record: {
     startDate: record.startDate.toISOString().slice(0, 10),
     endDate: record.endDate.toISOString().slice(0, 10),
     isAllDay: record.isAllDay,
-    startTime: record.startTime,
-    endTime: record.endTime,
+    startTime: toHHmm(record.startTime),
+    endTime: toHHmm(record.endTime),
   };
 }
 

@@ -41,7 +41,14 @@ export class ConsentService {
   }
 
   async createForm(data: ConsentFormCreate) {
-    return this.prisma.consentForm.create({ data: consentFormCreateSchema.parse(data) });
+    const parsed = consentFormCreateSchema.parse(data);
+    return this.prisma.consentForm.create({
+      data: {
+        practiceId: parsed.practiceId,
+        name: parsed.name,
+        content: parsed.content,
+      },
+    });
   }
 
   async updateForm(id: string, data: ConsentFormUpdate) {
@@ -66,6 +73,8 @@ export class ConsentService {
 
   async sign(formId: string, clientId: string, input: Omit<ConsentSignatureInput, 'formId' | 'clientId'>) {
     const parsed = consentSignatureSchema.parse({ ...input, formId, clientId });
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
     return this.prisma.consentSignature.upsert({
       where: { formId_clientId: { formId, clientId } },
       create: {
@@ -76,6 +85,7 @@ export class ConsentService {
         signatureText: parsed.signatureText,
         declineReason: parsed.declineReason,
         signedAt: new Date(),
+        expiresAt, // required column; same 30-day window as sendSignatureRequest
         ipAddress: undefined, // injected from middleware
         userAgent: undefined,
       },

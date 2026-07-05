@@ -24,7 +24,7 @@ import {
   professionalAudit,
   statusChangeAudit,
 } from '@/lib/audit';
-import { ProfessionalStatus } from '@prisma/client';
+import { Prisma, ProfessionalStatus } from '@prisma/client';
 
 // ============================================
 // Types
@@ -75,7 +75,7 @@ export async function createProfessional(
       status: ProfessionalStatus.PENDING_ACTIVATION,
       biography: data.biography ?? null,
       specialties: data.specialties ?? null,
-      contactInfo: (data.contactInfo as Record<string, unknown>) ?? null,
+      contactInfo: (data.contactInfo as Prisma.InputJsonValue) ?? null,
     },
   });
 
@@ -191,7 +191,7 @@ export async function updateProfessional(
       fullName: validated.fullName ?? undefined,
       biography: validated.biography ?? undefined,
       specialties: validated.specialties ?? undefined,
-      contactInfo: validated.contactInfo ? validated.contactInfo as Record<string, unknown> : undefined,
+      contactInfo: validated.contactInfo ? (validated.contactInfo as Prisma.InputJsonValue) : undefined,
       practiceId: validated.practiceId !== undefined ? validated.practiceId ?? undefined : undefined,
     },
   });
@@ -216,7 +216,7 @@ export async function updateProfessional(
 export async function listProfessionals(
   params: ProfessionalListParams,
   actorPracticeId?: string | null,
-): Promise<PaginatedResult<unknown[]>> {
+): Promise<PaginatedResult<unknown>> {
   const parsed = professionalListQuerySchema.safeParse(params);
   if (!parsed.success) {
     throw { _tag: 'validation' as const, errors: buildFieldErrors(parsed.error.issues) };

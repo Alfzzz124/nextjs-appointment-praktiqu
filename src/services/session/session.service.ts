@@ -117,7 +117,7 @@ type SessionWithIncluded = Prisma.SessionGetPayload<{ include: typeof SESSION_IN
 function toEntityWithRelations(row: SessionWithIncluded): SessionWithRelations {
   const fullName =
     `${row.client.user.firstName ?? ''} ${row.client.user.lastName ?? ''}`.trim() ||
-    row.client.user.displayNameFallback();
+    row.client.user.email;
   const profName =
     `${row.professional.user.firstName ?? ''} ${row.professional.user.lastName ?? ''}`.trim();
 

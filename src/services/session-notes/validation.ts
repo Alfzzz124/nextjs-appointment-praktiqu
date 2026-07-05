@@ -17,16 +17,34 @@ export const sessionNoteSoapSchema = z.object({
   plan: z.string().max(10_000, 'Plan section too long').default(''),
 });
 
-export const createSessionNoteSchema = z.object({
-  sessionId: z.string().min(1, 'sessionId is required'),
-  content: z.string().min(1, 'Notes content cannot be empty').max(50_000, 'Notes content too long'),
-  soap: sessionNoteSoapSchema.optional(),
-});
+export const createSessionNoteSchema = z
+  .object({
+    sessionId: z.string().min(1, 'sessionId is required'),
+    content: z
+      .string()
+      .min(1, 'Notes content cannot be empty')
+      .max(50_000, 'Notes content too long')
+      .optional(),
+    soap: sessionNoteSoapSchema.optional(),
+  })
+  .refine((d) => d.content !== undefined || d.soap !== undefined, {
+    message: 'Either content or soap is required',
+    path: ['content'],
+  });
 
-export const updateSessionNoteSchema = z.object({
-  content: z.string().min(1, 'Notes content cannot be empty').max(50_000, 'Notes content too long'),
-  soap: sessionNoteSoapSchema.optional(),
-});
+export const updateSessionNoteSchema = z
+  .object({
+    content: z
+      .string()
+      .min(1, 'Notes content cannot be empty')
+      .max(50_000, 'Notes content too long')
+      .optional(),
+    soap: sessionNoteSoapSchema.optional(),
+  })
+  .refine((d) => d.content !== undefined || d.soap !== undefined, {
+    message: 'Either content or soap is required',
+    path: ['content'],
+  });
 
 export const listSessionNotesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -43,24 +61,21 @@ export type UpdateSessionNoteInput = z.infer<typeof updateSessionNoteSchema>;
 export type ListSessionNotesQuery = z.infer<typeof listSessionNotesQuerySchema>;
 export type SessionNoteSoapInput = z.infer<typeof sessionNoteSoapSchema>;
 
-/** Format SOAP sections into a single, readable content string. */
+/**
+ * Format SOAP sections into a single, readable content string.
+ * Empty sections are omitted entirely; an all-empty SOAP yields ''.
+ */
 export function formatSoapToContent(soap: SessionNoteSoapInput): string {
-  return [
-    'SUBJECTIVE:',
-    soap.subjective.trim(),
-    '',
-    'OBJECTIVE:',
-    soap.objective.trim(),
-    '',
-    'ASSESSMENT:',
-    soap.assessment.trim(),
-    '',
-    'PLAN:',
-    soap.plan.trim(),
-  ]
-    .filter((line) => line !== undefined)
-    .join('\n')
-    .trim();
+  const sections: Array<[string, string]> = [
+    ['SUBJECTIVE', soap.subjective],
+    ['OBJECTIVE', soap.objective],
+    ['ASSESSMENT', soap.assessment],
+    ['PLAN', soap.plan],
+  ];
+  return sections
+    .filter(([, body]) => body.trim() !== '')
+    .map(([header, body]) => `${header}:\n${body.trim()}`)
+    .join('\n\n');
 }
 
 /** Build the truncated 200-char summary used by feature 014. */
