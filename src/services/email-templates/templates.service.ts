@@ -13,20 +13,19 @@
  */
 
 import { prisma } from '@/lib/db';
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 /** Union type accepted by all service functions so they work inside or outside a transaction. */
 type TxClient = PrismaClient;
-import {
-  extractPlaceholders,
-  renderTemplate,
-  type CreateEmailTemplateInput,
-  type EmailTemplateDTO,
-  type PreviewEmailTemplateInput,
-  type RenderedTemplate,
-  type UpdateEmailTemplateInput,
-  type VariableContext,
-} from '@/services/email-templates/preview.service';
+import { extractPlaceholders, renderTemplate } from '@/services/email-templates/preview.service';
+import type {
+  CreateEmailTemplateInput,
+  EmailTemplateDTO,
+  PreviewEmailTemplateInput,
+  RenderedTemplate,
+  UpdateEmailTemplateInput,
+  VariableContext,
+} from '@/types/email-template';
 
 /** JSON shape persisted in the `variables` column. */
 interface TemplateMetadata {
@@ -170,7 +169,7 @@ export async function createTemplate(
           variables,
           fromName: input.fromName ?? null,
           replyTo: input.replyTo ?? null,
-        }) as unknown as Record<string, unknown>,
+        }) as unknown as Prisma.InputJsonValue,
         status: input.status === 'active' ? 1 : 0,
         type: 'email',
       },
@@ -220,7 +219,7 @@ export async function updateTemplate(
     data: {
       subject: input.subject ?? undefined,
       body: input.bodyHtml ?? undefined,
-      variables: mergedMeta as unknown as Record<string, unknown>,
+      variables: mergedMeta as unknown as Prisma.InputJsonValue,
       status:
         input.status === undefined ? undefined : input.status === 'active' ? 1 : 0,
     },

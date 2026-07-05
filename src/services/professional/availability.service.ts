@@ -20,7 +20,7 @@
 import { prisma } from '@/lib/db';
 import { buildUtcDateTime, getDayOfWeekInTz, minutesToTime } from '@/lib/time';
 import { professionalAudit } from '@/lib/audit';
-import { AppointmentStatus } from '@prisma/client';
+import { AppointmentStatus, ServiceStatus } from '@prisma/client';
 
 // ============================================
 // Types
@@ -236,7 +236,7 @@ export async function generateSlots(
 
   // 2. Verify service assignment
   const assignment = professional.serviceAssignments.find(
-    (a) => a.serviceId === serviceId && a.service.status === 1,
+    (a) => a.serviceId === serviceId && a.service.status === ServiceStatus.ACTIVE,
   );
   if (!assignment) return [];
 
@@ -346,20 +346,16 @@ async function getBookedRanges(
     },
   });
 
-  // Convert appointment times to minutes-from-midnight in practice TZ
-  return appointments.map((apt) => {
-    const startTime = apt.appointmentStartTime;
-    const endTime = apt.appointmentEndTime;
+  // Convert appointment times to minutes-from-midnight in practice TZ.
+  // appointmentStartTime/EndTime are `@db.Time` → Date whose time part
+  // (in UTC) carries the HH:mm we stored.
+  const toMinutes = (t: Date | null): number =>
+    t ? t.getUTCHours() * 60 + t.getUTCMinutes() : 0;
 
-    // appointmentStartTime is stored as HH:mm
-    const [sh, sm] = (startTime ?? '00:00').split(':').map(Number);
-    const [eh, em] = (endTime ?? '00:00').split(':').map(Number);
-
-    return {
-      start: sh * 60 + sm,
-      end: eh * 60 + em,
-    };
-  });
+  return appointments.map((apt) => ({
+    start: toMinutes(apt.appointmentStartTime),
+    end: toMinutes(apt.appointmentEndTime),
+  }));
 }
 
 // ============================================

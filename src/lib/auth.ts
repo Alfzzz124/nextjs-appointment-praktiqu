@@ -55,14 +55,16 @@ export async function getActor(req: NextRequest): Promise<Actor> {
 export function withAuth<T>(
   handler: (req: NextRequest, ctx: AuthContext & { params: T }) => Promise<NextResponse>,
 ) {
-  return async (req: NextRequest, ctx: T): Promise<NextResponse> => {
+  // ctx is optional: Next.js omits it for non-dynamic routes and supplies
+  // `{ params }` for dynamic ones.
+  return async (req: NextRequest, ctx?: T): Promise<NextResponse> => {
     try {
       const actor = await getActor(req);
       return await handler(req, {
         actor,
         ip: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? null,
         userAgent: req.headers.get('user-agent') ?? null,
-        params: ctx,
+        params: ctx as T,
       });
     } catch (err) {
       if (err instanceof AuthError) {

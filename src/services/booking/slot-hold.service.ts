@@ -14,7 +14,7 @@ export interface SlotHold {
   expiresAt: number; // epoch ms
 }
 
-class SlotHoldService {
+export class SlotHoldService {
   private holds = new Map<string, SlotHold>();
 
   buildKey(professionalId: string, serviceId: string, date: string, startTime: string): string {

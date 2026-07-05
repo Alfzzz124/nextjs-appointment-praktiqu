@@ -63,7 +63,7 @@ export async function generateInvoiceNumber(
   clinicId: string,
   opts: GenerateOptions = {}
 ): Promise<GenerateResult> {
-  const client = (opts.tx ?? prisma) as PrismaClient | Prisma.TransactionClient;
+  const client = (opts.tx ?? prisma) as PrismaClient;
   const now = opts.now ?? new Date();
   const year = now.getUTCFullYear();
 
@@ -93,7 +93,7 @@ export async function generateInvoiceNumber(
 }
 
 async function runOneAttempt(
-  client: PrismaClient | Prisma.TransactionClient,
+  client: PrismaClient,
   clinicId: string,
   year: number,
   attempt: number

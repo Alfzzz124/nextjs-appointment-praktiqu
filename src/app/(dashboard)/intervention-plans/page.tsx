@@ -1,5 +1,5 @@
 // src/app/(dashboard)/intervention-plans/page.tsx
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import Link from 'next/link';
 
 // Force dynamic rendering - database tables may not exist during build
@@ -7,8 +7,10 @@ export const dynamic = 'force-dynamic';
 
 const prisma = new PrismaClient();
 
+type PlanWithItems = Prisma.InterventionPlanGetPayload<{ include: { items: true } }>;
+
 export default async function InterventionPlansPage() {
-  let plans: Awaited<ReturnType<typeof prisma.interventionPlan.findMany>> = [];
+  let plans: PlanWithItems[] = [];
 
   try {
     plans = await prisma.interventionPlan.findMany({

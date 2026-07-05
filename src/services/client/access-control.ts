@@ -8,7 +8,7 @@
  * The full RBAC matrix is documented in plan.md §Authorization Matrix.
  */
 
-import { Prisma } from '@prisma/client';
+import { AppointmentStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 
 /**
@@ -49,7 +49,7 @@ export async function canProfessionalAccessClient(
     where: {
       doctor: { userId: professionalId },
       patient: { userId: client.userId },
-      status: { in: [Prisma.AttendanceStatus.BOOKED, Prisma.AttendanceStatus.COMPLETED] },
+      status: { in: [AppointmentStatus.BOOKED, AppointmentStatus.CHECK_OUT] },
     },
   });
 

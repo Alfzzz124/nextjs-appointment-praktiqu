@@ -270,6 +270,7 @@ model Clinic {
   countryCode        String?
   countryCallingCode String?
   status             Int      @default(0) // 0 = inactive, 1 = active
+  timezone           String? // IANA tz (e.g. "Asia/Jakarta"); null → app default
   clinicAdminId      String?  @unique
   clinicLogo         Int?
   profileImage       Int?
@@ -1301,7 +1302,7 @@ model ConsentForm {
   content     String            @db.LongText // Dynamic content (HTML/markdown body the client will see)
   status      ConsentFormStatus @default(DRAFT)
   version     Int               @default(1) // Bumped on each substantive edit
-  createdById String // User.id (CLINIC_ADMIN or PROFESSIONAL) who authored
+  createdById String? // User.id (CLINIC_ADMIN or PROFESSIONAL) who authored; optional until auth is wired into the create route
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -1693,4 +1694,59 @@ model KcOption {
   optionValue String @map("option_value") @db.LongText
 
   @@map("wp_options")
+}
+
+// ============================================================
+// Native PraktiQU features (from the "18 specs" work). These models
+// were referenced by the services/routes but never declared. Restored
+// so the code type-checks; a Prisma migration must create the tables
+// before the features run at runtime.
+// ============================================================
+
+model NoteTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  content     String   @db.LongText
+  variables   Json? // string[] of placeholder names
+  category    String?
+  clinicId    String?
+  ownerId     String?
+  status      Int      @default(1) // 1 = active, 0 = archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([clinicId, status])
+  @@index([ownerId])
+  @@map("note_templates")
+}
+
+model Goal {
+  id          String      @id @default(cuid())
+  clientId    String
+  title       String?
+  description String?     @db.Text
+  isAchieved  Boolean     @default(false)
+  achievedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  milestones  Milestone[]
+
+  @@index([clientId])
+  @@map("goals")
+}
+
+model Milestone {
+  id         String   @id @default(cuid())
+  goalId     String
+  title      String?
+  sortOrder  Int      @default(0)
+  isAchieved Boolean  @default(false)
+  achievedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@map("goal_milestones")
 }

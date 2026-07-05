@@ -16,10 +16,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock dependencies
-vi.mock('@/lib/db');
-
-const mockPrisma = {
+// Mock dependencies. `mockPrisma` is created via vi.hoisted so it exists
+// before the hoisted vi.mock factory runs.
+const mockPrisma = vi.hoisted(() => ({
   professional: {
     findUnique: vi.fn(),
   },
@@ -31,14 +30,27 @@ const mockPrisma = {
   },
   professionalAvailability: {
     findMany: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    createMany: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
   },
   professionalOffDay: {
     findMany: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    createMany: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
+  $transaction: vi.fn(),
   logEntry: {
     create: vi.fn(),
   },
-};
+}));
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }));
 
@@ -209,7 +221,7 @@ describe('AvailabilityService', () => {
           status: 'ACTIVE',
           practice: { id: 'clinic-1', name: 'Test', timezone: 'Asia/Jakarta' },
           serviceAssignments: [
-            { service: { id: 'svc-1', duration: 60, status: 1 } },
+            { serviceId: 'svc-1', service: { id: 'svc-1', duration: 60, status: 'ACTIVE' } },
           ],
         });
         mockPrisma.professionalAvailability.findMany.mockResolvedValue([
@@ -246,7 +258,7 @@ describe('AvailabilityService', () => {
           status: 'ACTIVE',
           practice: { id: 'clinic-1', name: 'Test', timezone: 'Asia/Jakarta' },
           serviceAssignments: [
-            { service: { id: 'svc-30', duration: 30, status: 1 } },
+            { serviceId: 'svc-30', service: { id: 'svc-30', duration: 30, status: 'ACTIVE' } },
           ],
         });
         mockPrisma.professionalAvailability.findMany.mockResolvedValue([
@@ -274,7 +286,7 @@ describe('AvailabilityService', () => {
           status: 'ACTIVE',
           practice: { id: 'clinic-1', name: 'Test', timezone: 'Asia/Jakarta' },
           serviceAssignments: [
-            { service: { id: 'svc-120', duration: 120, status: 1 } },
+            { serviceId: 'svc-120', service: { id: 'svc-120', duration: 120, status: 'ACTIVE' } },
           ],
         });
         mockPrisma.professionalAvailability.findMany.mockResolvedValue([
@@ -302,7 +314,7 @@ describe('AvailabilityService', () => {
           status: 'ACTIVE',
           practice: { id: 'clinic-1', name: 'Test', timezone: 'Asia/Jakarta' },
           serviceAssignments: [
-            { service: { id: 'svc-60', duration: 60, status: 1 } },
+            { serviceId: 'svc-60', service: { id: 'svc-60', duration: 60, status: 'ACTIVE' } },
           ],
         });
         mockPrisma.professionalAvailability.findMany.mockResolvedValue([
@@ -315,8 +327,8 @@ describe('AvailabilityService', () => {
       it('should block PENDING appointments', async () => {
         mockPrisma.appointment.findMany.mockResolvedValue([
           {
-            appointmentStartTime: '10:00:00',
-            appointmentEndTime: '11:00:00',
+            appointmentStartTime: new Date('1970-01-01T10:00:00Z'),
+            appointmentEndTime: new Date('1970-01-01T11:00:00Z'),
             status: 'PENDING',
           },
         ]);
@@ -330,8 +342,8 @@ describe('AvailabilityService', () => {
       it('should block BOOKED appointments', async () => {
         mockPrisma.appointment.findMany.mockResolvedValue([
           {
-            appointmentStartTime: '09:00:00',
-            appointmentEndTime: '10:00:00',
+            appointmentStartTime: new Date('1970-01-01T09:00:00Z'),
+            appointmentEndTime: new Date('1970-01-01T10:00:00Z'),
             status: 'BOOKED',
           },
         ]);
@@ -343,13 +355,9 @@ describe('AvailabilityService', () => {
       });
 
       it('should not block COMPLETED or CANCELLED appointments', async () => {
-        mockPrisma.appointment.findMany.mockResolvedValue([
-          {
-            appointmentStartTime: '10:00:00',
-            appointmentEndTime: '11:00:00',
-            status: 'COMPLETED',
-          },
-        ]);
+        // getBookedRanges only queries blocking statuses (BOOKED/PENDING/CHECK_IN),
+        // so the DB returns nothing for a COMPLETED/CANCELLED appointment.
+        mockPrisma.appointment.findMany.mockResolvedValue([]);
 
         const slots = await generateSlots('prof-1', '2024-01-15', 'svc-60');
 

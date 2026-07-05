@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { runSessionAutoComplete } from '@/services/session/session.service';
+import { autoCompleteOldSessions } from '@/services/session/session.service';
 
 describe('Session auto-completion', () => {
   /**

@@ -14,7 +14,7 @@ import { problemResponse, validationProblemResponse } from '@/lib/http/problem';
 
 export const dynamic = 'force-dynamic';
 
-interface RouteContext {
+export interface RouteContext {
   params: { id: string; itemId: string };
 }
 

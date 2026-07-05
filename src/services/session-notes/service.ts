@@ -83,7 +83,7 @@ export class SessionNoteService {
 
     const content = input.soap
       ? formatSoapToContent(input.soap)
-      : input.content;
+      : (input.content ?? '');
 
     const note = await this.prisma.sessionNote.create({
       data: {
@@ -205,7 +205,7 @@ export class SessionNoteService {
     }
     this.assertCanEdit(note, scope);
 
-    const content = input.soap ? formatSoapToContent(input.soap) : input.content;
+    const content = input.soap ? formatSoapToContent(input.soap) : (input.content ?? '');
 
     const updated = await this.prisma.sessionNote.update({
       where: { id },

@@ -75,7 +75,7 @@ describe('listSessionNotesQuerySchema', () => {
   });
 
   it('accepts all optional filters', () => {
-    const result = listSessionNotesQuerySchema.parse({
+    const result = listSessionNotesQuerySchema.safeParse({
       page: 3,
       limit: 50,
       search: 'anxiety',
@@ -88,12 +88,12 @@ describe('listSessionNotesQuerySchema', () => {
   });
 
   it('rejects limit over 100', () => {
-    const result = listSessionNotesQuerySchema.parse({ limit: 101 });
+    const result = listSessionNotesQuerySchema.safeParse({ limit: 101 });
     expect(result.success).toBe(false);
   });
 
   it('rejects invalid status', () => {
-    const result = listSessionNotesQuerySchema.parse({ status: 'INVALID' });
+    const result = listSessionNotesQuerySchema.safeParse({ status: 'INVALID' });
     expect(result.success).toBe(false);
   });
 });
