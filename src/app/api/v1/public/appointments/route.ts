@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   createPublicAppointment,
   createPublicAppointmentSchema,
+  AppointmentInsertError,
   HoldExpiredError,
+  ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
 } from '@/services/public/public-booking.service';
@@ -55,6 +57,21 @@ export async function POST(req: NextRequest) {
       const p = notFound('service_not_found', 'Service not found');
       return NextResponse.json(p, { status: p.status });
     }
-    throw err;
+    if (err instanceof ProfessionalNotFoundError) {
+      const p = notFound('professional_not_found', 'Professional not found');
+      return NextResponse.json(p, { status: p.status });
+    }
+    if (err instanceof AppointmentInsertError) {
+      console.error('[public/appointments] insert failed:', err.message);
+      return NextResponse.json(
+        { type: 'about:blank', title: 'Internal Server Error', status: 500 },
+        { status: 500 },
+      );
+    }
+    console.error('[public/appointments] unexpected error:', err);
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Internal Server Error', status: 500 },
+      { status: 500 },
+    );
   }
 }

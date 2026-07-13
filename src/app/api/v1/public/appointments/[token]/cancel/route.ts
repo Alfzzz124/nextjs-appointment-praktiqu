@@ -27,6 +27,10 @@ export async function POST(_req: NextRequest, { params }: { params: { token: str
       const p = conflict('not_cancellable', 'Appointment cannot be cancelled in its current state');
       return NextResponse.json(p, { status: p.status });
     }
-    throw err;
+    console.error('[public/appointments/cancel] error:', err);
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Internal Server Error', status: 500 },
+      { status: 500 },
+    );
   }
 }

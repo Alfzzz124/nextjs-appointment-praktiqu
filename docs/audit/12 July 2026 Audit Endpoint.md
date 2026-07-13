@@ -6,6 +6,18 @@
 
 ---
 
+## ★★★ CODE-FIX — 2026-07-13 (public booking funnel, verified locally) ★★★
+
+Local functional test of all 14 `/public/*` routes against a schema-correct DB (fresh `prisma db push` + seed) found the funnel broken **at the code level**, independent of the staging DB state:
+
+1. **`POST /public/appointments` always 500** — `createPublicAppointment` was a verbatim KiviCare-era port: `parseInt(professionalId)` on the catalog's **cuid** ids → `NaN` → interpolated into raw `wp_kc_*` SQL → `Unknown column 'NaN'`. The audit never caught this because only empty-body probes (422) were sent. **Fixed:** rewritten onto the Prisma app tables, bridging Professional → Doctor by `userId` (the feature-002 `getBookedRanges` pattern); token now carries the appointment cuid. Lookup/cancel/rating follow the same store.
+2. **`/public/professionals/{id}/slots` never blocked booked slots** — it filtered `appointment.doctorId` by the *Professional* id (appointments are keyed by *Doctor* id). Fixed with the same bridge; also now 404s on unknown/inactive professionals and uses canonical `durationMinutes` (was legacy `duration`, so slot length contradicted what `/services` advertised).
+3. **Silent 500s** — several public routes swallowed or rethrew errors without logging (why F3 was undiagnosable from responses). All public routes now log and return problem-details 500s.
+
+Verified locally: full E2E hold → create (201) → slot blocked → token lookup → cancel (200/409 on repeat) → slot restored; double-booking → 409; tsc, vitest public-booking suites (26/26), and production build all green. **Staging re-verify pending:** workstation IP is currently edge-blocked (HTTP 403→timeout, SSH drop), so the fix could not be deployed/tested against wp314 yet — the remaining `/public/professionals/{id}/slots` 500 recorded in RE-TEST #2 may additionally involve wp314 column drift on `appointments`; the new logging will surface the exact Prisma error once deployed.
+
+---
+
 ## ★★ RE-TEST #2 — 2026-07-12 (against the new staging DB `praktiqu_wp314`) ★★
 
 The DB was switched off the accidental **production** copy (`wp580`, which lacked the app tables) to a proper staging DB **`praktiqu_wp314`** (275 tables incl. the full app schema + 44 `wp_kc_*`; `patient_clinic_mappings` present). Re-ran the full sweep from the server.

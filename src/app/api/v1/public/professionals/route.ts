@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items });
   } catch (err) {
+    console.error('[public/professionals] error:', err);
     return NextResponse.json(
       { type: 'about:blank', title: 'Internal Server Error', status: 500 },
       { status: 500 },

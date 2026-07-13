@@ -4,6 +4,14 @@ import { listPublicPractices } from '@/services/public/public-catalog.service';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const practices = await listPublicPractices();
-  return NextResponse.json({ data: practices });
+  try {
+    const practices = await listPublicPractices();
+    return NextResponse.json({ data: practices });
+  } catch (err) {
+    console.error('[public/practices] error:', err);
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Internal Server Error', status: 500 },
+      { status: 500 },
+    );
+  }
 }
