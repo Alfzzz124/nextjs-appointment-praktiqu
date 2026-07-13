@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { bulkDeleteDoctorServices } from '@/services/professional/service-assignment.service';
 
 type RouteParams = { params: { id: string } };
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     let body: unknown;
     try {
       body = await req.json();
-    } catch {
+    } catch (err) {
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
@@ -38,7 +39,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const updated = await bulkDeleteDoctorServices(params.id, serviceIds);
     return NextResponse.json({ updated });
-  } catch {
+  } catch (err) {
+        if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

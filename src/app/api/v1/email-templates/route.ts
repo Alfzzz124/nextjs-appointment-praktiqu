@@ -4,13 +4,12 @@
  *
  * Source: specs/018-email-templates/plan.md
  *
- * Auth: CLINIC_ADMIN / SUPER_ADMIN (matches spec 012 admin-only model).
- * The auth helper isn't wired up here yet because feature 001 doesn't
- * expose a stable session shape; downstream callers should pass
- * `x-user-role` for tests and the eventual middleware will replace that.
+ * Auth: CLINIC_ADMIN / SUPER_ADMIN (matches spec 012 admin-only model),
+ * enforced via `requireRoles` (canonical JWT auth).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles } from '@/lib/auth/route-guards';
 import {
   createTemplate,
   listTemplates,
@@ -21,20 +20,11 @@ import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-function unauthorizedIfNotAdmin(req: NextRequest): NextResponse | null {
-  const role = req.headers.get('x-user-role');
-  if (role && role !== 'CLINIC_ADMIN' && role !== 'SUPER_ADMIN') {
-    return NextResponse.json(
-      { error: 'forbidden', message: 'admin role required' },
-      { status: 403 },
-    );
-  }
-  return null;
-}
+const ADMIN_ROLES = ['CLINIC_ADMIN', 'SUPER_ADMIN'] as const;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const denied = unauthorizedIfNotAdmin(req);
-  if (denied) return denied;
+  const gate = await requireRoles(req, ADMIN_ROLES);
+  if ('response' in gate) return gate.response;
 
   const includeInactive =
     new URL(req.url).searchParams.get('includeInactive') === 'true';
@@ -43,8 +33,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const denied = unauthorizedIfNotAdmin(req);
-  if (denied) return denied;
+  const gate = await requireRoles(req, ADMIN_ROLES);
+  if ('response' in gate) return gate.response;
 
   let body: unknown;
   try {

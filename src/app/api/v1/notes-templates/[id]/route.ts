@@ -1,5 +1,6 @@
 // src/app/api/v1/notes-templates/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles, requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
 import { NoteTemplateService, noteTemplateUpdateSchema } from '@/services/notes-templates/service';
 
@@ -7,6 +8,9 @@ const prisma = new PrismaClient();
 const service = new NoteTemplateService(prisma);
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const gate = await requireAuth(_req);
+  if ('response' in gate) return gate.response;
+
   const item = await service.get(params.id);
   if (!item) {
     return NextResponse.json(
@@ -18,6 +22,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   try {
     const body = await req.json();
     const parsed = noteTemplateUpdateSchema.parse(body);
@@ -38,6 +45,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   await service.delete(params.id);
   return new NextResponse(null, { status: 204 });
 }

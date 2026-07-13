@@ -8,7 +8,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { listClients, createClient } from '@/services/client/client.service';
 import { listClientsQuerySchema, createClientSchema, formatFieldErrors } from '@/services/client/validation';
 
@@ -75,6 +76,12 @@ import { z } from 'zod';
 import { ClientServiceError } from '@/services/client/client.service';
 
 function handleServiceError(err: unknown): NextResponse {
+  if (err instanceof AuthError) {
+    return NextResponse.json(unauthorized('unauthorized', err.message), {
+      status: err.status,
+      headers: { 'Content-Type': 'application/problem+json' },
+    });
+  }
   if (err instanceof ClientServiceError) {
     return NextResponse.json(
       {

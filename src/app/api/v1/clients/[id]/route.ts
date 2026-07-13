@@ -5,7 +5,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { getClient, updateClient, archiveClient, ClientServiceError } from '@/services/client/client.service';
 import { updateClientSchema, formatFieldErrors } from '@/services/client/validation';
 
@@ -66,6 +67,12 @@ export async function DELETE(req: NextRequest, { params }: RouteParams): Promise
 }
 
 function handleServiceError(err: unknown): NextResponse {
+  if (err instanceof AuthError) {
+    return NextResponse.json(unauthorized('unauthorized', err.message), {
+      status: err.status,
+      headers: { 'Content-Type': 'application/problem+json' },
+    });
+  }
   if (err instanceof ClientServiceError) {
     return NextResponse.json(
       {

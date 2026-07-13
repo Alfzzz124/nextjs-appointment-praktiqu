@@ -4,7 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { bulkArchiveClients } from '@/services/client/client.service';
 import { z } from 'zod';
 
@@ -37,6 +38,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ message: `${count} clients archived`, data: { updated: count } });
   } catch (err) {
     console.error('[POST /clients/bulk/delete]', err);
+        if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

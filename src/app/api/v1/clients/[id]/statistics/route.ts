@@ -3,7 +3,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { prisma } from '@/lib/db';
 import { getClientStatistics } from '@/services/client/client.service';
 
@@ -35,6 +36,12 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
     return NextResponse.json({ data: stats }, { status: 200 });
   } catch (err) {
     console.error('[GET /clients/:id/statistics]', err);
+        if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

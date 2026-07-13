@@ -17,7 +17,9 @@ export async function GET(req: NextRequest) {
   const token = auth.slice(7);
   try {
     const me = await getMeFromAccessToken(token);
-    return NextResponse.json({ user: me });
+    // `wpUserId` is a Prisma BigInt (not JSON-serializable) — convert to number.
+    const { wpUserId, ...meRest } = me;
+    return NextResponse.json({ user: { ...meRest, wpUserId: wpUserId == null ? null : Number(wpUserId) } });
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     const code = (err as { code?: string }).code ?? 'unknown';

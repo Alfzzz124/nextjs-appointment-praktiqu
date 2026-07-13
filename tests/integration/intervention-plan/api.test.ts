@@ -12,8 +12,9 @@
  *   - PATCH /api/v1/intervention-plans/:id/items/:itemId/complete — US3 complete item
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { authHeaders } from '../../helpers/auth';
 import { GET, POST } from '@/app/api/v1/intervention-plans/route';
 import type { RouteContext } from '@/app/api/v1/intervention-plans/[id]/route';
 import { GET as getPlan } from '@/app/api/v1/intervention-plans/[id]/route';
@@ -26,20 +27,21 @@ import { PATCH as completeItem } from '@/app/api/v1/intervention-plans/[id]/item
 // Route handler test wrapper
 // -------------------------------------------------------------
 
+// Real Bearer-JWT headers, minted once before the suite (auth is now JWT-based).
+let PROFESSIONAL_HEADERS: Record<string, string>;
+let CLIENT_HEADERS: Record<string, string>;
+
+beforeAll(async () => {
+  PROFESSIONAL_HEADERS = await authHeaders({ userId: 'prof_1', role: 'PROFESSIONAL' });
+  CLIENT_HEADERS = await authHeaders({ userId: 'client_1', role: 'CLIENT' });
+});
+
 function professionalHeaders() {
-  return {
-    'x-praktiqu-user-id': 'prof_1',
-    'x-praktiqu-user-role': 'PROFESSIONAL',
-    'content-type': 'application/json',
-  };
+  return PROFESSIONAL_HEADERS;
 }
 
 function clientHeaders() {
-  return {
-    'x-praktiqu-user-id': 'client_1',
-    'x-praktiqu-user-role': 'CLIENT',
-    'content-type': 'application/json',
-  };
+  return CLIENT_HEADERS;
 }
 
 describe('POST /api/v1/intervention-plans (US1)', () => {

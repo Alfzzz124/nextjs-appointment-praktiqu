@@ -40,7 +40,7 @@ function problemResponse(err: SessionNoteAccessError): NextResponse {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const caller = callerFromHeaders(req);
+    const caller = await callerFromHeaders(req);
     const url = new URL(req.url);
     const parsed = listSessionNotesQuerySchema.safeParse({
       page: url.searchParams.get('page') ?? undefined,
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const caller = callerFromHeaders(req);
+    const caller = await callerFromHeaders(req);
     const body = await req.json().catch(() => ({}));
     const parsed = createSessionNoteSchema.safeParse(body);
     if (!parsed.success) {

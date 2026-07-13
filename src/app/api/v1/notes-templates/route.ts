@@ -1,5 +1,6 @@
 // src/app/api/v1/notes-templates/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles, requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
 import { NoteTemplateService, noteTemplateCreateSchema } from '@/services/notes-templates/service';
 
@@ -7,6 +8,9 @@ const prisma = new PrismaClient();
 const service = new NoteTemplateService(prisma);
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if ('response' in gate) return gate.response;
+
   const { searchParams } = new URL(req.url);
   const clinicId = searchParams.get('clinicId') ?? undefined;
   const ownerId = searchParams.get('ownerId') ?? undefined;
@@ -23,6 +27,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   try {
     const body = await req.json();
     const parsed = noteTemplateCreateSchema.parse(body);

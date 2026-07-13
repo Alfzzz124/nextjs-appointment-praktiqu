@@ -3,6 +3,9 @@ import { describe, it, expect } from 'vitest';
 import { generateSlots, formatSlotLabel } from '@/services/booking/slot-generator';
 
 const baseDate = new Date('2026-06-04T00:00:00'); // Thursday
+// Pin "now" to the start of baseDate so the generator's "skip past slots" guard
+// does not filter out the fixed baseDate (which would otherwise be in the past).
+const fixedNow = new Date('2026-06-04T00:00:00');
 const baseAvailability = [
   { dayOfWeek: 4, startMinute: 9 * 60, endMinute: 17 * 60 }, // 09:00-17:00
 ];
@@ -15,7 +18,7 @@ describe('generateSlots', () => {
   });
 
   it('generates slots for matching day', () => {
-    const slots = generateSlots({ date: baseDate, duration: 60, availability: baseAvailability, existingBookings: [] });
+    const slots = generateSlots({ date: baseDate, duration: 60, availability: baseAvailability, existingBookings: [], now: fixedNow });
     expect(slots.length).toBe(8); // 09, 10, 11, 12, 13, 14, 15, 16
     expect(slots[0].startTime).toBe('09:00');
     expect(slots[0].endTime).toBe('10:00');
@@ -28,6 +31,7 @@ describe('generateSlots', () => {
       duration: 60,
       availability: baseAvailability,
       existingBookings: [{ startUtc: conflict, endUtc: new Date('2026-06-04T11:00:00') }],
+      now: fixedNow,
     });
     expect(slots.find((s) => s.startTime === '10:00')).toBeUndefined();
   });
@@ -39,6 +43,7 @@ describe('generateSlots', () => {
       availability: baseAvailability,
       existingBookings: [],
       slotIntervalMinutes: 30,
+      now: fixedNow,
     });
     expect(slots.length).toBeGreaterThan(8);
   });

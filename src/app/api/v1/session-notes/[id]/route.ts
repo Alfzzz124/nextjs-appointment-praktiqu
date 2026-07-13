@@ -36,7 +36,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   try {
-    const caller = callerFromHeaders(req);
+    const caller = await callerFromHeaders(req);
     const note = await service.getById(params.id, { actor: caller, clinicId: caller.clinicId });
     return NextResponse.json(note);
   } catch (err) {
@@ -53,7 +53,7 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   try {
-    const caller = callerFromHeaders(req);
+    const caller = await callerFromHeaders(req);
     const body = await req.json().catch(() => ({}));
     const parsed = updateSessionNoteSchema.safeParse(body);
     if (!parsed.success) {

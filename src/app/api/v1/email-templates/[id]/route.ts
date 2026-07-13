@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles } from '@/lib/auth/route-guards';
 import {
   deleteTemplate,
   EmailTemplateNotFoundError,
@@ -17,23 +18,15 @@ import { updateEmailTemplateSchema } from '@/types/email-template';
 
 export const dynamic = 'force-dynamic';
 
-function adminOnly(req: NextRequest): NextResponse | null {
-  const role = req.headers.get('x-user-role');
-  if (role && role !== 'CLINIC_ADMIN' && role !== 'SUPER_ADMIN') {
-    return NextResponse.json(
-      { error: 'forbidden', message: 'admin role required' },
-      { status: 403 },
-    );
-  }
-  return null;
-}
+const ADMIN_ROLES = ['CLINIC_ADMIN', 'SUPER_ADMIN'] as const;
+
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const denied = adminOnly(req);
-  if (denied) return denied;
+  const gate = await requireRoles(req, ADMIN_ROLES);
+  if ('response' in gate) return gate.response;
   try {
     const dto = await getTemplateById(params.id);
     return NextResponse.json(dto);
@@ -53,8 +46,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const denied = adminOnly(req);
-  if (denied) return denied;
+  const gate = await requireRoles(req, ADMIN_ROLES);
+  if ('response' in gate) return gate.response;
 
   let body: unknown;
   try {
@@ -93,8 +86,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const denied = adminOnly(req);
-  if (denied) return denied;
+  const gate = await requireRoles(req, ADMIN_ROLES);
+  if ('response' in gate) return gate.response;
   try {
     await deleteTemplate(params.id);
     return new NextResponse(null, { status: 204 });

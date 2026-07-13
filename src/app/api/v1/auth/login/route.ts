@@ -41,9 +41,12 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
+    // `wpUserId` is a Prisma BigInt, which JSON.stringify cannot serialize —
+    // convert to a plain number (WP user ids are always small integers).
+    const { wpUserId, ...userRest } = result.user;
     return NextResponse.json(
       {
-        user: result.user,
+        user: { ...userRest, wpUserId: wpUserId == null ? null : Number(wpUserId) },
         accessToken: result.accessToken,
         accessTokenExpiresAt: result.accessTokenExpiresAt.toISOString(),
         refreshToken: result.refreshToken,

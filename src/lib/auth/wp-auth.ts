@@ -115,6 +115,11 @@ export async function wpAuthenticate(email: string, password: string): Promise<W
     if (body.code === 'blocked') return { ok: false, error: { code: 'blocked' } };
     return { ok: false, error: { code: 'inactive' } };
   }
+  // 404 means the `praktiqu-endpoint` plugin route is not present (plugin not
+  // installed/activated, or WORDPRESS_URL misconfigured) — a service problem,
+  // NOT a bad password. Surfacing it as `invalid_credentials` masks a broken
+  // deployment as "wrong credentials", so map it to service_unavailable.
+  if (res.status === 404) return { ok: false, error: { code: 'service_unavailable' } };
   if (res.status >= 500) return { ok: false, error: { code: 'service_unavailable' } };
   return { ok: false, error: { code: 'invalid_credentials' } };
 }

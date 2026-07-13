@@ -19,6 +19,7 @@ export interface SlotGeneratorInput {
   existingBookings: ExistingBooking[];
   bufferMinutes?: number; // gap between bookings
   slotIntervalMinutes?: number; // grid alignment, default = duration
+  now?: Date; // reference "current" time; slots at or before it are skipped (default: new Date())
 }
 
 export interface GeneratedSlot {
@@ -53,7 +54,7 @@ export function generateSlots(input: SlotGeneratorInput): GeneratedSlot[] {
   if (windows.length === 0) return [];
 
   const slots: GeneratedSlot[] = [];
-  const now = new Date();
+  const now = input.now ?? new Date();
 
   for (const window of windows) {
     for (let m = window.startMinute; m + duration <= window.endMinute; m += interval) {

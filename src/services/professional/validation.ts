@@ -130,11 +130,15 @@ export const updateProfessionalInputSchema = z.object({
 // Only biography, specialties, contactInfo can be updated.
 // SIP/SIK and professionalType are read-only.
 
-export const selfUpdateProfessionalInputSchema = z.object({
-  biography: z.string().max(2000).nullable().optional(),
-  specialties: z.array(z.string().max(100)).max(20).nullable().optional(),
-  contactInfo: contactInfoSchema.nullable().optional(),
-});
+export const selfUpdateProfessionalInputSchema = z
+  .object({
+    biography: z.string().max(2000).nullable().optional(),
+    specialties: z.array(z.string().max(100)).max(20).nullable().optional(),
+    contactInfo: contactInfoSchema.nullable().optional(),
+  })
+  // Reject read-only fields (registrationNumber/SIP-SIK, professionalType, …)
+  // rather than silently stripping them.
+  .strict();
 
 // ============================================
 // Status Change

@@ -5,6 +5,7 @@
  * DELETE /api/v1/practices/:id/holidays/:holidayId — remove a specific holiday
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles } from '@/lib/auth/route-guards';
 import {
   HolidayNotFoundError,
   PracticeNotFoundError,
@@ -74,6 +75,9 @@ function handleError(
 // ============================================================
 
 export async function GET(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   const holidays = await listHolidays(params.id).catch((e) => e);
   const handled = handleError(holidays instanceof Error ? holidays : null, `/api/v1/practices/${params.id}/holidays`, 'GET');
   if (handled) return handled;
@@ -85,6 +89,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
 // ============================================================
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   let body: unknown;
   try {
     body = await req.json();
@@ -106,6 +113,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
 // ============================================================
 
 export async function DELETE(_req: NextRequest, { params }: HolidayParams): Promise<NextResponse> {
+  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   const ok = await removeHoliday(params.id, params.holidayId, { actorId: null }).catch((e) => e);
   const handled = handleError(
     ok instanceof Error ? ok : null,

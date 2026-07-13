@@ -3,7 +3,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { bulkSetClientStatus } from '@/services/client/client.service';
 import { ClientStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -43,6 +44,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   } catch (err) {
     console.error('[POST /clients/bulk/status]', err);
+        if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

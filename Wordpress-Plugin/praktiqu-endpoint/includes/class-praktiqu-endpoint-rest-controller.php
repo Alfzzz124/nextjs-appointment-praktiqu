@@ -33,7 +33,7 @@ final class REST_Controller
 
     public function register_routes(): void
     {
-        $ns = PRAKTIQU_AUTH_REST_NAMESPACE;
+        $ns = PRAKTIQU_ENDPOINT_REST_NAMESPACE;
 
         // POST /praktiqu/v1/authenticate — verify email + password
         register_rest_route($ns, '/authenticate', [

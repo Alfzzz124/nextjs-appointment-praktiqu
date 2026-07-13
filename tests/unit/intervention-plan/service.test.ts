@@ -66,7 +66,8 @@ class StubPrisma {
         sessionId: data.sessionId,
         professionalId: data.professionalId,
         clientId: data.clientId,
-        status: data.status,
+        // Real Prisma applies the schema's @default(ACTIVE); the stub must too.
+        status: data.status ?? 'ACTIVE',
         createdAt: new Date(),
         updatedAt: new Date(),
         items: [],

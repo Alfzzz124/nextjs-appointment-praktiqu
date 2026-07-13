@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles, requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
 import {
   CustomFieldService,
@@ -21,6 +22,9 @@ const service = new CustomFieldService(prisma);
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if ('response' in gate) return gate.response;
+
   const { searchParams } = new URL(req.url);
   const moduleTypeRaw = searchParams.get('entityType') ?? searchParams.get('moduleType');
   const clinicId = searchParams.get('clinicId') ?? undefined;
@@ -54,6 +58,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   try {
     const body = await req.json();
     const parsed = customFieldCreateSchema.parse(body);

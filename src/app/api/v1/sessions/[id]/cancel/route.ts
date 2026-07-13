@@ -6,20 +6,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { sessionActorFromRequest } from '@/lib/auth/session-actor';
+import { AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { z } from 'zod';
-import { SessionStatus, UserRole } from '@prisma/client';
+import { SessionStatus } from '@prisma/client';
 import { transitionSession } from '@/services/session/session.service';
 
 const cancelSchema = z.object({
   reason: z.string().trim().max(500).optional().or(z.literal('')),
 });
 
-function getActor(req: NextRequest) {
-  const userId = req.headers.get('x-user-id') ?? '';
-  const role = (req.headers.get('x-user-role') ?? 'CLIENT') as UserRole;
-  const practiceId = req.headers.get('x-practice-id') ?? null;
-  return { userId, role, practiceId };
-}
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +28,7 @@ export async function POST(
     const { id } = await params;
     const body = await req.json();
     const { reason } = cancelSchema.parse(body);
-    const actor = getActor(req);
+    const actor = await sessionActorFromRequest(req);
 
     const session = await transitionSession({
       actor,
@@ -41,6 +38,12 @@ export async function POST(
     });
     return NextResponse.json({ data: session }, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { type: '/errors/validation-error', title: 'Validation Error', status: 422, detail: err.message, errors: err.errors },

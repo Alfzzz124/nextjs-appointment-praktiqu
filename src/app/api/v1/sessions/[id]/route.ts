@@ -5,15 +5,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { sessionActorFromRequest } from '@/lib/auth/session-actor';
+import { AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { getSession } from '@/services/session/session.service';
 
-/** Placeholder auth — replace with actual JWT decode (per feature 001). */
-function getActor(req: NextRequest) {
-  const userId = req.headers.get('x-user-id') ?? '';
-  const role = req.headers.get('x-user-role') ?? 'CLIENT';
-  const practiceId = req.headers.get('x-practice-id') ?? null;
-  return { userId, role: role as 'SUPER_ADMIN' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'RECEPTIONIST' | 'CLIENT', practiceId };
-}
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +19,16 @@ export async function GET(
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
-    const { userId, role, practiceId } = getActor(_req);
+    const { userId, role, practiceId } = await sessionActorFromRequest(_req);
     const session = await getSession({ userId, role, practiceId }, id);
     return NextResponse.json({ data: session }, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     if (err && typeof err === 'object' && 'code' in err && 'status' in err) {
       const e = err as { code: string; status: number; message: string };
       return NextResponse.json(

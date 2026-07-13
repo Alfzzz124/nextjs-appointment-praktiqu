@@ -133,12 +133,18 @@ export function htmlToText(html: string): string {
   // Remove script/style blocks entirely.
   out = out.replace(/<script\b[\s\S]*?<\/script>/gi, '');
   out = out.replace(/<style\b[\s\S]*?<\/style>/gi, '');
-  // Convert <br> and block closers to newlines.
+  // Convert <br> and block closers to newlines. Block closers get a blank
+  // line so paragraphs are visually separated.
   out = out.replace(/<br\s*\/?>(?!\n)/gi, '\n');
-  out = out.replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n');
+  out = out.replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n\n');
   // Strip remaining tags.
   out = out.replace(/<[^>]+>/g, '');
-  // Decode a small set of entities.
+  // Collapse excessive blank lines (2+ consecutive newlines → 2).
+  out = out.replace(/[\r\n]{3,}/g, '\n\n');
+  // Collapse multiple consecutive spaces → 2 (preserve intentional double spaces).
+  out = out.replace(/ {3,}/g, '  ').trim();
+  // Decode a small set of entities AFTER trimming so entity-produced whitespace
+  // (e.g. a trailing &nbsp;) is preserved rather than stripped.
   out = out
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -146,9 +152,5 @@ export function htmlToText(html: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
-  // Collapse excessive blank lines (2+ consecutive newlines → 2).
-  out = out.replace(/[\r\n]{3,}/g, '\n\n');
-  // Collapse multiple consecutive spaces → 2 (preserve intentional double spaces).
-  out = out.replace(/ {3,}/g, '  ').trim();
   return out;
 }

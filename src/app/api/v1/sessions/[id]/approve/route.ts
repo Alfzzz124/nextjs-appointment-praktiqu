@@ -5,15 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { SessionStatus, UserRole } from '@prisma/client';
+import { sessionActorFromRequest } from '@/lib/auth/session-actor';
+import { AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
+import { SessionStatus } from '@prisma/client';
 import { transitionSession } from '@/services/session/session.service';
 
-function getActor(req: NextRequest) {
-  const userId = req.headers.get('x-user-id') ?? '';
-  const role = (req.headers.get('x-user-role') ?? 'CLIENT') as UserRole;
-  const practiceId = req.headers.get('x-practice-id') ?? null;
-  return { userId, role, practiceId };
-}
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +20,7 @@ export async function POST(
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
-    const actor = getActor(_req);
+    const actor = await sessionActorFromRequest(_req);
     const session = await transitionSession({
       actor,
       sessionId: id,
@@ -31,6 +28,12 @@ export async function POST(
     });
     return NextResponse.json({ data: session }, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     if (err && typeof err === 'object' && 'code' in err && 'status' in err) {
       const e = err as { code: string; status: number; message: string };
       return NextResponse.json(

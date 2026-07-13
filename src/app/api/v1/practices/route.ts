@@ -3,11 +3,15 @@
  * POST /api/v1/practices        — Create a new practice (admin only)
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles } from '@/lib/auth/route-guards';
 import { listPractices } from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
 /** GET /api/v1/practices — paginated list */
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   const { searchParams } = req.nextUrl;
   const page = Number(searchParams.get('page') ?? 1);
   const limit = Number(searchParams.get('limit') ?? 20);
@@ -27,6 +31,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 /** POST /api/v1/practices — create (stub — actual creation deferred to WP-side provisioning) */
 export async function POST(_req: NextRequest): Promise<NextResponse> {
+  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   return NextResponse.json(
     {
       type: '/errors/not-implemented',

@@ -36,7 +36,7 @@ export async function POST(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   try {
-    const caller = callerFromHeaders(req);
+    const caller = await callerFromHeaders(req);
     const note = await service.close(params.id, { actor: caller, clinicId: caller.clinicId });
     return NextResponse.json(note);
   } catch (err) {

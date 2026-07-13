@@ -1,5 +1,6 @@
 // src/app/api/v1/consent-signatures/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
 import { ConsentService } from '@/services/consent/service';
 
@@ -7,6 +8,9 @@ const prisma = new PrismaClient();
 const service = new ConsentService(prisma);
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if ('response' in gate) return gate.response;
+
   try {
     const body = await req.json();
     if (body.action === 'send') {
@@ -25,6 +29,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if ('response' in gate) return gate.response;
+
   const { searchParams } = new URL(req.url);
   const formId = searchParams.get('formId') ?? '';
   const clientId = searchParams.get('clientId') ?? '';

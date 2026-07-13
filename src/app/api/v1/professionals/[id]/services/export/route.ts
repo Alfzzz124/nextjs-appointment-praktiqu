@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getActor } from '@/lib/auth';
+import { getActor, AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { exportDoctorServices } from '@/services/professional/service-assignment.service';
 
 type RouteParams = { params: { id: string } };
@@ -28,7 +29,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         'Content-Disposition': `attachment; filename="doctor-services-${params.id}.json"`,
       },
     });
-  } catch {
+  } catch (err) {
+        if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -5,20 +5,24 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock Prisma before importing the service
-const mockPrisma = {
-  professional: {
-    create: vi.fn(),
-    findUnique: vi.fn(),
-    findFirst: vi.fn(),
-    update: vi.fn(),
-    findMany: vi.fn(),
-    count: vi.fn(),
+// Mock Prisma before importing the service. `vi.mock` is hoisted above all
+// top-level code, so the mock object must be created inside `vi.hoisted` to be
+// available to the (also hoisted) factory.
+const { mockPrisma } = vi.hoisted(() => ({
+  mockPrisma: {
+    professional: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+    logEntry: {
+      create: vi.fn(),
+    },
   },
-  logEntry: {
-    create: vi.fn(),
-  },
-};
+}));
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }));
 
@@ -46,7 +50,7 @@ describe('ProfessionalService', () => {
   describe('createProfessional', () => {
     it('should create a professional with PENDING_ACTIVATION status', async () => {
       const input = {
-        userId: 'user-123',
+        userId: 'clt0000000000000000000001',
         fullName: 'Dr. Jane Doe',
         email: 'jane@example.com',
         professionalType: 'PSIKOLOG_KLINIS' as const,
@@ -74,7 +78,7 @@ describe('ProfessionalService', () => {
       expect(mockPrisma.professional.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            userId: 'user-123',
+            userId: 'clt0000000000000000000001',
             fullName: 'Dr. Jane Doe',
             status: ProfessionalStatus.PENDING_ACTIVATION,
           }),
@@ -89,7 +93,7 @@ describe('ProfessionalService', () => {
       });
 
       const input = {
-        userId: 'user-123',
+        userId: 'clt0000000000000000000001',
         fullName: 'Dr. Jane Doe',
         email: 'jane@example.com',
         professionalType: 'PSIKOLOG_KLINIS' as const,
@@ -105,7 +109,7 @@ describe('ProfessionalService', () => {
         .mockResolvedValueOnce({ id: 'existing-prof', email: 'existing@example.com' }); // email conflict
 
       const input = {
-        userId: 'user-123',
+        userId: 'clt0000000000000000000001',
         fullName: 'Dr. Jane Doe',
         email: 'existing@example.com', // duplicate
         professionalType: 'PSIKOLOG_KLINIS' as const,

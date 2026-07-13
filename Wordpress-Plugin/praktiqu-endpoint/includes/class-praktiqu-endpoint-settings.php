@@ -169,7 +169,7 @@ final class Settings
             <hr/>
 
             <h2><?php esc_html_e('REST Endpoints', 'praktiqu-endpoint'); ?></h2>
-            <p><?php esc_html_e('All endpoints require the X-PraktiQU-Service-Token header. Base path:', 'praktiqu-endpoint'); ?> <code><?php echo esc_html(rest_url(PRAKTIQU_AUTH_REST_NAMESPACE)); ?></code></p>
+            <p><?php esc_html_e('All endpoints require the X-PraktiQU-Service-Token header. Base path:', 'praktiqu-endpoint'); ?> <code><?php echo esc_html(rest_url(PRAKTIQU_ENDPOINT_REST_NAMESPACE)); ?></code></p>
             <ul style="list-style:disc;padding-left:24px;">
                 <li><code>POST /authenticate</code> — verify email + password</li>
                 <li><code>GET  /users/{id}</code> — get identity by WP user ID</li>

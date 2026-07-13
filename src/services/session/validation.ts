@@ -64,7 +64,7 @@ export type CancelSessionBody = z.infer<typeof cancelSessionSchema>;
 export const listSessionsQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: z.coerce.number().int().min(1).transform((n) => Math.min(n, 100)).default(20),
     status: z.nativeEnum(SessionStatus).optional(),
     clientId: z.string().optional(),
     professionalId: z.string().optional(),

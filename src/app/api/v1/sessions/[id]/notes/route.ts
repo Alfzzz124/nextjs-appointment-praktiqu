@@ -37,7 +37,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   try {
-    const caller = callerFromHeaders(req);
+    const caller = await callerFromHeaders(req);
     const note = await service.getBySessionId(params.id, {
       actor: caller,
       clinicId: caller.clinicId,

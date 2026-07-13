@@ -28,6 +28,15 @@ final class Plugin
         $this->rest     = new REST_Controller($this->service, $this->jobs);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();
+
+        // Wire each component's WordPress hooks. Runs on `plugins_loaded`
+        // (via instance()), before `rest_api_init` / `admin_menu` fire, so the
+        // REST routes, WP action listeners, admin settings page and AS job
+        // handlers are all registered.
+        $this->rest->register();
+        $this->hooks->register();
+        $this->jobs->register();
+        $this->settings->register();
     }
 
     public static function instance(): Plugin

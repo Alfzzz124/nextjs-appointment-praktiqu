@@ -1,5 +1,6 @@
 // tests/integration/consent/signature.test.ts
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { authHeaders } from '../../helpers/auth';
 import { POST, GET } from '@/app/api/v1/consent-forms/route';
 
 vi.mock('@prisma/client', () => ({
@@ -8,12 +9,17 @@ vi.mock('@prisma/client', () => ({
   },
 }));
 
+let AUTH: Record<string, string>;
+beforeAll(async () => {
+  AUTH = await authHeaders({ userId: 'admin_1', role: 'SUPER_ADMIN' });
+});
+
 function makeReq(url: string, init?: RequestInit) { return new Request(url, init) as any; }
 
 describe('POST /api/v1/consent-forms', () => {
   it('creates form', async () => {
     const req = makeReq('http://localhost/api/v1/consent-forms', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: AUTH,
       body: JSON.stringify({ practiceId: 'p1', name: 'Telehealth', content: '<p>Content</p>' }),
     });
     const res = await POST(req);
@@ -25,13 +31,13 @@ describe('POST /api/v1/consent-forms', () => {
 
 describe('GET /api/v1/consent-forms', () => {
   it('requires practiceId', async () => {
-    const req = makeReq('http://localhost/api/v1/consent-forms');
+    const req = makeReq('http://localhost/api/v1/consent-forms', { headers: AUTH });
     const res = await GET(req);
     expect(res.status).toBe(400);
   });
 
   it('returns list when practiceId provided', async () => {
-    const req = makeReq('http://localhost/api/v1/consent-forms?practiceId=p1');
+    const req = makeReq('http://localhost/api/v1/consent-forms?practiceId=p1', { headers: AUTH });
     const res = await GET(req);
     expect(res.status).toBe(200);
     const body = await res.json();

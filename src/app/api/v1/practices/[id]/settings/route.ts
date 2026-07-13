@@ -6,6 +6,7 @@
  * Separated into its own route for future RBAC (e.g., separate settings permissions).
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles } from '@/lib/auth/route-guards';
 import {
   PracticeNotFoundError,
   PracticeValidationError,
@@ -18,6 +19,9 @@ type Params = { params: { id: string } };
 
 /** GET /api/v1/practices/:id/settings */
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   try {
     const dto = await getPractice(params.id);
     return NextResponse.json({ data: dto }, { status: 200 });
@@ -38,6 +42,9 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 
 /** PATCH /api/v1/practices/:id/settings */
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   let body: unknown;
   try {
     body = await req.json();

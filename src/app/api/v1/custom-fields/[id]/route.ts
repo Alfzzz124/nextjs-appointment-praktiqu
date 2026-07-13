@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRoles, requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
 import {
   CustomFieldService,
@@ -20,6 +21,9 @@ const service = new CustomFieldService(prisma);
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const gate = await requireAuth(_req);
+  if ('response' in gate) return gate.response;
+
   try {
     const item = await service.getField(params.id);
     if (!item) {
@@ -41,6 +45,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   try {
     const body = await req.json();
     const parsed = customFieldUpdateSchema.parse(body);
@@ -64,6 +71,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  if ('response' in gate) return gate.response;
+
   try {
     await service.deleteField(params.id);
     return new NextResponse(null, { status: 204 });

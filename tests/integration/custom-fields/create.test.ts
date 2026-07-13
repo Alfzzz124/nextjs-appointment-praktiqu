@@ -1,5 +1,6 @@
 // tests/integration/custom-fields/create.test.ts
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { authHeaders } from '../../helpers/auth';
 import { POST, GET } from '@/app/api/v1/custom-fields/route';
 
 vi.mock('@prisma/client', () => ({
@@ -12,6 +13,11 @@ vi.mock('@prisma/client', () => ({
   },
 }));
 
+let AUTH: Record<string, string>;
+beforeAll(async () => {
+  AUTH = await authHeaders({ userId: 'admin_1', role: 'SUPER_ADMIN' });
+});
+
 function makeReq(url: string, init?: RequestInit) {
   return new Request(url, init) as any;
 }
@@ -20,7 +26,7 @@ describe('POST /api/v1/custom-fields', () => {
   it('creates a text field', async () => {
     const req = makeReq('http://localhost/api/v1/custom-fields', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: AUTH,
       body: JSON.stringify({
         moduleType: 'client',
         fieldLabel: 'Emergency Contact',
@@ -38,7 +44,7 @@ describe('POST /api/v1/custom-fields', () => {
   it('rejects unknown fieldType', async () => {
     const req = makeReq('http://localhost/api/v1/custom-fields', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: AUTH,
       body: JSON.stringify({
         moduleType: 'client',
         fieldLabel: 'X',
@@ -52,7 +58,7 @@ describe('POST /api/v1/custom-fields', () => {
 
 describe('GET /api/v1/custom-fields', () => {
   it('returns list', async () => {
-    const req = makeReq('http://localhost/api/v1/custom-fields?moduleType=client');
+    const req = makeReq('http://localhost/api/v1/custom-fields?moduleType=client', { headers: AUTH });
     const res = await GET(req);
     expect(res.status).toBe(200);
     const body = await res.json();

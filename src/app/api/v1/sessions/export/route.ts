@@ -1,21 +1,18 @@
 // GET /api/v1/sessions/export
 import { NextRequest, NextResponse } from 'next/server';
+import { sessionActorFromRequest } from '@/lib/auth/session-actor';
+import { AuthError } from '@/lib/auth';
+import { unauthorized } from '@/lib/problem-details';
 import { SessionStatus, UserRole } from '@prisma/client';
 import { exportSessions } from '@/services/session/session.service';
 import { z } from 'zod';
 
-function getActor(req: NextRequest) {
-  const userId = req.headers.get('x-user-id') ?? '';
-  const role = (req.headers.get('x-user-role') ?? 'CLIENT') as UserRole;
-  const practiceId = req.headers.get('x-practice-id') ?? null;
-  return { userId, role, practiceId };
-}
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const actor = getActor(req);
+    const actor = await sessionActorFromRequest(req);
     if (!([UserRole.SUPER_ADMIN, UserRole.CLINIC_ADMIN, UserRole.RECEPTIONIST] as string[]).includes(actor.role)) {
       return NextResponse.json({ type: '/errors/forbidden', title: 'Forbidden', status: 403 }, { status: 403 });
     }
@@ -37,6 +34,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { headers: { 'Content-Disposition': 'attachment; filename="sessions-export.json"' } },
     );
   } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json(unauthorized('unauthorized', err.message), {
+        status: err.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
     console.error('[GET /sessions/export]', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

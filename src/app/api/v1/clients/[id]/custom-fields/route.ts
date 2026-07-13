@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
 import {
   CustomFieldService,
@@ -23,6 +24,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const gate = await requireAuth(_req);
+  if ('response' in gate) return gate.response;
+
   try {
     const result = await service.getValuesWithFields('client', params.id);
     return NextResponse.json({ items: result });
@@ -42,6 +46,9 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const gate = await requireAuth(req);
+  if ('response' in gate) return gate.response;
+
   try {
     const body = await req.json();
     const parsed = customFieldBulkValuesSchema.parse(body);
