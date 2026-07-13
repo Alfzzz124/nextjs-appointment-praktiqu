@@ -50,7 +50,18 @@ export interface PublicService {
   price: string; durationMinutes: number; serviceType: string;
 }
 
-export async function getPublicProfessionalServices(professionalId: string): Promise<PublicService[]> {
+/**
+ * Returns the professional's public services, or `null` when the professional
+ * does not exist or is not ACTIVE — mirrors getPublicPractice so the route can
+ * 404 on unknown ids (matches the sibling /slots route).
+ */
+export async function getPublicProfessionalServices(professionalId: string): Promise<PublicService[] | null> {
+  const professional = await prisma.professional.findUnique({
+    where: { id: professionalId },
+    select: { status: true },
+  });
+  if (!professional || professional.status !== 'ACTIVE') return null;
+
   const assignments = await prisma.professionalServiceAssignment.findMany({
     where: { professionalId, service: { status: ServiceStatus.ACTIVE, isPrivate: false } },
     select: {

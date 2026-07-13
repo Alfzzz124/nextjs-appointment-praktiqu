@@ -21,6 +21,7 @@ vi.mock('@/services/public/public-booking.service', () => ({
 
 import { GET as practicesList } from '@/app/api/v1/public/practices/route';
 import { GET as practiceDetail } from '@/app/api/v1/public/practices/[id]/route';
+import { GET as professionalServices } from '@/app/api/v1/public/professionals/[id]/services/route';
 import { GET as staticData } from '@/app/api/v1/public/static-data/route';
 import { GET as config } from '@/app/api/v1/public/config/route';
 import { POST as paymentVerify } from '@/app/api/v1/public/payment-verify/route';
@@ -43,6 +44,18 @@ describe('public catalog routes', () => {
     (catalog.getPublicPractice as any).mockResolvedValue(null);
     const res = await practiceDetail(req('http://x/api/v1/public/practices/missing'), { params: { id: 'missing' } });
     expect(res.status).toBe(404);
+  });
+  it('GET /public/professionals/[id]/services → 200 with data array', async () => {
+    (catalog.getPublicProfessionalServices as any).mockResolvedValue([{ id: 's1', name: 'Svc' }]);
+    const res = await professionalServices(req('http://x/api/v1/public/professionals/29/services'), { params: { id: '29' } });
+    expect(res.status).toBe(200);
+    expect(Array.isArray((await res.json()).data)).toBe(true);
+  });
+  it('GET /public/professionals/[id]/services → 404 when professional missing', async () => {
+    (catalog.getPublicProfessionalServices as any).mockResolvedValue(null);
+    const res = await professionalServices(req('http://x/api/v1/public/professionals/missing/services'), { params: { id: 'missing' } });
+    expect(res.status).toBe(404);
+    expect((await res.json()).code).toBe('professional_not_found');
   });
   it('GET /public/static-data → 200', async () => {
     expect((await staticData()).status).toBe(200);
