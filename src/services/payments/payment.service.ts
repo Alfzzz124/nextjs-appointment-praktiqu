@@ -76,3 +76,99 @@ export function verifyPaymentWebhookSignature(rawBody: string, signature: string
     return false;
   }
 }
+
+import { prisma } from '@/lib/db';
+import type { PaymentOrder } from '@prisma/client';
+
+export type PaymentSource = 'public' | 'session';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled';
+
+export class AmountMismatchError extends Error {}
+export class UnknownOrderError extends Error {}
+
+export interface CreatePaymentOrderInput {
+  source: PaymentSource;
+  appointmentId?: string | null;
+  billId?: string | null;
+  encounterId?: string | null;
+  wcOrderId: number;
+  expectedAmount: number;
+}
+
+export async function createPaymentOrder(input: CreatePaymentOrderInput): Promise<PaymentOrder> {
+  return prisma.paymentOrder.create({
+    data: {
+      source: input.source,
+      appointmentId: input.appointmentId ?? null,
+      billId: input.billId ?? null,
+      encounterId: input.encounterId ?? null,
+      wcOrderId: input.wcOrderId,
+      expectedAmount: input.expectedAmount,
+      status: 'pending',
+    },
+  });
+}
+
+export async function getPaymentOrderByAppointment(appointmentId: string): Promise<PaymentOrder | null> {
+  return prisma.paymentOrder.findFirst({ where: { appointmentId }, orderBy: { createdAt: 'desc' } });
+}
+
+export async function getPaymentOrderByBill(billId: string): Promise<PaymentOrder | null> {
+  return prisma.paymentOrder.findFirst({ where: { billId }, orderBy: { createdAt: 'desc' } });
+}
+
+export async function getPaymentOrderByWcOrderId(wcOrderId: number): Promise<PaymentOrder | null> {
+  return prisma.paymentOrder.findUnique({ where: { wcOrderId } });
+}
+
+export interface MarkPaidInput {
+  wcOrderId: number;
+  amountPaid: number;
+  transactionId: string;
+  webhookPayload: unknown;
+}
+
+/** Guarded one-way transition pending -> paid. Returns null if already resolved (idempotent replay). */
+export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | null> {
+  const order = await prisma.paymentOrder.findUnique({ where: { wcOrderId: input.wcOrderId } });
+  if (!order) throw new UnknownOrderError(`No payment order for wcOrderId ${input.wcOrderId}`);
+  if (order.status === 'pending' && order.expectedAmount !== input.amountPaid) {
+    throw new AmountMismatchError(`Expected ${order.expectedAmount}, got ${input.amountPaid}`);
+  }
+
+  const result = await prisma.paymentOrder.updateMany({
+    where: { wcOrderId: input.wcOrderId, status: 'pending' },
+    data: {
+      status: 'paid',
+      transactionId: input.transactionId,
+      paidAt: new Date(),
+      webhookPayload: input.webhookPayload as any,
+    },
+  });
+  if (result.count === 0) return null;
+  return prisma.paymentOrder.findUnique({ where: { wcOrderId: input.wcOrderId } });
+}
+
+export async function markFailed(wcOrderId: number, webhookPayload: unknown): Promise<PaymentOrder | null> {
+  const result = await prisma.paymentOrder.updateMany({
+    where: { wcOrderId, status: 'pending' },
+    data: { status: 'failed', webhookPayload: webhookPayload as any },
+  });
+  if (result.count === 0) return null;
+  return prisma.paymentOrder.findUnique({ where: { wcOrderId } });
+}
+
+export async function markExpired(wcOrderId: number): Promise<PaymentOrder | null> {
+  const result = await prisma.paymentOrder.updateMany({
+    where: { wcOrderId, status: 'pending' },
+    data: { status: 'expired' },
+  });
+  if (result.count === 0) return null;
+  return prisma.paymentOrder.findUnique({ where: { wcOrderId } });
+}
+
+// Note: the `status` column also allows 'cancelled' (see Task 1's data model),
+// reserved for a future out-of-band cancellation path (e.g. a guest cancelling
+// their own PENDING appointment before paying). No route in this plan drives
+// that transition yet, so no markCancelled() is defined until one does —
+// avoids dead exported code (YAGNI).
