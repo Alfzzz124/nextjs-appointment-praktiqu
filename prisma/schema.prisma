@@ -960,6 +960,31 @@ model Tax {
 }
 
 // ============================================
+// PAYMENTS
+// ============================================
+
+model PaymentOrder {
+  id             String    @id @default(cuid())
+  source         String // 'public' | 'session'
+  appointmentId  String?
+  billId         String? // legacy wp_kc_bills.id, stored as string
+  encounterId    String? // legacy wp_kc_patient_encounters.id, stored as string
+  wcOrderId      Int       @unique
+  expectedAmount Int // integer rupiah
+  status         String    @default("pending") // pending|paid|failed|expired|cancelled
+  transactionId  String?
+  paidAt         DateTime?
+  webhookPayload Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([appointmentId])
+  @@index([billId])
+  @@index([status])
+  @@map("payment_orders")
+}
+
+// ============================================
 // CUSTOM FIELDS
 // ============================================
 
