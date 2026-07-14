@@ -50,6 +50,16 @@ final class Settings
             'sanitize_callback' => [$this, 'sanitize_secret'],
             'default'           => '',
         ]);
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_payment_webhook_url', [
+            'type'              => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default'           => '',
+        ]);
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_payment_webhook_secret', [
+            'type'              => 'string',
+            'sanitize_callback' => [$this, 'sanitize_payment_secret'],
+            'default'           => '',
+        ]);
     }
 
     /**
@@ -60,6 +70,19 @@ final class Settings
     {
         if ($value === '' || $value === str_repeat('*', 8)) {
             return (string) get_option('praktiqu_endpoint_webhook_secret', '');
+        }
+        return $value;
+    }
+
+    /**
+     * Same placeholder-preserving behavior as sanitize_secret(), but for the
+     * payment webhook secret — kept independently rotatable from the general
+     * webhook secret (see 2026-07-14 payment feature design §5 Security).
+     */
+    public function sanitize_payment_secret(string $value): string
+    {
+        if ($value === '' || $value === str_repeat('*', 8)) {
+            return (string) get_option('praktiqu_endpoint_payment_webhook_secret', '');
         }
         return $value;
     }
@@ -163,6 +186,47 @@ final class Settings
                     </tr>
                 </table>
 
+                <h2><?php esc_html_e('PraktiQU Payment Webhook', 'praktiqu-endpoint'); ?></h2>
+                <p class="description">
+                    <?php esc_html_e('Separate URL + secret for payment.completed / payment.failed / payment.expired events (Xendit via WooCommerce). Kept independent of the general webhook secret above so it can be rotated without affecting password/user-state webhooks.', 'praktiqu-endpoint'); ?>
+                </p>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row">
+                            <label for="praktiqu_endpoint_payment_webhook_url"><?php esc_html_e('Payment Webhook URL', 'praktiqu-endpoint'); ?></label>
+                        </th>
+                        <td>
+                            <input
+                                type="url"
+                                id="praktiqu_endpoint_payment_webhook_url"
+                                name="praktiqu_endpoint_payment_webhook_url"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_payment_webhook_url', '')); ?>"
+                                class="regular-text"
+                                placeholder="https://praktiqu.example.com/api/v1/sessions/payment-webhook"
+                            />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="praktiqu_endpoint_payment_webhook_secret"><?php esc_html_e('Payment Webhook Secret', 'praktiqu-endpoint'); ?></label>
+                        </th>
+                        <td>
+                            <?php $payment_secret = (string) get_option('praktiqu_endpoint_payment_webhook_secret', ''); ?>
+                            <input
+                                type="text"
+                                id="praktiqu_endpoint_payment_webhook_secret"
+                                name="praktiqu_endpoint_payment_webhook_secret"
+                                value="<?php echo esc_attr($payment_secret === '' ? '' : str_repeat('*', max(8, strlen($payment_secret)))); ?>"
+                                class="regular-text"
+                                placeholder="<?php esc_attr_e('(unchanged)', 'praktiqu-endpoint'); ?>"
+                            />
+                            <p class="description">
+                                <?php esc_html_e('Must match the PraktiQU Next.js app\'s PAYMENT_WEBHOOK_SECRET env var exactly.', 'praktiqu-endpoint'); ?>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
                 <?php submit_button(); ?>
             </form>
 
@@ -176,6 +240,8 @@ final class Settings
                 <li><code>POST /users/lookup</code> — get identity by email</li>
                 <li><code>POST /users/{id}/change-password</code> — change password</li>
                 <li><code>GET  /health</code> — liveness probe</li>
+                <li><code>POST /payments/order</code> — create a WooCommerce order for an appointment/bill</li>
+                <li><code>GET  /payments/order/{id}</code> — read WooCommerce order status</li>
             </ul>
         </div>
         <?php
