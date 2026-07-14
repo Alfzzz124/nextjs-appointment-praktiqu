@@ -23,6 +23,7 @@ vi.mock('@/lib/kc-response', () => ({
 }));
 
 import { POST as paymentVerify } from '@/app/api/v1/sessions/payment-verify/route';
+import { POST as webhook } from '@/app/api/v1/sessions/payment-webhook/route';
 import * as svc from '@/services/payments/payment.service';
 import { requireRoles } from '@/lib/auth/route-guards';
 
@@ -51,5 +52,68 @@ describe('POST /sessions/payment-verify', () => {
     const res = await paymentVerify(req({ billId: '9' }));
     expect(res.status).toBe(200);
     expect((await res.json()).data.checkoutUrl).toBe('https://wp/checkout/9');
+  });
+});
+
+function webhookReq(rawBody: string, signature: string | null) {
+  const headers: Record<string, string> = {};
+  if (signature) headers['x-praktiqu-webhook-signature'] = signature;
+  return new NextRequest('http://x/api/v1/sessions/payment-webhook', { method: 'POST', body: rawBody, headers });
+}
+
+describe('POST /sessions/payment-webhook', () => {
+  it('401 on invalid signature', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(false);
+    const res = await webhook(webhookReq('{}', 'bad-sig'));
+    expect(res.status).toBe(401);
+  });
+
+  it('404 for an unknown wcOrderId', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue(null);
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.completed', wcOrderId: 999 }), 'ok'));
+    expect(res.status).toBe(404);
+  });
+
+  it('200 + applies public side effects on payment.completed', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    // Returned from BOTH the pre-switch lookup and the post-markPaid
+    // re-fetch (mockResolvedValue, not Once) — status: 'paid' reflects the
+    // state after markPaid's guarded write, which the route re-reads rather
+    // than trusting markPaid's own return value (see the route's crash-window
+    // self-heal comment: markPaid returns null both on a lost race AND on a
+    // prior-crash replay, so re-reading current state is the only way to
+    // apply side effects in the replay case too).
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public', status: 'paid' });
+    (svc.markPaid as any).mockResolvedValue({ wcOrderId: 42, source: 'public', status: 'paid' });
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.completed', wcOrderId: 42, amountPaid: 100000, transactionId: 'tx' }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.applyPaidSideEffectsPublic).toHaveBeenCalled();
+  });
+
+  it('200 + still applies side effects when markPaid returns null (replay of an already-paid order)', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'session', status: 'paid' });
+    (svc.markPaid as any).mockResolvedValue(null); // e.g. a prior crash already flipped this row to 'paid'
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.completed', wcOrderId: 42, amountPaid: 100000, transactionId: 'tx' }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.applyPaidSideEffectsSession).toHaveBeenCalled();
+  });
+
+  it('409 on amount mismatch', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public' });
+    (svc.markPaid as any).mockRejectedValue(new (svc as any).AmountMismatchError());
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.completed', wcOrderId: 42, amountPaid: 1, transactionId: 'tx' }), 'ok'));
+    expect(res.status).toBe(409);
+  });
+
+  it('200 + cancels appointment on payment.expired', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public' });
+    (svc.markExpired as any).mockResolvedValue({ wcOrderId: 42, source: 'public', appointmentId: 'appt_1' });
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.expired', wcOrderId: 42 }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.cancelIfStillPending).toHaveBeenCalled();
   });
 });
