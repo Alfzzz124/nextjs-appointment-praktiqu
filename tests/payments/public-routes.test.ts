@@ -14,6 +14,7 @@ vi.mock('@/lib/public/appointment-token', () => ({
 }));
 
 import { POST as initiate } from '@/app/api/v1/public/payments/route';
+import { POST as verify } from '@/app/api/v1/public/payment-verify/route';
 import * as svc from '@/services/payments/payment.service';
 
 function req(body: unknown) {
@@ -44,6 +45,26 @@ describe('POST /public/payments', () => {
   it('404 when the appointment does not exist', async () => {
     (svc.initiatePublicPayment as any).mockRejectedValue(new (svc as any).AppointmentNotFoundError());
     const res = await initiate(req({ token: 'good' }));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /public/payment-verify', () => {
+  it('400 on invalid token', async () => {
+    const res = await verify(req({ token: 'bad' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('200 with current status', async () => {
+    (svc.checkPublicPaymentStatus as any).mockResolvedValue({ status: 'paid', expectedAmount: 100000 });
+    const res = await verify(req({ token: 'good' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toEqual({ status: 'paid', expectedAmount: 100000 });
+  });
+
+  it('404 when no payment exists for the appointment', async () => {
+    (svc.checkPublicPaymentStatus as any).mockRejectedValue(new (svc as any).UnknownOrderError());
+    const res = await verify(req({ token: 'good' }));
     expect(res.status).toBe(404);
   });
 });

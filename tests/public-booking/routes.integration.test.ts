@@ -24,7 +24,6 @@ import { GET as practiceDetail } from '@/app/api/v1/public/practices/[id]/route'
 import { GET as professionalServices } from '@/app/api/v1/public/professionals/[id]/services/route';
 import { GET as staticData } from '@/app/api/v1/public/static-data/route';
 import { GET as config } from '@/app/api/v1/public/config/route';
-import { POST as paymentVerify } from '@/app/api/v1/public/payment-verify/route';
 import { GET as rating } from '@/app/api/v1/public/rating/[id]/route';
 import { GET as apptLookup } from '@/app/api/v1/public/appointments/[token]/route';
 import { POST as bookingDeprecated } from '@/app/api/v1/public/booking/route';
@@ -62,14 +61,6 @@ describe('public catalog routes', () => {
   });
   it('GET /public/config → 200 with slotHoldTtlMs', async () => {
     expect((await config().then(r => r.json())).data).toHaveProperty('slotHoldTtlMs');
-  });
-});
-
-describe('payment-verify stub', () => {
-  it('POST /public/payment-verify → 501', async () => {
-    const res = await paymentVerify();
-    expect(res.status).toBe(501);
-    expect((await res.json()).code).toBe('NOT_IMPLEMENTED');
   });
 });
 
