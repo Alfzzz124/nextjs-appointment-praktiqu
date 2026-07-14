@@ -33,10 +33,12 @@ final class Jobs
     public const GROUP = 'praktiqu-jobs';
 
     private Service $service;
+    private Payments $payments;
 
-    public function __construct(Service $service)
+    public function __construct(Service $service, Payments $payments)
     {
         $this->service = $service;
+        $this->payments = $payments;
     }
 
     /**
@@ -48,6 +50,7 @@ final class Jobs
         add_action('praktiqu_session_auto_complete', [$this, 'handle_session_auto_complete'], 10, 1);
         add_action('praktiqu_session_send_reminder', [$this, 'handle_session_send_reminder'], 10, 2);
         add_action('praktiqu_log_purge', [$this, 'handle_log_purge'], 10, 0);
+        add_action('praktiqu_payment_auto_cancel', [$this, 'handle_payment_auto_cancel'], 10, 1);
 
         // Daily purge schedule (registers a recurring AS event on activation).
         // The actual schedule registration lives in Plugin::on_activation.
@@ -70,6 +73,7 @@ final class Jobs
             'praktiqu_session_auto_complete',
             'praktiqu_session_send_reminder',
             'praktiqu_log_purge',
+            'praktiqu_payment_auto_cancel',
         ];
         if (!in_array($hook, $allowed, true)) {
             return false;
@@ -121,6 +125,24 @@ final class Jobs
             'sessionId' => $session_id,
             'channel'   => $channel,
         ]);
+    }
+
+    /**
+     * Auto-cancel a WC order whose 1-hour payment window has expired
+     * (2026-07-14 payment feature). No-op if the order is already paid.
+     *
+     * Args: [wcOrderId (int)] — matches the args passed by PraktiQU's
+     * jobs.enqueue() call exactly, so jobs.cancel() with the same args can
+     * unschedule this action if payment completes first.
+     */
+    public function handle_payment_auto_cancel(int $wcOrderId): void
+    {
+        $order = wc_get_order($wcOrderId);
+        if (!$order instanceof \WC_Order || $order->is_paid()) {
+            return;
+        }
+        $this->payments->cancel_order($wcOrderId);
+        $this->payments->dispatch_payment_webhook('payment.expired', $order);
     }
 
     /**
