@@ -172,3 +172,187 @@ export async function markExpired(wcOrderId: number): Promise<PaymentOrder | nul
 // their own PENDING appointment before paying). No route in this plan drives
 // that transition yet, so no markCancelled() is defined until one does —
 // avoids dead exported code (YAGNI).
+
+import { AppointmentStatus } from '@prisma/client';
+import { signAppointmentToken } from '@/lib/public/appointment-token';
+import { createWcOrder, getWcOrderStatus } from '@/lib/wp-endpoint';
+import { jobs } from '@/lib/jobs/client';
+import { getBill } from '@/services/billing/bill.service';
+
+export class AppointmentNotFoundError extends Error {}
+export class AppointmentNotPendingError extends Error {}
+export class PaymentAlreadyInitiatedError extends Error {}
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+const AUTO_CANCEL_MS = 60 * 60 * 1000; // 1 hour — see Global Constraints
+const VERIFY_FALLBACK_MS = 2 * 60 * 1000; // 2 minutes — see Global Constraints
+
+export interface PaymentStatusView {
+  status: PaymentStatus;
+  expectedAmount: number;
+}
+
+export async function initiatePublicPayment(appointmentId: string): Promise<{ checkoutUrl: string }> {
+  const appt = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    select: {
+      id: true,
+      status: true,
+      patient: { select: { user: { select: { displayName: true, email: true } } } },
+      services: { take: 1, select: { price: true, service: { select: { name: true } } } },
+    },
+  });
+  if (!appt) throw new AppointmentNotFoundError();
+  if (appt.status !== AppointmentStatus.PENDING) throw new AppointmentNotPendingError();
+
+  const existing = await getPaymentOrderByAppointment(appointmentId);
+  if (existing && existing.status === 'pending') throw new PaymentAlreadyInitiatedError();
+
+  const svc = appt.services[0];
+  const serviceName = svc?.service.name ?? 'Service';
+  const servicePrice = svc ? Number(svc.price) : 0;
+  const { expectedAmount, items, taxes } = await computePublicAmount({ name: serviceName, price: servicePrice });
+
+  const token = signAppointmentToken(appointmentId);
+  const wcOrder = await createWcOrder({
+    source: 'public',
+    appointmentId,
+    customerName: appt.patient?.user.displayName ?? 'Guest',
+    customerEmail: appt.patient?.user.email ?? '',
+    items,
+    taxes,
+    returnUrl: `${APP_URL}/book/payment/success?appt=${token}`,
+    cancelUrl: `${APP_URL}/book/payment/cancel?appt=${token}`,
+  });
+
+  await createPaymentOrder({ source: 'public', appointmentId, wcOrderId: wcOrder.orderId, expectedAmount });
+  await jobs.enqueue({
+    hook: 'praktiqu_payment_auto_cancel',
+    runAt: new Date(Date.now() + AUTO_CANCEL_MS),
+    args: { wcOrderId: wcOrder.orderId },
+  });
+
+  return { checkoutUrl: wcOrder.checkoutUrl };
+}
+
+export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
+  await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
+  if (!order.appointmentId) return;
+  await prisma.appointment.updateMany({
+    where: { id: order.appointmentId, status: AppointmentStatus.PENDING },
+    data: { status: AppointmentStatus.BOOKED },
+  });
+}
+
+async function markBillPaid(billId: string, encounterId: string | null): Promise<void> {
+  await prisma.$transaction(async (tx: typeof prisma) => {
+    const bill = await tx.kcBill.update({ where: { id: BigInt(billId) }, data: { paymentStatus: 'paid' } });
+    const encId = encounterId ? BigInt(encounterId) : bill.encounterId;
+    await tx.kcPatientEncounter.update({ where: { id: encId }, data: { status: 0 } });
+    if (bill.appointmentId) {
+      await tx.kcAppointment.updateMany({ where: { id: bill.appointmentId }, data: { status: 3 } as any });
+    }
+  });
+}
+
+export async function applyPaidSideEffectsSession(order: PaymentOrder): Promise<void> {
+  await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
+  if (!order.billId) return;
+  await markBillPaid(order.billId, order.encounterId);
+}
+
+export async function cancelIfStillPending(order: PaymentOrder): Promise<void> {
+  if (order.source === 'public' && order.appointmentId) {
+    await prisma.appointment.updateMany({
+      where: { id: order.appointmentId, status: AppointmentStatus.PENDING },
+      data: { status: AppointmentStatus.CANCELLED },
+    });
+  }
+  // Session/staff flow: an expired unpaid bill simply stays unpaid — staff
+  // bookings don't hold a slot the way public PENDING appointments do.
+}
+
+async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
+  if (order.status !== 'pending') return order;
+  if (Date.now() - order.createdAt.getTime() < VERIFY_FALLBACK_MS) return order;
+
+  const wcStatus = await getWcOrderStatus(order.wcOrderId);
+  if (wcStatus.isPaid) {
+    const updated = await markPaid({
+      wcOrderId: order.wcOrderId,
+      amountPaid: wcStatus.amount,
+      transactionId: wcStatus.transactionId ?? '',
+      webhookPayload: { source: 'verify-fallback', wcStatus },
+    });
+    if (!updated) return order;
+    if (updated.source === 'public') await applyPaidSideEffectsPublic(updated);
+    else await applyPaidSideEffectsSession(updated);
+    return updated;
+  }
+  if (wcStatus.status === 'cancelled' || wcStatus.status === 'failed') {
+    const updated = await markFailed(order.wcOrderId, { source: 'verify-fallback', wcStatus });
+    return updated ?? order;
+  }
+  return order;
+}
+
+export async function checkPublicPaymentStatus(appointmentId: string): Promise<PaymentStatusView> {
+  const order = await getPaymentOrderByAppointment(appointmentId);
+  if (!order) throw new UnknownOrderError('No payment found for this appointment');
+  const reconciled = await reconcileIfStale(order);
+  return { status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };
+}
+
+export async function checkSessionPaymentStatus(billId: string): Promise<PaymentStatusView> {
+  const order = await getPaymentOrderByBill(billId);
+  if (!order) throw new UnknownOrderError('No payment found for this bill');
+  const reconciled = await reconcileIfStale(order);
+  return { status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };
+}
+
+export async function ensureSessionPayment(
+  billId: string,
+): Promise<{ checkoutUrl: string | null; status: PaymentStatus; expectedAmount: number }> {
+  const existing = await getPaymentOrderByBill(billId);
+  if (existing) {
+    const reconciled = await reconcileIfStale(existing);
+    if (reconciled.status !== 'failed' && reconciled.status !== 'expired' && reconciled.status !== 'cancelled') {
+      return { checkoutUrl: null, status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };
+    }
+    // failed/expired/cancelled — fall through and create a fresh order.
+  }
+
+  const bill = await getBill(Number(billId));
+  const { expectedAmount, items, taxes } = computeSessionAmountFromBill(bill);
+  const patientUser = await prisma.kcUser.findUnique({
+    where: { id: BigInt(bill.patient.id) },
+    select: { displayName: true, userEmail: true },
+  });
+
+  const wcOrder = await createWcOrder({
+    source: 'session',
+    billId,
+    encounterId: String(bill.patientEncounter.id),
+    customerName: patientUser?.displayName ?? 'Patient',
+    customerEmail: patientUser?.userEmail ?? '',
+    items,
+    taxes,
+    returnUrl: `${APP_URL}/staff/bills/${billId}/payment-success`,
+    cancelUrl: `${APP_URL}/staff/bills/${billId}/payment-cancel`,
+  });
+
+  await createPaymentOrder({
+    source: 'session',
+    billId,
+    encounterId: String(bill.patientEncounter.id),
+    wcOrderId: wcOrder.orderId,
+    expectedAmount,
+  });
+  await jobs.enqueue({
+    hook: 'praktiqu_payment_auto_cancel',
+    runAt: new Date(Date.now() + AUTO_CANCEL_MS),
+    args: { wcOrderId: wcOrder.orderId },
+  });
+
+  return { checkoutUrl: wcOrder.checkoutUrl, status: 'pending', expectedAmount };
+}
