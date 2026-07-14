@@ -16,6 +16,7 @@ final class Plugin
     private static ?Plugin $instance = null;
 
     public Service $service;
+    public Payments $payments;
     public REST_Controller $rest;
     public Hooks $hooks;
     public Jobs $jobs;
@@ -24,8 +25,9 @@ final class Plugin
     private function __construct()
     {
         $this->service  = new Service();
-        $this->jobs     = new Jobs($this->service);
-        $this->rest     = new REST_Controller($this->service, $this->jobs);
+        $this->payments = new Payments();
+        $this->jobs     = new Jobs($this->service, $this->payments);
+        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();
 
@@ -36,6 +38,7 @@ final class Plugin
         $this->rest->register();
         $this->hooks->register();
         $this->jobs->register();
+        $this->payments->register();
         $this->settings->register();
     }
 
