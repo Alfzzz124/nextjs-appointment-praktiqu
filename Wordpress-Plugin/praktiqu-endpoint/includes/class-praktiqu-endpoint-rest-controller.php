@@ -19,11 +19,13 @@ final class REST_Controller
 {
     private Service $service;
     private Jobs $jobs;
+    private Payments $payments;
 
-    public function __construct(Service $service, Jobs $jobs)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments)
     {
         $this->service = $service;
         $this->jobs = $jobs;
+        $this->payments = $payments;
     }
 
     public function register(): void
@@ -105,6 +107,23 @@ final class REST_Controller
             'args'                => [
                 'hook'  => ['required' => true, 'type' => 'string'],
                 'args'  => ['required' => false, 'type' => 'array', 'default' => []],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/payments/order — create a WC order (2026-07-14 payment feature)
+        register_rest_route($ns, '/payments/order', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_payment_order'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+        ]);
+
+        // GET /praktiqu/v1/payments/order/{id} — verify-fallback order status
+        register_rest_route($ns, '/payments/order/(?P<id>\d+)', [
+            'methods'             => \WP_REST_Server::READABLE,
+            'callback'            => [$this, 'handle_get_payment_order'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
     }
@@ -212,5 +231,29 @@ final class REST_Controller
             (array)  $request->get_param('args') ?: []
         );
         return new \WP_REST_Response(['ok' => true], 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/payments/order
+     */
+    public function handle_create_payment_order(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->payments->create_order($request->get_json_params() ?: []);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * GET /praktiqu/v1/payments/order/{id}
+     */
+    public function handle_get_payment_order(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->payments->get_order_status((int) $request->get_param('id'));
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
     }
 }
