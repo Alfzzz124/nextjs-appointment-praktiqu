@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.2.0
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -25,6 +25,8 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * `POST /users/lookup` — get user identity by email
 * `POST /users/{id}/change-password` — change a user's password
 * `GET  /health` — liveness probe
+* `POST /payments/order` — create a WooCommerce order for an appointment or bill
+* `GET  /payments/order/{id}` — read WooCommerce order status
 
 == Configuration ==
 
@@ -51,6 +53,12 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.2.0 =
+* Payments: Xendit-via-WooCommerce bridge. New /payments/order (create) and
+  /payments/order/{id} (status) endpoints, praktiqu_payment_auto_cancel job,
+  and a dedicated payment webhook URL/secret (independent of the general
+  webhook secret) dispatching payment.completed/failed/expired.
 
 = 1.0.0 =
 * Initial release: authenticate, lookup, change-password, health endpoints; webhook dispatcher on user-state changes; admin settings page.
