@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // computePublicAmount only needs calculateTax's *shape*, not a live DB — the
 // real calculateTax hits prisma.kcTax.findMany() against whatever DATABASE_URL
@@ -56,5 +56,38 @@ describe('payment.service money math', () => {
     expect(result.expectedAmount).toBe(250000);
     expect(result.items).toEqual([{ name: 'Therapy', price: 250000 }]);
     expect(result.taxes).toEqual([{ name: 'VAT', amount: 25000 }]);
+  });
+});
+
+import { createHmac } from 'node:crypto';
+import { verifyPaymentWebhookSignature } from '@/services/payments/payment.service';
+
+describe('payment.service webhook signature', () => {
+  const OLD_ENV = process.env;
+  beforeEach(() => { process.env = { ...OLD_ENV }; });
+  afterEach(() => { process.env = OLD_ENV; });
+
+  it('accepts a correctly-signed body', () => {
+    process.env.PAYMENT_WEBHOOK_SECRET = 'test-secret';
+    const body = '{"event":"payment.completed"}';
+    const sig = createHmac('sha256', 'test-secret').update(body).digest('hex');
+    expect(verifyPaymentWebhookSignature(body, sig)).toBe(true);
+  });
+
+  it('rejects a tampered body', () => {
+    process.env.PAYMENT_WEBHOOK_SECRET = 'test-secret';
+    const sig = createHmac('sha256', 'test-secret').update('{"event":"payment.completed"}').digest('hex');
+    expect(verifyPaymentWebhookSignature('{"event":"payment.failed"}', sig)).toBe(false);
+  });
+
+  it('rejects a missing signature', () => {
+    process.env.PAYMENT_WEBHOOK_SECRET = 'test-secret';
+    expect(verifyPaymentWebhookSignature('{}', null)).toBe(false);
+  });
+
+  it('rejects everything in production when no secret is configured', () => {
+    process.env.PAYMENT_WEBHOOK_SECRET = '';
+    process.env.NODE_ENV = 'production';
+    expect(verifyPaymentWebhookSignature('{}', 'anything')).toBe(false);
   });
 });

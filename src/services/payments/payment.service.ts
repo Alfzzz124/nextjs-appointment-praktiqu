@@ -1,6 +1,7 @@
 import { calculateTax } from '@/services/billing/bill.service';
 import type { BillDetail } from '@/services/billing/bill.service';
 import { toNum } from '@/lib/kc-num';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface PaymentLineItem {
   name: string;
@@ -50,4 +51,28 @@ export function computeSessionAmountFromBill(bill: BillDetail): ComputedAmount {
   }));
   const taxes: PaymentTaxLine[] = bill.taxItems.map((t) => ({ name: t.tax_name, amount: toRupiah(t.tax_amount) }));
   return { expectedAmount: toRupiah(bill.total_amount), items, taxes };
+}
+
+/**
+ * Constant-time HMAC-SHA256 verification for `sessions/payment-webhook`.
+ * Deliberately a SEPARATE secret from WORDPRESS_WEBHOOK_SECRET/AUTH_SECRET —
+ * see Global Constraints in the implementation plan.
+ */
+export function verifyPaymentWebhookSignature(rawBody: string, signature: string | null): boolean {
+  const secret = process.env.PAYMENT_WEBHOOK_SECRET ?? '';
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') return false;
+    return true; // dev-only fallback, mirrors src/lib/jobs/webhook-handler.ts
+  }
+  if (!signature) return false;
+
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
