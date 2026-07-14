@@ -132,8 +132,8 @@ export interface MarkPaidInput {
 export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | null> {
   const order = await prisma.paymentOrder.findUnique({ where: { wcOrderId: input.wcOrderId } });
   if (!order) throw new UnknownOrderError(`No payment order for wcOrderId ${input.wcOrderId}`);
-  if (order.status === 'pending' && order.expectedAmount !== input.amountPaid) {
-    throw new AmountMismatchError(`Expected ${order.expectedAmount}, got ${input.amountPaid}`);
+  if (order.status === 'pending' && Math.abs(order.expectedAmount - input.amountPaid) > AMOUNT_TOLERANCE_RUPIAH) {
+    throw new AmountMismatchError(`Expected ${order.expectedAmount} (±${AMOUNT_TOLERANCE_RUPIAH}), got ${input.amountPaid}`);
   }
 
   const result = await prisma.paymentOrder.updateMany({
@@ -178,6 +178,7 @@ import { signAppointmentToken } from '@/lib/public/appointment-token';
 import { createWcOrder, getWcOrderStatus } from '@/lib/wp-endpoint';
 import { jobs } from '@/lib/jobs/client';
 import { getBill } from '@/services/billing/bill.service';
+import { logging } from '@/lib/logging';
 
 export class AppointmentNotFoundError extends Error {}
 export class AppointmentNotPendingError extends Error {}
@@ -186,6 +187,11 @@ export class PaymentAlreadyInitiatedError extends Error {}
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 const AUTO_CANCEL_MS = 60 * 60 * 1000; // 1 hour — see Global Constraints
 const VERIFY_FALLBACK_MS = 2 * 60 * 1000; // 2 minutes — see Global Constraints
+
+/** Multi-item/multi-tax bills can differ by a rupiah or two between
+ *  Σround(line) and round(Σline) — tolerate a small drift rather than
+ *  rejecting a genuinely-correct payment. */
+const AMOUNT_TOLERANCE_RUPIAH = 2;
 
 export interface PaymentStatusView {
   status: PaymentStatus;
@@ -299,12 +305,23 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
 
   const wcStatus = await getWcOrderStatus(order.wcOrderId);
   if (wcStatus.isPaid) {
-    const updated = await markPaid({
-      wcOrderId: order.wcOrderId,
-      amountPaid: wcStatus.amount,
-      transactionId: wcStatus.transactionId ?? '',
-      webhookPayload: { source: 'verify-fallback', wcStatus },
-    });
+    let updated: PaymentOrder | null;
+    try {
+      updated = await markPaid({
+        wcOrderId: order.wcOrderId,
+        amountPaid: wcStatus.amount,
+        transactionId: wcStatus.transactionId ?? '',
+        webhookPayload: { source: 'verify-fallback', wcStatus },
+      });
+    } catch (err) {
+      if (err instanceof AmountMismatchError) {
+        await logging.error('Verify-fallback amount mismatch — leaving order pending for manual review', err, {
+          metadata: { wcOrderId: order.wcOrderId, expectedAmount: order.expectedAmount, wcAmount: wcStatus.amount },
+        });
+        return order;
+      }
+      throw err;
+    }
     if (!updated) return order;
     if (updated.source === 'public') await applyPaidSideEffectsPublic(updated);
     else await applyPaidSideEffectsSession(updated);
@@ -312,6 +329,7 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
   }
   if (wcStatus.status === 'cancelled' || wcStatus.status === 'failed') {
     const updated = await markFailed(order.wcOrderId, { source: 'verify-fallback', wcStatus });
+    if (updated) await cancelIfStillPending(updated);
     return updated ?? order;
   }
   return order;

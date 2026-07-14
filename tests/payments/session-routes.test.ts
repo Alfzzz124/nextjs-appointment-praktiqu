@@ -110,6 +110,24 @@ describe('POST /sessions/payment-webhook', () => {
     expect(res.status).toBe(409);
   });
 
+  it('200 + cancels appointment on payment.failed (releases the slot the same way payment.expired does)', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public' });
+    (svc.markFailed as any).mockResolvedValue({ wcOrderId: 42, source: 'public', appointmentId: 'appt_1' });
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.failed', wcOrderId: 42 }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.cancelIfStillPending).toHaveBeenCalled();
+  });
+
+  it('200 + skips cancelIfStillPending on payment.failed when markFailed returns null (replay)', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public' });
+    (svc.markFailed as any).mockResolvedValue(null); // already resolved by an earlier delivery
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.failed', wcOrderId: 42 }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.cancelIfStillPending).not.toHaveBeenCalled();
+  });
+
   it('200 + cancels appointment on payment.expired', async () => {
     (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
     (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public' });

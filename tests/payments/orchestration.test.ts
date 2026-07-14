@@ -31,6 +31,17 @@ vi.mock('@/services/billing/bill.service', () => ({
   getBill: vi.fn(),
 }));
 
+const logging = vi.hoisted(() => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock('@/lib/logging', () => logging);
+
 beforeEach(() => vi.clearAllMocks());
 
 import {
@@ -113,6 +124,68 @@ describe('checkPublicPaymentStatus — verify fallback', () => {
     const result = await checkPublicPaymentStatus('appt_1');
     expect(result.status).toBe('pending');
     expect(wpEndpoint.getWcOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it('releases the appointment slot when WC reports the order as failed/cancelled', async () => {
+    const staleCreatedAt = new Date(Date.now() - 3 * 60_000);
+    db.paymentOrder.findFirst.mockResolvedValue({
+      wcOrderId: 42, status: 'pending', expectedAmount: 100000, createdAt: staleCreatedAt,
+      source: 'public', appointmentId: 'appt_1', billId: null,
+    });
+    wpEndpoint.getWcOrderStatus.mockResolvedValue({ orderId: 42, status: 'failed', isPaid: false });
+    db.paymentOrder.updateMany.mockResolvedValue({ count: 1 });
+    db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'failed', expectedAmount: 100000, source: 'public', appointmentId: 'appt_1' });
+    db.appointment.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await checkPublicPaymentStatus('appt_1');
+    expect(result.status).toBe('failed');
+    expect(db.appointment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'appt_1', status: 'PENDING' },
+      data: { status: 'CANCELLED' },
+    });
+  });
+
+  it('tolerates a small rounding drift between expectedAmount and the WC-reported amount', async () => {
+    const staleCreatedAt = new Date(Date.now() - 3 * 60_000);
+    db.paymentOrder.findFirst.mockResolvedValue({
+      wcOrderId: 42, status: 'pending', expectedAmount: 100000, createdAt: staleCreatedAt,
+      source: 'public', appointmentId: 'appt_1', billId: null,
+    });
+    // WC's independently-recomputed total is 1 rupiah off due to per-line
+    // vs whole-total rounding order — within AMOUNT_TOLERANCE_RUPIAH.
+    wpEndpoint.getWcOrderStatus.mockResolvedValue({ orderId: 42, status: 'processing', isPaid: true, transactionId: 'tx-1', amount: 100001 });
+    db.paymentOrder.updateMany.mockResolvedValue({ count: 1 });
+    db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'paid', expectedAmount: 100000, source: 'public', appointmentId: 'appt_1' });
+    db.appointment.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await checkPublicPaymentStatus('appt_1');
+    expect(result.status).toBe('paid');
+  });
+
+  it('leaves the order pending (no throw) when a genuine amount mismatch surfaces during verify-fallback', async () => {
+    const staleCreatedAt = new Date(Date.now() - 3 * 60_000);
+    db.paymentOrder.findFirst.mockResolvedValue({
+      wcOrderId: 42, status: 'pending', expectedAmount: 100000, createdAt: staleCreatedAt,
+      source: 'public', appointmentId: 'appt_1', billId: null,
+    });
+    // WC reports an amount far outside the rounding-drift tolerance — a
+    // genuine mismatch, not a rounding artifact.
+    wpEndpoint.getWcOrderStatus.mockResolvedValue({ orderId: 42, status: 'processing', isPaid: true, transactionId: 'tx-1', amount: 50000 });
+    // markPaid's own findUnique lookup re-reads the same pending order,
+    // triggering its guarded AmountMismatchError check.
+    db.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42, status: 'pending', expectedAmount: 100000, source: 'public', appointmentId: 'appt_1',
+    });
+
+    const result = await checkPublicPaymentStatus('appt_1');
+    expect(result.status).toBe('pending');
+    expect(db.paymentOrder.updateMany).not.toHaveBeenCalled();
+    expect(db.appointment.updateMany).not.toHaveBeenCalled();
+    expect(logging.logging.error).toHaveBeenCalledWith(
+      expect.stringContaining('amount mismatch'),
+      expect.any(Error),
+      expect.objectContaining({ metadata: expect.objectContaining({ wcOrderId: 42 }) }),
+    );
   });
 });
 

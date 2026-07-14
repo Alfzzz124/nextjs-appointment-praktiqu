@@ -68,7 +68,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         else await applyPaidSideEffectsSession(current);
       }
     } else if (event === 'payment.failed') {
-      await markFailed(wcOrderId, parsed.data);
+      const updated = await markFailed(wcOrderId, parsed.data);
+      if (updated) await cancelIfStillPending(updated);
     } else if (event === 'payment.expired') {
       const updated = await markExpired(wcOrderId);
       if (updated) await cancelIfStillPending(updated);
