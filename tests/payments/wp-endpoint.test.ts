@@ -44,4 +44,13 @@ describe('wp-endpoint payments client', () => {
     expect(result).toEqual({ orderId: 7, status: 'processing', isPaid: true, transactionId: 'tx-1', amount: 100000 });
     expect((fetch as any).mock.calls[0][0]).toBe('http://wp.test/wp-json/praktiqu/v1/payments/order/7');
   });
+
+  it('createWcOrder throws WpEndpointError when WORDPRESS_SERVICE_TOKEN is not set', async () => {
+    process.env.WORDPRESS_SERVICE_TOKEN = '';
+    const { createWcOrder, WpEndpointError } = await import('@/lib/wp-endpoint');
+    await expect(createWcOrder({
+      source: 'public', customerName: 'A', customerEmail: 'a@x.com',
+      items: [], taxes: [], returnUrl: 'x', cancelUrl: 'y',
+    })).rejects.toThrow(WpEndpointError);
+  });
 });

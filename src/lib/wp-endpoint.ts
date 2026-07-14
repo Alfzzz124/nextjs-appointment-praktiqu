@@ -66,7 +66,12 @@ export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWc
     const text = await res.text().catch(() => res.statusText);
     throw new WpEndpointError(`WC order create failed ${res.status}: ${text}`, res.status);
   }
-  const data = await res.json();
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new WpEndpointError('WC order create returned invalid JSON', res.status);
+  }
   return { orderId: data.orderId, checkoutUrl: data.checkoutUrl };
 }
 
@@ -78,7 +83,12 @@ export async function getWcOrderStatus(orderId: number): Promise<WcOrderStatus> 
     const text = await res.text().catch(() => res.statusText);
     throw new WpEndpointError(`WC order status fetch failed ${res.status}: ${text}`, res.status);
   }
-  const data = await res.json();
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new WpEndpointError('WC order status returned invalid JSON', res.status);
+  }
   return {
     orderId: data.orderId,
     status: data.status,
