@@ -11,7 +11,7 @@ const db = vi.hoisted(() => {
   const d: any = {
     paymentOrder: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
     appointment: { findUnique: vi.fn(), updateMany: vi.fn() },
-    kcBill: { update: vi.fn() },
+    kcBill: { update: vi.fn(), findUnique: vi.fn() },
     kcPatientEncounter: { update: vi.fn() },
     kcAppointment: { updateMany: vi.fn() },
   };
@@ -96,6 +96,7 @@ describe('checkPublicPaymentStatus — verify fallback', () => {
     wpEndpoint.getWcOrderStatus.mockResolvedValue({ orderId: 42, status: 'processing', isPaid: true, transactionId: 'tx-1', amount: 100000 });
     db.paymentOrder.updateMany.mockResolvedValue({ count: 1 });
     db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'paid', expectedAmount: 100000, source: 'public', appointmentId: 'appt_1' });
+    db.appointment.updateMany.mockResolvedValue({ count: 1 }); // guarded PENDING -> BOOKED transition applies
 
     const result = await checkPublicPaymentStatus('appt_1');
     expect(result.status).toBe('paid');
@@ -129,5 +130,31 @@ describe('cancelIfStillPending — auto-cancel guard', () => {
     const { cancelIfStillPending } = await import('@/services/payments/payment.service');
     await cancelIfStillPending({ source: 'session', appointmentId: null, wcOrderId: 42 } as any);
     expect(db.appointment.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
+  it('re-applies the appointment transition for a paid order whose appointment never got updated (skips the network call once applied)', async () => {
+    db.paymentOrder.findFirst.mockResolvedValue({
+      wcOrderId: 42, status: 'paid', expectedAmount: 100000, createdAt: new Date(),
+      source: 'public', appointmentId: 'appt_1', billId: null,
+    });
+    db.appointment.updateMany.mockResolvedValue({ count: 1 }); // still PENDING -> BOOKED transition applies
+    await checkPublicPaymentStatus('appt_1');
+    expect(db.appointment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'appt_1', status: 'PENDING' },
+      data: { status: 'BOOKED' },
+    });
+    expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: 42 } });
+  });
+
+  it('is a cheap no-op (no jobs.cancel network call) when the appointment was already BOOKED', async () => {
+    db.paymentOrder.findFirst.mockResolvedValue({
+      wcOrderId: 42, status: 'paid', expectedAmount: 100000, createdAt: new Date(),
+      source: 'public', appointmentId: 'appt_1', billId: null,
+    });
+    db.appointment.updateMany.mockResolvedValue({ count: 0 }); // already BOOKED, guarded update matches nothing
+    await checkPublicPaymentStatus('appt_1');
+    expect(jobsClient.jobs.cancel).not.toHaveBeenCalled();
   });
 });

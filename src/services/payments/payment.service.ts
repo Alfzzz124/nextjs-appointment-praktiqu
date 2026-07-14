@@ -236,29 +236,46 @@ export async function initiatePublicPayment(appointmentId: string): Promise<{ ch
 }
 
 export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
-  await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
   if (!order.appointmentId) return;
-  await prisma.appointment.updateMany({
+  const result = await prisma.appointment.updateMany({
     where: { id: order.appointmentId, status: AppointmentStatus.PENDING },
     data: { status: AppointmentStatus.BOOKED },
   });
+  if (result.count === 0) return; // already applied — nothing left to do
+  await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
 }
 
-async function markBillPaid(billId: string, encounterId: string | null): Promise<void> {
-  await prisma.$transaction(async (tx: typeof prisma) => {
-    const bill = await tx.kcBill.update({ where: { id: BigInt(billId) }, data: { paymentStatus: 'paid' } });
+async function markBillPaid(billId: string, encounterId: string | null): Promise<boolean> {
+  return prisma.$transaction(async (tx: typeof prisma) => {
+    const bill = await tx.kcBill.findUnique({ where: { id: BigInt(billId) } });
+    if (!bill || bill.paymentStatus === 'paid') return false; // already applied
+    await tx.kcBill.update({ where: { id: BigInt(billId) }, data: { paymentStatus: 'paid' } });
     const encId = encounterId ? BigInt(encounterId) : bill.encounterId;
     await tx.kcPatientEncounter.update({ where: { id: encId }, data: { status: 0 } });
     if (bill.appointmentId) {
       await tx.kcAppointment.updateMany({ where: { id: bill.appointmentId }, data: { status: 3 } as any });
     }
+    return true;
   });
 }
 
 export async function applyPaidSideEffectsSession(order: PaymentOrder): Promise<void> {
-  await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
   if (!order.billId) return;
-  await markBillPaid(order.billId, order.encounterId);
+  const applied = await markBillPaid(order.billId, order.encounterId);
+  if (!applied) return; // already applied — nothing left to do
+  await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
+}
+
+/**
+ * Idempotently (re-)apply paid side effects for an order already marked
+ * 'paid'. Closes a crash-window gap: if the process died between markPaid's
+ * guarded write and the side-effect call, a later read of this order would
+ * otherwise never retry the (now cheap, guard-first) side effect.
+ */
+async function ensurePaidSideEffectsApplied(order: PaymentOrder): Promise<void> {
+  if (order.status !== 'paid') return;
+  if (order.source === 'public') await applyPaidSideEffectsPublic(order);
+  else await applyPaidSideEffectsSession(order);
 }
 
 export async function cancelIfStillPending(order: PaymentOrder): Promise<void> {
@@ -273,6 +290,10 @@ export async function cancelIfStillPending(order: PaymentOrder): Promise<void> {
 }
 
 async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
+  if (order.status === 'paid') {
+    await ensurePaidSideEffectsApplied(order);
+    return order;
+  }
   if (order.status !== 'pending') return order;
   if (Date.now() - order.createdAt.getTime() < VERIFY_FALLBACK_MS) return order;
 
