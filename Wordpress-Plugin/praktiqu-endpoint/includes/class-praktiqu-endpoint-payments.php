@@ -135,7 +135,18 @@ final class Payments
         if (!$this->is_praktiqu_order($order)) {
             return;
         }
-        if (in_array($new_status, ['cancelled', 'failed'], true)) {
+        // Distinguish the two outcomes so exactly one webhook fires per
+        // transition. A cancelled order maps to 'payment.expired' (whether
+        // cancelled by the auto-cancel job or manually in wp-admin) — the
+        // Next.js side treats both the same way (release the held slot). A
+        // failed order (e.g. a declined card) maps to 'payment.failed'. These
+        // must NOT both fire for a 'cancelled' transition — see
+        // Jobs::handle_payment_auto_cancel(), which used to also explicitly
+        // dispatch 'payment.expired' after this hook already fired
+        // 'payment.failed' for the same event, causing a double-dispatch race.
+        if ($new_status === 'cancelled') {
+            $this->dispatch_payment_webhook('payment.expired', $order);
+        } elseif ($new_status === 'failed') {
             $this->dispatch_payment_webhook('payment.failed', $order);
         }
     }

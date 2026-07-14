@@ -147,8 +147,12 @@ final class Jobs
         if (!$order instanceof \WC_Order || $order->is_paid()) {
             return;
         }
+        // cancel_order()'s update_status('cancelled', ...) synchronously fires
+        // woocommerce_order_status_changed, which Payments::on_order_status_changed()
+        // maps to exactly one 'payment.expired' dispatch — do NOT also dispatch
+        // here, or a single auto-cancel fires two webhooks (see the comment on
+        // on_order_status_changed() for the bug this used to cause).
         $this->payments->cancel_order($wcOrderId);
-        $this->payments->dispatch_payment_webhook('payment.expired', $order);
     }
 
     /**
