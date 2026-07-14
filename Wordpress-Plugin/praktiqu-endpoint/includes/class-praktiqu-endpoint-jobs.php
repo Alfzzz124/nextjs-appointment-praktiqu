@@ -134,6 +134,12 @@ final class Jobs
      * Args: [wcOrderId (int)] — matches the args passed by PraktiQU's
      * jobs.enqueue() call exactly, so jobs.cancel() with the same args can
      * unschedule this action if payment completes first.
+     *
+     * The is_paid() guard below is not merely defensive: it is the LAST
+     * LINE OF DEFENSE against cancelling a genuinely-paid order. PraktiQU's
+     * jobs.cancel() call is what's SUPPOSED to unschedule this action once
+     * payment completes — but if that call fails, races, or is lost, this
+     * job still fires on schedule. Do not remove or weaken this check.
      */
     public function handle_payment_auto_cancel(int $wcOrderId): void
     {
