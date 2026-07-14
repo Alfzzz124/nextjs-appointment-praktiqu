@@ -87,7 +87,8 @@ describe('payment.service webhook signature', () => {
 
   it('rejects everything in production when no secret is configured', () => {
     process.env.PAYMENT_WEBHOOK_SECRET = '';
-    process.env.NODE_ENV = 'production';
+    vi.stubEnv('NODE_ENV', 'production');
     expect(verifyPaymentWebhookSignature('{}', 'anything')).toBe(false);
+    vi.unstubAllEnvs();
   });
 });
