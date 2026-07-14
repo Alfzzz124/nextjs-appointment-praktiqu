@@ -24,6 +24,8 @@ vi.mock('@/lib/kc-response', () => ({
 
 import { POST as paymentVerify } from '@/app/api/v1/sessions/payment-verify/route';
 import { POST as webhook } from '@/app/api/v1/sessions/payment-webhook/route';
+import { POST as success } from '@/app/api/v1/sessions/payment-success/route';
+import { POST as cancelRoute } from '@/app/api/v1/sessions/payment-cancel/route';
 import * as svc from '@/services/payments/payment.service';
 import { requireRoles } from '@/lib/auth/route-guards';
 
@@ -115,5 +117,28 @@ describe('POST /sessions/payment-webhook', () => {
     const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.expired', wcOrderId: 42 }), 'ok'));
     expect(res.status).toBe(200);
     expect(svc.cancelIfStillPending).toHaveBeenCalled();
+  });
+});
+
+describe.each([
+  ['payment-success', success],
+  ['payment-cancel', cancelRoute],
+])('POST /sessions/%s', (_name, handler) => {
+  it('400 on missing billId', async () => {
+    const res = await handler(req({}));
+    expect(res.status).toBe(400);
+  });
+
+  it('200 with the reconciled status', async () => {
+    (svc.checkSessionPaymentStatus as any).mockResolvedValue({ status: 'paid', expectedAmount: 50000 });
+    const res = await handler(req({ billId: '9' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toEqual({ status: 'paid', expectedAmount: 50000 });
+  });
+
+  it('404 when no payment exists for the bill', async () => {
+    (svc.checkSessionPaymentStatus as any).mockRejectedValue(new (svc as any).UnknownOrderError());
+    const res = await handler(req({ billId: '9' }));
+    expect(res.status).toBe(404);
   });
 });
