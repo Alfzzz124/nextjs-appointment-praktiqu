@@ -172,10 +172,38 @@ unrelated to this work and should be ignored.
 
 ## Deployment risks
 
-- **WAF 415 (highest risk).** The staging WAF blocks certain content-types, which is directly
-  relevant to `multipart/form-data`. An upload that works locally can still be rejected at the
-  edge. Test a real multipart POST against staging **early** — `curl -4 -F file=@...`, VPN off —
-  before building on the assumption that the transport works.
+- **WAF 415 — probed 2026-07-15, RETIRED.** The handover flagged this as the highest risk. It
+  does not fire on `multipart/form-data`. Measured with `curl -4 -F`:
+
+  | Probe | Result |
+  | --- | --- |
+  | JSON POST → `staging2` stub (baseline) | `501` |
+  | Multipart POST → `staging2` stub | `501` (passed through) |
+  | Multipart POST → WP host REST | `404 rest_no_route` (reached WP router) |
+  | 10 MB multipart → `staging2` | `501`, 10,485,959 bytes uploaded |
+  | 10 MB multipart → WP host | `404 rest_no_route`, full 10 MB uploaded |
+
+  Multipart passes at both hops, at 1 byte and at the full 10 MB ceiling. The transport is sound;
+  do not design around a content-type 415.
+
+  **The 415 was mischaracterized.** It is not a content-type block. Per the
+  `staging-deploy-mechanics` memory, the WAF 415 from `openresty` is a **rate-limit / IP block**:
+  hammering endpoints from one IP gets that IP edge-blocked, after which *all* requests return
+  415 regardless of content type (including sibling hosts). Multipart was never special.
+
+  The residual risk is therefore real but different: **bulk upload testing from one IP can trip
+  the block and 415 everything**, which looks exactly like a multipart rejection and will send
+  the next person down a false trail. When testing batches, throttle, test from the server via
+  `curl`, or wait for the block to clear. The app is fine when this happens.
+
+- **PHP upload limits on the WP box — OPEN, verify when the route lands.** The probe above proves
+  the *edge* accepts 10 MB; it does **not** prove PHP keeps it. When `post_max_size` is exceeded
+  PHP discards the body and continues, so WP's router returns an identical `404 rest_no_route`
+  whether or not the 10 MB was parsed. Confirm `post_max_size`, `upload_max_filesize`, and
+  `max_file_uploads` are ≥ 10 MB / ≥ batch size before trusting the limit — either via
+  `php -i` on the server, or by asserting on the first real `POST /praktiqu/v1/media` response
+  (the route can report what it actually received). If PHP caps below 10 MB, the app-level 10 MB
+  limit is a lie and large uploads fail confusingly, so this must be checked, not assumed.
 - **Shared WP database.** `DATABASE_URL` points at the live WordPress database. Never run
   `prisma db push` or `migrate dev`. This feature needs no new tables — media is written through
   the plugin.
