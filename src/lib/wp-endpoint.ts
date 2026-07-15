@@ -129,7 +129,11 @@ export async function uploadMedia(input: UploadMediaInput): Promise<UploadMediaR
   form.append('context', input.context);
   form.append(
     'file',
-    new Blob([input.bytes], { type: input.contentType }),
+    // `input.bytes` is typed as plain `Uint8Array` (i.e. `Uint8Array<ArrayBufferLike>`),
+    // but DOM's `BlobPart` requires `ArrayBufferView<ArrayBuffer>`. Re-wrapping via the
+    // `new Uint8Array(source)` overload yields a concrete `Uint8Array<ArrayBuffer>` copy
+    // that satisfies the type without an unsafe cast.
+    new Blob([new Uint8Array(input.bytes)], { type: input.contentType }),
     input.filename,
   );
 

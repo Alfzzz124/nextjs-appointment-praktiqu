@@ -17,7 +17,9 @@ const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
 const PHP_SCRIPT = new Uint8Array([...Buffer.from('<?php echo 1; ?>', 'utf8')]);
 
 function filePart(name: string, bytes: Uint8Array, type: string): File {
-  return new File([bytes], name, { type });
+  // See src/lib/wp-endpoint.ts for why the re-wrap is needed: plain `Uint8Array`
+  // is `Uint8Array<ArrayBufferLike>`, but `BlobPart` requires `ArrayBufferView<ArrayBuffer>`.
+  return new File([new Uint8Array(bytes)], name, { type });
 }
 
 async function callRoute(form: FormData, opts: { auth?: boolean } = {}) {
