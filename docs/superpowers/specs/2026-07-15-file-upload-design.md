@@ -196,14 +196,26 @@ unrelated to this work and should be ignored.
   the next person down a false trail. When testing batches, throttle, test from the server via
   `curl`, or wait for the block to clear. The app is fine when this happens.
 
-- **PHP upload limits on the WP box — OPEN, verify when the route lands.** The probe above proves
-  the *edge* accepts 10 MB; it does **not** prove PHP keeps it. When `post_max_size` is exceeded
-  PHP discards the body and continues, so WP's router returns an identical `404 rest_no_route`
-  whether or not the 10 MB was parsed. Confirm `post_max_size`, `upload_max_filesize`, and
-  `max_file_uploads` are ≥ 10 MB / ≥ batch size before trusting the limit — either via
-  `php -i` on the server, or by asserting on the first real `POST /praktiqu/v1/media` response
-  (the route can report what it actually received). If PHP caps below 10 MB, the app-level 10 MB
-  limit is a lie and large uploads fail confusingly, so this must be checked, not assumed.
+- **PHP upload limits on the WP box — SETTLED 2026-07-15, verified against the deployed
+  `POST /praktiqu/v1/media` route (plugin 1.3.0, live on `appointment.praktiqu.com`).**
+  Uploaded a real 10,485,760-byte (10 MB) file with a valid PNG magic-byte header directly
+  through the plugin route with a real service token: `http=200`, a real numeric `mediaId`
+  was returned, and the file was sideloaded successfully. **PHP's `post_max_size` /
+  `upload_max_filesize` on this box accept the full 10 MB** — the app's advertised
+  `MAX_UPLOAD_MB = 10` limit is honest. No adjustment needed.
+
+  **Side finding, unanticipated by this spec:** a small, genuinely valid PNG uploaded through
+  the same route in an earlier verification step came back re-encoded as **AVIF**
+  (`probe-a2mO.avif`, served as `image/avif`, `200`) rather than the original PNG. This is
+  WordPress's own image-optimization behavior on this server (image conversion applied during
+  `media_handle_upload`/`wp_generate_attachment_metadata`), not something this feature's code
+  controls or requested. It did not affect the 10 MB decodable-garbage test file above — WP's
+  converter can't decode random noise past a PNG header, so that upload was stored as-is,
+  unconverted. Functionally the media id → URL contract this feature depends on
+  (`resolveReportFile()` reading `guid`) still holds regardless of which image format ends up
+  under the id. Recorded here because a consumer expecting byte-identical PNG/JPEG output
+  (rather than "some image format WordPress chose") would be surprised; not a defect in this
+  feature, out of scope to change.
 - **Shared WP database.** `DATABASE_URL` points at the live WordPress database. Never run
   `prisma db push` or `migrate dev`. This feature needs no new tables — media is written through
   the plugin.
