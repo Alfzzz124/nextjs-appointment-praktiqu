@@ -1507,26 +1507,87 @@ paths:
       - custom-fields
       summary: File Upload (POST) — custom fields
       operationId: post_api_v1_custom_fields_file_upload
-      description: '**Response envelope:** standard / RFC-7807 problem+json
+      description: >-
+        Accepts multipart/form-data and returns WordPress media attachment
+        ids. Authenticated users only; `context=medical-report` is
+        staff-only (SUPER_ADMIN/CLINIC_ADMIN/PROFESSIONAL/RECEPTIONIST) —
+        `context=custom-field` (the default) is open to every authenticated
+        role. Every file is validated (magic-byte sniff, extension
+        agreement, 10 MB cap, max 10 files per request) before any file is
+        written, so a validation failure never leaves orphaned media
+        behind. Next.js forwards accepted files to the WordPress plugin's
+        `POST /praktiqu/v1/media`, which performs the actual sideload — see
+        that operation in the repo-root OpenAPI doc for the other half of
+        the bridge.
 
 
-        _May return 501 (stub / not wired)._'
+        **Response envelope:** plain REST, not the KiviCare
+        `{status,message,data}` envelope. Error bodies follow RFC-7807
+        shape but are not the generic `ValidationProblem` (`errors[]`) —
+        see `UploadValidationProblem` below.
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               type: object
+              properties:
+                file:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: One or more files. Max 10 per request.
+                context:
+                  type: string
+                  enum:
+                  - medical-report
+                  - custom-field
+                  default: custom-field
+              required:
+              - file
       responses:
         '201':
-          description: Success
+          description: All files sideloaded successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                $ref: '#/components/schemas/UploadResult'
+        '207':
+          description: Some files sideloaded, some failed after validation passed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResult'
+        '400':
+          description: Not multipart/form-data, or no file part present
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 'context=medical-report requested by a non-staff role'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+          description: A file failed validation (type/size), or more than 10
+            files were sent. Nothing is written in this case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadValidationProblem'
+        '502':
+          description: Every accepted file failed to sideload into WordPress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadValidationProblem'
+      security:
+      - bearerAuth: []
   /api/v1/custom-fields/get-data:
     get:
       tags:
@@ -7404,6 +7465,47 @@ components:
                 field:
                   type: string
                 message:
+                  type: string
+    UploadResult:
+      type: object
+      description: One entry per submitted file, in the order the files were sent.
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              mediaId:
+                type: integer
+                description: WordPress attachment ID. Present when this file
+                  sideloaded successfully.
+              url:
+                type: string
+                description: Present when this file sideloaded successfully.
+              error:
+                type: string
+                description: Present when this file failed to sideload.
+      required:
+      - files
+    UploadValidationProblem:
+      description: RFC-7807 problem, optionally carrying a per-file breakdown.
+        `files` is present when validation failures or sideload failures are
+        attributable to specific files (e.g. a magic-byte/extension mismatch);
+        it is absent for request-level failures (e.g. more than 10 files sent).
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        properties:
+          files:
+            type: array
+            items:
+              type: object
+              properties:
+                name:
+                  type: string
+                error:
                   type: string
   responses:
     Unauthorized:
