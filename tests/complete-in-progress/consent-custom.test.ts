@@ -1,8 +1,11 @@
 /**
  * Tests for Task 9: consent-form DELETE + bulk-status, custom-field bulk-status,
- * save-data, get-data, file-upload stub.
+ * save-data, get-data.
  *
  * These tests mock the Prisma client so no DB is needed.
+ *
+ * The former "file-upload stub" coverage here was removed when the real
+ * handler replaced the 501 stub — see tests/uploads/file-upload-route.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -44,7 +47,6 @@ import { POST as consentStatusPost } from '@/app/api/v1/consent-forms/status/rou
 import { POST as cfStatusPost } from '@/app/api/v1/custom-fields/status/route';
 import { POST as cfSaveData } from '@/app/api/v1/custom-fields/save-data/route';
 import { GET as cfGetData } from '@/app/api/v1/custom-fields/get-data/route';
-import { POST as cfFileUpload } from '@/app/api/v1/custom-fields/file-upload/route';
 import { PrismaClient } from '@prisma/client';
 
 // Helper to get the underlying mock prisma instance
@@ -201,18 +203,5 @@ describe('GET /api/v1/custom-fields/get-data', () => {
       makeReq('http://localhost/api/v1/custom-fields/get-data'),
     );
     expect(res.status).toBe(400);
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Custom field file-upload stub
-// ────────────────────────────────────────────────────────────────────────────
-
-describe('POST /api/v1/custom-fields/file-upload', () => {
-  it('returns 501 NOT_IMPLEMENTED', async () => {
-    const res = await cfFileUpload();
-    expect(res.status).toBe(501);
-    const json = await res.json();
-    expect(json).toHaveProperty('code', 'NOT_IMPLEMENTED');
   });
 });
