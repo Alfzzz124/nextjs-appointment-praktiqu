@@ -17,6 +17,7 @@ final class Plugin
 
     public Service $service;
     public Payments $payments;
+    public Media $media;
     public REST_Controller $rest;
     public Hooks $hooks;
     public Jobs $jobs;
@@ -26,8 +27,9 @@ final class Plugin
     {
         $this->service  = new Service();
         $this->payments = new Payments();
+        $this->media    = new Media();
         $this->jobs     = new Jobs($this->service, $this->payments);
-        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments);
+        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();
 

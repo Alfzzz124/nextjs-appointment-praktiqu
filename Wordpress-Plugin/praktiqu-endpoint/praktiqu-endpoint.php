@@ -3,7 +3,7 @@
  * Plugin Name:       PraktiQU Endpoint
  * Plugin URI:        https://praktiqu.local/docs/wordpress-plugin
  * Description:       Multipurpose bridge plugin between the PraktiQU Next.js app (on Cloudflare) and WordPress (on shared hosting). Provides service-to-service REST endpoints for auth, identity, job scheduling, and scheduled background jobs via WooCommerce Action Scheduler.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            PraktiQU Team
@@ -16,7 +16,7 @@
 
 defined('ABSPATH') || exit;
 
-define('PRAKTIQU_ENDPOINT_VERSION', '1.2.0');
+define('PRAKTIQU_ENDPOINT_VERSION', '1.3.0');
 define('PRAKTIQU_ENDPOINT_FILE', __FILE__);
 define('PRAKTIQU_ENDPOINT_PATH', plugin_dir_path(__FILE__));
 define('PRAKTIQU_ENDPOINT_URL', plugin_dir_url(__FILE__));
@@ -28,6 +28,7 @@ require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-rest-con
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-hooks.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-jobs.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-payments.php';
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-media.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-settings.php';
 
 /**

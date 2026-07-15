@@ -20,12 +20,14 @@ final class REST_Controller
     private Service $service;
     private Jobs $jobs;
     private Payments $payments;
+    private Media $media;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media)
     {
         $this->service = $service;
         $this->jobs = $jobs;
         $this->payments = $payments;
+        $this->media = $media;
     }
 
     public function register(): void
@@ -85,6 +87,21 @@ final class REST_Controller
             'methods'             => \WP_REST_Server::READABLE,
             'callback'            => [$this, 'handle_health'],
             'permission_callback' => [Plugin::class, 'verify_service_token'],
+        ]);
+
+        // POST /praktiqu/v1/media — sideload a file into the WP media library
+        register_rest_route($ns, '/media', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_media_upload'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'context' => [
+                    'required' => false,
+                    'type'     => 'string',
+                    'enum'     => ['medical-report', 'custom-field'],
+                    'default'  => 'custom-field',
+                ],
+            ],
         ]);
 
         // POST /praktiqu/v1/jobs — enqueue a background job (C8 architecture)
@@ -196,6 +213,20 @@ final class REST_Controller
             'phpVersion' => PHP_VERSION,
             'asActive'   => function_exists('as_schedule_single_action'),
         ], 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/media
+     *
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function handle_media_upload(\WP_REST_Request $request)
+    {
+        $result = $this->media->sideload($request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return rest_ensure_response($result);
     }
 
     /**
