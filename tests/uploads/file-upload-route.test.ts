@@ -22,10 +22,16 @@ function filePart(name: string, bytes: Uint8Array, type: string): File {
   return new File([new Uint8Array(bytes)], name, { type });
 }
 
-async function callRoute(form: FormData, opts: { auth?: boolean } = {}) {
+async function callRoute(
+  form: FormData,
+  opts: { auth?: boolean; role?: 'SUPER_ADMIN' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'RECEPTIONIST' | 'CLIENT' } = {},
+) {
   const headers = new Headers();
   if (opts.auth !== false) {
-    headers.set('authorization', `Bearer ${await bearerToken({ userId: 'u1', role: 'CLINIC_ADMIN' })}`);
+    headers.set(
+      'authorization',
+      `Bearer ${await bearerToken({ userId: 'u1', role: opts.role ?? 'CLINIC_ADMIN' })}`,
+    );
   }
   const req = new NextRequest('http://localhost/api/v1/custom-fields/file-upload', {
     method: 'POST',
@@ -172,5 +178,49 @@ describe('POST /api/v1/custom-fields/file-upload', () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(JSON.stringify(body)).not.toContain('boom');
+  });
+
+  // hardening: file-count cap, checked before any file is buffered/validated.
+  it('returns 422 when more than 10 file parts are submitted', async () => {
+    const form = new FormData();
+    for (let i = 0; i < 11; i += 1) {
+      form.append('file', filePart(`f${i}.png`, PNG, 'image/png'));
+    }
+    const res = await callRoute(form);
+    expect(res.status).toBe(422);
+    expect(uploadMediaMock).not.toHaveBeenCalled();
+  });
+
+  // hardening: only staff roles may upload medical-report context.
+  it('returns 403 when a CLIENT actor uploads with context=medical-report', async () => {
+    const form = new FormData();
+    form.append('context', 'medical-report');
+    form.append('file', filePart('r.pdf', PDF, 'application/pdf'));
+    const res = await callRoute(form, { role: 'CLIENT' });
+    expect(res.status).toBe(403);
+    expect(uploadMediaMock).not.toHaveBeenCalled();
+  });
+
+  it('still allows a staff actor (e.g. CLINIC_ADMIN) to upload with context=medical-report', async () => {
+    uploadMediaMock.mockResolvedValue({ mediaId: 1, url: 'u', name: 'r' });
+    const form = new FormData();
+    form.append('context', 'medical-report');
+    form.append('file', filePart('r.pdf', PDF, 'application/pdf'));
+    const res = await callRoute(form, { role: 'CLINIC_ADMIN' });
+    expect(res.status).toBe(201);
+    expect(uploadMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'medical-report' }),
+    );
+  });
+
+  it('still allows a CLIENT actor to upload with context=custom-field (default)', async () => {
+    uploadMediaMock.mockResolvedValue({ mediaId: 1, url: 'u', name: 'x' });
+    const form = new FormData();
+    form.append('file', filePart('x.png', PNG, 'image/png'));
+    const res = await callRoute(form, { role: 'CLIENT' });
+    expect(res.status).toBe(201);
+    expect(uploadMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'custom-field' }),
+    );
   });
 });

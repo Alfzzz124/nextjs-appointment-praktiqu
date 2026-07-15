@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { withAuth } from '@/lib/auth';
+import { withAuth, type AuthContext } from '@/lib/auth';
 import {
   validateUpload,
   MAX_UPLOAD_BYTES,
@@ -28,6 +28,8 @@ export const dynamic = 'force-dynamic';
 
 const CONTEXTS: readonly UploadContext[] = ['medical-report', 'custom-field'];
 const DEFAULT_CONTEXT: UploadContext = 'custom-field';
+const MAX_FILES = 10;
+const STAFF_ROLES = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'] as const;
 
 function problem(title: string, status: number, extra: Record<string, unknown> = {}): NextResponse {
   return NextResponse.json({ type: 'about:blank', title, status, ...extra }, { status });
@@ -37,7 +39,7 @@ function isFilePart(value: FormDataEntryValue): value is File {
   return typeof value === 'object' && value !== null && 'arrayBuffer' in value;
 }
 
-export const POST = withAuth(async (req: NextRequest) => {
+export const POST = withAuth(async (req: NextRequest, ctx: AuthContext) => {
   let form: FormData;
   try {
     form = await req.formData();
@@ -50,9 +52,16 @@ export const POST = withAuth(async (req: NextRequest) => {
     ? (rawContext as UploadContext)
     : DEFAULT_CONTEXT;
 
+  if (context === 'medical-report' && !STAFF_ROLES.includes(ctx.actor.role as typeof STAFF_ROLES[number])) {
+    return problem('Only staff can upload medical reports', 403);
+  }
+
   const parts = form.getAll('file').filter(isFilePart);
   if (parts.length === 0) {
     return problem('No file provided', 400);
+  }
+  if (parts.length > MAX_FILES) {
+    return problem('Too many files — max 10 per request', 422);
   }
 
   // Validate every file before writing any of them.
