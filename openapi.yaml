@@ -12483,6 +12483,63 @@ paths:
         schema:
           type: array
           items: {}
+  /praktiqu/v1/media:
+    post:
+      tags:
+      - praktiqu
+      summary: POST /praktiqu/v1/media
+      description: >-
+        Sideload one file into the WordPress media library and return its
+        attachment id. Service-to-service only. Files land in a flat
+        kivicare-* subfolder chosen by `context`.
+      operationId: post_praktiqu_v1_media
+      responses:
+        '200':
+          description: Attachment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mediaId:
+                    type: integer
+                    description: WordPress attachment ID
+                  url:
+                    type: string
+                  name:
+                    type: string
+                required:
+                - mediaId
+                - url
+                - name
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+      security:
+      - serviceToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                context:
+                  type: string
+                  enum:
+                  - medical-report
+                  - custom-field
+                  default: custom-field
+              required:
+              - file
   /praktiqu/v1/users/lookup:
     post:
       tags:
