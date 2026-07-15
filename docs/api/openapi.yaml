@@ -5740,25 +5740,114 @@ paths:
       - public
       summary: Payment Verify (POST) — public
       operationId: post_api_v1_public_payment_verify
-      description: '**Response envelope:** standard / RFC-7807 problem+json
+      description: >-
+        Guest polls the current payment status for a pending appointment,
+        using the signed appointment token from booking (not a JWT). The
+        webhook (`POST /api/v1/sessions/payment-webhook`), not this
+        endpoint, is the source of truth for status transitions — this
+        only reads current state.
 
 
-        _May return 501 (stub / not wired)._'
+        **Response envelope:** `{ data: PaymentStatusView }` / RFC-7807
+        problem+json.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                token:
+                  type: string
+                  description: Signed appointment token (see
+                    `POST /api/v1/public/booking`).
+              required:
+              - token
       responses:
-        '201':
+        '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentStatusView'
+                required:
+                - data
+        '400':
+          description: Missing/invalid body, or invalid/expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: No payment order exists for this appointment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security: []
+  /api/v1/public/payments:
+    post:
+      tags:
+      - public
+      summary: Initiate Payment (POST) — public
+      operationId: post_api_v1_public_payments
+      description: >-
+        Guest initiates a WooCommerce/Xendit checkout for a pending
+        appointment, using the signed appointment token from booking (not
+        a JWT). Fails if the appointment isn't `PENDING`, or if a payment
+        was already initiated and is still pending — poll
+        `POST /api/v1/public/payment-verify` instead in that case.
+
+
+        **Response envelope:** `{ data: { checkoutUrl } }` / RFC-7807
+        problem+json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Signed appointment token (see
+                    `POST /api/v1/public/booking`).
+              required:
+              - token
+      responses:
+        '201':
+          description: Checkout created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CheckoutUrlResult'
+                required:
+                - data
+        '400':
+          description: Missing/invalid body, or invalid/expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Appointment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Appointment not awaiting payment, or payment already
+            initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security: []
   /api/v1/public/practices:
     get:
@@ -6665,104 +6754,240 @@ paths:
       - sessions
       summary: Create payment cancel
       operationId: post_api_v1_sessions_payment_cancel
-      description: '**Response envelope:** standard / RFC-7807 problem+json
+      description: >-
+        Staff-only. Re-checks payment status for a bill — used as the
+        landing endpoint when staff return from a cancelled WooCommerce
+        checkout. Identical behavior to
+        `POST /api/v1/sessions/payment-success`: the payment webhook, not
+        the browser redirect, is the source of truth for what actually
+        happened, so both landing endpoints simply report current status.
 
 
-        _May return 501 (stub / not wired)._'
+        **Response envelope:** `{ data: PaymentStatusView }` / RFC-7807
+        problem+json.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                billId:
+                  type: string
+              required:
+              - billId
       responses:
-        '201':
+        '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentStatusView'
+                required:
+                - data
+        '400':
+          description: Missing billId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: No payment order exists for this bill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security:
+      - bearerAuth: []
   /api/v1/sessions/payment-success:
     post:
       tags:
       - sessions
       summary: Create payment success
       operationId: post_api_v1_sessions_payment_success
-      description: '**Response envelope:** standard / RFC-7807 problem+json
+      description: >-
+        Staff-only. Re-checks payment status for a bill — used as the
+        landing endpoint when staff return from a successful WooCommerce
+        checkout. Identical behavior to
+        `POST /api/v1/sessions/payment-cancel`: the payment webhook, not
+        the browser redirect, is the source of truth for what actually
+        happened, so both landing endpoints simply report current status.
 
 
-        _May return 501 (stub / not wired)._'
+        **Response envelope:** `{ data: PaymentStatusView }` / RFC-7807
+        problem+json.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                billId:
+                  type: string
+              required:
+              - billId
       responses:
-        '201':
+        '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentStatusView'
+                required:
+                - data
+        '400':
+          description: Missing billId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: No payment order exists for this bill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security:
+      - bearerAuth: []
   /api/v1/sessions/payment-verify:
     post:
       tags:
       - sessions
       summary: Payment Verify (POST) — sessions
       operationId: post_api_v1_sessions_payment_verify
-      description: '**Response envelope:** standard / RFC-7807 problem+json
+      description: >-
+        Staff-only. Ensures a payment order exists for a bill: if none
+        exists, or the existing one is `failed`/`expired`/`cancelled`, a
+        fresh WooCommerce/Xendit checkout is created and its URL returned;
+        otherwise the existing (non-terminal) order's current status is
+        returned with `checkoutUrl: null`.
 
 
-        _May return 501 (stub / not wired)._'
+        **Response envelope:** `{ data: SessionPaymentEnsureResult }` /
+        RFC-7807 problem+json.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                billId:
+                  type: string
+              required:
+              - billId
       responses:
-        '201':
+        '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SessionPaymentEnsureResult'
+                required:
+                - data
+        '400':
+          description: Missing billId, or an underlying KcError (e.g. bill
+            not found)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - bearerAuth: []
   /api/v1/sessions/payment-webhook:
     post:
       tags:
       - sessions
       summary: Create payment webhook
       operationId: post_api_v1_sessions_payment_webhook
-      description: '**Response envelope:** standard / RFC-7807 problem+json
+      description: >-
+        WooCommerce/Xendit payment webhook. Authenticated by an HMAC
+        signature over the raw request body (see `webhookSignature`
+        below), **not** a bearer JWT. Drives the actual status
+        transitions for both public and session payment orders — the
+        other payment endpoints only read state this webhook writes.
 
 
-        _May return 501 (stub / not wired)._'
+        **Response envelope:** `{status: boolean, message: string}` (KC
+        style) for every outcome, including errors — never RFC-7807.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                event:
+                  type: string
+                  enum:
+                  - payment.completed
+                  - payment.failed
+                  - payment.expired
+                wcOrderId:
+                  type: integer
+                amountPaid:
+                  type: number
+                transactionId:
+                  type: string
+              required:
+              - event
+              - wcOrderId
       responses:
-        '201':
-          description: Success
+        '200':
+          description: Processed (or already-processed, idempotently)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+                $ref: '#/components/schemas/KcEnvelope'
+        '400':
+          description: Body is not valid JSON, or fails the payload schema
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          description: Missing or invalid X-PraktiQU-Webhook-Signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '404':
+          description: No payment order matches wcOrderId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '409':
+          description: payment.completed amount does not match the expected
+            amount within tolerance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+      security:
+      - webhookSignature: []
   /api/v1/sessions/pending:
     get:
       tags:
@@ -7423,6 +7648,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-PraktiQU-Webhook-Signature
+      description: HMAC signature of the raw request body, verified by
+        verifyPaymentWebhookSignature. Not a bearer JWT.
   schemas:
     KcEnvelope:
       type: object
@@ -7489,6 +7720,44 @@ components:
                 description: Present when this file failed to sideload.
       required:
       - files
+    PaymentStatusView:
+      type: object
+      description: Current payment order status for an appointment or bill.
+      properties:
+        status:
+          type: string
+          enum:
+          - pending
+          - paid
+          - failed
+          - expired
+          - cancelled
+        expectedAmount:
+          type: number
+          description: Amount (IDR) expected for this payment order.
+      required:
+      - status
+      - expectedAmount
+    CheckoutUrlResult:
+      type: object
+      properties:
+        checkoutUrl:
+          type: string
+      required:
+      - checkoutUrl
+    SessionPaymentEnsureResult:
+      allOf:
+      - $ref: '#/components/schemas/PaymentStatusView'
+      - type: object
+        properties:
+          checkoutUrl:
+            type: string
+            nullable: true
+            description: Present when a fresh checkout was created; null
+              when an existing non-terminal order's status was returned
+              instead.
+        required:
+        - checkoutUrl
     UploadValidationProblem:
       description: RFC-7807 problem, optionally carrying a per-file breakdown.
         `files` is present when validation failures or sideload failures are
