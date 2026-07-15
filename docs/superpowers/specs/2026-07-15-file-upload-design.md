@@ -23,13 +23,35 @@ Out of scope: the payment feature (code-complete, awaiting `payment_orders` tabl
 
 | Decision | Choice |
 | --- | --- |
-| Upload surface | Both authed staff **and** guest (public booking widget) |
-| Guest authorization | Live `holdKey` from `slotHoldService` |
+| Upload surface | **Authenticated users only** (`withAuth`) |
 | Allowed types | jpg, jpeg, png, webp, gif, pdf |
 | Max size | 10 MB per file |
 | Multiplicity | Multiple files per request |
 | Partial failure | Best-effort → `207` with per-file results |
-| Subfolder | `kivicare-reports` for medical reports; `kivicare-uploads` for custom-field/booking files |
+| Subfolder | `kivicare-reports` for medical reports; `kivicare-uploads` for custom-field files |
+
+### Why authenticated-only
+
+Guest upload was considered and rejected. It buys nothing today and costs real security surface:
+
+- The Next.js public booking flow **has no custom fields at all**. `createPublicAppointmentSchema`
+  (`src/services/public/public-booking.service.ts`) accepts only `professionalId`, `serviceId`,
+  `date`, `startTime`, `clientName`, `clientEmail`, `clientMobile`, `notes`, `holdKey`. There is
+  no file field, so a guest cannot attach a file to a booking even in principle.
+- `file-uploads-custom` exists only as a **booking-step config in the legacy KiviCare WP plugin**
+  (`WidgetSetting.php`, `KCActivate.php`, the `2026_05_01_MigrateAptBookingSteps` migration). It
+  is not referenced anywhere in the Next.js app.
+- The real consumer, `POST /api/v1/patient-medical-reports`, is already `withAuth`.
+
+The rejected alternative was authorizing guests with a live `slotHoldService` `holdKey` (the only
+capability a guest holds mid-booking, since the signed appointment token in
+`src/lib/public/appointment-token.ts` is bound to an appointment id that does not exist until
+after booking). That would have meant an unauthenticated endpoint writing into the WordPress
+media library, gated only by an in-memory hold that dies on restart and does not survive
+horizontal scaling — in exchange for a flow that does not exist.
+
+If public booking ever grows custom fields with file uploads, guest upload becomes a separate
+feature with its own design. Do not pre-build it.
 
 ## Architecture
 
@@ -38,8 +60,8 @@ MIME checks, thumbnail generation, and upload-dir filters. Instead the flow mirr
 existing payment bridge:
 
 ```
-FE → POST /api/v1/custom-fields/file-upload  (Next.js, multipart)
-   → validate (auth/type/size/MIME sniff)
+FE → POST /api/v1/custom-fields/file-upload  (Next.js, multipart, authed)
+   → validate (type/size/MIME sniff)
    → POST /praktiqu/v1/media                 (plugin, X-PraktiQU-Service-Token)
    → wp_handle_upload / media_handle_sideload → kivicare-* subfolder
    → { mediaId, url, name }
@@ -65,48 +87,29 @@ A pure `validateUpload(file)` unit, testable in isolation:
 
 ### 2. Next.js route — `POST /api/v1/custom-fields/file-upload`
 
-Replaces the 501 stub. Accepts `multipart/form-data`.
+Replaces the 501 stub. Accepts `multipart/form-data`. Wrapped in `withAuth`, consistent with
+sibling routes such as `patient-medical-reports`.
 
 **Request**
 
 - One or more `file` parts.
 - Optional `context`: `"medical-report" | "custom-field"` (default `custom-field`). Selects the
   WP subfolder only.
-- Guest only: `holdKey`, sent as header `X-Booking-Hold` or a form field.
-
-**Auth** — one of:
-
-- **Authed staff:** the existing `withAuth` wrapper, consistent with sibling routes.
-- **Guest:** a live `holdKey`. The route calls `slotHoldService.get(key)`; if the hold is absent
-  or expired, respond `401`.
-
-Rationale: in the public booking flow the guest holds a slot (`POST /api/v1/public/booking/hold`
-→ `holdKey`, 15-min TTL), *then* fills custom fields including file uploads, and only afterwards
-creates the appointment (`POST /api/v1/public/booking` → `signAppointmentToken(created.id)`).
-At upload time no appointment id exists yet, so the signed appointment token in
-`src/lib/public/appointment-token.ts` cannot be used. The `holdKey` is the only capability the
-guest holds at that moment; requiring it ties every guest upload to an in-progress booking and
-bounds abuse to the 15-minute hold window without new token infrastructure.
-
-Known constraint: slot holds are in-memory (single instance) and are lost on restart. Acceptable
-for the current single-instance staging/production topology; revisit if the app is horizontally
-scaled.
 
 **Response**
 
 - All succeed → `201 { files: [{ name, mediaId: number, url: string }, ...] }`
 - Mixed → `207 { files: [ { name, mediaId, url } | { name, error } ] }`
 - Any file fails validation → `422`, **before anything is written**
-- Missing/expired holdKey and not authed → `401`
+- Unauthenticated → `401` (via `withAuth`)
 
 **Order of operations:** validate *every* file first; only if all pass, sideload each. This
 guarantees a validation error never leaves orphaned media behind. A `207` can therefore only
 arise from a plugin/WP failure part-way through a batch, not from bad input.
 
 **Partial-failure semantics:** best-effort. Media that succeeded is kept and reported; failures
-are reported per file. An abandoned booking already orphans media (upload, then never submit),
-so orphans are an accepted property of the system, and discarding good uploads because one
-sideload failed would be a worse trade.
+are reported per file. Discarding good uploads because one sideload failed would be a worse
+trade.
 
 ### 3. WP-side bridge
 
@@ -126,10 +129,9 @@ validation, thumbnail generation, and attachment bookkeeping, then returns
 remove it afterwards. It must *not* rely on `KCMediaHandler::modify_upload_dir`: that filter only
 fires when `userHasKivicareRole()` is true and a report/encounter context is detected from the
 `X-KC-View-Path` header, the referer, or the `kc_upload_report` action. Our route authenticates
-with a service token and has no logged-in KiviCare user in the request — for guest booking uploads
-there is no WP user at all — so the filter would silently not fire and files would land in the
-default year/month folder. The route sets the target directory itself, based on `context`, and
-ensures the directory exists.
+with a service token and has no logged-in KiviCare user in the request, so the filter would
+silently not fire and files would land in the default year/month folder. The route sets the
+target directory itself, based on `context`, and ensures the directory exists.
 
 Plugin version goes **1.2.0 → 1.3.0**, redeployed as an mu-plugin the documented way (`php -l`
 in a temp dir on the server, back up the old directory, then swap).
@@ -148,7 +150,7 @@ with the existing `2026_03_26_MoveExistingMediaToKivicareFolder` convention.
 
 | Case | Response |
 | --- | --- |
-| Not authed, no/expired holdKey | `401` |
+| Unauthenticated | `401` |
 | Disallowed type, MIME/extension mismatch, oversized | `422` (nothing written) |
 | Plugin/WP failure on some files | `207` with per-file errors |
 | Plugin/WP failure on all files | mapped `4xx`/`5xx`, never a leaked `500` |
@@ -160,9 +162,8 @@ Write tests first, following the payment feature's approach.
 - **Unit — `validateUpload`:** allowlist accepts each permitted type; rejects `.php`, `.svg`,
   and executables; rejects a `.php` renamed to `.png` (MIME-vs-extension mismatch); rejects
   oversized files at the 10 MB boundary.
-- **Route:** missing/expired holdKey and unauthenticated → `401`; authed staff → allowed;
-  validation failure → `422` with nothing written; plugin error → clean `4xx`/`5xx` mapping,
-  no leaked `500`.
+- **Route:** unauthenticated → `401`; authed → allowed; validation failure → `422` with nothing
+  written; plugin error → clean `4xx`/`5xx` mapping, no leaked `500`.
 - **Happy path:** returns a numeric media id and a URL that resolves.
 - **Batch:** all-success → `201`; mid-batch sideload failure → `207` with per-file breakdown.
 
@@ -174,7 +175,7 @@ unrelated to this work and should be ignored.
 - **WAF 415 (highest risk).** The staging WAF blocks certain content-types, which is directly
   relevant to `multipart/form-data`. An upload that works locally can still be rejected at the
   edge. Test a real multipart POST against staging **early** — `curl -4 -F file=@...`, VPN off —
-  before wiring the frontend.
+  before building on the assumption that the transport works.
 - **Shared WP database.** `DATABASE_URL` points at the live WordPress database. Never run
   `prisma db push` or `migrate dev`. This feature needs no new tables — media is written through
   the plugin.
@@ -190,5 +191,5 @@ unrelated to this work and should be ignored.
 
 - `openapi.yaml:8723` lists the endpoint with no request/response schema. Update it to match the
   contract above once implemented.
-- Orphaned media from abandoned bookings has no reaper. Acceptable for now; worth a cleanup job
-  if volume grows.
+- Orphaned media from abandoned flows has no reaper. Acceptable for now; worth a cleanup job if
+  volume grows.
