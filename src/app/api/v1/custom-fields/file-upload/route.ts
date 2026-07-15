@@ -61,7 +61,7 @@ export const POST = withAuth(async (req: NextRequest, ctx: AuthContext) => {
     return problem('No file provided', 400);
   }
   if (parts.length > MAX_FILES) {
-    return problem('Too many files — max 10 per request', 422);
+    return problem(`Too many files — max ${MAX_FILES} per request`, 422);
   }
 
   // Validate every file before writing any of them.
