@@ -93,10 +93,75 @@ final class Payments
         $order->calculate_totals();
         $order->save();
 
+        // Free service (total 0, below Xendit's minimum): no invoice. Complete
+        // the order so our woocommerce_order_status_changed hook books the slot,
+        // and send the patient straight to the return URL.
+        if ((float) $order->get_total() <= 0) {
+            $order->payment_complete();
+            return [
+                'orderId'     => $order->get_id(),
+                'checkoutUrl' => (string) ($input['returnUrl'] ?? $order->get_checkout_order_received_url()),
+            ];
+        }
+
+        $gateway = $this->resolve_xendit_gateway();
+        if ($gateway === null) {
+            $order->update_status('cancelled', 'PraktiQU: no enabled Xendit gateway');
+            return new \WP_Error('xendit_gateway_missing', 'No enabled Xendit payment gateway', ['status' => 503]);
+        }
+
+        // process_payment() early-returns unless the order's payment method
+        // resolves to this gateway (woo-xendit class-wc-xendit-invoice.php:1022),
+        // so set it first.
+        $order->set_payment_method($gateway);
+        $order->save();
+
+        // Xendit's process_payment() adds a WC notice and returns null on failure
+        // (class-wc-xendit-invoice.php:1108). Clear stale notices so we read only
+        // this call's error.
+        if (function_exists('wc_clear_notices')) {
+            wc_clear_notices();
+        }
+
+        $result = $gateway->process_payment($order->get_id());
+
+        if (!is_array($result) || ($result['result'] ?? '') !== 'success' || empty($result['redirect'])) {
+            $message = 'Failed to create Xendit invoice';
+            if (function_exists('wc_get_notices')) {
+                $errors = wc_get_notices('error');
+                if (!empty($errors)) {
+                    $first = $errors[0];
+                    $message = is_array($first) ? ($first['notice'] ?? $message) : (string) $first;
+                }
+                wc_clear_notices();
+            }
+            $order->update_status('cancelled', 'PraktiQU: Xendit invoice creation failed');
+            return new \WP_Error('xendit_invoice_failed', $message, ['status' => 502]);
+        }
+
         return [
             'orderId'     => $order->get_id(),
-            'checkoutUrl' => $order->get_checkout_payment_url(),
+            'checkoutUrl' => (string) $result['redirect'],
         ];
+    }
+
+    /**
+     * First enabled Xendit gateway (id prefixed with 'xendit'). The hosted
+     * invoice shows every enabled Xendit method regardless of which gateway
+     * triggers it, so the specific pick only sets the page's pre-highlighted
+     * method.
+     */
+    private function resolve_xendit_gateway(): ?\WC_Payment_Gateway
+    {
+        if (!function_exists('WC') || !WC()->payment_gateways()) {
+            return null;
+        }
+        foreach (WC()->payment_gateways()->payment_gateways() as $gateway) {
+            if (strpos((string) $gateway->id, 'xendit') === 0 && $gateway->enabled === 'yes') {
+                return $gateway;
+            }
+        }
+        return null;
     }
 
     public function get_order_status(int $order_id): array|\WP_Error
