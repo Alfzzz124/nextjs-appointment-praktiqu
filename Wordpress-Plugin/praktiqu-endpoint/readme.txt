@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.4.0
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -53,6 +53,15 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.4.0 =
+* Payment hand-off now returns the Xendit hosted invoice URL (all enabled
+  methods on one page) instead of the WooCommerce order-pay page. WC order is
+  still created. Patients return to the app frontend on success via
+  woocommerce_get_return_url.
+
+= 1.3.0 =
+* Added POST /media — sideload a file into the WordPress media library.
 
 = 1.2.0 =
 * Payments: Xendit-via-WooCommerce bridge. New /payments/order (create) and

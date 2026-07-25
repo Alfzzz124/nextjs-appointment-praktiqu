@@ -25,6 +25,7 @@ final class Payments
     {
         add_action('woocommerce_order_status_changed', [$this, 'on_order_status_changed'], 10, 4);
         add_action('woocommerce_payment_complete', [$this, 'on_payment_complete'], 10, 1);
+        add_filter('woocommerce_get_return_url', [$this, 'filter_return_url'], 10, 2);
     }
 
     /**
@@ -162,6 +163,23 @@ final class Payments
             }
         }
         return null;
+    }
+
+    /**
+     * Send praktiqu orders back to the app frontend after payment instead of
+     * the WooCommerce order-received page. Consumes the praktiqu_return_url meta
+     * set in create_order(). Non-praktiqu orders are left untouched.
+     *
+     * @param string    $return_url
+     * @param \WC_Order|null $order
+     */
+    public function filter_return_url(string $return_url, $order): string
+    {
+        if (!$order instanceof \WC_Order || !$this->is_praktiqu_order($order)) {
+            return $return_url;
+        }
+        $fe = (string) $order->get_meta('praktiqu_return_url');
+        return $fe !== '' ? $fe : $return_url;
     }
 
     public function get_order_status(int $order_id): array|\WP_Error
