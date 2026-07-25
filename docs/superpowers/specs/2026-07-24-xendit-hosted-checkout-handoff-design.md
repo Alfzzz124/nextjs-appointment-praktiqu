@@ -56,7 +56,7 @@ Change is PHP-only in our plugin:
 - Staging smoke test: public booking → `POST /public/payments` → confirm the returned `checkoutUrl` is a Xendit `invoice_url` → pay in Xendit **test mode** → confirm `PENDING → BOOKED` and that the patient lands on the FE success URL.
 - Next.js money-math tests (`computePublicAmount`, webhook signature) are unchanged and must stay green.
 
-Plugin version bumps **1.2.0 → 1.3.0**.
+Plugin version bumps **1.3.0 → 1.4.0** (repo is already at 1.3.0 from the media endpoint).
 
 ## Out of scope
 
