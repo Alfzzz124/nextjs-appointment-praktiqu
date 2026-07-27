@@ -203,8 +203,15 @@ Three compounding decisions:
 - [x] **1R.1a** `src/repositories/wp/patients.repo.ts` — **done.** `findPatientById`
       + `listPatients`, filtering on the `kiviCare_patient` capability. 7 contract
       tests in `tests/repositories/wp-patients.repo.test.ts`.
-- [ ] **1R.1b** Remaining read repositories: `doctors.repo.ts`, `clinics.repo.ts`,
-      `services.repo.ts`, `appointments.repo.ts`, `clinic-sessions.repo.ts`,
+- [x] **1R.1b** `doctors.repo.ts` — **done.** `findDoctorById` + `listDoctors` on the
+      `kiviCare_doctor` capability. Shared mechanics extracted to `wp-user.ts`
+      (role slugs, capability EXISTS, meta joins, `basic_data` decoding, LIKE
+      escaping, pagination). 7 tests, incl. asserting `temp_password` never leaks.
+- [x] **1R.1c** `clinics.repo.ts` + `services.repo.ts` — **done.** Typed Prisma client
+      (these are plain tables with mapped models), normalising `status` → `isActive`
+      and decoding the `specialties` LongText JSON. `listServicesForDoctor` resolves
+      the per-doctor `charges`/`duration` that override the base price. 11 tests.
+- [ ] **1R.1d** Remaining: `appointments.repo.ts`, `clinic-sessions.repo.ts`,
       `static-data.repo.ts`.
 - [x] **1R.2** ~~`wp_usermeta` read helpers.~~ **Done for patients** — `basic_data` is a
       JSON blob decoded in `patients.repo.ts`; malformed/absent JSON yields nulls.
