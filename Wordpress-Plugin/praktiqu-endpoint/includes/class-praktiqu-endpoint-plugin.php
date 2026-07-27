@@ -20,6 +20,7 @@ final class Plugin
     public Media $media;
     public Patients $patients;
     public Appointments $appointments;
+    public Receptionists $receptionists;
     public REST_Controller $rest;
     public Hooks $hooks;
     public Jobs $jobs;
@@ -32,8 +33,9 @@ final class Plugin
         $this->media    = new Media();
         $this->patients = new Patients();
         $this->appointments = new Appointments();
+        $this->receptionists = new Receptionists();
         $this->jobs     = new Jobs($this->service, $this->payments);
-        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments);
+        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments, $this->receptionists);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();
 

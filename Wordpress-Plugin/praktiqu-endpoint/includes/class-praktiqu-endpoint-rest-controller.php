@@ -23,8 +23,9 @@ final class REST_Controller
     private Media $media;
     private Patients $patients;
     private Appointments $appointments;
+    private Receptionists $receptionists;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists)
     {
         $this->service = $service;
         $this->jobs = $jobs;
@@ -32,6 +33,7 @@ final class REST_Controller
         $this->media = $media;
         $this->patients = $patients;
         $this->appointments = $appointments;
+        $this->receptionists = $receptionists;
     }
 
     public function register(): void
@@ -150,6 +152,22 @@ final class REST_Controller
                 'id'     => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
                 // 0=CANCELLED 1=BOOKED 2=PENDING 3=CHECK_OUT 4=CHECK_IN (KCAppointment.php:41-45)
                 'status' => ['required' => true, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/receptionists — create a receptionist
+        //
+        // The raw-SQL path in billing/receptionist.service.ts produces an unusable
+        // account: no welcome email (kc_receptionist_save never fires) and an invalid
+        // password hash, so the receptionist can never log in.
+        register_rest_route($ns, '/receptionists', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_receptionist'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'email'     => ['required' => true, 'type' => 'string', 'format' => 'email'],
+                'name'      => ['required' => true, 'type' => 'string'],
+                'clinic_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
 
@@ -335,6 +353,18 @@ final class REST_Controller
             return $result;
         }
         return new \WP_REST_Response($result, 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/receptionists
+     */
+    public function handle_create_receptionist(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->receptionists->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
     }
 
     /**

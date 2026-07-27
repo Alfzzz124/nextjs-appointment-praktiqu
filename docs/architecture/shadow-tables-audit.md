@@ -439,8 +439,27 @@ No `legacyId` compat shim. Response IDs change from cuid strings to WP numeric I
    | `kc_before_delete_encounter` | 1 — Pro's `deleteTaxData` | **NO** — no encounter DELETE exists in `src/` |
 
    **Recommendation: migrate `receptionist.service.ts` only.** It has a confirmed,
-   user-visible defect today — creating a receptionist never sends the welcome email,
-   because it writes `wp_users` directly and `kc_receptionist_save` never fires.
+   user-visible defect today — and on closer inspection it is worse than a missing
+   email. `createReceptionist` (`receptionist.service.ts:60-100`) produces an account
+   that is **completely unusable**:
+
+   1. It never fires `kc_receptionist_save`, so
+      `KCReceptionistNotificationListener::handleReceptionistRegistered` never runs —
+      **no welcome email.**
+   2. It writes `user_pass = '!disabled-<username>'`, which is not a valid WordPress
+      hash. `Service::authenticate` checks it with `wp_check_password`
+      (`class-praktiqu-endpoint-service.php:53`), which therefore always returns false
+      — **the receptionist can never log in**, and no flow ever sets a real password.
+
+   So every receptionist created through our API is locked out and never told they
+   exist. `POST /praktiqu/v1/receptionists` (added 2026-07-26,
+   `class-praktiqu-endpoint-receptionists.php`) fixes both: `wp_insert_user` hashes a
+   real password and the hook delivers it by email.
+
+   **Remaining step:** switch `createReceptionist` to call that endpoint. Not done in
+   the same pass because `tests/billing/receptionist.service.test.ts` asserts against
+   rows the raw-SQL path writes directly; those tests need a plugin stub first, and a
+   half-finished switch would leave the suite red.
 
    The other 14 services are not worth migrating: encounters and bills have no
    listeners on their write hooks, and the only service-catalogue writer is the
