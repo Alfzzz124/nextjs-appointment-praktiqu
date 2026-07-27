@@ -1,16 +1,14 @@
 /**
- * Patient reads, straight from WordPress.
+ * Doctor reads, straight from WordPress.
  *
- * A patient is not a row in a `clients` table — it is a `wp_users` row carrying the
- * `kiviCare_patient` capability, with its profile spread across `wp_usermeta`. See
- * docs/architecture/shadow-tables-audit.md.
+ * What our shadow schema called a "professional" is a `wp_users` row carrying the
+ * `kiviCare_doctor` capability. There is no `professionals` or `doctors` table to
+ * consult — see docs/architecture/shadow-tables-audit.md.
  *
- * Mirrors KiviCare: PatientController.php:1083-1121 (meta joins) and
- * KCPatient.php:128-145 (basic_data shape).
+ * Mirrors KiviCare: DoctorController.php:1079-1106 (meta joins) and
+ * KCDoctor.php:139-151 (basic_data shape).
  *
- * Reads go direct to SQL, consistent with the 15 `billing/*` services. Writes do NOT
- * live here — they go through the praktiqu-endpoint plugin's REST layer so KiviCare's
- * hooks (notifications, calendar sync, telemed) still fire. See audit doc §6 D1.
+ * Reads only. Writes go through the praktiqu-endpoint plugin's REST layer (D1).
  */
 import { prisma } from '@/lib/db';
 import {
@@ -26,22 +24,30 @@ import {
   paginate,
   roleLikePattern,
   str,
+  strArray,
 } from './wp-user';
 
-/** Re-exported for callers that only deal in patients. */
-export const PATIENT_ROLE = KIVICARE_ROLES.patient;
+/**
+ * Meta keys lifted for a doctor. `doctor_signature` and `doctor_profile_image` are
+ * deliberately excluded — the signature is sensitive and the image is an attachment
+ * ID needing a separate `wp_posts` lookup. Add them behind explicit callers.
+ */
+const META_KEYS = [
+  'first_name',
+  'last_name',
+  'basic_data',
+  'doctor_description',
+  'timezone',
+] as const;
 
-/** Meta keys we lift out of `wp_usermeta` for a patient record. */
-const META_KEYS = ['first_name', 'last_name', 'basic_data', 'patient_unique_id', 'timezone'] as const;
-
-export type WpPatient = {
+export type WpDoctor = {
   id: bigint;
   email: string;
   displayName: string;
   registeredAt: Date;
   firstName: string | null;
   lastName: string | null;
-  patientUniqueId: string | null;
+  description: string | null;
   timezone: string | null;
   // From `basic_data`.
   mobileNumber: string | null;
@@ -51,17 +57,19 @@ export type WpPatient = {
   city: string | null;
   country: string | null;
   postalCode: string | null;
-  bloodGroup: string | null;
+  qualifications: string[];
+  specialties: string[];
+  yearsOfExperience: string | null;
 };
 
-export type ListPatientsQuery = {
+export type ListDoctorsQuery = {
   page: number;
   perPage: number;
   search?: string;
 };
 
-export type PaginatedPatients = {
-  items: WpPatient[];
+export type PaginatedDoctors = {
+  items: WpDoctor[];
   total: number;
   page: number;
   perPage: number;
@@ -71,12 +79,16 @@ type RawRow = BaseUserRow & {
   first_name: string | null;
   last_name: string | null;
   basic_data: string | null;
-  patient_unique_id: string | null;
+  doctor_description: string | null;
   timezone: string | null;
 };
 
-function toPatient(row: RawRow): WpPatient {
+function toDoctor(row: RawRow): WpDoctor {
   const basic = decodeBasicData(row.basic_data);
+
+  // NOTE: basic_data also carries `temp_password` — a plaintext password KiviCare
+  // keeps for the welcome email (KCDoctor.php:150). Fields are mapped explicitly
+  // rather than spread, so it cannot leak into a response.
   return {
     id: BigInt(row.ID),
     email: row.user_email,
@@ -84,7 +96,7 @@ function toPatient(row: RawRow): WpPatient {
     registeredAt: row.user_registered,
     firstName: str(row.first_name),
     lastName: str(row.last_name),
-    patientUniqueId: str(row.patient_unique_id),
+    description: str(row.doctor_description),
     timezone: str(row.timezone),
     mobileNumber: str(basic.mobile_number),
     gender: str(basic.gender),
@@ -93,13 +105,16 @@ function toPatient(row: RawRow): WpPatient {
     city: str(basic.city),
     country: str(basic.country),
     postalCode: str(basic.postal_code),
-    bloodGroup: str(basic.blood_group),
+    // KiviCare writes `''` rather than `[]` when these are unset.
+    qualifications: strArray(basic.qualifications),
+    specialties: strArray(basic.specialties),
+    yearsOfExperience: str(basic.no_of_experience),
   };
 }
 
-const ROLE_ARGS = [CAPABILITIES_KEY, roleLikePattern(KIVICARE_ROLES.patient)] as const;
+const ROLE_ARGS = [CAPABILITIES_KEY, roleLikePattern(KIVICARE_ROLES.doctor)] as const;
 
-export async function findPatientById(id: bigint): Promise<WpPatient | null> {
+export async function findDoctorById(id: bigint): Promise<WpDoctor | null> {
   const rows = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT ${USER_COLUMNS},
             ${metaSelects(META_KEYS)}
@@ -111,10 +126,10 @@ export async function findPatientById(id: bigint): Promise<WpPatient | null> {
     ...ROLE_ARGS,
   );
 
-  return rows.length > 0 ? toPatient(rows[0]) : null;
+  return rows.length > 0 ? toDoctor(rows[0]) : null;
 }
 
-export async function listPatients(query: ListPatientsQuery): Promise<PaginatedPatients> {
+export async function listDoctors(query: ListDoctorsQuery): Promise<PaginatedDoctors> {
   const { page, perPage, offset } = paginate(query.page, query.perPage);
 
   const where: string[] = [HAS_ROLE_SQL];
@@ -153,7 +168,7 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
   );
 
   return {
-    items: rows.map(toPatient),
+    items: rows.map(toDoctor),
     total: Number(countRows[0]?.n ?? 0),
     page,
     perPage,
