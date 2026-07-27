@@ -227,14 +227,16 @@ Three compounding decisions:
       (`professional_availability`, `doctor_sessions`, `clinic_sessions`).
       `listClinicSessions` + `getWeeklyAvailability`. An unknown day slug throws
       rather than returning `[]`, which would read as "never works". 10 tests.
-- [ ] **1R.1f** `static-data.repo.ts` (backs `specialties` / `_DoctorToSpecialty`) —
-      **BLOCKED**: `wp_kc_static_data` does not exist in either local database.
-      See §3a below.
+- [x] **1R.1f** `static-data.repo.ts` — **done.** Backs `specialties` /
+      `_DoctorToSpecialty`. Adds the missing `KcStaticData` Prisma mapping. 8 tests.
+      *(Was blocked on §3a; unblocked by the provisioning script below.)*
 
-### ⚠️ 3a. The local databases are a partial mirror
+**Phase 1R is complete — 6 repositories, 57 contract tests.**
 
-Both `wordpress-praktiqu` and `wordpress-praktiqu-test` contain **16 of KiviCare's 30
-tables**. Fifteen are missing outright:
+### ✅ 3a. The local databases were a partial mirror — RESOLVED
+
+Both `wordpress-praktiqu` and `wordpress-praktiqu-test` contained **16 of KiviCare's 30
+tables**. Fifteen were missing outright:
 
 `static_data`, `custom_fields`, `custom_field_data`, `patient_clinic_mappings`,
 `clinic_schedule`, `appointment_service_mapping`, `appointment_reminder_mapping`,
@@ -251,10 +253,34 @@ tables**. Fifteen are missing outright:
 - `clinic_schedule` (holidays) is queried by `billing/clinic-schedule.service.ts`,
   which therefore cannot be exercised locally.
 
-**Action:** provision a complete KiviCare schema locally — run the plugin's own
-migrations against the test database rather than hand-writing DDL, so the tables match
-what production actually has. Until then, mark repositories for the missing tables as
-untestable rather than untested.
+**Resolved** by `scripts/provision-kivicare-test-schema.mjs`, which extracts the DDL
+from the plugin's own migrations rather than hand-writing it. It refuses any database
+whose name lacks "test" and only issues `CREATE TABLE IF NOT EXISTS`. The test database
+now has all 30 tables.
+
+```bash
+node scripts/provision-kivicare-test-schema.mjs
+```
+
+**What this uncovered.** `tests/billing/fixtures.ts` cleans up with *unbounded*
+`id >= 9_000_000` deletes across `wp_kc_appointments`, `wp_kc_clinic_sessions` and
+others. That cleanup had been silently **aborting partway**, because it deletes from
+`wp_kc_patient_clinic_mappings` and `wp_kc_clinic_schedule` first and those tables did
+not exist. Completing the schema made the cleanup run to completion — which then wiped
+the repository suites' fixtures. Two consequences:
+
+1. The repository suites had only been surviving by accident. Their fixtures moved to
+   8.4M–8.8M, below the billing blast radius.
+2. **Open follow-up:** billing's cleanup should bound its deletes the way the
+   repository suites do (`[BASE, BASE + 100_000)`). Left alone for now — it touches 15
+   billing suites and buys nothing immediate.
+
+Net effect on the baseline: **679 → 736 tests, still 9 failures.** The 57 extra passing
+tests are billing suites that could not run before. The 9 failures are unchanged, so
+the missing tables were never their cause.
+
+⚠️ The *dev* database (`wordpress-praktiqu`) is still a 16-table partial mirror. The
+script deliberately refuses to touch it.
 - [x] **1R.2** ~~`wp_usermeta` read helpers.~~ **Done for patients** — `basic_data` is a
       JSON blob decoded in `patients.repo.ts`; malformed/absent JSON yields nulls.
       Extract into a shared helper when the second repo needs it.
@@ -374,10 +400,7 @@ No `legacyId` compat shim. Response IDs change from cuid strings to WP numeric I
    instead of a plain `DROP`.
 3. **`users` mirror.** Keep as auth anchor (recommended — JWT/refresh tokens need a
    local FK target) or eliminate and read `wp_users` on every request?
-4. **Provisioning a complete local KiviCare schema.** Half the tables are missing
-   locally (§3a), so Phase 1R cannot be fully validated before staging. Running the
-   plugin's own migrations against `wordpress-praktiqu-test` is the clean fix — is
-   there a WordPress install available to run them from?
+4. ~~**Provisioning a complete local KiviCare schema.**~~ **Resolved** — see §3a.
 
 ---
 
