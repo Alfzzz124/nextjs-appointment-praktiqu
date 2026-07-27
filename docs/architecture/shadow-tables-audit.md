@@ -223,7 +223,38 @@ Three compounding decisions:
       use raw SQL with `'HH:MM:SS'` string params. It also passed the tests at first
       because all but one conflict test asserted an empty result and so passed
       vacuously — **always assert one non-empty case when testing a filter.**
-- [ ] **1R.1e** Remaining: `clinic-sessions.repo.ts`, `static-data.repo.ts`.
+- [x] **1R.1e** `clinic-sessions.repo.ts` — **done.** Replaces *three* shadow tables
+      (`professional_availability`, `doctor_sessions`, `clinic_sessions`).
+      `listClinicSessions` + `getWeeklyAvailability`. An unknown day slug throws
+      rather than returning `[]`, which would read as "never works". 10 tests.
+- [ ] **1R.1f** `static-data.repo.ts` (backs `specialties` / `_DoctorToSpecialty`) —
+      **BLOCKED**: `wp_kc_static_data` does not exist in either local database.
+      See §3a below.
+
+### ⚠️ 3a. The local databases are a partial mirror
+
+Both `wordpress-praktiqu` and `wordpress-praktiqu-test` contain **16 of KiviCare's 30
+tables**. Fifteen are missing outright:
+
+`static_data`, `custom_fields`, `custom_field_data`, `patient_clinic_mappings`,
+`clinic_schedule`, `appointment_service_mapping`, `appointment_reminder_mapping`,
+`appointment_reminder_mapping_data`, `patient_encounters_template`,
+`patient_encounters_template_mapping`, `prescription_enconter_template`,
+`medical_problems`, `payments_appointment_mappings`, `gcal_appointment_mapping`,
+`custom_notifications`.
+
+**Why this matters for the remediation:**
+- Contract tests can only cover the half of KiviCare that exists locally. Phase 1R is
+  verified against a partial schema — treat staging as the real gate.
+- `patient_clinic_mappings` is among the missing, and clinic-scoped patient access
+  control depends on it. That is a security-relevant gap, not just a convenience one.
+- `clinic_schedule` (holidays) is queried by `billing/clinic-schedule.service.ts`,
+  which therefore cannot be exercised locally.
+
+**Action:** provision a complete KiviCare schema locally — run the plugin's own
+migrations against the test database rather than hand-writing DDL, so the tables match
+what production actually has. Until then, mark repositories for the missing tables as
+untestable rather than untested.
 - [x] **1R.2** ~~`wp_usermeta` read helpers.~~ **Done for patients** — `basic_data` is a
       JSON blob decoded in `patients.repo.ts`; malformed/absent JSON yields nulls.
       Extract into a shared helper when the second repo needs it.
@@ -343,6 +374,10 @@ No `legacyId` compat shim. Response IDs change from cuid strings to WP numeric I
    instead of a plain `DROP`.
 3. **`users` mirror.** Keep as auth anchor (recommended — JWT/refresh tokens need a
    local FK target) or eliminate and read `wp_users` on every request?
+4. **Provisioning a complete local KiviCare schema.** Half the tables are missing
+   locally (§3a), so Phase 1R cannot be fully validated before staging. Running the
+   plugin's own migrations against `wordpress-praktiqu-test` is the clean fix — is
+   there a WordPress install available to run them from?
 
 ---
 
