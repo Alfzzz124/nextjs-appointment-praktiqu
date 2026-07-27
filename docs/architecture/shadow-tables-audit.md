@@ -200,13 +200,15 @@ Three compounding decisions:
 
 ### Phase 1R — WP read layer, direct SQL (~2 days)
 
-- [ ] **1R.1** Create `src/repositories/wp/` with typed read repositories mirroring
-      KiviCare's access patterns, replacing ad-hoc `$queryRawUnsafe`:
-      `patients.repo.ts`, `doctors.repo.ts`, `clinics.repo.ts`, `services.repo.ts`,
-      `appointments.repo.ts`, `clinic-sessions.repo.ts`, `static-data.repo.ts`.
-- [ ] **1R.2** Implement `wp_usermeta` read helpers — `basic_data` is a JSON blob, not
-      columns. Parsing must match KiviCare's format exactly
-      (see `PatientController.php:988,1153`).
+- [x] **1R.1a** `src/repositories/wp/patients.repo.ts` — **done.** `findPatientById`
+      + `listPatients`, filtering on the `kiviCare_patient` capability. 7 contract
+      tests in `tests/repositories/wp-patients.repo.test.ts`.
+- [ ] **1R.1b** Remaining read repositories: `doctors.repo.ts`, `clinics.repo.ts`,
+      `services.repo.ts`, `appointments.repo.ts`, `clinic-sessions.repo.ts`,
+      `static-data.repo.ts`.
+- [x] **1R.2** ~~`wp_usermeta` read helpers.~~ **Done for patients** — `basic_data` is a
+      JSON blob decoded in `patients.repo.ts`; malformed/absent JSON yields nulls.
+      Extract into a shared helper when the second repo needs it.
 - [ ] **1R.3** Role resolution from `wp_usermeta.wp_capabilities` (`kiviCare_patient`,
       `kiviCare_doctor`, `kiviCare_receptionist`, `kiviCare_clinic_admin`). Reuse the
       existing `src/lib/auth/role-mapping.ts`.
