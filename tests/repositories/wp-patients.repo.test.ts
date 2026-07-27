@@ -24,7 +24,7 @@ import {
  * repository suite shares wp_users; an unbounded `gte: BASE` delete here wiped the
  * doctors suite's fixtures at 9_500_000 out from under it.
  */
-const BASE = 9_400_000;
+const BASE = 8_400_000;
 const END = BASE + 100_000;
 
 /** Serialised PHP array as WordPress writes it into wp_capabilities. */

@@ -12,7 +12,7 @@ import { findDoctorById, listDoctors } from '@/repositories/wp/doctors.repo';
 import { KIVICARE_ROLES } from '@/repositories/wp/wp-user';
 
 /** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 9_500_000;
+const BASE = 8_500_000;
 const END = BASE + 100_000;
 
 function capabilities(role: string): string {

@@ -15,7 +15,7 @@ import {
 } from '@/repositories/wp/services.repo';
 
 /** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 9_600_000;
+const BASE = 8_600_000;
 const END = BASE + 100_000;
 
 describe('wp catalog repositories', () => {

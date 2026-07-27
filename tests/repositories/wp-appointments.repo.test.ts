@@ -20,7 +20,7 @@ import {
 } from '@/repositories/wp/appointments.repo';
 
 /** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 9_700_000;
+const BASE = 8_700_000;
 const END = BASE + 100_000;
 
 const CLINIC = BigInt(BASE + 10);
