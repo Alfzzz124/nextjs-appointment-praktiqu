@@ -8,48 +8,41 @@
  * The full RBAC matrix is documented in plan.md §Authorization Matrix.
  */
 
-import { AppointmentStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { ACTIVE_STATUSES, APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 
 /**
- * Check whether a professional (Doctor) may access a client record.
+ * Appointment states that count as "has seen this client".
  *
- * Rule (BR-10.01): access is granted if the professional has at least one
- * BOOKED or COMPLETED appointment with the client.
+ * A cancelled appointment must not grant access, but a completed one must — so this is
+ * the active set plus CHECK_OUT, not `ACTIVE_STATUSES` alone (CHECK_OUT is a finished
+ * visit and does not block a slot, hence its absence there).
+ */
+const QUALIFYING_STATUSES = [...ACTIVE_STATUSES, APPOINTMENT_STATUS.CHECK_OUT];
+
+/**
+ * Check whether a professional may access a client record.
  *
- * @param professionalId — the User.id of the professional
- * @param clientId        — the Client.id
+ * Rule (BR-10.01): access is granted if the professional has at least one qualifying
+ * appointment with the client.
+ *
+ * Both ids are WordPress user ids (`wp_users.ID`) — a doctor and a patient are both
+ * just WP users. This previously read the `clients` shadow table, which holds no rows;
+ * it now reads `wp_kc_appointments` directly.
+ *
+ * @param professionalWpUserId — the doctor's `wp_users.ID`
+ * @param clientWpUserId       — the patient's `wp_users.ID`
  * @returns `true` if access is granted; throws `AccessDeniedError` if not.
  */
 export async function canProfessionalAccessClient(
-  professionalId: string,
-  clientId: string,
+  professionalWpUserId: number | bigint,
+  clientWpUserId: number | bigint,
 ): Promise<boolean> {
-  const result = await prisma.appointment.findFirst({
+  const count = await prisma.kcAppointment.count({
     where: {
-      doctor: { userId: professionalId },
-      patient: { userId: { equals: undefined } }, // find patient by clientId
-    },
-    // We need to find the patient's userId from the Client record.
-    select: { id: true },
-  });
-
-  // Resolve the Client's userId.
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
-    select: { userId: true },
-  });
-  if (!client) {
-    throw new AccessDeniedError('Client not found');
-  }
-
-  // Find appointments where the professional (via Doctor.userId) has
-  // BOOKED or COMPLETED status with this client.
-  const count = await prisma.appointment.count({
-    where: {
-      doctor: { userId: professionalId },
-      patient: { userId: client.userId },
-      status: { in: [AppointmentStatus.BOOKED, AppointmentStatus.CHECK_OUT] },
+      doctorId: BigInt(professionalWpUserId),
+      patientId: BigInt(clientWpUserId),
+      status: { in: [...QUALIFYING_STATUSES] },
     },
   });
 

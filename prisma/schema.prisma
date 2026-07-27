@@ -386,37 +386,6 @@ enum Gender {
   OTHER
 }
 
-enum ClientStatus {
-  ACTIVE // can book
-  INACTIVE // paused / departed
-  ARCHIVED // soft-deleted (history preserved)
-}
-
-model Client {
-  id               String       @id @default(cuid())
-  userId           String       @unique // WordPress user link
-  practiceId       String // FK to Clinic
-  uniqueClientId   String // e.g. CLT-2026-00001
-  fullName         String       @db.VarChar(100)
-  email            String       @db.VarChar(255)
-  mobileNumber     String       @db.VarChar(20)
-  dateOfBirth      DateTime
-  gender           Gender
-  address          String?      @db.Text
-  emergencyContact String?      @db.VarChar(100)
-  notes            String?      @db.Text
-  status           ClientStatus @default(ACTIVE)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-
-  @@unique([practiceId, uniqueClientId])
-  @@unique([practiceId, email])
-  @@index([practiceId, status])
-  @@index([fullName])
-  @@index([mobileNumber])
-  @@map("clients")
-}
-
 // ============================================
 // PATIENT MANAGEMENT (legacy KiviCare clinical record)
 // ============================================

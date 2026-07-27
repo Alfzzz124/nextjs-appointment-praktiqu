@@ -6,12 +6,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { exportClients } from '@/services/client/client.service';
-import { ClientStatus } from '@prisma/client';
+import { CLIENT_STATUS } from '@/repositories/wp/patients.repo';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-const statusSchema = z.nativeEnum(ClientStatus).optional();
+const statusSchema = z.enum([CLIENT_STATUS.ACTIVE, CLIENT_STATUS.INACTIVE, CLIENT_STATUS.ARCHIVED]).optional();
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
