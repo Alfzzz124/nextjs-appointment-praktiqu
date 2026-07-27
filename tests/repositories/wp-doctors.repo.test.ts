@@ -11,7 +11,9 @@ import { assertTestDb } from '../billing/fixtures';
 import { findDoctorById, listDoctors } from '@/repositories/wp/doctors.repo';
 import { KIVICARE_ROLES } from '@/repositories/wp/wp-user';
 
+/** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
 const BASE = 9_500_000;
+const END = BASE + 100_000;
 
 function capabilities(role: string): string {
   return `a:1:{s:${role.length}:"${role}";b:1;}`;
@@ -57,8 +59,8 @@ async function seedWpUser(opts: {
 describe('wp doctors repository', () => {
   beforeAll(async () => {
     assertTestDb();
-    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE) } } });
-    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE) } } });
+    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
+    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
 
     await seedWpUser({
       id: BASE + 1,
@@ -106,8 +108,8 @@ describe('wp doctors repository', () => {
   });
 
   afterAll(async () => {
-    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE) } } });
-    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE) } } });
+    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
+    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
     await prisma.$disconnect();
   });
 

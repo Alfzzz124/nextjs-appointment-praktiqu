@@ -17,8 +17,15 @@ import {
   PATIENT_ROLE,
 } from '@/repositories/wp/patients.repo';
 
-/** Test-owned ID range, matching the convention in tests/billing/fixtures.ts. */
+/**
+ * Test-owned ID range, matching the convention in tests/billing/fixtures.ts.
+ *
+ * Cleanup MUST be bounded by END. Vitest runs suites concurrently and every wp
+ * repository suite shares wp_users; an unbounded `gte: BASE` delete here wiped the
+ * doctors suite's fixtures at 9_500_000 out from under it.
+ */
 const BASE = 9_400_000;
+const END = BASE + 100_000;
 
 /** Serialised PHP array as WordPress writes it into wp_capabilities. */
 function capabilities(role: string): string {
@@ -65,8 +72,8 @@ async function seedWpUser(opts: {
 describe('wp patients repository', () => {
   beforeAll(async () => {
     assertTestDb();
-    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE) } } });
-    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE) } } });
+    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
+    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
 
     await seedWpUser({
       id: BASE + 1,
@@ -107,8 +114,8 @@ describe('wp patients repository', () => {
   });
 
   afterAll(async () => {
-    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE) } } });
-    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE) } } });
+    await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
+    await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
     await prisma.$disconnect();
   });
 
