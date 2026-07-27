@@ -292,16 +292,36 @@ script deliberately refuses to touch it.
 
 ### Phase 1W — Write path via `praktiqu-endpoint` plugin (~3 days, per D1)
 
-- [ ] **1W.1** Add REST routes to `praktiqu-endpoint` for every write we need. Each must
-      call KiviCare's own service/controller layer so hooks fire — **not** raw `$wpdb`:
-      - `POST/PUT /patients` → `wp_insert_user` + `set_role('kiviCare_patient')` +
-        `update_user_meta` (mirror `PatientController.php:1299–1498`)
-      - `POST/PUT/DELETE /appointments` → KiviCare appointment create/reschedule/cancel
-      - `POST/PUT /clinics`, `POST/PUT /services`
+- [x] **1W.1a** `POST /patients` + `PUT /patients/{id}` — **done.**
+      `class-praktiqu-endpoint-patients.php`. Writes via `wp_insert_user` +
+      `set_role` + `update_user_meta`, then fires `kc_patient_save` /
+      `kivicare_patient_registered` / `kc_patient_update` with KiviCare's own payload
+      shape.
+
+      **D1 justified concretely:** `kc_patient_save` has three real listeners —
+      `KCPatientNotificationListener::handlePatientRegistered` (welcome email),
+      `KCPatientControllerFilters::handlePatientSave`, and Pro's
+      `KCPPatientControllerFilters::saveCustomFormData`. A raw INSERT skips all three.
+
+      Edge cases handled: update *merges* into `basic_data` (a partial request must not
+      blank fields); update rejects a non-patient (no editing a doctor via this route);
+      clinic mapping is idempotent (no unique constraint on the table); usernames are
+      de-duplicated (derived from the email local-part, so cross-domain collisions are
+      real).
+- [ ] **1W.1b** `POST/PUT/DELETE /appointments` → KiviCare appointment
+      create/reschedule/cancel. Hooks: `kc_after_create_appointment`,
+      `kc_appointment_updated`, `kc_appointment_cancelled`, `kc_appointment_status_update`.
+- [ ] **1W.1c** `POST/PUT /clinics`, `POST/PUT /services`
+      (`kc_service_add` / `kc_service_update` / `kc_clinic_delete`).
 - [ ] **1W.2** Multi-table writes must be **one** endpoint each — an appointment plus its
       service mapping cannot be two calls from Next.js without a partial-failure window.
-- [ ] **1W.3** Typed client in `src/repositories/wp/plugin-client.ts`: auth, timeouts,
-      retry policy, and mapping of plugin errors onto our problem-details shape.
+- [x] **1W.3** Typed client — **done for patients.** `wpRequestJson` in
+      `src/lib/wp-endpoint.ts` centralises the fetch/check/parse/rethrow the payments
+      and media clients each repeated, and surfaces WordPress's
+      `{code,message,data.status}` message rather than the raw body.
+      `src/repositories/wp/patients.write.ts` sends flat fields and lets PHP assemble
+      `basic_data` — two implementations of that layout would drift.
+      *Still to add: timeouts and a retry policy.*
 - [ ] **1W.4** Integration tests against a real WP instance asserting the hooks actually
       fired (notification queued, calendar event created) — that is the entire reason
       D1 chose this path, so it must be verified, not assumed.
