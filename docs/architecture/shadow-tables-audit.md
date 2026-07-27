@@ -308,9 +308,25 @@ script deliberately refuses to touch it.
       clinic mapping is idempotent (no unique constraint on the table); usernames are
       de-duplicated (derived from the email local-part, so cross-domain collisions are
       real).
-- [ ] **1W.1b** `POST/PUT/DELETE /appointments` → KiviCare appointment
-      create/reschedule/cancel. Hooks: `kc_after_create_appointment`,
-      `kc_appointment_updated`, `kc_appointment_cancelled`, `kc_appointment_status_update`.
+- [x] **1W.1b** `POST /appointments`, `PUT /appointments/{id}`,
+      `POST /appointments/{id}/status` — **done.**
+      `class-praktiqu-endpoint-appointments.php` + `appointments.write.ts`.
+
+      Delegates the row to `KCAppointment::create` rather than writing SQL, because
+      `KCAppointment::save` derives `appointment_start_utc` / `appointment_end_utc`.
+      A raw INSERT leaves them NULL and breaks every UTC query. Returns 503 if
+      KiviCare is inactive rather than writing a half-formed row.
+
+      Behaviours copied from `AppointmentsController`, not invented:
+      `kc_after_create_appointment` fires **only when status ≠ PENDING** (line 3349) —
+      an unpaid booking must not send the "booked" email, surfaced as `notified` in
+      the response; service ids are stored comma-joined in `visit_type` (line 3171);
+      the `kivicare_appointment_data` filter is applied; and on cancel
+      `kc_appointment_cancelled` fires *before* `kc_appointment_status_update`
+      (lines 3887–3891), because the cancellation listener tears down telemed links
+      the status listener may still read.
+
+      Reschedule re-derives the UTC column whenever local time or timezone moves.
 - [ ] **1W.1c** `POST/PUT /clinics`, `POST/PUT /services`
       (`kc_service_add` / `kc_service_update` / `kc_clinic_delete`).
 - [ ] **1W.2** Multi-table writes must be **one** endpoint each — an appointment plus its
@@ -409,9 +425,27 @@ No `legacyId` compat shim. Response IDs change from cuid strings to WP numeric I
 
 ### ❓ Still open
 
-1. **Do the 15 `billing/*` services migrate to plugin-REST writes too?** D1 makes their
-   direct `INSERT`/`UPDATE` statements non-compliant. Migrating them is significant
-   extra scope; leaving them is a knowingly inconsistent write path.
+1. ~~**Do the 15 `billing/*` services migrate to plugin-REST writes too?**~~
+   **ANSWERED 2026-07-26 — by evidence, and the answer is "almost none of them".**
+
+   I checked which hooks those direct writes actually bypass, and how many listeners
+   each hook has, rather than reasoning from the principle:
+
+   | Hook a direct write skips | Listeners | Does `billing/*` trigger it? |
+   |---|---|---|
+   | `kc_receptionist_save` | 1 — `KCReceptionistNotificationListener` (welcome email) | **YES** — `receptionist.service.ts:79` does `INSERT INTO wp_users` |
+   | `kc_service_add` / `kc_service_update` | 1 each — Pro's `KCProServiceControllerFilters` | Only `import/adapters/services.ts`, **deleted in Phase 4** |
+   | `kc_encounter_save` / `kc_encounter_update` | **0** | n/a — nothing listens, direct writes are fine |
+   | `kc_before_delete_encounter` | 1 — Pro's `deleteTaxData` | **NO** — no encounter DELETE exists in `src/` |
+
+   **Recommendation: migrate `receptionist.service.ts` only.** It has a confirmed,
+   user-visible defect today — creating a receptionist never sends the welcome email,
+   because it writes `wp_users` directly and `kc_receptionist_save` never fires.
+
+   The other 14 services are not worth migrating: encounters and bills have no
+   listeners on their write hooks, and the only service-catalogue writer is the
+   importer that Phase 4 deletes outright. This drops the ~4 days that a blanket
+   migration would have cost down to roughly half a day.
 2. **Staging data.** Are there real `clients` / `sessions_booking` rows on
    staging2.praktiqu.com? Local dev is near-empty (`clients=0`, `patients=3`,
    `professionals=1`, `appointments=2`), but staging is unverified — I have no DB
@@ -437,5 +471,6 @@ No `legacyId` compat shim. Response IDs change from cuid strings to WP numeric I
 | 5 — API contract | 1 day | ships with Phase 3 |
 | **Total** | **~14.5 days** | was ~11.5 before D1 |
 
-D1 (plugin-REST writes) added ~3 days of PHP work. If open question Q1 resolves toward
-migrating the 15 `billing/*` services to plugin writes as well, add roughly 4 more days.
+D1 (plugin-REST writes) added ~3 days of PHP work. Q1 has since been answered by
+evidence: only `receptionist.service.ts` needs migrating (~0.5 day), not all 15
+`billing/*` services (~4 days) — see §6 Q1.
