@@ -155,3 +155,64 @@ export function formatFieldErrors(err: z.ZodError): FieldError[] {
     message: i.message,
   }));
 }
+
+/* ------------------------------------------------------------------ */
+/* Response shapes                                                     */
+/* ------------------------------------------------------------------ */
+/**
+ * Declared as Zod rather than plain TypeScript so the OpenAPI generator and the
+ * runtime share one definition — a hand-written spec is what drifted before.
+ *
+ * `id` is an integer (`wp_users.ID`), not a cuid string: a client IS a WordPress user.
+ * Profile fields are nullable because WordPress permits a user with no `basic_data`
+ * meta, and KiviCare-created patients often have partial profiles.
+ */
+export const clientSchema = z.object({
+  id: z.number().int().describe('WordPress user ID (wp_users.ID)'),
+  clinicId: z.number().int().nullable(),
+  uniqueClientId: z.string().nullable().describe('patient_unique_id meta, e.g. "PAT-0001"'),
+  fullName: z.string(),
+  email: z.string().email(),
+  mobileNumber: z.string().nullable(),
+  dateOfBirth: z.string().nullable().describe('YYYY-MM-DD'),
+  gender: z.string().nullable(),
+  address: z.string().nullable(),
+  emergencyContact: z.string().nullable(),
+  notes: z.string().nullable(),
+  status: clientStatusSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const clientDetailSchema = clientSchema.extend({
+  sessionCount: z.number().int().describe('KiviCare appointments for this patient'),
+});
+
+export const clientListItemSchema = z.object({
+  id: z.number().int(),
+  uniqueClientId: z.string().nullable(),
+  fullName: z.string(),
+  email: z.string().email(),
+  mobileNumber: z.string().nullable(),
+  status: clientStatusSchema,
+  sessionCount: z.number().int(),
+  createdAt: z.string().datetime(),
+});
+
+export const paginationSchema = z.object({
+  currentPage: z.number().int(),
+  totalPages: z.number().int(),
+  totalItems: z.number().int(),
+  itemsPerPage: z.number().int(),
+});
+
+export const clientListResponseSchema = z.object({
+  data: z.array(clientListItemSchema),
+  pagination: paginationSchema,
+});
+
+export const clientDetailResponseSchema = z.object({ data: clientDetailSchema });
+
+export const clientStatisticsSchema = z.object({
+  totalSessions: z.number().int(),
+  lastSessionAt: z.string().datetime().nullable(),
+});
