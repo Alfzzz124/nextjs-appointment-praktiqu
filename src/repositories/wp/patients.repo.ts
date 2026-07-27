@@ -58,6 +58,14 @@ export type ListPatientsQuery = {
   page: number;
   perPage: number;
   search?: string;
+  /**
+   * Restrict to patients mapped to at least one of these clinics.
+   *
+   * This is the WordPress equivalent of the old `Client.practiceId` scoping, and it
+   * is an access-control boundary — an empty array means "no clinics", which must
+   * return nothing rather than everything.
+   */
+  clinicIds?: bigint[];
 };
 
 export type PaginatedPatients = {
@@ -127,6 +135,21 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
       `(u.user_email LIKE ? OR u.display_name LIKE ? OR m_first_name.meta_value LIKE ? OR m_last_name.meta_value LIKE ?)`,
     );
     args.push(term, term, term, term);
+  }
+
+  if (query.clinicIds !== undefined) {
+    if (query.clinicIds.length === 0) {
+      // "Scoped to no clinics" must yield nothing. Omitting the clause here would
+      // silently widen an access-control filter to every patient in the install.
+      where.push('1 = 0');
+    } else {
+      where.push(`EXISTS (
+        SELECT 1 FROM wp_kc_patient_clinic_mappings pcm
+        WHERE pcm.patient_id = u.ID
+          AND pcm.clinic_id IN (${query.clinicIds.map(() => '?').join(',')})
+      )`);
+      args.push(...query.clinicIds);
+    }
   }
 
   const whereSql = where.join(' AND ');

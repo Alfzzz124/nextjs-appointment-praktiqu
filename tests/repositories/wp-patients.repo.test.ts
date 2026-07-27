@@ -174,6 +174,62 @@ describe('wp patients repository', () => {
     expect(byEmail.items.map((p) => Number(p.id))).toEqual([BASE + 3]);
   });
 
+  describe('clinic scoping (replaces Client.practiceId access control)', () => {
+    const CLINIC_A = BigInt(BASE + 500);
+    const CLINIC_B = BigInt(BASE + 501);
+
+    beforeAll(async () => {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id >= ? AND patient_id < ?`,
+        BASE,
+        END,
+      );
+      // BASE+1 belongs to clinic A; BASE+3 to clinic B.
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO wp_kc_patient_clinic_mappings (patient_id, clinic_id, created_at) VALUES (?, ?, NOW()), (?, ?, NOW())`,
+        BASE + 1,
+        CLINIC_A,
+        BASE + 3,
+        CLINIC_B,
+      );
+    });
+
+    it('returns only patients mapped to the given clinic', async () => {
+      const { items } = await listPatients({ page: 1, perPage: 50, clinicIds: [CLINIC_A] });
+      const ids = items.map((p) => Number(p.id));
+
+      expect(ids).toContain(BASE + 1);
+      expect(ids).not.toContain(BASE + 3);
+    });
+
+    it('accepts several clinics', async () => {
+      const { items } = await listPatients({
+        page: 1,
+        perPage: 50,
+        clinicIds: [CLINIC_A, CLINIC_B],
+      });
+      const ids = items.map((p) => Number(p.id));
+
+      expect(ids).toContain(BASE + 1);
+      expect(ids).toContain(BASE + 3);
+    });
+
+    it('returns nothing — not everything — when scoped to no clinics', async () => {
+      // The dangerous case: an empty scope must not widen to the whole install.
+      const { items, total } = await listPatients({ page: 1, perPage: 50, clinicIds: [] });
+
+      expect(items).toEqual([]);
+      expect(total).toBe(0);
+    });
+
+    it('excludes patients with no clinic mapping at all', async () => {
+      const { items } = await listPatients({ page: 1, perPage: 50, clinicIds: [CLINIC_A] });
+
+      // BASE+2 is the doctor and BASE+3 is mapped elsewhere; neither is in clinic A.
+      expect(items.map((p) => Number(p.id))).toEqual([BASE + 1]);
+    });
+  });
+
   it('reports a total count independent of the current page', async () => {
     const firstPage = await listPatients({ page: 1, perPage: 1, search: '@test.local' });
 
