@@ -129,12 +129,14 @@ paths. A path-count assertion before/after is a cheap guard.
 
 **Migrated so far:** `clients` (10 paths). Remaining: 177 paths still hand-maintained.
 
-## 6. Immediate consequence for the ID break
+## 6. The ID break — fixed for `clients`
 
-Until a generator is wired up, `docs/api/openapi.yaml` still documents client ids as
-cuid strings. That is now wrong — they are numeric `wp_users.ID` (decision D2). The
-paths needing correction are `/api/v1/clients*`, and the Laravel front-end and Postman
-collection must move with them in the same release.
+`/api/v1/clients/{id}` declared `type: string` long after client ids became numeric
+`wp_users.ID`, and every client request body was documented as a bare `type: object`,
+so the spec never described the real shape at all. Both are now generated and correct.
+
+**Still outstanding:** the Laravel front-end and the Postman collection must move to
+numeric ids in the same release (decision D2 — no compatibility shim).
 
 ## Sources
 
