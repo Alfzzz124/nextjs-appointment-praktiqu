@@ -11,7 +11,11 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:guard": "node scripts/guard-db.mjs",
+    "db:push": "npm run db:guard && prisma db push",
+    "db:migrate": "npm run db:guard && prisma migrate dev",
+    "db:reset": "npm run db:guard && prisma migrate reset"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
