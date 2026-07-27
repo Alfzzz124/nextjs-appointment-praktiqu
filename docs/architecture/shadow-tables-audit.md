@@ -498,12 +498,39 @@ concurrently.
    listeners on their write hooks, and the only service-catalogue writer is the
    importer that Phase 4 deletes outright. This drops the ~4 days that a blanket
    migration would have cost down to roughly half a day.
-2. **Staging data.** Are there real `clients` / `sessions_booking` rows on
-   staging2.praktiqu.com? Local dev is near-empty (`clients=0`, `patients=3`,
-   `professionals=1`, `appointments=2`), but staging is unverified — I have no DB
-   credentials for it. **This gates Phase 4.4 and validates D2.** If rows exist,
-   Phase 4.4 needs a data migration (shadow row → `wp_users` + `wp_usermeta`)
-   instead of a plain `DROP`.
+2. ~~**Staging data.**~~ **ANSWERED 2026-07-27.** A production copy was restored into
+   the `praktiqu` database on the local `praktiqu-mysql` container. Table prefix is
+   plain `wp_` (not `wp_314_`), so the repositories' assumptions hold.
+
+   | Real KiviCare data | rows | | Shadow table | rows |
+   |---|---|---|---|---|
+   | `wp_users` | **843** | | `clients` | **0** |
+   | └ role `kiviCare_patient` | **752** | | `patients` | **0** |
+   | └ role `kiviCare_doctor` | **59** | | `sessions_booking` | **0** |
+   | `wp_kc_appointments` | **2 411** | | `appointments` | **0** |
+   | `wp_kc_clinics` | 22 | | `clinics` | 22 *(exact mirror)* |
+   | `wp_kc_services` | 497 | | `services` | 497 *(exact mirror)* |
+   | | | | `professionals` / `doctors` | 59 *(exact mirror)* |
+   | | | | `users` | 60 — all have `wpUserId`, **0 orphans** |
+
+   **Phase 4.4 is a plain `DROP`. No data migration is needed**, and **D2 is
+   validated** — there are no client rows to preserve and no cuid client IDs in the
+   wild. Every populated shadow table is an exact mirror of a `wp_kc_*` source with no
+   rows that aren't derivable from it.
+
+   ### 🔴 And the real consequence of the bug is now measurable
+
+   `GET /api/v1/clients` → `listClients` → `prisma.client` → the `clients` table,
+   which holds **0 rows**. Meanwhile **752 patients exist in `wp_users`**.
+
+   **The client API has been blind to every real patient in the system.** This is not a
+   latent schema-tidiness problem; it is a live, total data-visibility failure, and it
+   raises Phase 3.1 from cleanup to the highest-priority fix on the list.
+
+   Verified end-to-end read-only against the restored data — `listPatients` returns
+   752 with names, emails and phone numbers correctly decoded from the `basic_data`
+   blob; `listDoctors` 59; `listAppointments` 2 411; `listClinics` 20 (correctly
+   excluding the 2 inactive of 22).
 3. **`users` mirror.** Keep as auth anchor (recommended — JWT/refresh tokens need a
    local FK target) or eliminate and read `wp_users` on every request?
 4. ~~**Provisioning a complete local KiviCare schema.**~~ **Resolved** — see §3a.
