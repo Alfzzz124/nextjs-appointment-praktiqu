@@ -10,6 +10,25 @@ import { unauthorized } from '@/lib/problem-details';
 import { getClient, updateClient, archiveClient, ClientServiceError } from '@/services/client/client.service';
 import { updateClientSchema, formatFieldErrors } from '@/services/client/validation';
 
+/**
+ * Parse a WordPress user id from the route.
+ *
+ * Client ids are numeric now (D2). A non-numeric segment must fail as 400 here — left
+ * unchecked it becomes NaN, and NaN reaching a SQL parameter has crashed this codebase
+ * before.
+ */
+function parseClientId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+const invalidId = () =>
+  NextResponse.json(
+    { type: '/errors/validation-error', title: 'Invalid client id', status: 400 },
+    { status: 400 },
+  );
+
+
 export const dynamic = 'force-dynamic';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -17,7 +36,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function GET(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const actor = await getActor(req);
-    const { id } = await params;
+    const { id: rawId } = await params;
+    const id = parseClientId(rawId);
+    if (id === null) return invalidId();
     const result = await getClient({ actor, id });
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
@@ -28,7 +49,9 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
 export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const actor = await getActor(req);
-    const { id } = await params;
+    const { id: rawId } = await params;
+    const id = parseClientId(rawId);
+    if (id === null) return invalidId();
     let body: unknown;
     try {
       body = await req.json();
@@ -58,7 +81,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 export async function DELETE(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const actor = await getActor(req);
-    const { id } = await params;
+    const { id: rawId } = await params;
+    const id = parseClientId(rawId);
+    if (id === null) return invalidId();
     const result = await archiveClient({ actor, id });
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {

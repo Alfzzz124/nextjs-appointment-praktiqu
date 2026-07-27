@@ -1,35 +1,45 @@
 /**
  * Client entity types.
  *
- * Mirrors `prisma/schema.prisma::Client` plus the derived shapes the API
- * returns (with `sessionCount`, etc.). Kept in `src/types/` so they can
- * be imported by both server (service + API routes) and client (UI) code.
+ * A client IS a WordPress user carrying the `kiviCare_patient` capability. There is no
+ * `clients` table — see docs/architecture/shadow-tables-audit.md.
+ *
+ * IDs are therefore `number` (`wp_users.ID`), not cuid strings. This is the D2
+ * breaking change: it ships in one release with no compatibility shim.
  */
 
-import type { ClientStatus, Gender } from '@prisma/client';
+import type { ClientStatus } from '@/repositories/wp/patients.repo';
 
-/** Re-export enums for consumers who don't want to depend on @prisma/client. */
-export { ClientStatus, Gender };
-export type GenderValue = Gender;
+export type { ClientStatus };
 export type ClientStatusValue = ClientStatus;
 
-/** Raw DB shape (matches `prisma.client.findFirst()` row). */
+/** Gender is free text inside KiviCare's `basic_data` blob, not an enum. */
+export type GenderValue = string;
+
+/**
+ * A client, assembled from `wp_users` + `wp_usermeta`.
+ *
+ * Profile fields are nullable: WordPress permits a user with no `basic_data` meta at
+ * all, and patients created through KiviCare's own UI often have partial profiles.
+ */
 export interface Client {
-  id: string;
-  userId: string;
-  practiceId: string;
-  uniqueClientId: string;
+  /** `wp_users.ID`. */
+  id: number;
+  /** From `wp_kc_patient_clinic_mappings` — null when the patient is unmapped. */
+  clinicId: number | null;
+  /** `patient_unique_id` meta, e.g. "PAT-0001". */
+  uniqueClientId: string | null;
   fullName: string;
   email: string;
-  mobileNumber: string;
-  dateOfBirth: Date;
-  gender: Gender;
+  mobileNumber: string | null;
+  /** `YYYY-MM-DD` from `basic_data.dob`. A string, not a Date — that is how KiviCare stores it. */
+  dateOfBirth: string | null;
+  gender: GenderValue | null;
   address: string | null;
   emergencyContact: string | null;
   notes: string | null;
   status: ClientStatus;
   createdAt: Date;
-  updatedAt: Date;
 }
 
 /** API response shape with session count (matches GET /clients/[id]). */
@@ -39,11 +49,11 @@ export interface ClientDetail extends Client {
 
 /** Compact list-row shape (matches GET /clients). */
 export interface ClientListItem {
-  id: string;
-  uniqueClientId: string;
+  id: number;
+  uniqueClientId: string | null;
   fullName: string;
   email: string;
-  mobileNumber: string;
+  mobileNumber: string | null;
   status: ClientStatus;
   sessionCount: number;
   createdAt: Date;

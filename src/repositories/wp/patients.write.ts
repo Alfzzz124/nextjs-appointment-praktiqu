@@ -35,6 +35,9 @@ export type CreatePatientInput = {
   profileImageId?: number;
   /** ACTIVE | INACTIVE | ARCHIVED. Stored in wp_usermeta, never wp_users.user_status. */
   status?: ClientStatus;
+  /** PraktiQU-only fields — KiviCare's basic_data blob has no slot for these. */
+  emergencyContact?: string;
+  notes?: string;
 };
 
 /** Every field optional — the plugin merges into `basic_data` rather than replacing. */
@@ -79,6 +82,8 @@ function toRequestBody(input: CreatePatientInput | UpdatePatientInput): Record<s
     ['clinicId', 'clinic_id'],
     ['profileImageId', 'profile_image'],
     ['status', 'client_status'],
+    ['emergencyContact', 'emergency_contact'],
+    ['notes', 'notes'],
   ];
 
   const body: Record<string, unknown> = {};

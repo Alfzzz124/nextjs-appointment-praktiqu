@@ -32,12 +32,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const practiceId =
+    const clinicIdRaw =
       actor.role === 'SUPER_ADMIN'
-        ? (req.nextUrl.searchParams.get('practiceId') ?? undefined)
-        : (actor.practiceId ?? undefined);
+        ? (req.nextUrl.searchParams.get('clinicId') ?? undefined)
+        : undefined;
 
-    const rows = await exportClients({ practiceId, status: parsedStatus.data });
+    // Non-super-admins are scoped by the service via resolveKcActor; only a
+    // SUPER_ADMIN may name a clinic explicitly.
+    const clinicId = clinicIdRaw !== undefined ? Number(clinicIdRaw) : undefined;
+    const rows = await exportClients({
+      clinicId: Number.isFinite(clinicId) ? clinicId : undefined,
+      status: parsedStatus.data,
+    });
 
     return new NextResponse(JSON.stringify(rows), {
       status: 200,

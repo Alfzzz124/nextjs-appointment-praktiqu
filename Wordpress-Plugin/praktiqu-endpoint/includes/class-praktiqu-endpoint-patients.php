@@ -220,6 +220,14 @@ final class Patients
             }
         }
 
+        // PraktiQU-only fields. KiviCare's basic_data has no slot for these, and we
+        // keep them under our own prefix so we never reinterpret one of its keys.
+        foreach (['emergency_contact' => 'praktiqu_emergency_contact', 'notes' => 'praktiqu_notes'] as $param => $meta) {
+            if (array_key_exists($param, $params)) {
+                update_user_meta($user_id, $meta, sanitize_textarea_field((string) $params[$param]));
+            }
+        }
+
         foreach (['patient_unique_id', 'timezone'] as $key) {
             if (!empty($params[$key])) {
                 update_user_meta($user_id, $key, sanitize_text_field((string) $params[$key]));

@@ -50,6 +50,14 @@ export type ClientStatus = (typeof CLIENT_STATUS)[keyof typeof CLIENT_STATUS];
 
 export const CLIENT_STATUS_META_KEY = 'praktiqu_client_status';
 
+/**
+ * Fields PraktiQU tracks that KiviCare's `basic_data` blob has no slot for.
+ * Same rationale as the status meta: our own keys, so we never reinterpret one of
+ * KiviCare's.
+ */
+export const EMERGENCY_CONTACT_META_KEY = 'praktiqu_emergency_contact';
+export const NOTES_META_KEY = 'praktiqu_notes';
+
 /** Meta keys we lift out of `wp_usermeta` for a patient record. */
 const META_KEYS = [
   'first_name',
@@ -58,6 +66,8 @@ const META_KEYS = [
   'patient_unique_id',
   'timezone',
   CLIENT_STATUS_META_KEY,
+  EMERGENCY_CONTACT_META_KEY,
+  NOTES_META_KEY,
 ] as const;
 
 export type WpPatient = {
@@ -71,6 +81,10 @@ export type WpPatient = {
   timezone: string | null;
   /** Absent meta reads as ACTIVE — a patient created in KiviCare has no such meta. */
   status: ClientStatus;
+  emergencyContact: string | null;
+  notes: string | null;
+  /** First mapped clinic, or null when the patient is mapped to none. */
+  clinicId: bigint | null;
   // From `basic_data`.
   mobileNumber: string | null;
   gender: string | null;
@@ -115,6 +129,9 @@ type RawRow = BaseUserRow & {
   patient_unique_id: string | null;
   timezone: string | null;
   praktiqu_client_status: string | null;
+  praktiqu_emergency_contact: string | null;
+  praktiqu_notes: string | null;
+  clinic_id: bigint | number | null;
 };
 
 function toStatus(raw: string | null): ClientStatus {
@@ -138,6 +155,9 @@ function toPatient(row: RawRow): WpPatient {
     patientUniqueId: str(row.patient_unique_id),
     timezone: str(row.timezone),
     status: toStatus(row.praktiqu_client_status),
+    emergencyContact: str(row.praktiqu_emergency_contact),
+    notes: str(row.praktiqu_notes),
+    clinicId: row.clinic_id === null || row.clinic_id === undefined ? null : BigInt(row.clinic_id),
     mobileNumber: str(basic.mobile_number),
     gender: str(basic.gender),
     dateOfBirth: str(basic.dob),
@@ -154,7 +174,9 @@ const ROLE_ARGS = [CAPABILITIES_KEY, roleLikePattern(KIVICARE_ROLES.patient)] as
 export async function findPatientById(id: bigint): Promise<WpPatient | null> {
   const rows = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT ${USER_COLUMNS},
-            ${metaSelects(META_KEYS)}
+            ${metaSelects(META_KEYS)},
+            (SELECT pcm.clinic_id FROM wp_kc_patient_clinic_mappings pcm
+              WHERE pcm.patient_id = u.ID ORDER BY pcm.id ASC LIMIT 1) AS clinic_id
        FROM wp_users AS u
        ${metaJoins(META_KEYS)}
       WHERE u.ID = ? AND ${HAS_ROLE_SQL}
@@ -223,7 +245,9 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
 
   const rows = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT ${USER_COLUMNS},
-            ${metaSelects(META_KEYS)}
+            ${metaSelects(META_KEYS)},
+            (SELECT pcm.clinic_id FROM wp_kc_patient_clinic_mappings pcm
+              WHERE pcm.patient_id = u.ID ORDER BY pcm.id ASC LIMIT 1) AS clinic_id
        FROM wp_users AS u
        ${metaJoins(META_KEYS)}
       WHERE ${whereSql}

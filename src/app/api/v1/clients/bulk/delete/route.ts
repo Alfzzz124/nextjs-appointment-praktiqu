@@ -11,7 +11,8 @@ import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-const schema = z.object({ ids: z.array(z.string()).min(1) });
+// WP user ids — numeric since the client store moved to wp_users (D2).
+const schema = z.object({ ids: z.array(z.coerce.number().int().positive()).min(1) });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
