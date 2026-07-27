@@ -211,8 +211,19 @@ Three compounding decisions:
       (these are plain tables with mapped models), normalising `status` → `isActive`
       and decoding the `specialties` LongText JSON. `listServicesForDoctor` resolves
       the per-doctor `charges`/`duration` that override the base price. 11 tests.
-- [ ] **1R.1d** Remaining: `appointments.repo.ts`, `clinic-sessions.repo.ts`,
-      `static-data.repo.ts`.
+- [x] **1R.1d** `appointments.repo.ts` — **done.** Replaces *both* shadow copies
+      (`appointments` and `sessions_booking`). `findAppointmentById`,
+      `listAppointments`, `findConflictingAppointments`. 14 tests.
+      Status ordinals verified against `KCAppointment.php:41-45` and pinned by test:
+      `CANCELLED=0, BOOKED=1, PENDING=2, CHECK_OUT=3, CHECK_IN=4`; slot-blocking set
+      is `[1,2,4]` (`KCAppointment.php:493`) — CHECK_OUT does not block.
+      ⚠️ **Trap found here:** binding a JS `Date` to a MySQL `TIME` comparison matches
+      nothing (MySQL promotes TIME using the *current* date), so every overlap check
+      silently returned "no conflict" — a double-booking bug. Time comparisons must
+      use raw SQL with `'HH:MM:SS'` string params. It also passed the tests at first
+      because all but one conflict test asserted an empty result and so passed
+      vacuously — **always assert one non-empty case when testing a filter.**
+- [ ] **1R.1e** Remaining: `clinic-sessions.repo.ts`, `static-data.repo.ts`.
 - [x] **1R.2** ~~`wp_usermeta` read helpers.~~ **Done for patients** — `basic_data` is a
       JSON blob decoded in `patients.repo.ts`; malformed/absent JSON yields nulls.
       Extract into a shared helper when the second repo needs it.
