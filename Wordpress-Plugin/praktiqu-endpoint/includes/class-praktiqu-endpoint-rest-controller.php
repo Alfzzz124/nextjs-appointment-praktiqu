@@ -21,13 +21,15 @@ final class REST_Controller
     private Jobs $jobs;
     private Payments $payments;
     private Media $media;
+    private Patients $patients;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients)
     {
         $this->service = $service;
         $this->jobs = $jobs;
         $this->payments = $payments;
         $this->media = $media;
+        $this->patients = $patients;
     }
 
     public function register(): void
@@ -79,6 +81,33 @@ final class REST_Controller
                 'id'              => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
                 'newPassword'     => ['required' => true, 'type' => 'string'],
                 'invalidateTokens' => ['required' => false, 'type' => 'boolean', 'default' => true],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/patients — create a patient (wp_users + kiviCare_patient)
+        //
+        // PraktiQU READS patients directly from wp_users, but must write them here:
+        // a raw INSERT skips the kc_patient_save listeners (welcome email, KiviCare
+        // bookkeeping, Pro custom fields). See docs/architecture/shadow-tables-audit.md §6 D1.
+        register_rest_route($ns, '/patients', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_patient'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'email'      => ['required' => true,  'type' => 'string', 'format' => 'email'],
+                'first_name' => ['required' => true,  'type' => 'string'],
+                'last_name'  => ['required' => false, 'type' => 'string'],
+                'clinic_id'  => ['required' => false, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // PUT/PATCH /praktiqu/v1/patients/{id} — update a patient
+        register_rest_route($ns, '/patients/(?P<id>\d+)', [
+            'methods'             => \WP_REST_Server::EDITABLE,
+            'callback'            => [$this, 'handle_update_patient'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
 
@@ -195,6 +224,31 @@ final class REST_Controller
         $new_password   = (string) $request->get_param('newPassword');
 
         $result = $this->service->change_password($wp_user_id, $new_password);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/patients
+     */
+    public function handle_create_patient(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->patients->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * PUT/PATCH /praktiqu/v1/patients/{id}
+     */
+    public function handle_update_patient(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id = (int) $request->get_param('id');
+        $result = $this->patients->update($id, (array) $request->get_json_params(), $request);
         if (is_wp_error($result)) {
             return $result;
         }
