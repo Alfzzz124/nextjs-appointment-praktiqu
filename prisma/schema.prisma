@@ -1713,6 +1713,22 @@ model KcUserMeta {
   @@map("wp_usermeta")
 }
 
+/// KiviCare's lookup table: specializations, blood groups, qualifications, service
+/// categories. Backs the `specialties` + `_DoctorToSpecialty` shadow tables, which
+/// should not exist — see docs/architecture/shadow-tables-audit.md.
+model KcStaticData {
+  id        BigInt   @id @default(autoincrement())
+  type      String
+  label     String?  @db.Text
+  value     String?  @db.Text
+  parentId  BigInt?  @map("parent_id")
+  status    BigInt
+  createdAt DateTime @map("created_at")
+
+  @@index([type])
+  @@map("wp_kc_static_data")
+}
+
 model KcOption {
   optionId    BigInt @id @default(autoincrement()) @map("option_id")
   optionName  String @map("option_name")
