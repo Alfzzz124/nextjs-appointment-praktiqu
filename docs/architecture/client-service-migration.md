@@ -80,6 +80,19 @@ column cannot carry a third state.
 **Recommendation: A.** It is the only option that cannot silently invert a meaning, and
 the KiviCare admin UI is not the system of record for PraktiQU client lifecycle.
 
+### ✅ DECIDED 2026-07-26 — Option A
+
+Status lives entirely in `wp_usermeta.praktiqu_client_status`, holding the literal
+strings `ACTIVE` / `INACTIVE` / `ARCHIVED`. `wp_users.user_status` is **never written**
+by PraktiQU, so KiviCare's contradictory 0/1 convention stays its own business and we
+cannot invert it.
+
+Absent meta reads as `ACTIVE` — a patient created directly in KiviCare has no such meta
+and must not be treated as archived.
+
+Accepted trade-off: status changes made in PraktiQU are not reflected in KiviCare's
+admin UI. PraktiQU is the system of record for client lifecycle.
+
 ---
 
 ## 4. Clinic scoping

@@ -209,6 +209,17 @@ final class Patients
 
         update_user_meta($user_id, 'basic_data', wp_json_encode($basic, JSON_UNESCAPED_UNICODE));
 
+        // Client lifecycle status lives here, NOT in wp_users.user_status: KiviCare's
+        // use of that column is self-contradictory (KCPatient defaults it to 1 while
+        // KCWPUser::updateStatus maps 'active' to 0) and it cannot hold ARCHIVED.
+        // Decision A, 2026-07-26.
+        if (!empty($params['client_status'])) {
+            $status = strtoupper(sanitize_text_field((string) $params['client_status']));
+            if (in_array($status, ['ACTIVE', 'INACTIVE', 'ARCHIVED'], true)) {
+                update_user_meta($user_id, 'praktiqu_client_status', $status);
+            }
+        }
+
         foreach (['patient_unique_id', 'timezone'] as $key) {
             if (!empty($params[$key])) {
                 update_user_meta($user_id, $key, sanitize_text_field((string) $params[$key]));

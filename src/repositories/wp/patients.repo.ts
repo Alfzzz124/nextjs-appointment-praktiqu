@@ -31,8 +31,34 @@ import {
 /** Re-exported for callers that only deal in patients. */
 export const PATIENT_ROLE = KIVICARE_ROLES.patient;
 
+/**
+ * Client lifecycle status.
+ *
+ * Stored in `wp_usermeta.praktiqu_client_status`, NOT in `wp_users.user_status`.
+ * KiviCare's use of that column is self-contradictory — `KCPatient::initSchema`
+ * defaults it to 1 while `KCWPUser::updateStatus` maps 'active' to 0 — and it is
+ * binary, so it cannot hold ARCHIVED at all. Decision A, 2026-07-26; see
+ * docs/architecture/client-service-migration.md §3.
+ */
+export const CLIENT_STATUS = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+  ARCHIVED: 'ARCHIVED',
+} as const;
+
+export type ClientStatus = (typeof CLIENT_STATUS)[keyof typeof CLIENT_STATUS];
+
+export const CLIENT_STATUS_META_KEY = 'praktiqu_client_status';
+
 /** Meta keys we lift out of `wp_usermeta` for a patient record. */
-const META_KEYS = ['first_name', 'last_name', 'basic_data', 'patient_unique_id', 'timezone'] as const;
+const META_KEYS = [
+  'first_name',
+  'last_name',
+  'basic_data',
+  'patient_unique_id',
+  'timezone',
+  CLIENT_STATUS_META_KEY,
+] as const;
 
 export type WpPatient = {
   id: bigint;
@@ -43,6 +69,8 @@ export type WpPatient = {
   lastName: string | null;
   patientUniqueId: string | null;
   timezone: string | null;
+  /** Absent meta reads as ACTIVE — a patient created in KiviCare has no such meta. */
+  status: ClientStatus;
   // From `basic_data`.
   mobileNumber: string | null;
   gender: string | null;
@@ -66,6 +94,11 @@ export type ListPatientsQuery = {
    * return nothing rather than everything.
    */
   clinicIds?: bigint[];
+  /**
+   * Restrict to these lifecycle statuses. Including ACTIVE also matches patients with
+   * no status meta at all — those created directly in KiviCare.
+   */
+  statuses?: readonly ClientStatus[];
 };
 
 export type PaginatedPatients = {
@@ -81,7 +114,17 @@ type RawRow = BaseUserRow & {
   basic_data: string | null;
   patient_unique_id: string | null;
   timezone: string | null;
+  praktiqu_client_status: string | null;
 };
+
+function toStatus(raw: string | null): ClientStatus {
+  const value = str(raw);
+  // Anything unrecognised (or absent) is ACTIVE: patients created directly in
+  // KiviCare carry no status meta and must not be hidden as archived.
+  return value === CLIENT_STATUS.INACTIVE || value === CLIENT_STATUS.ARCHIVED
+    ? value
+    : CLIENT_STATUS.ACTIVE;
+}
 
 function toPatient(row: RawRow): WpPatient {
   const basic = decodeBasicData(row.basic_data);
@@ -94,6 +137,7 @@ function toPatient(row: RawRow): WpPatient {
     lastName: str(row.last_name),
     patientUniqueId: str(row.patient_unique_id),
     timezone: str(row.timezone),
+    status: toStatus(row.praktiqu_client_status),
     mobileNumber: str(basic.mobile_number),
     gender: str(basic.gender),
     dateOfBirth: str(basic.dob),
@@ -149,6 +193,21 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
           AND pcm.clinic_id IN (${query.clinicIds.map(() => '?').join(',')})
       )`);
       args.push(...query.clinicIds);
+    }
+  }
+
+  if (query.statuses !== undefined) {
+    if (query.statuses.length === 0) {
+      where.push('1 = 0');
+    } else {
+      const placeholders = query.statuses.map(() => '?').join(',');
+      // A patient created in KiviCare has no status meta and reads as ACTIVE, so an
+      // ACTIVE filter must also match NULL — otherwise those patients disappear.
+      const nullIsActive = query.statuses.includes(CLIENT_STATUS.ACTIVE)
+        ? `OR m_${CLIENT_STATUS_META_KEY}.meta_value IS NULL OR m_${CLIENT_STATUS_META_KEY}.meta_value = ''`
+        : '';
+      where.push(`(m_${CLIENT_STATUS_META_KEY}.meta_value IN (${placeholders}) ${nullIsActive})`);
+      args.push(...query.statuses);
     }
   }
 

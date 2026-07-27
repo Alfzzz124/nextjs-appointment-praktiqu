@@ -12,6 +12,7 @@
  * shape would drift.
  */
 import { WpEndpointError, wpRequestJson } from '@/lib/wp-endpoint';
+import type { ClientStatus } from './patients.repo';
 
 export type CreatePatientInput = {
   email: string;
@@ -32,6 +33,8 @@ export type CreatePatientInput = {
   timezone?: string;
   clinicId?: number;
   profileImageId?: number;
+  /** ACTIVE | INACTIVE | ARCHIVED. Stored in wp_usermeta, never wp_users.user_status. */
+  status?: ClientStatus;
 };
 
 /** Every field optional — the plugin merges into `basic_data` rather than replacing. */
@@ -75,6 +78,7 @@ function toRequestBody(input: CreatePatientInput | UpdatePatientInput): Record<s
     ['timezone', 'timezone'],
     ['clinicId', 'clinic_id'],
     ['profileImageId', 'profile_image'],
+    ['status', 'client_status'],
   ];
 
   const body: Record<string, unknown> = {};

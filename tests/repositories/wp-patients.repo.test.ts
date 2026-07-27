@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
 import {
+  CLIENT_STATUS,
   findPatientById,
   listPatients,
   PATIENT_ROLE,
@@ -235,5 +236,54 @@ describe('wp patients repository', () => {
 
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.total).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('lifecycle status (wp_usermeta, not wp_users.user_status)', () => {
+    beforeAll(async () => {
+      // BASE+1 archived; BASE+3 deliberately left with NO status meta.
+      await prisma.kcUserMeta.create({
+        data: {
+          userId: BigInt(BASE + 1),
+          metaKey: 'praktiqu_client_status',
+          metaValue: CLIENT_STATUS.ARCHIVED,
+        },
+      });
+    });
+
+    it('reads the status meta', async () => {
+      const patient = await findPatientById(BigInt(BASE + 1));
+      expect(patient!.status).toBe(CLIENT_STATUS.ARCHIVED);
+    });
+
+    it('treats a patient with no status meta as ACTIVE', async () => {
+      // Patients created directly in KiviCare carry no such meta.
+      const patient = await findPatientById(BigInt(BASE + 3));
+      expect(patient!.status).toBe(CLIENT_STATUS.ACTIVE);
+    });
+
+    it('filters by status', async () => {
+      const { items } = await listPatients({
+        page: 1,
+        perPage: 50,
+        statuses: [CLIENT_STATUS.ARCHIVED],
+      });
+      const ids = items.map((p) => Number(p.id));
+
+      expect(ids).toContain(BASE + 1);
+      expect(ids).not.toContain(BASE + 3);
+    });
+
+    it('an ACTIVE filter also matches patients with no status meta', async () => {
+      const { items } = await listPatients({
+        page: 1,
+        perPage: 50,
+        search: '@test.local',
+        statuses: [CLIENT_STATUS.ACTIVE],
+      });
+      const ids = items.map((p) => Number(p.id));
+
+      expect(ids).toContain(BASE + 3); // no meta at all
+      expect(ids).not.toContain(BASE + 1); // archived
+    });
   });
 });
