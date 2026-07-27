@@ -107,6 +107,28 @@ proves harmless in a scratch install (test `npm run build` and `tsc --noEmit` be
 committing the lockfile). Otherwise `@asteasolutions/zod-to-openapi`, which has no such
 conflict and reuses the Zod schemas already written.
 
+### ✅ DECIDED 2026-07-27 — `@asteasolutions/zod-to-openapi`
+
+Pinned to **7.3.4**: v9 peers on `zod ^4` and this project is on zod 3.25, so npm
+refuses the install rather than mis-resolving. Installed cleanly in 3 packages with no
+TypeScript conflict.
+
+```bash
+npm run openapi         # regenerate the owned groups
+npm run openapi:check   # exit 1 if stale — CI gate
+```
+
+`scripts/generate-openapi.ts` owns route groups one at a time (`OWNED_PREFIXES`).
+Registered groups are deleted and re-emitted each run; unregistered groups are left
+untouched, so the hand-maintained remainder shrinks incrementally.
+
+**Trap, learned the hard way:** owning a prefix means owning *all* of it. The first run
+deleted three `/api/v1/clients/*` paths that existed in the spec but had not been
+registered. If you add a group, register every route in it — or the spec silently loses
+paths. A path-count assertion before/after is a cheap guard.
+
+**Migrated so far:** `clients` (10 paths). Remaining: 177 paths still hand-maintained.
+
 ## 6. Immediate consequence for the ID break
 
 Until a generator is wired up, `docs/api/openapi.yaml` still documents client ids as
