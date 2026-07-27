@@ -456,10 +456,43 @@ No `legacyId` compat shim. Response IDs change from cuid strings to WP numeric I
    `class-praktiqu-endpoint-receptionists.php`) fixes both: `wp_insert_user` hashes a
    real password and the hook delivers it by email.
 
-   **Remaining step:** switch `createReceptionist` to call that endpoint. Not done in
-   the same pass because `tests/billing/receptionist.service.test.ts` asserts against
-   rows the raw-SQL path writes directly; those tests need a plugin stub first, and a
-   half-finished switch would leave the suite red.
+   **DONE 2026-07-26** — `createReceptionist` now calls that endpoint, with the plugin
+   mocked in tests. 4/4 pass in isolation.
+
+### ⚠️ 3b. Sixteen billing suites were reporting green while running nothing
+
+Found while finishing the receptionist fix. `tests/billing/fixtures.ts` `cleanup()`
+deletes from 8 tables that exist only on staging — `wp_kc_patient_review`,
+`wp_kc_followups(_chains/_reminders/_activity_log)`, `wp_kc_gdpr_consents`,
+`wp_kc_gdpr_consent_versions`, `wp_kc_gdpr_audit_log`. **No DDL for any of them exists
+anywhere in this repo.**
+
+The first missing table threw, which aborted `beforeAll`, which made vitest report
+every test in that suite as **skipped** — not failed. The suites looked green.
+
+Separately, the test database's `wp_users` was a five-column stub created by
+`prisma db push` from the `KcUser` model. It lacked `user_pass`, `user_nicename`,
+`user_url`, `user_activation_key` and `user_status`, so anything writing a user the way
+WordPress does failed with *Unknown column 'user_pass'*.
+
+Both fixed: `cleanup()` now tolerates MySQL 1146 (and only 1146), and the provisioning
+script adds the missing core columns.
+
+**The baseline got worse on purpose:**
+
+| | before | after |
+|---|---|---|
+| passed | 673 | 699 |
+| failed | **9** | **42** |
+| skipped | 62 | 3 |
+
+The 33 newly-failing tests were never passing — they were never *run*. 18 fail purely
+because those staging-only tables are absent (verified: `rating.service` fails with
+1146 on `wp_kc_patient_review`). This trades a misleading green for an accurate red.
+
+**Follow-ups:** obtain or write DDL for the 8 staging-only tables; and bound billing's
+unbounded `id >= 9_000_000` cleanup, which still contaminates suites running
+concurrently.
 
    The other 14 services are not worth migrating: encounters and bills have no
    listeners on their write hooks, and the only service-catalogue writer is the
