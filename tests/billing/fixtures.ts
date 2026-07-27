@@ -2,6 +2,19 @@ import { prisma } from '@/lib/db';
 
 const TEST_MARKER = 9_000_000; // ids in this range belong to tests
 
+/**
+ * Upper bound of this suite's id range.
+ *
+ * Cleanup used to delete `id >= TEST_MARKER` with no ceiling. Vitest runs suites
+ * concurrently against one shared database, so those deletes reached past this range
+ * and wiped other suites' fixtures mid-run — which is why the full-suite failure count
+ * moved between runs of identical code while each suite passed alone.
+ *
+ * Highest offset actually used by these fixtures is TEST_MARKER + 1300, so a 100k
+ * window is generous. Other suites own ranges below TEST_MARKER (8.3M-8.9M).
+ */
+const TEST_MARKER_END = TEST_MARKER + 100_000;
+
 export function assertTestDb(): void {
   const url = process.env.DATABASE_URL ?? '';
   if (!/test/i.test(url)) {
@@ -435,40 +448,40 @@ export async function cleanup() {
   assertTestDb();
   // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
   // are matched by their TEST_MARKER-range clinic scope / *.import.test email.
-  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER} AND clinic_id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
   await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
   await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
   await deleteIfTableExists(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER} AND clinic_id < ${TEST_MARKER_END}`);
   // FK-safe order: leaf tables reference encounters, so delete them first.
-  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER}`);
-  await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // Followups: FK-safe order (activity log + reminders reference followups; followups reference chains).
-  await deleteIfTableExists(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // GDPR: consents + consent-versions (TEST_MARKER-range). NEVER touch wp_kc_gdpr_audit_log (checksum chain).
-  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // Soft-delete markers written by softDeleteSubject on TEST_MARKER-range subjects.
-  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
-  await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcTax.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcBillItem.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcBill.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcTaxData.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcClinic.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
+  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND user_id < ${TEST_MARKER_END} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
+  await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcTax.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcBillItem.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcBill.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcTaxData.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcClinic.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
   await prisma.user.deleteMany({ where: { id: { startsWith: 'test-' } } });
 }
