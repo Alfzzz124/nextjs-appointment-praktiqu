@@ -22,14 +22,16 @@ final class REST_Controller
     private Payments $payments;
     private Media $media;
     private Patients $patients;
+    private Appointments $appointments;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments)
     {
         $this->service = $service;
         $this->jobs = $jobs;
         $this->payments = $payments;
         $this->media = $media;
         $this->patients = $patients;
+        $this->appointments = $appointments;
     }
 
     public function register(): void
@@ -108,6 +110,46 @@ final class REST_Controller
             'permission_callback' => [Plugin::class, 'verify_service_token'],
             'args'                => [
                 'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/appointments — create an appointment
+        //
+        // The hook-densest write in KiviCare: kc_after_create_appointment drives the
+        // booking email, Pro custom fields and followup scheduling. It also derives the
+        // UTC columns via KCAppointment::save, which a raw INSERT would leave NULL.
+        register_rest_route($ns, '/appointments', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_appointment'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'clinic_id'  => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                'doctor_id'  => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                'patient_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                'start_date' => ['required' => true, 'type' => 'string'],
+                'start_time' => ['required' => true, 'type' => 'string'],
+            ],
+        ]);
+
+        // PUT/PATCH /praktiqu/v1/appointments/{id} — reschedule / edit
+        register_rest_route($ns, '/appointments/(?P<id>\d+)', [
+            'methods'             => \WP_REST_Server::EDITABLE,
+            'callback'            => [$this, 'handle_update_appointment'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/appointments/{id}/status — change status; 0 cancels
+        register_rest_route($ns, '/appointments/(?P<id>\d+)/status', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_appointment_status'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id'     => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                // 0=CANCELLED 1=BOOKED 2=PENDING 3=CHECK_OUT 4=CHECK_IN (KCAppointment.php:41-45)
+                'status' => ['required' => true, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
             ],
         ]);
 
@@ -249,6 +291,46 @@ final class REST_Controller
     {
         $id = (int) $request->get_param('id');
         $result = $this->patients->update($id, (array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/appointments
+     */
+    public function handle_create_appointment(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->appointments->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * PUT/PATCH /praktiqu/v1/appointments/{id}
+     */
+    public function handle_update_appointment(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id = (int) $request->get_param('id');
+        $result = $this->appointments->update($id, (array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/appointments/{id}/status
+     */
+    public function handle_appointment_status(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id     = (int) $request->get_param('id');
+        $status = (int) $request->get_param('status');
+
+        $result = $this->appointments->set_status($id, $status, $request);
         if (is_wp_error($result)) {
             return $result;
         }
