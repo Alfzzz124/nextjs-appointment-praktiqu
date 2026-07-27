@@ -408,35 +408,58 @@ export async function seedConsent(data: Partial<{
   return { id };
 }
 
+/**
+ * Raw DELETE that tolerates a missing table.
+ *
+ * Several kc_* tables used by the followup, rating and GDPR features exist only on
+ * staging — no DDL for them lives in this repo, so a local test database does not have
+ * them. Before this, the first missing table made cleanup() throw, which aborted
+ * beforeAll and caused every billing suite's tests to be reported as SKIPPED rather
+ * than run. They looked green while testing nothing.
+ *
+ * Only MySQL 1146 ("table doesn't exist") is swallowed; anything else still throws,
+ * so a genuine cleanup failure is not hidden.
+ */
+async function deleteIfTableExists(sql: string): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(sql);
+  } catch (err: any) {
+    const code = err?.meta?.code ?? err?.code;
+    const message = String(err?.message ?? '');
+    const missing = code === '1146' || /doesn't exist|Unknown table/i.test(message);
+    if (!missing) throw err;
+  }
+}
+
 export async function cleanup() {
   assertTestDb();
   // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
   // are matched by their TEST_MARKER-range clinic scope / *.import.test email.
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER}`);
   // FK-safe order: leaf tables reference encounters, so delete them first.
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER}`);
   await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER}`);
   // Followups: FK-safe order (activity log + reminders reference followups; followups reference chains).
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER}`);
   // GDPR: consents + consent-versions (TEST_MARKER-range). NEVER touch wp_kc_gdpr_audit_log (checksum chain).
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER}`);
   // Soft-delete markers written by softDeleteSubject on TEST_MARKER-range subjects.
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
+  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
   await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });

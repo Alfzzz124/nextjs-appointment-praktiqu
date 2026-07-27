@@ -128,6 +128,22 @@ if (DRY_RUN) {
 /* Apply                                                             */
 /* ---------------------------------------------------------------- */
 
+/**
+ * WordPress core columns the test database is missing.
+ *
+ * `wp_users` here was created by `prisma db push` from the `KcUser` model, which maps
+ * only the five columns the app reads. Real WordPress has ten, and anything writing a
+ * user the way WordPress does — a receptionist, a patient — fails with
+ * "Unknown column 'user_pass'". Adding them is additive and test-only.
+ */
+const CORE_COLUMNS = [
+  ['wp_users', 'user_pass', "varchar(255) NOT NULL DEFAULT ''"],
+  ['wp_users', 'user_nicename', "varchar(50) NOT NULL DEFAULT ''"],
+  ['wp_users', 'user_url', "varchar(100) NOT NULL DEFAULT ''"],
+  ['wp_users', 'user_activation_key', "varchar(255) NOT NULL DEFAULT ''"],
+  ['wp_users', 'user_status', 'int NOT NULL DEFAULT 0'],
+];
+
 const { PrismaClient } = await import('@prisma/client');
 const prisma = new PrismaClient({ datasources: { db: { url } } });
 
@@ -153,6 +169,27 @@ try {
       }
     } catch (err) {
       failed.push({ table: s.table, message: String(err?.message ?? err).split('\n')[0] });
+    }
+  }
+  // Repair WordPress core columns the Prisma-pushed stubs are missing.
+  const existingCols = await prisma.$queryRawUnsafe(
+    `SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = ?`,
+    database,
+  );
+  const haveCol = new Set(
+    existingCols.map((r) => `${r.t ?? r.table_name}.${r.c ?? r.column_name}`),
+  );
+
+  for (const [table, column, definition] of CORE_COLUMNS) {
+    if (!present.has(table) || haveCol.has(`${table}.${column}`)) continue;
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`,
+      );
+      console.log(`  \x1b[32m+\x1b[0m ${table}.${column}`);
+      created++;
+    } catch (err) {
+      failed.push({ table: `${table}.${column}`, message: String(err?.message ?? err).split('\n')[0] });
     }
   }
 } finally {

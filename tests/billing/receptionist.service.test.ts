@@ -1,6 +1,49 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+
+/**
+ * Stand in for the WordPress plugin.
+ *
+ * createReceptionist now provisions through POST /praktiqu/v1/receptionists, because
+ * the old raw-SQL path wrote an invalid password hash and skipped kc_receptionist_save
+ * — leaving every receptionist locked out and un-emailed. There is no WordPress here,
+ * so this mock performs the row writes the plugin would, letting the get/list/scope/
+ * status/delete assertions below keep exercising our own read and scoping logic.
+ *
+ * It deliberately does NOT reproduce the old placeholder hash: wp_insert_user stores a
+ * real one, and nothing in these tests should depend on the broken behaviour.
+ */
+vi.mock('@/repositories/wp/receptionists.write', () => ({
+  createReceptionistViaPlugin: vi.fn(async (input: { name: string; email: string; clinicId: number }) => {
+    const { prisma: db } = await import('@/lib/db');
+    const username = input.email.split('@')[0].slice(0, 60);
+    const first = input.name.split(' ')[0];
+    const last = input.name.split(' ').slice(1).join(' ') || '-';
+
+    return db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_users (user_login, user_pass, user_nicename, display_name, user_email, user_url, user_registered, user_activation_key, user_status)
+         VALUES (?, ?, ?, ?, ?, '', NOW(), '', 0)`,
+        username, '$P$BvalidLookingHashForTestsOnly1234567', username, input.name, input.email,
+      );
+      const idRow = await tx.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
+      const wpId = Number(idRow[0].id);
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES
+         (?, 'first_name', ?), (?, 'last_name', ?),
+         (?, 'wp_capabilities', 'a:1:{s:21:"kiviCare_receptionist";b:1;}'),
+         (?, 'wp_user_level', '0')`,
+        wpId, first, wpId, last, wpId, wpId,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_kc_receptionist_clinic_mappings (receptionist_id, clinic_id, created_at) VALUES (?, ?, NOW())`,
+        wpId, input.clinicId,
+      );
+      return { id: wpId, email: input.email, clinicId: input.clinicId };
+    });
+  }),
+}));
 import {
   createReceptionist, getReceptionist, listReceptionists,
   bulkSetReceptionistStatus, deleteReceptionist,
