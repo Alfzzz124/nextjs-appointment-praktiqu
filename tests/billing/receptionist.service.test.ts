@@ -22,13 +22,19 @@ vi.mock('@/repositories/wp/receptionists.write', () => ({
     const last = input.name.split(' ').slice(1).join(' ') || '-';
 
     return db.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `INSERT INTO wp_users (user_login, user_pass, user_nicename, display_name, user_email, user_url, user_registered, user_activation_key, user_status)
-         VALUES (?, ?, ?, ?, ?, '', NOW(), '', 0)`,
-        username, '$P$BvalidLookingHashForTestsOnly1234567', username, input.name, input.email,
+      // Explicit id inside the fixtures' TEST_MARKER range. Letting AUTO_INCREMENT
+      // assign one produces a low id that cleanup() — bounded to that range — cannot
+      // find, so rows survive the run and the next one fails on a duplicate email.
+      const idRow = await tx.$queryRawUnsafe<any[]>(
+        `SELECT COALESCE(MAX(ID), ?) + 1 AS id FROM wp_users WHERE ID >= ? AND ID < ?`,
+        9_000_100, 9_000_100, 9_100_000,
       );
-      const idRow = await tx.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
       const wpId = Number(idRow[0].id);
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_users (ID, user_login, user_pass, user_nicename, display_name, user_email, user_url, user_registered, user_activation_key, user_status)
+         VALUES (?, ?, ?, ?, ?, ?, '', NOW(), '', 0)`,
+        wpId, username, '$P$BvalidLookingHashForTestsOnly1234567', username, input.name, input.email,
+      );
       await tx.$executeRawUnsafe(
         `INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES
          (?, 'first_name', ?), (?, 'last_name', ?),
