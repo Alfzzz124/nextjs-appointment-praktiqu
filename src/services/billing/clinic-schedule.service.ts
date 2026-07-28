@@ -7,14 +7,23 @@ import type { ScheduleScope } from '@/services/billing/schedule-scope';
 export interface ScheduleListParams { page: number; perPage: number | 'all'; moduleType?: string; moduleId?: number; }
 
 function mapRow(r: any) {
-  const t = (v: any) => (v == null ? null : typeof v === 'string' ? v : String(v).slice(11, 19));
+  /**
+   * `@db.Date`/`@db.Time` columns come back as JS Dates, and `String(date)` yields
+   * "Wed Jul 01 2026 …" — so slicing it produced "Wed Jul 01" rather than a date.
+   * Format off the UTC parts, which is also what stops a non-UTC server timezone
+   * shifting the value by a day.
+   */
+  const d = (v: any) =>
+    v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+  const t = (v: any) =>
+    v == null ? null : v instanceof Date ? v.toISOString().slice(11, 19) : String(v).slice(11, 19);
   return {
     id: Number(r.id),
     module_type: r.module_type ?? null,
     module_id: r.module_id != null ? Number(r.module_id) : null,
     selection_mode: r.selection_mode ?? null,
-    start_date: r.start_date ? String(r.start_date).slice(0, 10) : null,
-    end_date: r.end_date ? String(r.end_date).slice(0, 10) : null,
+    start_date: d(r.start_date),
+    end_date: d(r.end_date),
     selected_dates: r.selected_dates ?? null,
     time_specific: r.time_specific != null ? Number(r.time_specific) : null,
     start_time: t(r.start_time),

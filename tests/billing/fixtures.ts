@@ -470,7 +470,11 @@ export async function cleanup() {
   await deleteIfTableExists(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // GDPR: consents + consent-versions (TEST_MARKER-range). NEVER touch wp_kc_gdpr_audit_log (checksum chain).
   await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  // Versions created through the service get AUTO_INCREMENT ids, which fall outside the
+  // TEST_MARKER range and so survived cleanup — version_number then kept climbing across
+  // runs (a test expecting 1 saw 11). Also match the test-owned consent_type.
   await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE consent_type LIKE '%test%'`);
   // Soft-delete markers written by softDeleteSubject on TEST_MARKER-range subjects.
   await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND user_id < ${TEST_MARKER_END} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
@@ -483,5 +487,33 @@ export async function cleanup() {
   await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
   await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
   await prisma.kcClinic.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  /**
+   * Rows created THROUGH THE SERVICES rather than by a seed helper get AUTO_INCREMENT
+   * ids, which fall below TEST_MARKER and so survived every delete above. They then
+   * accumulated across runs and broke any assertion counting rows in scope — 44 stray
+   * prescriptions had built up by the time this was found.
+   *
+   * These deletes match on the foreign keys instead, which do point into the test range.
+   */
+  for (const [table, column] of [
+    ['wp_kc_prescription', 'patient_id'],
+    ['wp_kc_patient_medical_report', 'patient_id'],
+    ['wp_kc_medical_history', 'patient_id'],
+    ['wp_kc_patient_encounters', 'patient_id'],
+    ['wp_kc_appointments', 'patient_id'],
+    ['wp_kc_bills', 'patient_id'],
+    ['wp_kc_followups', 'patient_id'],
+    ['wp_kc_followup_chains', 'patient_id'],
+    ['wp_kc_patient_review', 'patient_id'],
+    ['wp_kc_clinic_sessions', 'clinic_id'],
+    ['wp_kc_doctor_clinic_mappings', 'clinic_id'],
+    ['wp_kc_receptionist_clinic_mappings', 'clinic_id'],
+    ['wp_kc_patient_clinic_mappings', 'clinic_id'],
+  ] as const) {
+    await deleteIfTableExists(
+      `DELETE FROM ${table} WHERE ${column} >= ${TEST_MARKER} AND ${column} < ${TEST_MARKER_END}`,
+    );
+  }
+
   await prisma.user.deleteMany({ where: { id: { startsWith: 'test-' } } });
 }

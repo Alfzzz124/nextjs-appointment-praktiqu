@@ -261,6 +261,10 @@ describe('Holiday management integration', () => {
         startTime: null,
         endTime: null,
       }));
+      // findUnique is stubbed to claim h_1 exists, but the default `delete` reads the
+      // mock's backing array — which nothing seeded, so it threw 'not found'. Stub
+      // delete to match, keeping the toHaveBeenCalledOnce assertion meaningful.
+      (stub.holiday.delete as any) = vi.fn(async ({ where }: any) => ({ id: where.id }));
       vi.doMock('@/lib/db', () => ({ prisma: stub }));
 
       const { removeHoliday } = await import('@/services/practice/service');
