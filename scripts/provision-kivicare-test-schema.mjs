@@ -144,6 +144,23 @@ const CORE_COLUMNS = [
   ['wp_users', 'user_status', 'int NOT NULL DEFAULT 0'],
 ];
 
+/**
+ * Tables that predate this script were created by `prisma db push` from the Kc* models,
+ * whose `id BigInt @id` carries no autoincrement. KiviCare's real DDL declares
+ * AUTO_INCREMENT, so inserts that omit the id — which is how every KiviCare write
+ * works — fail with "Field 'id' doesn't have a default value". Repaired here rather
+ * than worked around in each test.
+ */
+const AUTOINCREMENT_TABLES = [
+  'wp_kc_appointments',
+  'wp_kc_clinic_sessions',
+  'wp_kc_clinics',
+  'wp_kc_doctor_clinic_mappings',
+  'wp_kc_service_doctor_mapping',
+  'wp_kc_service_sessions',
+  'wp_kc_services',
+];
+
 const { PrismaClient } = await import('@prisma/client');
 const prisma = new PrismaClient({ datasources: { db: { url } } });
 
@@ -179,6 +196,27 @@ try {
   const haveCol = new Set(
     existingCols.map((r) => `${r.t ?? r.table_name}.${r.c ?? r.column_name}`),
   );
+
+  // Restore AUTO_INCREMENT where `prisma db push` dropped it.
+  const noAutoInc = await prisma.$queryRawUnsafe(
+    `SELECT table_name AS t FROM information_schema.columns
+      WHERE table_schema = ? AND column_name = 'id'
+        AND table_name LIKE 'wp\\_kc\\_%' AND extra NOT LIKE '%auto_increment%'`,
+    database,
+  );
+  for (const row of noAutoInc) {
+    const table = row.t ?? row.table_name;
+    if (!AUTOINCREMENT_TABLES.includes(table)) continue;
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE \`${table}\` MODIFY COLUMN \`id\` bigint NOT NULL AUTO_INCREMENT`,
+      );
+      console.log(`  \x1b[32m~\x1b[0m ${table}.id AUTO_INCREMENT restored`);
+      created++;
+    } catch (err) {
+      failed.push({ table: `${table}.id`, message: String(err?.message ?? err).split('\n')[0] });
+    }
+  }
 
   for (const [table, column, definition] of CORE_COLUMNS) {
     if (!present.has(table) || haveCol.has(`${table}.${column}`)) continue;

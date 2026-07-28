@@ -8,7 +8,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
-import { findDoctorById, listDoctors } from '@/repositories/wp/doctors.repo';
+import {
+  PROFESSIONAL_STATUS,
+  PROFESSIONAL_TYPE,
+  findDoctorById,
+  findDoctorByRegistrationNumber,
+  listDoctors,
+} from '@/repositories/wp/doctors.repo';
 import { KIVICARE_ROLES } from '@/repositories/wp/wp-user';
 
 /** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
@@ -171,5 +177,86 @@ describe('wp doctors repository', () => {
   it('searches across name and email', async () => {
     const byName = await listDoctors({ page: 1, perPage: 50, search: 'Pratiwi' });
     expect(byName.items.map((d) => Number(d.id))).toEqual([BASE + 1]);
+  });
+
+  describe('PraktiQU professional fields (wp_usermeta, not KiviCare columns)', () => {
+    const CLINIC_A = BigInt(BASE + 600);
+
+    beforeAll(async () => {
+      await prisma.kcUserMeta.createMany({
+        data: [
+          { userId: BigInt(BASE + 1), metaKey: 'praktiqu_professional_type', metaValue: PROFESSIONAL_TYPE.PSIKOLOG_KLINIS },
+          { userId: BigInt(BASE + 1), metaKey: 'praktiqu_registration_number', metaValue: 'REG-0001' },
+          { userId: BigInt(BASE + 1), metaKey: 'praktiqu_professional_status', metaValue: PROFESSIONAL_STATUS.INACTIVE },
+        ],
+      });
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id >= ? AND doctor_id < ?`,
+        BASE, END,
+      );
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO wp_kc_doctor_clinic_mappings (doctor_id, clinic_id, created_at) VALUES (?, ?, NOW())`,
+        BASE + 1, CLINIC_A,
+      );
+    });
+
+    it('reads type, registration number and status', async () => {
+      const doctor = await findDoctorById(BigInt(BASE + 1));
+
+      expect(doctor!.professionalType).toBe(PROFESSIONAL_TYPE.PSIKOLOG_KLINIS);
+      expect(doctor!.registrationNumber).toBe('REG-0001');
+      expect(doctor!.status).toBe(PROFESSIONAL_STATUS.INACTIVE);
+    });
+
+    it('treats a doctor with no status meta as ACTIVE', async () => {
+      // BASE+3 was created in the outer fixture with no praktiqu_* meta at all —
+      // exactly like a doctor created through KiviCare's own UI.
+      const doctor = await findDoctorById(BigInt(BASE + 3));
+
+      expect(doctor!.status).toBe(PROFESSIONAL_STATUS.ACTIVE);
+      expect(doctor!.professionalType).toBeNull();
+      expect(doctor!.registrationNumber).toBeNull();
+    });
+
+    it('finds a doctor by registration number', async () => {
+      const doctor = await findDoctorByRegistrationNumber('REG-0001');
+      expect(Number(doctor!.id)).toBe(BASE + 1);
+    });
+
+    it('returns null for an unknown registration number', async () => {
+      expect(await findDoctorByRegistrationNumber('REG-NOPE')).toBeNull();
+    });
+
+    it('filters by status, and ACTIVE also matches doctors with no meta', async () => {
+      const inactive = await listDoctors({ page: 1, perPage: 50, statuses: [PROFESSIONAL_STATUS.INACTIVE] });
+      expect(inactive.items.map((d) => Number(d.id))).toContain(BASE + 1);
+      expect(inactive.items.map((d) => Number(d.id))).not.toContain(BASE + 3);
+
+      const active = await listDoctors({ page: 1, perPage: 50, statuses: [PROFESSIONAL_STATUS.ACTIVE] });
+      expect(active.items.map((d) => Number(d.id))).toContain(BASE + 3);
+      expect(active.items.map((d) => Number(d.id))).not.toContain(BASE + 1);
+    });
+
+    it('filters by professional type', async () => {
+      const { items } = await listDoctors({
+        page: 1, perPage: 50, professionalTypes: [PROFESSIONAL_TYPE.PSIKOLOG_KLINIS],
+      });
+      expect(items.map((d) => Number(d.id))).toEqual([BASE + 1]);
+    });
+
+    it('scopes by clinic', async () => {
+      const { items } = await listDoctors({ page: 1, perPage: 50, clinicIds: [CLINIC_A] });
+      const ids = items.map((d) => Number(d.id));
+
+      expect(ids).toContain(BASE + 1);
+      expect(ids).not.toContain(BASE + 3);
+    });
+
+    it('returns nothing — not everything — when scoped to no clinics', async () => {
+      const { items, total } = await listDoctors({ page: 1, perPage: 50, clinicIds: [] });
+
+      expect(items).toEqual([]);
+      expect(total).toBe(0);
+    });
   });
 });
