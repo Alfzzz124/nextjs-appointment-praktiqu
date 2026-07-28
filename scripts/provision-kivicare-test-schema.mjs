@@ -231,9 +231,76 @@ try {
     }
   }
 
-  // Copy any columns the reference database has and this one lacks.
+  // Copy whole tables the reference has and this one lacks, then any missing columns.
   if (REFERENCE_DB) {
     if (REFERENCE_DB === database) die('--reference must name a DIFFERENT database.');
+
+    /**
+     * Some tables exist only in production: the followup, rating and GDPR features ship
+     * no DDL in this repo, and KiviCare add-ons (telemed, custom forms) create their own.
+     * Tests that touch them were reported as SKIPPED rather than failed, so the suite
+     * looked green while they never ran.
+     *
+     * Structure only — no rows are copied, and only tables absent here are created.
+     * Restricted to wp_kc_* plus an explicit list of WordPress core tables the tests
+     * need, so this cannot pull in the whole of an unrelated production database.
+     */
+    const CORE_TABLES = ['wp_posts', 'wp_postmeta', 'wp_terms', 'wp_term_taxonomy'];
+
+    const missingTables = await prisma.$queryRawUnsafe(
+      `SELECT table_name AS t FROM information_schema.tables r
+        WHERE r.table_schema = ?
+          AND (r.table_name LIKE 'wp\\_kc\\_%' OR r.table_name IN (${CORE_TABLES.map(() => '?').join(',')}))
+          AND r.table_name NOT IN (
+            SELECT table_name FROM information_schema.tables WHERE table_schema = ?
+          )
+        ORDER BY r.table_name`,
+      REFERENCE_DB,
+      ...CORE_TABLES,
+      database,
+    );
+
+    for (const row of missingTables) {
+      const table = row.t ?? row.table_name;
+      // CREATE TABLE ... LIKE copies the full definition including indexes and
+      // AUTO_INCREMENT, without copying a single row.
+      const createLike = `CREATE TABLE \`${database}\`.\`${table}\` LIKE \`${REFERENCE_DB}\`.\`${table}\``;
+
+      try {
+        await prisma.$executeRawUnsafe(createLike);
+        console.log(`  \x1b[32m+\x1b[0m ${table} (structure from ${REFERENCE_DB})`);
+        created++;
+      } catch (err) {
+        const msg = String(err?.message ?? err);
+
+        // WordPress core tables carry '0000-00-00' defaults that this server's
+        // sql_mode rejects (error 1067). Retry with the zero-date restrictions lifted
+        // for that one connection — the schema must match production, not this
+        // server's stricter defaults. $transaction pins the connection so the
+        // SET SESSION actually applies to the CREATE.
+        if (msg.includes('1067')) {
+          try {
+            await prisma.$transaction(async (tx) => {
+              await tx.$executeRawUnsafe(
+                `SET SESSION sql_mode = REPLACE(REPLACE(@@sql_mode, 'NO_ZERO_DATE', ''), 'NO_ZERO_IN_DATE', '')`,
+              );
+              await tx.$executeRawUnsafe(createLike);
+            });
+            console.log(`  \x1b[32m+\x1b[0m ${table} (structure from ${REFERENCE_DB}, zero-dates allowed)`);
+            created++;
+            continue;
+          } catch (retryErr) {
+            failed.push({
+              table,
+              message: String(retryErr?.message ?? retryErr).split('\n').map((l) => l.trim()).filter(Boolean).slice(-1)[0],
+            });
+            continue;
+          }
+        }
+
+        failed.push({ table, message: msg.split('\n').map((l) => l.trim()).filter(Boolean).slice(-1)[0] });
+      }
+    }
 
     const missing = await prisma.$queryRawUnsafe(
       `SELECT r.table_name AS t, r.column_name AS c, r.column_type AS ty,
