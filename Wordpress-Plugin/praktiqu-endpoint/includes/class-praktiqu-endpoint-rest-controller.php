@@ -24,8 +24,9 @@ final class REST_Controller
     private Patients $patients;
     private Appointments $appointments;
     private Receptionists $receptionists;
+    private Doctors $doctors;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors)
     {
         $this->service = $service;
         $this->jobs = $jobs;
@@ -34,6 +35,7 @@ final class REST_Controller
         $this->patients = $patients;
         $this->appointments = $appointments;
         $this->receptionists = $receptionists;
+        $this->doctors = $doctors;
     }
 
     public function register(): void
@@ -168,6 +170,33 @@ final class REST_Controller
                 'email'     => ['required' => true, 'type' => 'string', 'format' => 'email'],
                 'name'      => ['required' => true, 'type' => 'string'],
                 'clinic_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/doctors — create a doctor (professional)
+        //
+        // kc_doctor_save has three listeners: the welcome email, KiviCare's own
+        // bookkeeping, and Pro's custom-field persistence. A raw INSERT skips all three.
+        register_rest_route($ns, '/doctors', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_doctor'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'email'               => ['required' => true, 'type' => 'string', 'format' => 'email'],
+                'first_name'          => ['required' => true, 'type' => 'string'],
+                'registration_number' => ['required' => true, 'type' => 'string'],
+                'professional_type'   => ['required' => true, 'type' => 'string'],
+                'clinic_id'           => ['required' => false, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // PUT/PATCH /praktiqu/v1/doctors/{id}
+        register_rest_route($ns, '/doctors/(?P<id>\d+)', [
+            'methods'             => \WP_REST_Server::EDITABLE,
+            'callback'            => [$this, 'handle_update_doctor'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
 
@@ -365,6 +394,31 @@ final class REST_Controller
             return $result;
         }
         return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * POST /praktiqu/v1/doctors
+     */
+    public function handle_create_doctor(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->doctors->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * PUT/PATCH /praktiqu/v1/doctors/{id}
+     */
+    public function handle_update_doctor(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id = (int) $request->get_param('id');
+        $result = $this->doctors->update($id, (array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
     }
 
     /**
