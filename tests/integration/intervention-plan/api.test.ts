@@ -12,8 +12,10 @@
  *   - PATCH /api/v1/intervention-plans/:id/items/:itemId/complete — US3 complete item
  */
 
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { assertTestDb } from '../../billing/fixtures';
 import { authHeaders } from '../../helpers/auth';
 import { GET, POST } from '@/app/api/v1/intervention-plans/route';
 import type { RouteContext } from '@/app/api/v1/intervention-plans/[id]/route';
@@ -31,9 +33,36 @@ import { PATCH as completeItem } from '@/app/api/v1/intervention-plans/[id]/item
 let PROFESSIONAL_HEADERS: Record<string, string>;
 let CLIENT_HEADERS: Record<string, string>;
 
+/**
+ * Session ids this suite creates. `InterventionPlan.sessionId` is @unique, so a row
+ * left behind by an earlier run makes the create return 409 instead of 201 — which is
+ * exactly how this suite was failing.
+ */
+const OWNED_SESSION_IDS = ['sess_new'];
+
+async function wipe() {
+  const plans = await prisma.interventionPlan.findMany({
+    where: { sessionId: { in: OWNED_SESSION_IDS } },
+    select: { id: true },
+  });
+  if (plans.length > 0) {
+    await prisma.recommendationItem.deleteMany({
+      where: { interventionPlanId: { in: plans.map((p) => p.id) } },
+    });
+    await prisma.interventionPlan.deleteMany({ where: { id: { in: plans.map((p) => p.id) } } });
+  }
+}
+
 beforeAll(async () => {
+  assertTestDb();
+  await wipe();
   PROFESSIONAL_HEADERS = await authHeaders({ userId: 'prof_1', role: 'PROFESSIONAL' });
   CLIENT_HEADERS = await authHeaders({ userId: 'client_1', role: 'CLIENT' });
+});
+
+afterAll(async () => {
+  await wipe();
+  await prisma.$disconnect();
 });
 
 function professionalHeaders() {

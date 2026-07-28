@@ -157,7 +157,10 @@ describe('Create Professional Integration', () => {
           fullName: 'Dr. Test',
           email: `test.${type.toLowerCase()}@example.com`,
           professionalType: type,
-          registrationNumber: `TST-${Math.random().toString(36).substring(2, 7).toUpperCase()}-2024`,
+          // Must be AAA-NNNNN-YYYY: the middle group is five DIGITS. This previously
+          // used base-36, which yields letters ~99.8% of the time and so all but
+          // always failed.
+          registrationNumber: `TST-${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}-2024`,
         };
         const result = createProfessionalInputSchema.safeParse(payload);
         expect(result.success).toBe(true);
