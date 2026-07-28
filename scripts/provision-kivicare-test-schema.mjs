@@ -27,6 +27,19 @@ const MIGRATIONS_DIR = resolve(
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
+/**
+ * Optional reference database to copy missing columns from, e.g.
+ *   node scripts/provision-kivicare-test-schema.mjs --reference praktiqu
+ *
+ * CREATE TABLE alone is not enough for fidelity: KiviCare also ships imperative
+ * `Add*` migrations that ALTER tables afterwards (six columns on
+ * wp_kc_clinic_schedule alone). Parsing those is brittle — they are PHP with
+ * conditionals — so a restored production copy is used as ground truth instead.
+ * Columns are only ever ADDed; nothing is altered or dropped.
+ */
+const refIndex = process.argv.indexOf('--reference');
+const REFERENCE_DB = refIndex !== -1 ? process.argv[refIndex + 1] : null;
+
 function die(msg) {
   console.error(`\n\x1b[31m✖ ${msg}\x1b[0m\n`);
   process.exit(1);
@@ -215,6 +228,65 @@ try {
       created++;
     } catch (err) {
       failed.push({ table: `${table}.id`, message: String(err?.message ?? err).split('\n')[0] });
+    }
+  }
+
+  // Copy any columns the reference database has and this one lacks.
+  if (REFERENCE_DB) {
+    if (REFERENCE_DB === database) die('--reference must name a DIFFERENT database.');
+
+    const missing = await prisma.$queryRawUnsafe(
+      `SELECT r.table_name AS t, r.column_name AS c, r.column_type AS ty,
+              r.is_nullable AS nul, r.column_default AS def, r.column_comment AS cmt
+         FROM information_schema.columns r
+         LEFT JOIN information_schema.columns x
+           ON x.table_schema = ? AND x.table_name = r.table_name AND x.column_name = r.column_name
+        WHERE r.table_schema = ?
+          AND x.column_name IS NULL
+          AND r.table_name IN (
+            SELECT table_name FROM information_schema.tables WHERE table_schema = ?
+          )
+        ORDER BY r.table_name, r.ordinal_position`,
+      database,
+      REFERENCE_DB,
+      database,
+    );
+
+    for (const m of missing) {
+      const table = m.t ?? m.table_name;
+      const column = m.c ?? m.column_name;
+      const type = m.ty ?? m.column_type;
+      const nullable = (m.nul ?? m.is_nullable) === 'YES';
+      const def = m.def ?? m.column_default;
+
+      // NOT NULL without a default would fail on a non-empty table; leave such
+      // columns nullable rather than inventing a value.
+      const hasDefault = def !== null && def !== undefined && String(def).toUpperCase() !== 'NULL';
+      const nullSql = nullable || !hasDefault ? 'NULL' : 'NOT NULL';
+
+      // MySQL forbids DEFAULT on these types outright (error 1101), and rejects a
+      // quoted default on TIME/DATE columns (error 1067).
+      const noDefaultType = /^(tiny|medium|long)?(text|blob)|^json|^geometry/i.test(String(type));
+      const defSql =
+        !hasDefault || noDefaultType
+          ? ''
+          : ` DEFAULT ${/^[0-9.]+$/.test(String(def)) ? def : `'${String(def).replace(/'/g, "''")}'`}`;
+
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${type} ${nullSql}${defSql}`,
+        );
+        console.log(`  \x1b[32m+\x1b[0m ${table}.${column} (from ${REFERENCE_DB})`);
+        created++;
+      } catch (err) {
+        const detail = String(err?.message ?? err)
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .slice(-2)
+          .join(' | ');
+        failed.push({ table: `${table}.${column}`, message: detail });
+      }
     }
   }
 
