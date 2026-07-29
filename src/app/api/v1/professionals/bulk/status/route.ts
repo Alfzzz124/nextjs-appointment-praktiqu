@@ -6,7 +6,8 @@ import { ProfessionalStatus } from '@prisma/client';
 import { z } from 'zod';
 
 const schema = z.object({
-  ids: z.array(z.string()).min(1),
+  // WP user ids — numeric since professionals moved to wp_users (D2).
+  ids: z.array(z.coerce.number().int().positive()).min(1),
   status: z.nativeEnum(ProfessionalStatus),
 });
 

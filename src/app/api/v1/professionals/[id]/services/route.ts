@@ -18,6 +18,13 @@ import {
   isServiceAssignmentError,
 } from '@/services/professional/service-assignment.service';
 import type { Actor } from '@/lib/auth';
+import {
+  canEdit,
+  canView,
+  invalidIdResponse,
+  parseProfessionalId,
+  scopeFor,
+} from '@/services/professional/route-scope';
 
 type RouteParams = { params: { id: string } };
 
@@ -27,24 +34,15 @@ type RouteParams = { params: { id: string } };
 
 export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  // SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL (self), RECEPTIONIST (own practice)
-  const { getProfessional } = await import('@/services/professional/professional.service');
-  const professional = await getProfessional(id);
-
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
-
-  const canView =
-    actor.role === 'SUPER_ADMIN' ||
-    actor.role === 'CLINIC_ADMIN' ||
-    (actor.role === 'PROFESSIONAL' && actor.id === professional.userId) ||
-    (actor.role === 'RECEPTIONIST' && actor.practiceId === professional.practiceId);
-
-  if (!canView) {
-    return NextResponse.json(forbidden('Cannot view this professional\'s services'), { status: 403 });
+  if (!canView(scope, actor.role)) {
+    return NextResponse.json(forbidden("Cannot view this professional's services"), { status: 403 });
   }
 
   const services = await listAssignedServices(id);
@@ -55,8 +53,11 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
       id: s.id,
       serviceId: s.serviceId,
       serviceName: s.serviceName,
-      serviceDuration: s.serviceDuration,
-      createdAt: s.createdAt.toISOString(),
+      // Duration and charge come from the doctor's own mapping row, which is what a
+      // patient is actually billed and booked for.
+      durationMinutes: s.durationMinutes,
+      charges: s.charges,
+      isPublic: s.isPublic,
     })),
   });
 });
@@ -67,7 +68,8 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
 
 export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
   // SUPER_ADMIN and CLINIC_ADMIN can assign (US5)
   if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
@@ -77,13 +79,15 @@ export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { getProfessional } = await import('@/services/professional/professional.service');
   const professional = await getProfessional(id);
 
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
-
-  // CLINIC_ADMIN: practice boundary
-  if (actor.role === 'CLINIC_ADMIN' && actor.practiceId !== professional.practiceId) {
-    return NextResponse.json(forbidden('Cannot assign services to professional outside your practice'), { status: 403 });
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(
+      forbidden('Cannot assign services to a professional outside your clinic'),
+      { status: 403 },
+    );
   }
 
   let body: unknown;
@@ -93,13 +97,13 @@ export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
     return NextResponse.json(validationError('invalid_json', 'Request body must be valid JSON'), { status: 400 });
   }
 
-  const parsedBody = body as { serviceId?: string };
+  const parsedBody = body as { serviceId?: number | string; clinicId?: number };
   if (!parsedBody?.serviceId) {
     return NextResponse.json(validationError('missing_service_id', 'serviceId is required'), { status: 422 });
   }
 
   try {
-    const result = await assignService(id, parsedBody.serviceId, actor.id);
+    const result = await assignService(id, Number(parsedBody.serviceId), Number(parsedBody.clinicId ?? scope.kc.clinicId ?? 0), actor.id);
     return NextResponse.json({ id: result.id, professionalId: id, serviceId: parsedBody.serviceId }, { status: 201 });
   } catch (err) {
     if (isServiceAssignmentError(err)) {
@@ -123,7 +127,8 @@ export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
 
 export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
   const { searchParams } = req.nextUrl;
   const serviceId = searchParams.get('serviceId');
 
@@ -135,19 +140,21 @@ export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
     return NextResponse.json(forbidden('Only Super Admin and Clinic Admin can unassign services'), { status: 403 });
   }
 
-  const { getProfessional } = await import('@/services/professional/professional.service');
-  const professional = await getProfessional(id);
-
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
-
-  if (actor.role === 'CLINIC_ADMIN' && actor.practiceId !== professional.practiceId) {
-    return NextResponse.json(forbidden('Cannot unassign services from professional outside your practice'), { status: 403 });
+  // Clinic scoping now comes from wp_kc_doctor_clinic_mappings rather than the JWT's
+  // practiceId, which was a cuid from the retired shadow schema.
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(
+      forbidden('Cannot unassign services from a professional outside your clinic'),
+      { status: 403 },
+    );
   }
 
   try {
-    await unassignService(id, serviceId, actor.id);
+    await unassignService(id, Number(serviceId), actor.id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (isServiceAssignmentError(err)) {

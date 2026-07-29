@@ -9,7 +9,9 @@
  * afternoon is simply two rows for that day. `time_slot` is the appointment
  * granularity in minutes.
  *
- * Reads only. Writes go through the praktiqu-endpoint plugin's REST layer (D1).
+ * Reads AND writes are direct SQL here. That is a deliberate exception to the
+ * plugin-REST rule (D1), made on evidence: KiviCare registers no `do_action` for
+ * clinic sessions, so a direct write skips nothing. See the Writes section below.
  */
 import { prisma } from '@/lib/db';
 
@@ -148,4 +150,78 @@ export async function getWeeklyAvailability(query: {
   }
 
   return week;
+}
+
+/* ------------------------------------------------------------------ */
+/* Writes                                                              */
+/* ------------------------------------------------------------------ */
+/**
+ * Writes go direct to SQL here, unlike patients and appointments.
+ *
+ * That is a deliberate exception to the plugin-REST rule, made on evidence: KiviCare
+ * registers no `do_action` at all for clinic sessions, so there is nothing for a write
+ * to skip. Routing these through the plugin would add a network hop and buy nothing.
+ */
+
+const TIME_RE = /^\d{2}:\d{2}:\d{2}$/;
+
+function assertTime(value: string): string {
+  if (!TIME_RE.test(value)) {
+    throw new Error(`Expected HH:MM:SS, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+export type ClinicSessionInput = {
+  day: DayOfWeek;
+  /** `HH:MM:SS`. */
+  startTime: string;
+  endTime: string;
+  slotDurationMinutes?: number;
+};
+
+/**
+ * Replace a doctor's whole weekly schedule at one clinic.
+ *
+ * Replace rather than merge: the caller supplies the complete week, so anything absent
+ * has been removed. Runs in a transaction so a failure part-way cannot leave the doctor
+ * with a half-deleted schedule and no availability at all.
+ */
+export async function replaceWeeklySchedule(opts: {
+  clinicId: bigint;
+  doctorId: bigint;
+  sessions: ClinicSessionInput[];
+}): Promise<number> {
+  for (const s of opts.sessions) {
+    assertTime(s.startTime);
+    assertTime(s.endTime);
+    if (!(DAYS_OF_WEEK as readonly string[]).includes(s.day)) {
+      throw new Error(`Unknown day ${JSON.stringify(s.day)}`);
+    }
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `DELETE FROM wp_kc_clinic_sessions WHERE clinic_id = ? AND doctor_id = ?`,
+      opts.clinicId,
+      opts.doctorId,
+    );
+
+    for (const s of opts.sessions) {
+      // Times bound as strings — a Date on a TIME column is silently wrong; see the
+      // warning in appointments.repo.ts.
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_kc_clinic_sessions (clinic_id, doctor_id, day, start_time, end_time, time_slot, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        opts.clinicId,
+        opts.doctorId,
+        s.day,
+        s.startTime,
+        s.endTime,
+        s.slotDurationMinutes ?? 30,
+      );
+    }
+
+    return opts.sessions.length;
+  });
 }

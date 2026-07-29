@@ -10,6 +10,13 @@ import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { bulkSetDoctorServiceStatus } from '@/services/professional/service-assignment.service';
 
+/** Doctor ids are numeric now (D2); reject anything else before it becomes NaN. */
+function parseDoctorId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+
 type RouteParams = { params: { id: string } };
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
@@ -40,7 +47,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'status is required' }, { status: 422 });
     }
 
-    const updated = await bulkSetDoctorServiceStatus(params.id, serviceIds, status);
+    const doctorId = parseDoctorId(params.id);
+    if (doctorId === null) {
+      return NextResponse.json(
+        { type: '/errors/validation-error', title: 'Invalid professional id', status: 400 },
+        { status: 400 },
+      );
+    }
+    const updated = await bulkSetDoctorServiceStatus(doctorId, serviceIds.map(Number), status);
     return NextResponse.json({ updated });
   } catch (err) {
         if (err instanceof AuthError) {

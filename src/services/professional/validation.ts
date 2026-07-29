@@ -101,8 +101,9 @@ export const createOffDayInputSchema = z.object({
 // ============================================
 
 export const createProfessionalInputSchema = z.object({
-  userId: z.string().cuid('Invalid userId format'),
-  practiceId: z.string().cuid('Invalid practiceId format').optional().nullable(),
+  // No userId: the WordPress user IS the professional, and the plugin creates it.
+  // clinicId is a numeric wp_kc_clinics id, not a cuid (decision D2).
+  clinicId: z.coerce.number().int().positive().optional(),
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(200),
   email: z.string().email('Invalid email address'),
   professionalType: professionalTypeEnum,
@@ -118,7 +119,7 @@ export const createProfessionalInputSchema = z.object({
 
 export const updateProfessionalInputSchema = z.object({
   fullName: z.string().min(2).max(200).optional(),
-  practiceId: z.string().cuid().nullable().optional(),
+  clinicId: z.coerce.number().int().positive().optional(),
   biography: z.string().max(2000).nullable().optional(),
   specialties: z.array(z.string().max(100)).max(20).nullable().optional(),
   contactInfo: contactInfoSchema.nullable().optional(),
@@ -174,7 +175,7 @@ export const professionalListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().max(200).optional(),
   status: professionalStatusEnum.optional(),
-  practiceId: z.string().cuid().optional(),
+  clinicId: z.coerce.number().int().positive().optional(),
   sortBy: z.enum(['fullName', 'email', 'createdAt', 'status']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
@@ -208,22 +209,22 @@ export function buildFieldErrors(
 // ============================================
 
 import { prisma } from '@/lib/db';
+import { findDoctorByRegistrationNumber } from '@/repositories/wp/doctors.repo';
 
 /**
  * Check that registrationNumber (SIP/SIK) is unique.
- * Throws Zod error if a professional with this number already exists.
+ *
+ * Reads `wp_usermeta`, which has no unique index on (meta_key, meta_value) — so this is
+ * check-then-write and inherently racy. The plugin re-checks immediately before the
+ * insert, which is where the authoritative check lives; this one exists to give the
+ * caller a field-level error instead of a bare 409.
  */
 export async function checkUniqueRegistrationNumber(
   registrationNumber: string,
-  excludeId?: string,
+  excludeWpUserId?: number,
 ): Promise<void> {
-  const existing = await prisma.professional.findFirst({
-    where: {
-      registrationNumber,
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-    },
-  });
-  if (existing) {
+  const existing = await findDoctorByRegistrationNumber(registrationNumber);
+  if (existing && Number(existing.id) !== excludeWpUserId) {
     throw new z.ZodError([
       {
         code: 'custom',
@@ -235,24 +236,26 @@ export async function checkUniqueRegistrationNumber(
 }
 
 /**
- * Check that email is unique.
- * Throws Zod error if a professional with this email already exists.
+ * Check that the email is unused.
+ *
+ * Scoped to WordPress users generally, not just doctors: `wp_users.user_email` is
+ * unique across every role, so a patient already holding the address would block the
+ * insert just the same.
  */
 export async function checkUniqueEmail(
   email: string,
-  excludeId?: string,
+  excludeWpUserId?: number,
 ): Promise<void> {
-  const existing = await prisma.professional.findFirst({
-    where: {
-      email,
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-    },
-  });
-  if (existing) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ ID: bigint | number }>>(
+    `SELECT ID FROM wp_users WHERE user_email = ? LIMIT 1`,
+    email,
+  );
+  const owner = rows[0] ? Number(rows[0].ID) : null;
+  if (owner !== null && owner !== excludeWpUserId) {
     throw new z.ZodError([
       {
         code: 'custom',
-        message: `Email "${email}" is already registered to another professional`,
+        message: `Email "${email}" is already registered`,
         path: ['email'],
       },
     ]);

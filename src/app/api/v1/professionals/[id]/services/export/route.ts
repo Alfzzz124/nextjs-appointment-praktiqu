@@ -10,6 +10,13 @@ import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { exportDoctorServices } from '@/services/professional/service-assignment.service';
 
+/** Doctor ids are numeric now (D2); reject anything else before it becomes NaN. */
+function parseDoctorId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+
 type RouteParams = { params: { id: string } };
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
@@ -22,7 +29,14 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const data = await exportDoctorServices(params.id);
+    const doctorId = parseDoctorId(params.id);
+    if (doctorId === null) {
+      return NextResponse.json(
+        { type: '/errors/validation-error', title: 'Invalid professional id', status: 400 },
+        { status: 400 },
+      );
+    }
+    const data = await exportDoctorServices(doctorId);
 
     return NextResponse.json(data, {
       headers: {

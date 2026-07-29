@@ -1,372 +1,351 @@
 /**
- * Availability Service — slot generation and schedule management.
+ * Professional availability — backed by KiviCare's own tables.
  *
- * T008: generateSlots(), getWeeklySchedule(), addOffDay(), removeOffDay()
- * T039: overlapping windows validation (FR-015)
- * T040: slot generation algorithm (per plan.md)
+ * Replaces three shadow tables at once:
+ *   `professional_availability` → `wp_kc_clinic_sessions`
+ *   `professional_off_days`     → `wp_kc_clinic_schedule` (module_type = 'doctor')
+ *   booked-slot lookups         → `wp_kc_appointments`
  *
- * Slot generation algorithm (plan.md):
- *   1. Verify professional.status == ACTIVE
- *   2. Verify service is assigned to professional and ACTIVE
- *   3. Get practice.timezone
- *   4. Convert date (in practice TZ) → weekday
- *   5. Fetch windows for (professionalId, weekday)
- *   6. Subtract off-days where startDate..endDate includes date
- *   7. Subtract existing BOOKED, PENDING, CHECKED_IN sessions for date
- *   8. For each window: walk in service.durationMinutes increments
- *   9. Convert each slot (local TZ) → UTC, return
+ * Reads and writes are both direct SQL. That is a deliberate exception to the
+ * plugin-REST rule (D1), made on evidence: KiviCare registers no `do_action` for clinic
+ * sessions or holidays, so a direct write skips nothing.
+ *
+ * Ids are `number` — `wp_users.ID` for the doctor, `wp_kc_clinics.id` for the clinic.
  */
 
-import { prisma } from '@/lib/db';
-import { buildUtcDateTime, getDayOfWeekInTz, minutesToTime } from '@/lib/time';
-import { professionalAudit } from '@/lib/audit';
-import { AppointmentStatus, ServiceStatus } from '@prisma/client';
+import {
+  DAYS_OF_WEEK,
+  getWeeklyAvailability,
+  listClinicSessions,
+  replaceWeeklySchedule,
+  type ClinicSessionInput,
+  type DayOfWeek,
+} from '@/repositories/wp/clinic-sessions.repo';
+import {
+  OFF_DAY_MODULE,
+  createOffDay,
+  deleteOffDay,
+  isOffOn,
+  listDoctorOffDays,
+  type WpOffDay,
+} from '@/repositories/wp/off-days.repo';
+import { ACTIVE_STATUSES, listAppointments } from '@/repositories/wp/appointments.repo';
+import { listServicesForDoctor } from '@/repositories/wp/services.repo';
+import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
 
-// ============================================
-// Types
-// ============================================
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
+/* ------------------------------------------------------------------ */
 
 export interface AvailabilityWindow {
-  id?: string;
-  dayOfWeek: number;
-  startMinute: number;
-  endMinute: number;
+  id?: number;
+  /** KiviCare's day slug: 'mon'…'sun'. */
+  day: DayOfWeek;
+  /** `HH:MM:SS`. */
+  startTime: string;
+  endTime: string;
+  slotDurationMinutes: number;
 }
 
 export interface BookableSlot {
-  startUtc: Date;
-  endUtc: Date;
-  serviceId: string;
-  professionalId: string;
+  /** Local clinic time — the basis KiviCare stores appointments in. */
+  date: string;
+  startTime: string;
+  endTime: string;
+  serviceId: number;
+  doctorId: number;
 }
 
-export interface WeeklySchedule {
-  [dayOfWeek: number]: AvailabilityWindow[];
+/** Every day is present, so callers can iterate without existence checks. */
+export type WeeklySchedule = Record<DayOfWeek, AvailabilityWindow[]>;
+
+export interface OffDay {
+  id: number;
+  startDate: string | null;
+  endDate: string | null;
+  selectionMode: string;
+  selectedDates: string[];
+  timeSpecific: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  description: string | null;
 }
 
-// ============================================
-// Weekly Schedule (T008)
-// ============================================
+export type AvailabilityError =
+  | { _tag: 'validation'; message: string }
+  | { _tag: 'not_found' }
+  | { _tag: 'conflict'; message: string };
 
-/**
- * Get the full weekly schedule for a professional.
- * Returns a map from dayOfWeek (0-6) to array of windows.
- */
-export async function getWeeklySchedule(professionalId: string): Promise<WeeklySchedule> {
-  const windows = await prisma.professionalAvailability.findMany({
-    where: { professionalId },
-    orderBy: [{ dayOfWeek: 'asc' }, { startMinute: 'asc' }],
+export function isAvailabilityError(err: unknown): err is AvailabilityError {
+  return typeof err === 'object' && err !== null && '_tag' in err;
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+const TIME_RE = /^\d{2}:\d{2}:\d{2}$/;
+
+/** `HH:MM:SS` → minutes past midnight, for overlap arithmetic only. */
+function toMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function toTime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+}
+
+/** `YYYY-MM-DD` → KiviCare's day slug, computed in UTC so no local-tz shift applies. */
+export function dayOfWeekFor(date: string): DayOfWeek {
+  const d = new Date(`${date}T00:00:00Z`);
+  // getUTCDay() is 0=Sunday, but DAYS_OF_WEEK starts at Monday.
+  return DAYS_OF_WEEK[(d.getUTCDay() + 6) % 7];
+}
+
+function toOffDay(o: WpOffDay): OffDay {
+  return {
+    id: Number(o.id),
+    startDate: o.startDate,
+    endDate: o.endDate,
+    selectionMode: o.selectionMode,
+    selectedDates: o.selectedDates,
+    timeSpecific: o.timeSpecific,
+    startTime: o.startTime,
+    endTime: o.endTime,
+    description: o.description,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Weekly schedule                                                     */
+/* ------------------------------------------------------------------ */
+
+export async function getWeeklySchedule(
+  doctorId: number,
+  clinicId: number,
+): Promise<WeeklySchedule> {
+  const week = await getWeeklyAvailability({
+    clinicId: BigInt(clinicId),
+    doctorId: BigInt(doctorId),
   });
 
-  const schedule: WeeklySchedule = {};
-  for (let d = 0; d <= 6; d++) {
-    schedule[d] = [];
+  const out = Object.fromEntries(
+    DAYS_OF_WEEK.map((d) => [d, [] as AvailabilityWindow[]]),
+  ) as WeeklySchedule;
+
+  for (const day of DAYS_OF_WEEK) {
+    out[day] = week[day].map((s) => ({
+      id: Number(s.id),
+      day,
+      startTime: s.startTime ?? '00:00:00',
+      endTime: s.endTime ?? '00:00:00',
+      slotDurationMinutes: s.slotDurationMinutes,
+    }));
   }
-  for (const w of windows) {
-    schedule[w.dayOfWeek].push({
-      id: w.id,
-      dayOfWeek: w.dayOfWeek,
-      startMinute: w.startMinute,
-      endMinute: w.endMinute,
-    });
-  }
-  return schedule;
+  return out;
 }
 
 /**
- * Replace the full weekly schedule for a professional.
- * Deletes all existing windows and creates new ones.
- * Validates for overlapping windows (T039, FR-015).
+ * Replace the whole weekly schedule.
+ *
+ * Overlapping windows on the same day are rejected: two overlapping rows make the same
+ * minute bookable twice and produce duplicate slots.
  */
 export async function setWeeklySchedule(
-  professionalId: string,
+  doctorId: number,
+  clinicId: number,
   windows: AvailabilityWindow[],
-  actorId: string,
-): Promise<void> {
-  // T039: Validate no overlapping windows on same day
-  const byDay = new Map<number, AvailabilityWindow[]>();
+): Promise<number> {
   for (const w of windows) {
-    if (!byDay.has(w.dayOfWeek)) byDay.set(w.dayOfWeek, []);
-    byDay.get(w.dayOfWeek)!.push(w);
+    if (!TIME_RE.test(w.startTime) || !TIME_RE.test(w.endTime)) {
+      throw { _tag: 'validation' as const, message: 'Times must be HH:MM:SS' };
+    }
+    if (!(DAYS_OF_WEEK as readonly string[]).includes(w.day)) {
+      throw { _tag: 'validation' as const, message: `Unknown day "${w.day}"` };
+    }
+    if (toMinutes(w.endTime) <= toMinutes(w.startTime)) {
+      throw {
+        _tag: 'validation' as const,
+        message: `${w.day}: endTime must be after startTime`,
+      };
+    }
   }
 
-  for (const [day, dayWindows] of byDay) {
-    // Sort by start time
-    const sorted = [...dayWindows].sort((a, b) => a.startMinute - b.startMinute);
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (sorted[i].endMinute > sorted[i + 1].startMinute) {
+  for (const day of DAYS_OF_WEEK) {
+    const sameDay = windows
+      .filter((w) => w.day === day)
+      .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+
+    for (let i = 1; i < sameDay.length; i++) {
+      if (toMinutes(sameDay[i].startTime) < toMinutes(sameDay[i - 1].endTime)) {
         throw {
-          _tag: 'validation' as const,
-          errors: {
-            [`schedule[${day}]`]: [
-              `Overlapping availability windows on day ${day}. Window ends at ${minutesToTime(sorted[i].endMinute)} but next window starts at ${minutesToTime(sorted[i + 1].startMinute)}`,
-            ],
-          },
+          _tag: 'conflict' as const,
+          message:
+            `${day}: ${sameDay[i - 1].startTime}-${sameDay[i - 1].endTime} overlaps ` +
+            `${sameDay[i].startTime}-${sameDay[i].endTime}`,
         };
       }
     }
   }
 
-  // Atomic replace
-  await prisma.$transaction([
-    prisma.professionalAvailability.deleteMany({ where: { professionalId } }),
-    prisma.professionalAvailability.createMany({
-      data: windows.map((w) => ({
-        professionalId,
-        dayOfWeek: w.dayOfWeek,
-        startMinute: w.startMinute,
-        endMinute: w.endMinute,
-      })),
-    }),
-  ]);
+  const sessions: ClinicSessionInput[] = windows.map((w) => ({
+    day: w.day,
+    startTime: w.startTime,
+    endTime: w.endTime,
+    slotDurationMinutes: w.slotDurationMinutes,
+  }));
 
-  // AUDIT
-  await professionalAudit('professional.availability_changed', {
-    professionalId,
-    actorId,
-    after: { windows },
+  return replaceWeeklySchedule({
+    clinicId: BigInt(clinicId),
+    doctorId: BigInt(doctorId),
+    sessions,
   });
 }
 
-// ============================================
-// Off Days (T008)
-// ============================================
+/* ------------------------------------------------------------------ */
+/* Off days                                                            */
+/* ------------------------------------------------------------------ */
 
-export interface OffDay {
-  id: string;
-  professionalId: string;
-  startDate: Date;
-  endDate: Date;
-  reason: string | null;
-  createdAt: Date;
+export async function listOffDays(doctorId: number): Promise<OffDay[]> {
+  return (await listDoctorOffDays(BigInt(doctorId))).map(toOffDay);
 }
 
 export async function addOffDay(
-  professionalId: string,
-  startDate: Date,
-  endDate: Date,
-  reason: string | null,
-  actorId: string,
-): Promise<OffDay> {
-  const offDay = await prisma.professionalOffDay.create({
-    data: {
-      professionalId,
-      startDate,
-      endDate,
-      reason,
-    },
-  });
-
-  await professionalAudit('professional.off_day_added', {
-    professionalId,
-    actorId,
-    after: {
-      id: offDay.id,
-      startDate: offDay.startDate,
-      endDate: offDay.endDate,
-      reason: offDay.reason,
-    },
-  });
-
-  return offDay;
-}
-
-export async function removeOffDay(id: string, actorId: string): Promise<void> {
-  const offDay = await prisma.professionalOffDay.findUnique({ where: { id } });
-  if (!offDay) {
-    throw { _tag: 'not_found' as const };
+  doctorId: number,
+  input: {
+    startDate: string;
+    endDate?: string;
+    selectionMode?: 'single' | 'multiple' | 'range';
+    selectedDates?: string[];
+    timeSpecific?: boolean;
+    startTime?: string;
+    endTime?: string;
+    description?: string;
+  },
+): Promise<number> {
+  if (input.timeSpecific && (!input.startTime || !input.endTime)) {
+    throw {
+      _tag: 'validation' as const,
+      message: 'A time-specific off day needs both startTime and endTime',
+    };
   }
 
-  await prisma.professionalOffDay.delete({ where: { id } });
-
-  await professionalAudit('professional.off_day_removed', {
-    professionalId: offDay.professionalId,
-    actorId,
-    before: {
-      id: offDay.id,
-      startDate: offDay.startDate,
-      endDate: offDay.endDate,
-    },
-  });
+  try {
+    return Number(
+      await createOffDay({
+        module: OFF_DAY_MODULE.DOCTOR,
+        moduleId: BigInt(doctorId),
+        ...input,
+      }),
+    );
+  } catch (err) {
+    throw { _tag: 'validation' as const, message: String((err as Error).message) };
+  }
 }
 
-export async function listOffDays(professionalId: string): Promise<OffDay[]> {
-  return prisma.professionalOffDay.findMany({
-    where: { professionalId },
-    orderBy: { startDate: 'desc' },
+/** Scoped by doctor, so one professional cannot delete another's closure. */
+export async function removeOffDay(doctorId: number, offDayId: number): Promise<boolean> {
+  const ok = await deleteOffDay({
+    id: BigInt(offDayId),
+    module: OFF_DAY_MODULE.DOCTOR,
+    moduleId: BigInt(doctorId),
   });
+  if (!ok) throw { _tag: 'not_found' as const };
+  return true;
 }
 
-// ============================================
-// Slot Generation (T008, T040)
-// ============================================
+/* ------------------------------------------------------------------ */
+/* Slot generation                                                     */
+/* ------------------------------------------------------------------ */
 
 /**
- * Generate bookable slots for a professional, date, and service.
+ * Bookable slots for a doctor on one date.
  *
- * Algorithm (per plan.md):
- *   1. Verify professional.status == ACTIVE
- *   2. Verify service is assigned to professional and ACTIVE
- *   3. Get practice.timezone
- *   4. Convert date (in practice TZ) → weekday
- *   5. Fetch windows for (professionalId, weekday)
- *   6. Subtract off-days where startDate..endDate includes date
- *   7. Subtract existing BOOKED, PENDING, CHECKED_IN sessions for date
- *   8. For each window: walk in service.durationMinutes increments
- *   9. Convert each slot (local TZ) → UTC, return
+ * Returns `[]` when the doctor is inactive, the service is not assigned to them at that
+ * clinic, or they have no window that day.
+ *
+ * Off-day handling is the subtle part. The previous implementation returned `[]` if ANY
+ * off-day row matched the date. That is wrong now that time-specific closures exist in
+ * the data — a 13:00–17:00 closure would have hidden the whole morning. A full-day
+ * closure still clears the date; a time-specific one only blocks the range it covers.
  */
 export async function generateSlots(
-  professionalId: string,
-  dateStr: string, // YYYY-MM-DD in practice TZ
-  serviceId: string,
+  doctorId: number,
+  date: string,
+  serviceId: number,
+  clinicId: number,
 ): Promise<BookableSlot[]> {
-  // 1. Get professional + service assignment
-  const professional = await prisma.professional.findUnique({
-    where: { id: professionalId },
-    include: {
-      practice: { select: { id: true, name: true, timezone: true } },
-      serviceAssignments: {
-        include: { service: { select: { id: true, duration: true, status: true } } },
-      },
-    },
+  const doctor = await findDoctorById(BigInt(doctorId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return [];
+
+  const assigned = await listServicesForDoctor({
+    doctorId: BigInt(doctorId),
+    clinicId: BigInt(clinicId),
   });
+  const service = assigned.find((s) => Number(s.serviceId) === serviceId && s.isActive);
+  if (!service) return [];
 
-  if (!professional) return [];
-  if (professional.status !== 'ACTIVE') return [];
-
-  // 2. Verify service assignment
-  const assignment = professional.serviceAssignments.find(
-    (a) => a.serviceId === serviceId && a.service.status === ServiceStatus.ACTIVE,
-  );
-  if (!assignment) return [];
-
-  const service = assignment.service;
-  const tz = professional.practice?.timezone ?? 'Asia/Jakarta';
-
-  // 3 & 4: Get day of week in practice timezone
-  const dayOfWeek = getDayOfWeekInTz(dateStr + 'T00:00:00Z', tz);
-
-  // 5: Fetch availability windows for this day
-  const windows = await prisma.professionalAvailability.findMany({
-    where: { professionalId, dayOfWeek },
-    orderBy: { startMinute: 'asc' },
+  const windows = await listClinicSessions({
+    clinicId: BigInt(clinicId),
+    doctorId: BigInt(doctorId),
+    day: dayOfWeekFor(date),
   });
-
   if (windows.length === 0) return [];
 
-  // 6: Check off-days
-  const offDays = await prisma.professionalOffDay.findMany({
-    where: {
-      professionalId,
-      startDate: { lte: dateStr + 'T00:00:00Z' },
-      endDate: { gte: dateStr + 'T00:00:00Z' },
-    },
+  const offDays = (
+    await listDoctorOffDays(BigInt(doctorId), { from: date, to: date })
+  ).filter((o) => isOffOn(o, date));
+
+  // A full-day closure ends it here; time-specific ones become blocked ranges below.
+  if (offDays.some((o) => !o.timeSpecific)) return [];
+
+  const blocked: Array<{ start: number; end: number }> = offDays
+    .filter((o) => o.timeSpecific && o.startTime && o.endTime)
+    .map((o) => ({ start: toMinutes(o.startTime!), end: toMinutes(o.endTime!) }));
+
+  // Appointments occupying the slot. ACTIVE_STATUSES rather than "not cancelled":
+  // CHECK_OUT is a completed visit and does not block.
+  const { items: appointments } = await listAppointments({
+    page: 1,
+    perPage: 100,
+    doctorId: BigInt(doctorId),
+    date,
+    statuses: ACTIVE_STATUSES,
   });
 
-  if (offDays.length > 0) return [];
+  for (const a of appointments) {
+    if (a.startTime && a.endTime) {
+      blocked.push({ start: toMinutes(a.startTime), end: toMinutes(a.endTime) });
+    }
+  }
 
-  // 7: Subtract existing BOOKED/PENDING/CHECKED_IN sessions
-  // We need to find appointments for this professional on this date
-  // that overlap with the availability windows
-  const bookedRanges = await getBookedRanges(professionalId, dateStr, tz);
-
-  // 8 & 9: Generate slots
   const slots: BookableSlot[] = [];
-  const duration = service.duration;
+  for (const w of windows) {
+    if (!w.startTime || !w.endTime) continue;
+    // The doctor's own duration for this service, else the window's slot size.
+    const duration = service.durationMinutes ?? w.slotDurationMinutes;
+    if (duration <= 0) continue;
 
-  for (const window of windows) {
-    let slotStart = window.startMinute;
-    while (slotStart + duration <= window.endMinute) {
-      // Check if this slot overlaps with any booked range
-      const slotEnd = slotStart + duration;
-      const overlaps = bookedRanges.some(
-        (range) => range.start < slotEnd && range.end > slotStart,
-      );
+    const windowStart = toMinutes(w.startTime);
+    const windowEnd = toMinutes(w.endTime);
 
-      if (!overlaps) {
-        const startUtc = buildUtcDateTime(dateStr, slotStart, tz);
-        const endUtc = new Date(startUtc.getTime() + duration * 60 * 1000);
-        slots.push({
-          startUtc,
-          endUtc,
-          serviceId,
-          professionalId,
-        });
-      }
+    for (let start = windowStart; start + duration <= windowEnd; start += duration) {
+      const end = start + duration;
+      // Half-open overlap: a slot ending exactly when a block starts is still bookable.
+      if (blocked.some((b) => b.start < end && b.end > start)) continue;
 
-      slotStart += duration;
+      slots.push({
+        date,
+        startTime: toTime(start),
+        endTime: toTime(end),
+        serviceId,
+        doctorId,
+      });
     }
   }
 
   return slots;
-}
-
-/**
- * Get booked/pending session time ranges for a professional on a given date.
- * Returns array of {start, end} in minutes-from-midnight (practice TZ).
- *
- * Blocking states: BOOKED, PENDING, CHECKED_IN
- * Non-blocking: COMPLETED, CANCELLED, REJECTED
- */
-async function getBookedRanges(
-  professionalId: string,
-  dateStr: string,
-  tz: string,
-): Promise<Array<{ start: number; end: number }>> {
-  // Find the Doctor record for this professional's userId
-  const professional = await prisma.professional.findUnique({
-    where: { id: professionalId },
-    include: { user: { select: { id: true } } },
-  });
-
-  if (!professional) return [];
-
-  // Find Doctor by userId
-  const doctor = await prisma.doctor.findUnique({
-    where: { userId: professional.userId },
-  });
-
-  if (!doctor) return [];
-
-  // Query appointments for this date and doctor
-  const startOfDay = new Date(dateStr + 'T00:00:00Z');
-  const endOfDay = new Date(dateStr + 'T23:59:59Z');
-
-  const appointments = await prisma.appointment.findMany({
-    where: {
-      doctorId: doctor.id,
-      appointmentStartDate: { gte: startOfDay, lte: endOfDay },
-      status: {
-        in: [
-          AppointmentStatus.BOOKED,
-          AppointmentStatus.PENDING,
-          AppointmentStatus.CHECK_IN,
-        ],
-      },
-    },
-  });
-
-  // Convert appointment times to minutes-from-midnight in practice TZ.
-  // appointmentStartTime/EndTime are `@db.Time` → Date whose time part
-  // (in UTC) carries the HH:mm we stored.
-  const toMinutes = (t: Date | null): number =>
-    t ? t.getUTCHours() * 60 + t.getUTCMinutes() : 0;
-
-  return appointments.map((apt) => ({
-    start: toMinutes(apt.appointmentStartTime),
-    end: toMinutes(apt.appointmentEndTime),
-  }));
-}
-
-// ============================================
-// Error types
-// ============================================
-
-export type AvailabilityError =
-  | { _tag: 'validation'; errors: Record<string, string[]> }
-  | { _tag: 'not_found' }
-  | { _tag: 'forbidden'; message: string };
-
-export function isAvailabilityError(err: unknown): err is AvailabilityError {
-  return typeof err === 'object' && err !== null && '_tag' in err;
 }

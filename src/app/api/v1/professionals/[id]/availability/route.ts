@@ -16,6 +16,13 @@ import {
 } from '@/services/professional/availability.service';
 import { setAvailabilityInputSchema } from '@/services/professional/validation';
 import type { Actor } from '@/lib/auth';
+import {
+  canEdit,
+  canView,
+  invalidIdResponse,
+  parseProfessionalId,
+  scopeFor,
+} from '@/services/professional/route-scope';
 
 type RouteParams = { params: { id: string } };
 
@@ -25,25 +32,28 @@ type RouteParams = { params: { id: string } };
 
 export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  const schedule = await getWeeklySchedule(id);
-
-  // RBAC: SUPER_ADMIN can view any, PROFESSIONAL can view self
-  if (actor.role === 'SUPER_ADMIN') {
-    // ok
-  } else if (actor.role === 'PROFESSIONAL' && actor.id !== id) {
-    // id here is professionalId, not userId — need to look up
-    const { getProfessionalByUserId } = await import('@/services/professional/professional.service');
-    const professional = await getProfessionalByUserId(actor.id);
-    if (professional?.id !== id) {
-      return NextResponse.json(forbidden('Cannot view this professional\'s availability'), { status: 403 });
-    }
-  } else if (!['SUPER_ADMIN', 'PROFESSIONAL'].includes(actor.role)) {
-    return NextResponse.json(forbidden('Cannot view availability'), { status: 403 });
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
+    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
+  }
+  if (!canView(scope, actor.role)) {
+    return NextResponse.json(forbidden("Cannot view this professional's availability"), { status: 403 });
   }
 
-  return NextResponse.json({ professionalId: id, schedule });
+  // A schedule belongs to a doctor AT a clinic, so a clinic is required.
+  const clinicId = Number(req.nextUrl.searchParams.get('clinicId') ?? scope.kc.clinicId ?? 0);
+  if (!clinicId) {
+    return NextResponse.json(
+      validationError('missing_clinic_id', 'clinicId is required for this actor'),
+      { status: 400 },
+    );
+  }
+
+  const schedule = await getWeeklySchedule(id, clinicId);
+  return NextResponse.json({ professionalId: id, clinicId, schedule });
 });
 
 // ============================================
@@ -52,19 +62,23 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
 
 export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  // RBAC: SUPER_ADMIN any, PROFESSIONAL self only
-  if (actor.role === 'SUPER_ADMIN') {
-    // ok
-  } else if (actor.role === 'PROFESSIONAL') {
-    const { getProfessionalByUserId } = await import('@/services/professional/professional.service');
-    const professional = await getProfessionalByUserId(actor.id);
-    if (professional?.id !== id) {
-      return NextResponse.json(forbidden('Cannot update this professional\'s availability'), { status: 403 });
-    }
-  } else {
-    return NextResponse.json(forbidden('Cannot update availability'), { status: 403 });
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
+    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
+  }
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(forbidden("Cannot update this professional's availability"), { status: 403 });
+  }
+
+  const clinicId = Number(req.nextUrl.searchParams.get('clinicId') ?? scope.kc.clinicId ?? 0);
+  if (!clinicId) {
+    return NextResponse.json(
+      validationError('missing_clinic_id', 'clinicId is required for this actor'),
+      { status: 400 },
+    );
   }
 
   let body: unknown;
@@ -83,14 +97,14 @@ export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   }
 
   try {
-    await setWeeklySchedule(id, parsed.data.schedule as any, actor.id);
-    const schedule = await getWeeklySchedule(id);
-    return NextResponse.json({ professionalId: id, schedule });
+    await setWeeklySchedule(id, clinicId, parsed.data.schedule as never);
+    const schedule = await getWeeklySchedule(id, clinicId);
+    return NextResponse.json({ professionalId: id, clinicId, schedule });
   } catch (err) {
     if (isAvailabilityError(err)) {
-      if (err._tag === 'validation') {
+      if (err._tag === 'validation' || err._tag === 'conflict') {
         return NextResponse.json(
-          validationError('overlapping_windows', 'Availability windows overlap on the same day', undefined, err.errors),
+          validationError('invalid_availability', err.message),
           { status: 422 },
         );
       }

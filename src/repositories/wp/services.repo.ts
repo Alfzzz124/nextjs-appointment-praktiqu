@@ -7,7 +7,8 @@
  * base catalogue in `wp_kc_services` and the per-doctor, per-clinic price and
  * duration in the mapping table; the mapping's `charges` is what a patient pays.
  *
- * Reads only. Writes go through the praktiqu-endpoint plugin's REST layer (D1).
+ * Reads are direct SQL. Assignment WRITES are too — see the Writes section: KiviCare
+ * hooks the service catalogue but not the doctor-service mapping.
  */
 import { prisma } from '@/lib/db';
 import { paginate } from './wp-user';
@@ -183,4 +184,100 @@ export async function listServicesForDoctor(opts: {
         nameAlias: m.serviceNameAlias,
       };
     });
+}
+
+/* ------------------------------------------------------------------ */
+/* Writes — doctor↔service assignments                                 */
+/* ------------------------------------------------------------------ */
+/**
+ * Direct SQL, like clinic sessions. KiviCare fires `kc_service_add`/`kc_service_update`
+ * for the SERVICE CATALOGUE, but registers nothing for the doctor↔service mapping,
+ * which is what these functions touch — so a direct write skips no listener.
+ */
+
+/** Assign a service to a doctor at a clinic. Idempotent: re-assigning reactivates. */
+export async function assignServiceToDoctor(opts: {
+  doctorId: bigint;
+  serviceId: bigint;
+  clinicId: bigint;
+  charges?: string;
+  durationMinutes?: number;
+  isPublic?: boolean;
+}): Promise<bigint> {
+  const existing = await prisma.kcServiceDoctorMapping.findFirst({
+    where: { doctorId: opts.doctorId, serviceId: opts.serviceId, clinicId: opts.clinicId },
+    select: { id: true },
+  });
+
+  if (existing) {
+    // The table has no unique constraint, so a plain insert would duplicate. Reactivate
+    // instead — a previously unassigned service should come back, not appear twice.
+    await prisma.$executeRawUnsafe(
+      `UPDATE wp_kc_service_doctor_mapping
+          SET status = 1, charges = COALESCE(?, charges), duration = COALESCE(?, duration)
+        WHERE id = ?`,
+      opts.charges ?? null,
+      opts.durationMinutes ?? null,
+      existing.id,
+    );
+    return existing.id;
+  }
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_service_doctor_mapping
+       (service_id, doctor_id, clinic_id, charges, duration, status, is_public, created_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, NOW())`,
+    opts.serviceId,
+    opts.doctorId,
+    opts.clinicId,
+    opts.charges ?? '0',
+    opts.durationMinutes ?? null,
+    opts.isPublic === false ? 0 : 1,
+  );
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+    `SELECT LAST_INSERT_ID() AS id`,
+  );
+  return BigInt(rows[0].id);
+}
+
+/**
+ * Unassign — soft, by setting status = 0.
+ *
+ * Not a DELETE: existing appointments reference the service, and removing the row would
+ * strip the price and duration from historical bookings.
+ */
+export async function unassignServiceFromDoctor(opts: {
+  doctorId: bigint;
+  serviceId: bigint;
+  clinicId?: bigint;
+}): Promise<number> {
+  const where: string[] = ['doctor_id = ?', 'service_id = ?', 'status = 1'];
+  const args: unknown[] = [opts.doctorId, opts.serviceId];
+  if (opts.clinicId !== undefined) {
+    where.push('clinic_id = ?');
+    args.push(opts.clinicId);
+  }
+
+  return prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_service_doctor_mapping SET status = 0 WHERE ${where.join(' AND ')}`,
+    ...args,
+  );
+}
+
+export async function setDoctorServiceStatus(opts: {
+  mappingIds: bigint[];
+  doctorId: bigint;
+  status: 0 | 1;
+}): Promise<number> {
+  if (opts.mappingIds.length === 0) return 0;
+
+  // doctor_id is in the WHERE so one professional cannot flip another's assignments.
+  return prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_service_doctor_mapping SET status = ?
+      WHERE doctor_id = ? AND id IN (${opts.mappingIds.map(() => '?').join(',')})`,
+    opts.status,
+    opts.doctorId,
+    ...opts.mappingIds,
+  );
 }

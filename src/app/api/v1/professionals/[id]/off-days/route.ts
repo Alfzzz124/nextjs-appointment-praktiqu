@@ -1,13 +1,15 @@
 /**
- * GET /api/v1/professionals/[id]/off-days — list off days
- * POST /api/v1/professionals/[id]/off-days — add off day
- * DELETE /api/v1/professionals/[id]/off-days — remove off day
+ * GET    /api/v1/professionals/[id]/off-days — list off days
+ * POST   /api/v1/professionals/[id]/off-days — add an off day
+ * DELETE /api/v1/professionals/[id]/off-days — remove one
  *
- * T038: off-days CRUD endpoints (US3)
+ * Off days live in `wp_kc_clinic_schedule` with `module_type = 'doctor'`, so `id` is a
+ * numeric `wp_users.ID`. Dates stay as `YYYY-MM-DD` strings end to end — KiviCare stores
+ * them that way, and round-tripping through Date only risks a timezone shift.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { withAuth } from '@/lib/auth';
+import { withAuth, type Actor } from '@/lib/auth';
 import { forbidden, notFound, validationError } from '@/lib/problem-details';
 import {
   listOffDays,
@@ -16,54 +18,43 @@ import {
   isAvailabilityError,
 } from '@/services/professional/availability.service';
 import { createOffDayInputSchema } from '@/services/professional/validation';
-import type { Actor } from '@/lib/auth';
+import {
+  canEdit,
+  canView,
+  invalidIdResponse,
+  parseProfessionalId,
+  scopeFor,
+} from '@/services/professional/route-scope';
 
 type RouteParams = { params: { id: string } };
 
-// ============================================
-// GET /api/v1/professionals/:id/off-days
-// ============================================
-
-export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
+export const GET = withAuth(async (_req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  if (!['SUPER_ADMIN', 'PROFESSIONAL'].includes(actor.role)) {
-    return NextResponse.json(forbidden('Cannot view off days'), { status: 403 });
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
+    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
+  }
+  if (!canView(scope, actor.role)) {
+    return NextResponse.json(forbidden('Cannot view these off days'), { status: 403 });
   }
 
-  const offDays = await listOffDays(id);
-
-  return NextResponse.json({
-    professionalId: id,
-    offDays: offDays.map((od) => ({
-      id: od.id,
-      startDate: od.startDate.toISOString().split('T')[0],
-      endDate: od.endDate.toISOString().split('T')[0],
-      reason: od.reason,
-      createdAt: od.createdAt.toISOString(),
-    })),
-  });
+  return NextResponse.json({ offDays: await listOffDays(id) });
 });
-
-// ============================================
-// POST /api/v1/professionals/[id]/off-days
-// ============================================
 
 export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  if (actor.role === 'SUPER_ADMIN') {
-    // ok
-  } else if (actor.role === 'PROFESSIONAL') {
-    const { getProfessionalByUserId } = await import('@/services/professional/professional.service');
-    const professional = await getProfessionalByUserId(actor.id);
-    if (professional?.id !== id) {
-      return NextResponse.json(forbidden('Cannot add off days for this professional'), { status: 403 });
-    }
-  } else {
-    return NextResponse.json(forbidden('Cannot add off days'), { status: 403 });
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
+    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
+  }
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(forbidden('Cannot add off days for this professional'), { status: 403 });
   }
 
   let body: unknown;
@@ -76,60 +67,57 @@ export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const parsed = createOffDayInputSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      validationError('validation_failed', 'Invalid off day data', undefined, parsed.error.flatten().fieldErrors as Record<string, string[]>),
+      validationError('validation_failed', parsed.error.issues[0]?.message ?? 'Invalid off day'),
       { status: 422 },
     );
   }
 
-  const startDate = new Date(parsed.data.startDate + 'T00:00:00Z');
-  const endDate = new Date(parsed.data.endDate + 'T00:00:00Z');
-
-  const offDay = await addOffDay(id, startDate, endDate, parsed.data.reason ?? null, actor.id);
-
-  return NextResponse.json({
-    id: offDay.id,
-    professionalId: offDay.professionalId,
-    startDate: offDay.startDate.toISOString().split('T')[0],
-    endDate: offDay.endDate.toISOString().split('T')[0],
-    reason: offDay.reason,
-    createdAt: offDay.createdAt.toISOString(),
-  }, { status: 201 });
+  try {
+    const offDayId = await addOffDay(id, {
+      startDate: parsed.data.startDate,
+      endDate: parsed.data.endDate,
+      description: parsed.data.reason ?? undefined,
+    });
+    const created = (await listOffDays(id)).find((o) => o.id === offDayId);
+    return NextResponse.json(created ?? { id: offDayId }, { status: 201 });
+  } catch (err) {
+    if (isAvailabilityError(err) && err._tag === 'validation') {
+      return NextResponse.json(validationError('validation_failed', err.message), { status: 422 });
+    }
+    throw err;
+  }
 });
-
-// ============================================
-// DELETE /api/v1/professionals/:id/off-days/:offDayId
-// ============================================
 
 export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
-  const { searchParams } = req.nextUrl;
-  const offDayId = searchParams.get('offDayId');
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  if (!offDayId) {
-    return NextResponse.json(validationError('missing_off_day_id', 'offDayId query param required'), { status: 400 });
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
+    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
+  }
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(forbidden('Cannot remove off days for this professional'), { status: 403 });
   }
 
-  if (actor.role === 'SUPER_ADMIN') {
-    // ok
-  } else if (actor.role === 'PROFESSIONAL') {
-    const { getProfessionalByUserId } = await import('@/services/professional/professional.service');
-    const professional = await getProfessionalByUserId(actor.id);
-    if (professional?.id !== id) {
-      return NextResponse.json(forbidden('Cannot remove off days for this professional'), { status: 403 });
-    }
-  } else {
-    return NextResponse.json(forbidden('Cannot remove off days'), { status: 403 });
+  const raw = req.nextUrl.searchParams.get('offDayId');
+  const offDayId = Number(raw);
+  if (!raw || !Number.isInteger(offDayId) || offDayId <= 0) {
+    return NextResponse.json(
+      validationError('invalid_off_day_id', 'offDayId must be a positive integer'),
+      { status: 400 },
+    );
   }
 
   try {
-    await removeOffDay(offDayId, actor.id);
+    // The service scopes the delete by professional too, so one doctor cannot remove
+    // another's closure by guessing an id.
+    await removeOffDay(id, offDayId);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (isAvailabilityError(err)) {
-      if (err._tag === 'not_found') {
-        return NextResponse.json(notFound('off_day_not_found', 'Off day not found'), { status: 404 });
-      }
+    if (isAvailabilityError(err) && err._tag === 'not_found') {
+      return NextResponse.json(notFound('off_day_not_found', 'Off day not found'), { status: 404 });
     }
     throw err;
   }

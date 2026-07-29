@@ -6,7 +6,9 @@
  * ('clinic' | 'doctor') with `module_id` naming the clinic or the doctor's
  * `wp_users.ID`.
  *
- * Reads only. Writes go through the praktiqu-endpoint plugin's REST layer (D1).
+ * Reads AND writes are direct SQL here. That is a deliberate exception to the
+ * plugin-REST rule (D1), made on evidence: KiviCare registers no `do_action` for
+ * holidays, so a direct write skips nothing. See the Writes section below.
  */
 import { prisma } from '@/lib/db';
 
@@ -220,4 +222,82 @@ export function isOffOn(offDay: WpOffDay, date: string): boolean {
 /** The subset of `offDays` that cover `date`. */
 export function offDaysOn(offDays: WpOffDay[], date: string): WpOffDay[] {
   return offDays.filter((o) => isOffOn(o, date));
+}
+
+/* ------------------------------------------------------------------ */
+/* Writes                                                              */
+/* ------------------------------------------------------------------ */
+/**
+ * Direct SQL, like clinic sessions: KiviCare registers no `do_action` for holidays, so
+ * a write here skips nothing. See the note in clinic-sessions.repo.ts.
+ */
+
+export type CreateOffDayInput = {
+  module: OffDayModule;
+  moduleId: bigint;
+  selectionMode?: SelectionMode;
+  startDate: string;
+  endDate?: string;
+  selectedDates?: string[];
+  timeSpecific?: boolean;
+  startTime?: string;
+  endTime?: string;
+  timezone?: string;
+  description?: string;
+};
+
+export async function createOffDay(input: CreateOffDayInput): Promise<bigint> {
+  const mode = input.selectionMode ?? SELECTION_MODE.RANGE;
+  assertDate(input.startDate);
+  if (input.endDate) assertDate(input.endDate);
+  for (const d of input.selectedDates ?? []) assertDate(d);
+
+  if (mode === SELECTION_MODE.MULTIPLE && (input.selectedDates ?? []).length === 0) {
+    // A multiple-mode row with no dates covers nothing, and isOffOn would report the
+    // doctor as available on every day it nominally spans.
+    throw new Error('selectionMode "multiple" requires at least one selected date');
+  }
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_clinic_schedule
+       (module_type, module_id, selection_mode, start_date, end_date, selected_dates,
+        time_specific, start_time, end_time, timezone, description, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+    input.module,
+    input.moduleId,
+    mode,
+    input.startDate,
+    input.endDate ?? input.startDate,
+    input.selectedDates ? JSON.stringify(input.selectedDates) : null,
+    input.timeSpecific ? 1 : 0,
+    input.startTime ?? null,
+    input.endTime ?? null,
+    input.timezone ?? null,
+    input.description ?? null,
+  );
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+    `SELECT LAST_INSERT_ID() AS id`,
+  );
+  return BigInt(rows[0].id);
+}
+
+/**
+ * Remove an off day, scoped to its owner.
+ *
+ * The module/moduleId are part of the WHERE rather than trusted from the caller: an id
+ * alone would let one doctor delete another's closure.
+ */
+export async function deleteOffDay(opts: {
+  id: bigint;
+  module: OffDayModule;
+  moduleId: bigint;
+}): Promise<boolean> {
+  const affected = await prisma.$executeRawUnsafe(
+    `DELETE FROM wp_kc_clinic_schedule WHERE id = ? AND module_type = ? AND module_id = ?`,
+    opts.id,
+    opts.module,
+    opts.moduleId,
+  );
+  return affected > 0;
 }
