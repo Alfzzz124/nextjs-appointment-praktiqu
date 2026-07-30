@@ -4,11 +4,11 @@ import { sessionActorFromRequest } from '@/lib/auth/session-actor';
 import { AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { UserRole } from '@prisma/client';
-import { bulkDeleteSessions } from '@/services/session/session.service';
+import { bulkCancelSessions } from '@/services/session/session.service';
 import { z } from 'zod';
 
 
-const schema = z.object({ ids: z.array(z.string()).min(1) });
+const schema = z.object({ ids: z.array(z.coerce.number().int().positive()).min(1) });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 400 },
       );
     }
-    const count = await bulkDeleteSessions(parsed.data.ids);
+    const count = await bulkCancelSessions(parsed.data.ids);
     return NextResponse.json({ message: `${count} sessions cancelled`, data: { updated: count } });
   } catch (err) {
     if (err instanceof AuthError) {

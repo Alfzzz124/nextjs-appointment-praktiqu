@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { prisma } from '@/lib/db';
-import { bulkDeleteSessions, exportSessions } from '@/services/session/session.service';
+import { bulkCancelSessions, exportSessions } from '@/services/session/session.service';
 
 let existingSessionId: string | null = null;
 let practiceId: string | null = null;
@@ -11,9 +11,9 @@ beforeAll(async () => {
   practiceId = session?.practiceId ?? null;
 });
 
-describe('bulkDeleteSessions', () => {
+describe('bulkCancelSessions', () => {
   it('returns 0 for empty ids without error', async () => {
-    const n = await bulkDeleteSessions([]);
+    const n = await bulkCancelSessions([]);
     expect(n).toBe(0);
   });
 });
@@ -24,9 +24,10 @@ describe('exportSessions', () => {
     expect(Array.isArray(rows)).toBe(true);
   });
 
-  it('filters by practiceId when provided', async () => {
-    if (!practiceId) return; // skip if no sessions in DB
-    const rows = await exportSessions({ practiceId });
+  it('filters by clinic when provided', async () => {
+    // practiceId was a cuid from the retired shadow schema; a clinic is now a numeric
+    // wp_kc_clinics id.
+    const rows = await exportSessions({ clinicId: 1 });
     expect(Array.isArray(rows)).toBe(true);
   });
 });

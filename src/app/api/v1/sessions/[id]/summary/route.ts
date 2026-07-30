@@ -18,9 +18,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   try {
-    const { id } = await params;
-    const { userId, role, practiceId } = await sessionActorFromRequest(req);
-    const session = await getSession({ userId, role, practiceId }, id);
+    const { id: rawId } = await params;
+    const id = Number(rawId);
+    if (!Number.isInteger(id) || id <= 0) {
+      return NextResponse.json(
+        { type: '/errors/validation-error', title: 'Invalid session id', status: 400 },
+        { status: 400 },
+      );
+    }
+    const actor = await sessionActorFromRequest(req);
+    const session = await getSession(actor, id);
     return NextResponse.json(
       { status: true, message: 'Session summary retrieved', data: session },
       { status: 200 },

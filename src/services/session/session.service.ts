@@ -1,237 +1,271 @@
 /**
- * Session service — business logic for booking, lifecycle, and queries.
+ * Session service — backed by `wp_kc_appointments`, not the shadow tables.
  *
- * Source of truth: specs/005-session-mgmt/data-model.md
+ * A session IS a KiviCare appointment. Our schema carried TWO copies of that table
+ * (`sessions_booking` and `appointments`); neither should exist. See
+ * docs/architecture/shadow-tables-audit.md.
  *
- * The service is the single chokepoint for:
- *   - status transition validation (T008)
- *   - client INACTIVE blocking (T009)
- *   - professional off-day validation (T010)
- *   - practice holiday validation (T011)
- *   - AUDIT logging on every status change (T012)
- *   - double-booking guard (delegated to double-booking-check.ts)
+ *  - Reads  → `repositories/wp/sessions.repo.ts`
+ *  - Writes → `repositories/wp/appointments.write.ts` → plugin REST, because
+ *             `kc_after_create_appointment` has five listeners (booking email, Pro
+ *             custom fields, followup scheduling) and cancellation drives the
+ *             cancellation email and telemed teardown.
  *
- * All API route handlers MUST go through this service — never mutate the
- * Session table directly.
+ * Ids are `number`. Statuses are KiviCare's five — see sessions.repo.ts for why
+ * COMPLETED and REJECTED are gone.
+ *
+ * Two things the shadow table stored have no KiviCare column, and are NOT faked:
+ * the `checkedInAt`/`checkedOutAt` timestamps are simply gone (KiviCare records only
+ * the status), and the cancellation reason now lives in the audit log, which is
+ * app-native and stays.
  */
 
-import {
-  Prisma,
-  SessionStatus,
-  UserRole,
-  type Session as SessionRow,
-} from '@prisma/client';
-import { prisma } from '@/lib/db';
 import { logging } from '@/lib/logging';
+import { resolveKcActor, type KcActor } from '@/services/billing/kc-actor';
+import type { Actor } from '@/lib/auth';
 import {
-  createSessionWithDoubleBookingGuard,
-  DoubleBookingError,
-  type SlotCandidate,
-} from './double-booking-check';
-import {
+  SESSION_STATUS,
   canTransition,
-  type CalendarResponse,
-  type CalendarView,
-  type CreateSessionInput,
-  type PaginatedResponse,
-  type SessionEntity,
-  type SessionListFilters,
-  type SessionWithRelations,
-  STATUS_COLOR,
-} from '@/types/session';
+  findSessionById,
+  listSessions as listSessionRows,
+  normaliseStatus,
+  setSessionStatusDirect,
+  toKcStatus,
+  type SessionRow,
+  type SessionStatus,
+} from '@/repositories/wp/sessions.repo';
+import {
+  cancelAppointment,
+  createAppointment,
+  setAppointmentStatus,
+} from '@/repositories/wp/appointments.write';
+import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
+import { listServicesForDoctor } from '@/repositories/wp/services.repo';
+import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
+import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
+import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
+
+export { SESSION_STATUS, canTransition, normaliseStatus };
+export type { SessionStatus };
+
+/* ------------------------------------------------------------------ */
+/* Errors                                                              */
+/* ------------------------------------------------------------------ */
 
 export class SessionServiceError extends Error {
-  readonly code: string;
-  readonly status: number;
-  constructor(code: string, message: string, status = 400) {
+  constructor(
+    public code: string,
+    message: string,
+    public status = 400,
+  ) {
     super(message);
     this.name = 'SessionServiceError';
-    this.code = code;
-    this.status = status;
   }
 }
 
-interface Actor {
-  userId: string;
-  role: UserRole;
-  practiceId: string | null;
+/* ------------------------------------------------------------------ */
+/* Shapes                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface Session {
+  id: number;
+  clinicId: number;
+  professionalId: number;
+  clientId: number;
+  /** `YYYY-MM-DD` local clinic date. */
+  slotDate: string | null;
+  /** `HH:MM:SS` local clinic time. */
+  startTime: string | null;
+  endTime: string | null;
+  timezone: string;
+  status: SessionStatus;
+  serviceIds: number[];
+  description: string | null;
+  createdAt: Date;
 }
 
-interface CreateArgs {
+export interface SessionWithRelations extends Session {
+  professionalName: string;
+  clientName: string;
+  clientEmail: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: { currentPage: number; totalPages: number; totalItems: number; itemsPerPage: number };
+}
+
+export type CalendarView = 'day' | 'week' | 'month';
+
+export interface CalendarResponse {
+  view: CalendarView;
+  date: string;
+  sessions: Array<{
+    id: number;
+    slotDate: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    client: string;
+    status: SessionStatus;
+    statusColor: string;
+    professionalId: number;
+    professionalName: string;
+  }>;
+}
+
+/** UI badge colours, one per remaining status. */
+export const STATUS_COLOR: Record<SessionStatus, string> = {
+  PENDING: '#eab308',
+  BOOKED: '#22c55e',
+  CHECK_IN: '#3b82f6',
+  CHECK_OUT: '#8b5cf6',
+  CANCELLED: '#6b7280',
+};
+
+export interface CreateSessionInput {
+  clientId: number;
+  professionalId: number;
+  serviceId: number;
+  clinicId?: number;
+  /** `YYYY-MM-DD`. */
+  slotDate: string;
+  /** `HH:MM:SS` local clinic time. */
+  startTime: string;
+}
+
+export interface SessionListFilters {
+  page?: number;
+  limit?: number;
+  professionalId?: number;
+  clientId?: number;
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^\d{2}:\d{2}:\d{2}$/;
+
+function toSession(r: SessionRow): SessionWithRelations {
+  return { ...r };
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`;
+}
+
+/**
+ * The clinic an actor is confined to; `null` means unrestricted (SUPER_ADMIN).
+ *
+ * A scoped actor with no clinic resolves to `-1`, a clinic id that matches nothing,
+ * rather than to "no filter" — the latter would widen an access boundary to every
+ * clinic in the install.
+ */
+function actorClinic(kc: KcActor): number | null {
+  if (kc.actor.role === 'SUPER_ADMIN') return null;
+  return kc.clinicId === null ? -1 : Number(kc.clinicId);
+}
+
+function assertCanRead(kc: KcActor, s: SessionRow): void {
+  const role = kc.actor.role;
+  if (role === 'SUPER_ADMIN') return;
+
+  if (role === 'PROFESSIONAL') {
+    if (s.professionalId === Number(kc.wpUserId)) return;
+    throw new SessionServiceError('forbidden', 'Not authorized', 403);
+  }
+  if (role === 'CLIENT') {
+    if (s.clientId === Number(kc.wpUserId)) return;
+    throw new SessionServiceError('forbidden', 'Not authorized', 403);
+  }
+  // Clinic staff, scoped to their own clinic.
+  if (kc.clinicId !== null && s.clinicId === Number(kc.clinicId)) return;
+  throw new SessionServiceError('forbidden', 'Not authorized for this clinic', 403);
+}
+
+async function loadForActor(kc: KcActor, id: number): Promise<SessionRow> {
+  const s = await findSessionById(id);
+  if (!s) throw new SessionServiceError('not_found', 'Session not found', 404);
+  assertCanRead(kc, s);
+  return s;
+}
+
+/**
+ * Reject a booking that falls on a closed day.
+ *
+ * A full-day closure blocks it outright; a time-specific one blocks only its own range,
+ * so the caller's slot may still be fine. Treating a partial closure as a full one
+ * would refuse bookable slots.
+ */
+async function assertNotOffDay(
+  professionalId: number,
+  clinicId: number,
+  date: string,
+  startTime: string,
+  endTime: string,
+): Promise<void> {
+  const [doctorOff, clinicOff] = await Promise.all([
+    listDoctorOffDays(BigInt(professionalId), { from: date, to: date }),
+    listClinicOffDays(BigInt(clinicId), { from: date, to: date }),
+  ]);
+
+  const covering = [...doctorOff, ...clinicOff].filter((o) => isOffOn(o, date));
+  if (covering.some((o) => !o.timeSpecific)) {
+    throw new SessionServiceError('unavailable', 'The professional is unavailable on that date', 400);
+  }
+
+  const start = addMinutes(startTime, 0);
+  for (const o of covering) {
+    if (o.timeSpecific && o.startTime && o.endTime) {
+      // Half-open overlap, matching the slot generator.
+      if (o.startTime < endTime && o.endTime > start) {
+        throw new SessionServiceError('unavailable', 'That time is blocked on this date', 400);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Create                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface CreateArgs {
   actor: Actor;
   input: CreateSessionInput;
-  /** Force BOOKED status (used by staff bookings); otherwise PENDING. */
+  /** Staff bookings skip the pending queue and land BOOKED. */
   forceBooked?: boolean;
-  /** Optional override of createdBy (defaults to actor.userId). */
-  createdBy?: string;
 }
-
-interface TransitionArgs {
-  actor: Actor;
-  sessionId: string;
-  target: SessionStatus;
-  reason?: string;
-}
-
-const MS_PER_MIN = 60_000;
-
-/* -------------------------------------------------------------------------- */
-/*                                READ HELPERS                                */
-/* -------------------------------------------------------------------------- */
-
-function toEntity(row: SessionRow): SessionEntity {
-  return {
-    id: row.id,
-    clientId: row.clientId,
-    professionalId: row.professionalId,
-    serviceId: row.serviceId,
-    practiceId: row.practiceId,
-    slotDate: row.slotDate.toISOString().slice(0, 10),
-    startTime: row.startTime.toISOString(),
-    endTime: row.endTime.toISOString(),
-    status: row.status,
-    rejectionReason: row.rejectionReason,
-    cancellationReason: row.cancellationReason,
-    checkedInAt: row.checkedInAt ? row.checkedInAt.toISOString() : null,
-    checkedOutAt: row.checkedOutAt ? row.checkedOutAt.toISOString() : null,
-    createdBy: row.createdBy,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-const SESSION_INCLUDE = {
-  client: {
-    include: {
-      user: { select: { firstName: true, lastName: true, email: true, basicData: true } },
-    },
-  },
-  professional: {
-    include: { user: { select: { firstName: true, lastName: true, email: true } } },
-  },
-  service: { select: { id: true, name: true, duration: true } },
-} satisfies Prisma.SessionInclude;
-
-type SessionWithIncluded = Prisma.SessionGetPayload<{ include: typeof SESSION_INCLUDE }>;
-
-function toEntityWithRelations(row: SessionWithIncluded): SessionWithRelations {
-  const fullName =
-    `${row.client.user.firstName ?? ''} ${row.client.user.lastName ?? ''}`.trim() ||
-    row.client.user.email;
-  const profName =
-    `${row.professional.user.firstName ?? ''} ${row.professional.user.lastName ?? ''}`.trim();
-
-  // best-effort mobile: look in basicData JSON (KiviCare stores mobile_number there)
-  const basic = (row.client.user.basicData as Record<string, unknown> | null) ?? null;
-  const mobile = typeof basic?.mobileNumber === 'string' ? (basic.mobileNumber as string) : null;
-
-  return {
-    ...toEntity(row),
-    client: {
-      id: row.client.id,
-      fullName,
-      uniqueClientId: row.client.patientUniqueId ?? null,
-      mobileNumber: mobile,
-      email: row.client.user.email,
-    },
-    professional: {
-      id: row.professional.id,
-      fullName: profName,
-      email: row.professional.user.email,
-    },
-    service: {
-      id: row.service.id,
-      name: row.service.name,
-      durationMinutes: row.service.duration,
-    },
-  };
-}
-
-/* -------------------------------------------------------------------------- */
-/*                              ACCESS GUARDS                                 */
-/* -------------------------------------------------------------------------- */
-
-async function assertCanView(actor: Actor, row: SessionWithIncluded): Promise<void> {
-  const role = actor.role;
-  if (role === UserRole.SUPER_ADMIN) return;
-  if (role === UserRole.CLINIC_ADMIN || role === UserRole.RECEPTIONIST) {
-    if (actor.practiceId && row.practiceId === actor.practiceId) return;
-    throw new SessionServiceError('forbidden', 'Not authorized', 403);
-  }
-  if (role === UserRole.PROFESSIONAL) {
-    if (row.professional.userId === actor.userId) return;
-    throw new SessionServiceError('forbidden', 'Not authorized', 403);
-  }
-  if (role === UserRole.CLIENT) {
-    if (row.client.userId === actor.userId) return;
-    throw new SessionServiceError('forbidden', 'Not authorized', 403);
-  }
-  throw new SessionServiceError('forbidden', 'Not authorized', 403);
-}
-
-function assertCanMutate(actor: Actor, row: SessionWithIncluded): void {
-  const role = actor.role;
-  if (role === UserRole.SUPER_ADMIN) return;
-  if (role === UserRole.CLINIC_ADMIN || role === UserRole.RECEPTIONIST) {
-    if (actor.practiceId && row.practiceId === actor.practiceId) return;
-    throw new SessionServiceError('forbidden', 'Not authorized for this practice', 403);
-  }
-  if (role === UserRole.PROFESSIONAL) {
-    if (row.professional.userId === actor.userId) return;
-    throw new SessionServiceError('forbidden', 'You can only manage your own sessions', 403);
-  }
-  if (role === UserRole.CLIENT) {
-    if (row.client.userId === actor.userId) return;
-    throw new SessionServiceError('forbidden', 'You can only manage your own sessions', 403);
-  }
-  throw new SessionServiceError('forbidden', 'Not authorized', 403);
-}
-
-/* -------------------------------------------------------------------------- */
-/*                              CREATE / BOOK                                 */
-/* -------------------------------------------------------------------------- */
 
 export async function createSession(args: CreateArgs): Promise<SessionWithRelations> {
-  const { actor, input, forceBooked = false, createdBy } = args;
+  const { actor, input } = args;
+  const kc = await resolveKcActor(actor);
 
-  // T042: detect staff vs client booking from JWT role.
-  const isStaff =
-    actor.role === UserRole.RECEPTIONIST ||
-    actor.role === UserRole.CLINIC_ADMIN ||
-    actor.role === UserRole.SUPER_ADMIN;
-  const isClient = actor.role === UserRole.CLIENT;
+  const isStaff = ['RECEPTIONIST', 'CLINIC_ADMIN', 'SUPER_ADMIN'].includes(actor.role);
+  const isClient = actor.role === 'CLIENT';
   if (!isStaff && !isClient) {
-    throw new SessionServiceError(
-      'forbidden',
-      'Only clients and staff can create sessions',
-      403,
-    );
+    throw new SessionServiceError('forbidden', 'Only clients and staff can create sessions', 403);
   }
 
-  // Clients can only book for themselves.
-  if (isClient) {
-    const clientRow = await prisma.patient.findUnique({
-      where: { id: input.clientId },
-      select: { userId: true },
-    });
-    if (!clientRow) {
-      throw new SessionServiceError('not_found', 'Client not found', 404);
-    }
-    if (clientRow.userId !== actor.userId) {
-      throw new SessionServiceError('forbidden', 'Clients can only book for themselves', 403);
-    }
+  if (!DATE_RE.test(input.slotDate)) {
+    throw new SessionServiceError('invalid_date', 'slotDate must be YYYY-MM-DD', 422);
+  }
+  if (!TIME_RE.test(input.startTime)) {
+    throw new SessionServiceError('invalid_time', 'startTime must be HH:MM:SS', 422);
   }
 
-  // T009: client INACTIVE blocking (FR-008 from feature 004).
-  const client = await prisma.patient.findUnique({
-    where: { id: input.clientId },
-    select: { id: true, userId: true, status: true, user: { select: { status: true } } },
-  });
-  if (!client) {
-    throw new SessionServiceError('not_found', 'Client not found', 404);
+  if (isClient && input.clientId !== Number(kc.wpUserId)) {
+    throw new SessionServiceError('forbidden', 'Clients can only book for themselves', 403);
   }
-  const clientActive = (client.status === 1) && (client.user.status === 1);
-  if (!clientActive) {
+
+  const client = await findPatientById(BigInt(input.clientId));
+  if (!client) throw new SessionServiceError('not_found', 'Client not found', 404);
+  if (client.status !== CLIENT_STATUS.ACTIVE) {
     throw new SessionServiceError(
       'account_inactive',
       'Account inactive. Please contact the practice.',
@@ -239,181 +273,130 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
     );
   }
 
-  // Professional must exist and be active.
-  const professional = await prisma.doctor.findUnique({
-    where: { id: input.professionalId },
-    select: { id: true, status: true },
-  });
-  if (!professional || professional.status !== 1) {
-    throw new SessionServiceError(
-      'professional_inactive',
-      'Professional is not available',
-      400,
-    );
+  const professional = await findDoctorById(BigInt(input.professionalId));
+  if (!professional || professional.status !== PROFESSIONAL_STATUS.ACTIVE) {
+    throw new SessionServiceError('professional_inactive', 'Professional is not available', 400);
   }
 
-  // Service lookup (for duration + practice).
-  const service = await prisma.service.findUnique({
-    where: { id: input.serviceId },
-    select: { id: true, duration: true, clinicId: true },
+  const clinicId = input.clinicId ?? (kc.clinicId !== null ? Number(kc.clinicId) : undefined);
+  if (!clinicId) {
+    throw new SessionServiceError('missing_clinic', 'clinicId is required', 400);
+  }
+  if (isStaff && kc.clinicId !== null && clinicId !== Number(kc.clinicId)) {
+    throw new SessionServiceError('forbidden', 'Not authorized for this clinic', 403);
+  }
+
+  // The doctor's own mapping carries the duration that actually applies, which is also
+  // what the patient is charged for.
+  const assigned = await listServicesForDoctor({
+    doctorId: BigInt(input.professionalId),
+    clinicId: BigInt(clinicId),
   });
+  const service = assigned.find((s) => Number(s.serviceId) === input.serviceId && s.isActive);
   if (!service) {
-    throw new SessionServiceError('not_found', 'Service not found', 404);
-  }
-  if (!service.clinicId) {
     throw new SessionServiceError(
-      'service_orphan',
-      'Service is not attached to a practice',
+      'service_unavailable',
+      'Service is not offered by this professional',
       400,
     );
   }
+  const endTime = addMinutes(input.startTime, service.durationMinutes ?? 30);
 
-  // Practice scoping: staff must operate within their own practice.
-  if (isStaff) {
-    if (!actor.practiceId || actor.practiceId !== service.clinicId) {
-      throw new SessionServiceError('forbidden', 'Not authorized for this practice', 403);
-    }
-  }
+  await assertNotOffDay(input.professionalId, clinicId, input.slotDate, input.startTime, endTime);
 
-  // T010: professional off-day check (re-validate on booking).
-  // T011: practice holiday check.
-  await assertNoOffDay(professional.id, input.slotDate);
-  await assertNotHoliday(service.clinicId, input.slotDate);
-
-  // Parse time bounds.
-  const startTime = new Date(input.startTime);
-  if (Number.isNaN(startTime.getTime())) {
-    throw new SessionServiceError('invalid_time', 'startTime is not a valid datetime', 422);
-  }
-  const endTime = new Date(startTime.getTime() + service.duration * MS_PER_MIN);
-  const slotDate = new Date(`${input.slotDate}T00:00:00.000Z`);
-
-  const candidate: SlotCandidate = {
-    clientId: input.clientId,
-    professionalId: input.professionalId,
-    serviceId: input.serviceId,
-    practiceId: service.clinicId,
-    slotDate,
-    startTime,
+  const clashes = await findConflictingAppointments({
+    doctorId: BigInt(input.professionalId),
+    date: input.slotDate,
+    startTime: input.startTime,
     endTime,
-    createdBy: createdBy ?? actor.userId,
-  };
-
-  let created;
-  try {
-    created = await createSessionWithDoubleBookingGuard(candidate);
-  } catch (err) {
-    if (err instanceof DoubleBookingError) {
-      throw new SessionServiceError('double_booking', err.message, 409);
-    }
-    throw err;
+  });
+  if (clashes.length > 0) {
+    throw new SessionServiceError('slot_taken', 'That slot is no longer available', 409);
   }
 
-  // Staff booking promotes PENDING → BOOKED directly.
-  let finalStatus = created.status;
-  if (forceBooked || isStaff) {
-    const updated = await prisma.session.update({
-      where: { id: created.id },
-      data: { status: SessionStatus.BOOKED },
-      select: { id: true, status: true },
-    });
-    finalStatus = updated.status;
-  }
+  // Staff bookings are confirmed; a client's own booking waits for approval. This also
+  // decides whether KiviCare sends the "booked" email — it withholds it for PENDING.
+  const status = args.forceBooked || isStaff ? SESSION_STATUS.BOOKED : SESSION_STATUS.PENDING;
 
-  // T012: AUDIT log for the create.
+  const created = await createAppointment({
+    clinicId,
+    doctorId: input.professionalId,
+    patientId: input.clientId,
+    startDate: input.slotDate,
+    startTime: input.startTime,
+    endDate: input.slotDate,
+    endTime,
+    serviceIds: [input.serviceId],
+    status: toKcStatus(status),
+  });
+
   await logging.audit('session.created', {
-    userId: actor.userId,
+    userId: actor.id,
     resource: 'session',
-    resourceId: created.id,
+    resourceId: String(created.id),
     action: 'session.created',
-    metadata: {
-      clientId: input.clientId,
-      professionalId: input.professionalId,
-      serviceId: input.serviceId,
-      practiceId: service.clinicId,
-      status: finalStatus,
-      forced: forceBooked || isStaff,
-    },
+    metadata: { status, clinicId, professionalId: input.professionalId, clientId: input.clientId },
   });
 
-  if (finalStatus === SessionStatus.PENDING) {
-    await logging.audit('session.status_changed', {
-      userId: actor.userId,
-      resource: 'session',
-      resourceId: created.id,
-      action: 'session.status_changed',
-      metadata: { from: null, to: SessionStatus.PENDING, reason: 'created' },
-    });
+  const row = await findSessionById(created.id);
+  if (!row) {
+    throw new SessionServiceError(
+      'readback_failed',
+      'Session was created but could not be read back',
+      502,
+    );
   }
-
-  const row = await prisma.session.findUniqueOrThrow({
-    where: { id: created.id },
-    include: SESSION_INCLUDE,
-  });
-  return toEntityWithRelations(row);
+  return toSession(row);
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                READ / LIST                                 */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------ */
+/* Read                                                                */
+/* ------------------------------------------------------------------ */
 
-export async function getSession(actor: Actor, id: string): Promise<SessionWithRelations> {
-  const row = await prisma.session.findUnique({ where: { id }, include: SESSION_INCLUDE });
-  if (!row) {
-    throw new SessionServiceError('not_found', 'Session not found', 404);
-  }
-  await assertCanView(actor, row);
-  return toEntityWithRelations(row);
+export async function getSession(actor: Actor, id: number): Promise<SessionWithRelations> {
+  const kc = await resolveKcActor(actor);
+  return toSession(await loadForActor(kc, id));
 }
 
 export async function listSessions(
   actor: Actor,
-  filters: SessionListFilters & { page: number; limit: number },
+  filters: SessionListFilters,
 ): Promise<PaginatedResponse<SessionWithRelations>> {
-  const { page, limit, status, clientId, professionalId, serviceId, dateFrom, dateTo } = filters;
+  const kc = await resolveKcActor(actor);
+  const page = filters.page ?? 1;
+  const limit = filters.limit ?? 20;
 
-  const where: Prisma.SessionWhereInput = { AND: [] };
+  const query: Parameters<typeof listSessionRows>[0] = {
+    page,
+    perPage: limit,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+  };
 
-  // Role scoping
-  if (actor.role === UserRole.SUPER_ADMIN) {
-    // no extra filter
-  } else if (actor.role === UserRole.CLINIC_ADMIN || actor.role === UserRole.RECEPTIONIST) {
-    if (!actor.practiceId) {
-      throw new SessionServiceError('forbidden', 'No practice on actor', 403);
-    }
-    (where.AND as Prisma.SessionWhereInput[]).push({ practiceId: actor.practiceId });
-  } else if (actor.role === UserRole.PROFESSIONAL) {
-    (where.AND as Prisma.SessionWhereInput[]).push({ professional: { userId: actor.userId } });
-  } else if (actor.role === UserRole.CLIENT) {
-    (where.AND as Prisma.SessionWhereInput[]).push({ client: { userId: actor.userId } });
+  // A professional or client sees only their own rows, whatever the query asks for.
+  if (actor.role === 'PROFESSIONAL') {
+    query.professionalId = Number(kc.wpUserId);
+  } else if (actor.role === 'CLIENT') {
+    query.clientId = Number(kc.wpUserId);
   } else {
-    throw new SessionServiceError('forbidden', 'Not authorized', 403);
+    const clinic = actorClinic(kc);
+    if (clinic !== null) query.clinicId = clinic;
+    if (filters.professionalId !== undefined) query.professionalId = filters.professionalId;
+    if (filters.clientId !== undefined) query.clientId = filters.clientId;
   }
 
-  if (status) (where.AND as Prisma.SessionWhereInput[]).push({ status });
-  if (clientId) (where.AND as Prisma.SessionWhereInput[]).push({ clientId });
-  if (professionalId) (where.AND as Prisma.SessionWhereInput[]).push({ professionalId });
-  if (serviceId) (where.AND as Prisma.SessionWhereInput[]).push({ serviceId });
-  if (dateFrom || dateTo) {
-    const range: Prisma.DateTimeFilter = {};
-    if (dateFrom) range.gte = new Date(`${dateFrom}T00:00:00.000Z`);
-    if (dateTo) range.lte = new Date(`${dateTo}T23:59:59.999Z`);
-    (where.AND as Prisma.SessionWhereInput[]).push({ slotDate: range });
+  if (filters.status) {
+    const s = normaliseStatus(filters.status);
+    if (!s) {
+      throw new SessionServiceError('invalid_status', `Unknown status "${filters.status}"`, 422);
+    }
+    query.statuses = [s];
   }
 
-  const [total, rows] = await Promise.all([
-    prisma.session.count({ where }),
-    prisma.session.findMany({
-      where,
-      include: SESSION_INCLUDE,
-      orderBy: [{ slotDate: 'asc' }, { startTime: 'asc' }],
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-  ]);
+  const { items, total } = await listSessionRows(query);
 
   return {
-    data: rows.map(toEntityWithRelations),
+    data: items.map(toSession),
     pagination: {
       currentPage: page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -422,455 +405,249 @@ export async function listSessions(
     },
   };
 }
-
-/* -------------------------------------------------------------------------- */
-/*                            STATUS TRANSITIONS                              */
-/* -------------------------------------------------------------------------- */
-
-export async function transitionSession(args: TransitionArgs): Promise<SessionWithRelations> {
-  const { actor, sessionId, target, reason } = args;
-
-  return prisma.$transaction(async (tx) => {
-    const row = await tx.session.findUnique({
-      where: { id: sessionId },
-      include: SESSION_INCLUDE,
-    });
-    if (!row) {
-      throw new SessionServiceError('not_found', 'Session not found', 404);
-    }
-
-    // Role-specific permission checks
-    switch (target) {
-      case SessionStatus.BOOKED:
-        // approve — professional/admin
-        if (
-          actor.role !== UserRole.SUPER_ADMIN &&
-          actor.role !== UserRole.CLINIC_ADMIN &&
-          !(actor.role === UserRole.PROFESSIONAL && row.professional.userId === actor.userId)
-        ) {
-          throw new SessionServiceError('forbidden', 'Not authorized to approve', 403);
-        }
-        break;
-      case SessionStatus.REJECTED:
-        if (
-          actor.role !== UserRole.SUPER_ADMIN &&
-          actor.role !== UserRole.CLINIC_ADMIN &&
-          !(actor.role === UserRole.PROFESSIONAL && row.professional.userId === actor.userId)
-        ) {
-          throw new SessionServiceError('forbidden', 'Not authorized to reject', 403);
-        }
-        if (!reason || reason.trim().length === 0) {
-          throw new SessionServiceError('reason_required', 'Rejection reason is required', 400);
-        }
-        break;
-      case SessionStatus.CHECK_IN:
-      case SessionStatus.CHECK_OUT:
-        if (
-          actor.role !== UserRole.CLINIC_ADMIN &&
-          actor.role !== UserRole.RECEPTIONIST &&
-          actor.role !== UserRole.SUPER_ADMIN
-        ) {
-          throw new SessionServiceError('forbidden', 'Not authorized to check in/out', 403);
-        }
-        if (
-          (actor.role === UserRole.CLINIC_ADMIN || actor.role === UserRole.RECEPTIONIST) &&
-          (!actor.practiceId || actor.practiceId !== row.practiceId)
-        ) {
-          throw new SessionServiceError('forbidden', 'Not authorized for this practice', 403);
-        }
-        break;
-      case SessionStatus.CANCELLED:
-        if (
-          actor.role === UserRole.PROFESSIONAL ||
-          actor.role === UserRole.SUPER_ADMIN
-        ) {
-          throw new SessionServiceError('forbidden', 'Professionals cannot cancel', 403);
-        }
-        if (actor.role === UserRole.CLIENT) {
-          if (row.client.userId !== actor.userId) {
-            throw new SessionServiceError('forbidden', 'Not your session', 403);
-          }
-        }
-        if (
-          (actor.role === UserRole.CLINIC_ADMIN || actor.role === UserRole.RECEPTIONIST) &&
-          (!actor.practiceId || actor.practiceId !== row.practiceId)
-        ) {
-          throw new SessionServiceError('forbidden', 'Not authorized for this practice', 403);
-        }
-        break;
-      default:
-        break;
-    }
-
-    // T008: validate transition
-    if (!canTransition(row.status, target)) {
-      throw new SessionServiceError(
-        'invalid_transition',
-        `Cannot transition session from ${row.status} to ${target}`,
-        400,
-      );
-    }
-
-    // Build update payload
-    const data: Prisma.SessionUpdateInput = { status: target };
-    if (target === SessionStatus.REJECTED) {
-      data.rejectionReason = reason ?? null;
-    }
-    if (target === SessionStatus.CANCELLED) {
-      data.cancellationReason = reason ?? null;
-    }
-    if (target === SessionStatus.CHECK_IN) {
-      data.checkedInAt = new Date();
-    }
-    if (target === SessionStatus.CHECK_OUT) {
-      data.checkedOutAt = new Date();
-    }
-
-    const updated = await tx.session.update({
-      where: { id: sessionId },
-      data,
-      include: SESSION_INCLUDE,
-    });
-
-    // T012: AUDIT log
-    await logging.audit('session.status_changed', {
-      userId: actor.userId,
-      resource: 'session',
-      resourceId: sessionId,
-      action: 'session.status_changed',
-      metadata: { from: row.status, to: target, reason: reason ?? null },
-    });
-
-    return toEntityWithRelations(updated);
-  });
-}
-
-/* -------------------------------------------------------------------------- */
-/*                              PENDING QUEUE                                 */
-/* -------------------------------------------------------------------------- */
 
 export async function listPendingForProfessional(
   actor: Actor,
-  page: number,
-  limit: number,
-): Promise<PaginatedResponse<SessionWithRelations>> {
-  if (
-    actor.role !== UserRole.SUPER_ADMIN &&
-    actor.role !== UserRole.CLINIC_ADMIN &&
-    actor.role !== UserRole.PROFESSIONAL
-  ) {
-    throw new SessionServiceError('forbidden', 'Not authorized', 403);
-  }
-  const where: Prisma.SessionWhereInput = { status: SessionStatus.PENDING };
-  if (actor.role === UserRole.PROFESSIONAL) {
-    where.professional = { userId: actor.userId };
-  } else if (actor.role === UserRole.CLINIC_ADMIN) {
-    if (!actor.practiceId) {
-      throw new SessionServiceError('forbidden', 'No practice on actor', 403);
-    }
-    where.practiceId = actor.practiceId;
-  }
+  professionalId?: number,
+): Promise<SessionWithRelations[]> {
+  const kc = await resolveKcActor(actor);
+  // A professional always sees their own queue, never another's.
+  const target =
+    actor.role === 'PROFESSIONAL' ? Number(kc.wpUserId) : (professionalId ?? Number(kc.wpUserId));
 
-  const [total, rows] = await Promise.all([
-    prisma.session.count({ where }),
-    prisma.session.findMany({
-      where,
-      include: SESSION_INCLUDE,
-      orderBy: { createdAt: 'asc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-  ]);
-
-  return {
-    data: rows.map(toEntityWithRelations),
-    pagination: {
-      currentPage: page,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-      totalItems: total,
-      itemsPerPage: limit,
-    },
-  };
+  const { items } = await listSessionRows({
+    page: 1,
+    perPage: 200,
+    professionalId: target,
+    statuses: [SESSION_STATUS.PENDING],
+  });
+  return items.map(toSession);
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                CALENDAR                                    */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------ */
+/* Transitions                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface TransitionArgs {
+  actor: Actor;
+  sessionId: number;
+  target: SessionStatus;
+  reason?: string;
+}
+
+export async function transitionSession(args: TransitionArgs): Promise<SessionWithRelations> {
+  const { actor, sessionId, target, reason } = args;
+  const kc = await resolveKcActor(actor);
+  const row = await loadForActor(kc, sessionId);
+
+  const isOwningProfessional =
+    actor.role === 'PROFESSIONAL' && row.professionalId === Number(kc.wpUserId);
+  const isAdmin = actor.role === 'SUPER_ADMIN' || actor.role === 'CLINIC_ADMIN';
+
+  if (target === SESSION_STATUS.BOOKED && !isAdmin && !isOwningProfessional) {
+    throw new SessionServiceError('forbidden', 'Not authorized to approve', 403);
+  }
+  if (
+    (target === SESSION_STATUS.CHECK_IN || target === SESSION_STATUS.CHECK_OUT) &&
+    !isAdmin &&
+    actor.role !== 'RECEPTIONIST' &&
+    !isOwningProfessional
+  ) {
+    throw new SessionServiceError('forbidden', 'Not authorized to change attendance', 403);
+  }
+
+  if (!canTransition(row.status, target)) {
+    throw new SessionServiceError(
+      'invalid_transition',
+      `Cannot transition session from ${row.status} to ${target}`,
+      400,
+    );
+  }
+
+  // Through the plugin, so KiviCare's cancellation email and telemed teardown fire.
+  await setAppointmentStatus(sessionId, toKcStatus(target));
+
+  // The reason has no column in wp_kc_appointments, so it lives here. The audit log is
+  // app-native and stays, which is why collapsing REJECTED into CANCELLED does not lose
+  // the "why".
+  await logging.audit('session.status_changed', {
+    userId: actor.id,
+    resource: 'session',
+    resourceId: String(sessionId),
+    action: 'session.status_changed',
+    metadata: { from: row.status, to: target, reason: reason ?? null },
+  });
+
+  const updated = await findSessionById(sessionId);
+  if (!updated) throw new SessionServiceError('not_found', 'Session not found', 404);
+  return toSession(updated);
+}
+
+/* ------------------------------------------------------------------ */
+/* Calendar                                                            */
+/* ------------------------------------------------------------------ */
+
+function rangeForView(view: CalendarView, date: string): { from: string; to: string } {
+  const d = new Date(`${date}T00:00:00Z`);
+  if (view === 'day') return { from: date, to: date };
+
+  if (view === 'week') {
+    // Weeks start Monday, matching KiviCare's day slugs.
+    const dow = (d.getUTCDay() + 6) % 7;
+    const start = new Date(d);
+    start.setUTCDate(d.getUTCDate() - dow);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 6);
+    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+  }
+
+  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
 
 export async function getCalendar(
   actor: Actor,
   view: CalendarView,
-  date: Date,
-  professionalId: string | null,
+  date: string,
+  professionalId: number | null,
 ): Promise<CalendarResponse> {
-  const { start, end } = rangeForView(view, date);
+  if (!DATE_RE.test(date)) {
+    throw new SessionServiceError('invalid_date', 'date must be YYYY-MM-DD', 422);
+  }
+  const kc = await resolveKcActor(actor);
+  const { from, to } = rangeForView(view, date);
 
-  const where: Prisma.SessionWhereInput = {
-    slotDate: { gte: start, lte: end },
+  const query: Parameters<typeof listSessionRows>[0] = {
+    page: 1,
+    perPage: 200,
+    dateFrom: from,
+    dateTo: to,
   };
-  if (actor.role === UserRole.SUPER_ADMIN) {
-    if (professionalId) where.professionalId = professionalId;
-  } else if (actor.role === UserRole.CLINIC_ADMIN || actor.role === UserRole.RECEPTIONIST) {
-    if (!actor.practiceId) {
-      throw new SessionServiceError('forbidden', 'No practice on actor', 403);
-    }
-    where.practiceId = actor.practiceId;
-    if (professionalId) where.professionalId = professionalId;
-  } else if (actor.role === UserRole.PROFESSIONAL) {
-    where.professional = { userId: actor.userId };
-    if (professionalId) where.professionalId = professionalId;
+
+  if (actor.role === 'PROFESSIONAL') {
+    query.professionalId = Number(kc.wpUserId);
+  } else if (['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role)) {
+    const clinic = actorClinic(kc);
+    if (clinic !== null) query.clinicId = clinic;
+    if (professionalId !== null) query.professionalId = professionalId;
   } else {
     throw new SessionServiceError('forbidden', 'Not authorized', 403);
   }
 
-  const rows = await prisma.session.findMany({
-    where,
-    include: SESSION_INCLUDE,
-    orderBy: { startTime: 'asc' },
-  });
+  const { items } = await listSessionRows(query);
 
   return {
     view,
-    date: date.toISOString().slice(0, 10),
-    sessions: rows.map((r) => {
-      const profName =
-        `${r.professional.user.firstName ?? ''} ${r.professional.user.lastName ?? ''}`.trim();
-      const cliName =
-        `${r.client.user.firstName ?? ''} ${r.client.user.lastName ?? ''}`.trim();
-      return {
-        id: r.id,
-        startTime: r.startTime.toISOString().slice(11, 16),
-        endTime: r.endTime.toISOString().slice(11, 16),
-        client: cliName,
-        service: r.service.name,
-        status: r.status,
-        statusColor: STATUS_COLOR[r.status],
-        professionalId: r.professionalId,
-        professionalName: profName,
-      };
-    }),
+    date,
+    sessions: items.map((s) => ({
+      id: s.id,
+      slotDate: s.slotDate,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      client: s.clientName,
+      status: s.status,
+      statusColor: STATUS_COLOR[s.status],
+      professionalId: s.professionalId,
+      professionalName: s.professionalName,
+    })),
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/*                            OFF-DAY / HOLIDAY                               */
-/* -------------------------------------------------------------------------- */
-
-async function assertNoOffDay(professionalId: string, slotDateISO: string): Promise<void> {
-  const slotDate = new Date(`${slotDateISO}T00:00:00.000Z`);
-  // DoctorSession.dayOfWeek is 0-6; we compare by the UTC weekday of slotDate.
-  const dow = slotDate.getUTCDay();
-  const offDay = await prisma.doctorSession.findFirst({
-    where: { doctorId: professionalId, dayOfWeek: dow, status: 0 },
-    select: { id: true },
-  });
-  if (offDay) {
-    throw new SessionServiceError(
-      'professional_off_day',
-      'The professional is off on this day',
-      400,
-    );
-  }
-}
-
-async function assertNotHoliday(practiceId: string, slotDateISO: string): Promise<void> {
-  const day = new Date(`${slotDateISO}T00:00:00.000Z`);
-  const holiday = await prisma.holiday.findFirst({
-    where: {
-      moduleType: 'clinic',
-      moduleId: practiceId,
-      startDate: { lte: day },
-      endDate: { gte: day },
-    },
-    select: { id: true, title: true },
-  });
-  if (holiday) {
-    throw new SessionServiceError(
-      'holiday',
-      `The practice is closed for ${holiday.title} on this day`,
-      400,
-    );
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/*                         PROFESSIONAL OFF-DAY HOOK                          */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------ */
+/* Maintenance                                                         */
+/* ------------------------------------------------------------------ */
 
 /**
- * When a professional's off-day is updated (feature 002), all PENDING
- * sessions for that professional on the affected date are auto-cancelled
- * with reason "Professional unavailable".
+ * Cancel PENDING sessions that fall on a newly-created off day.
  *
- * Called from the professional management flow; uses AUDIT logging with
- * actor = "system" to attribute the invalidation.
+ * Uses the direct status write rather than the plugin: this can touch many rows at
+ * once and firing a cancellation notification per row would flood the patient. The
+ * audit entries are the record instead.
  */
 export async function invalidatePendingForOffDay(
-  professionalId: string,
-  slotDateISO: string,
+  professionalId: number,
+  slotDate: string,
 ): Promise<number> {
-  const slotDate = new Date(`${slotDateISO}T00:00:00.000Z`);
-  const result = await prisma.$transaction(async (tx) => {
-    const pending = await tx.session.findMany({
-      where: {
-        professionalId,
-        slotDate,
-        status: SessionStatus.PENDING,
-      },
-      select: { id: true, status: true },
-    });
-    if (pending.length === 0) return [] as string[];
+  if (!DATE_RE.test(slotDate)) {
+    throw new SessionServiceError('invalid_date', 'slotDate must be YYYY-MM-DD', 422);
+  }
 
-    await tx.session.updateMany({
-      where: { id: { in: pending.map((p) => p.id) } },
-      data: {
-        status: SessionStatus.CANCELLED,
-        cancellationReason: 'Professional unavailable',
-      },
-    });
-    return pending.map((p) => p.id);
+  const { items } = await listSessionRows({
+    page: 1,
+    perPage: 200,
+    professionalId,
+    date: slotDate,
+    statuses: [SESSION_STATUS.PENDING],
   });
 
-  for (const id of result) {
+  for (const s of items) {
+    await setSessionStatusDirect(s.id, SESSION_STATUS.CANCELLED);
     await logging.audit('session.status_changed', {
       userId: null,
       resource: 'session',
-      resourceId: id,
+      resourceId: String(s.id),
       action: 'session.status_changed',
       metadata: {
-        from: SessionStatus.PENDING,
-        to: SessionStatus.CANCELLED,
+        from: SESSION_STATUS.PENDING,
+        to: SESSION_STATUS.CANCELLED,
         reason: 'Professional unavailable (off-day updated)',
         system: true,
       },
     });
   }
 
-  return result.length;
+  return items.length;
 }
-
-/* -------------------------------------------------------------------------- */
-/*                            AUTO-COMPLETION                                 */
-/* -------------------------------------------------------------------------- */
 
 /**
- * Mark all CHECK_OUT sessions older than the given threshold as COMPLETED.
- * Returns the number of sessions updated.
+ * Cancel sessions in bulk.
+ *
+ * Sequential and through the plugin, so each cancellation fires KiviCare's hooks.
+ * Failures are counted rather than thrown, so one bad id cannot abandon the batch.
  */
-export async function autoCompleteOldSessions(olderThanMs: number): Promise<number> {
-  const cutoff = new Date(Date.now() - olderThanMs);
-  const candidates = await prisma.session.findMany({
-    where: {
-      status: SessionStatus.CHECK_OUT,
-      checkedOutAt: { lt: cutoff },
-    },
-    select: { id: true },
-  });
-  if (candidates.length === 0) return 0;
-
-  await prisma.session.updateMany({
-    where: { id: { in: candidates.map((c) => c.id) } },
-    data: { status: SessionStatus.COMPLETED },
-  });
-
-  for (const c of candidates) {
-    await logging.audit('session.status_changed', {
-      userId: null,
-      resource: 'session',
-      resourceId: c.id,
-      action: 'session.status_changed',
-      metadata: {
-        from: SessionStatus.CHECK_OUT,
-        to: SessionStatus.COMPLETED,
-        reason: 'auto-completion (>24h past check-out)',
-        system: true,
-      },
-    });
+export async function bulkCancelSessions(ids: number[]): Promise<number> {
+  let cancelled = 0;
+  for (const id of ids) {
+    try {
+      await cancelAppointment(id);
+      cancelled += 1;
+    } catch {
+      // Counted, not thrown — the returned number is the caller's signal.
+    }
   }
-
-  return candidates.length;
+  return cancelled;
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                HELPERS                                     */
-/* -------------------------------------------------------------------------- */
-
-function rangeForView(view: CalendarView, date: Date): { start: Date; end: Date } {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  if (view === 'day') {
-    const start = new Date(d);
-    const end = new Date(d);
-    end.setUTCDate(end.getUTCDate() + 1);
-    end.setUTCMilliseconds(end.getUTCMilliseconds() - 1);
-    return { start, end };
-  }
-  if (view === 'week') {
-    const start = new Date(d);
-    start.setUTCDate(start.getUTCDate() - start.getUTCDay());
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 7);
-    end.setUTCMilliseconds(end.getUTCMilliseconds() - 1);
-    return { start, end };
-  }
-  // month
-  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
-  end.setUTCMilliseconds(end.getUTCMilliseconds() - 1);
-  return { start, end };
-}
-
-export { assertCanMutate };
-
-// ============================================
-// Bulk operations
-// ============================================
-
-/**
- * Cancels sessions by setting status to CANCELLED.
- * Named "delete" to match the KiviCare API convention (/appointments/bulk/delete).
- */
-export async function bulkDeleteSessions(ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  const result = await prisma.session.updateMany({
-    where: { id: { in: ids } },
-    data: { status: SessionStatus.CANCELLED },
-  });
-  return result.count;
-}
+/* ------------------------------------------------------------------ */
+/* Export                                                              */
+/* ------------------------------------------------------------------ */
 
 export interface SessionExportParams {
-  practiceId?: string;
+  clinicId?: number;
+  professionalId?: number;
   status?: SessionStatus;
-  from?: Date;
-  to?: Date;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
-/**
- * Returns all sessions matching filters as a flat array for export.
- */
-export async function exportSessions(params: SessionExportParams): Promise<unknown[]> {
-  const where: Prisma.SessionWhereInput = {};
-  if (params.practiceId) where.practiceId = params.practiceId;
-  if (params.status) where.status = params.status;
-  if (params.from || params.to) {
-    const range: Prisma.DateTimeFilter = {};
-    if (params.from) range.gte = params.from;
-    if (params.to) range.lte = params.to;
-    where.slotDate = range;
+const EXPORT_PAGE = 200;
+
+export async function exportSessions(params: SessionExportParams): Promise<SessionWithRelations[]> {
+  const out: SessionWithRelations[] = [];
+  for (let page = 1; ; page += 1) {
+    const { items, total } = await listSessionRows({
+      page,
+      perPage: EXPORT_PAGE,
+      clinicId: params.clinicId,
+      professionalId: params.professionalId,
+      statuses: params.status ? [params.status] : undefined,
+      dateFrom: params.dateFrom,
+      dateTo: params.dateTo,
+    });
+    out.push(...items.map(toSession));
+    // items.length === 0 also guards a total that shrinks mid-sweep.
+    if (items.length === 0 || out.length >= total) break;
   }
-  return prisma.session.findMany({
-    where,
-    include: {
-      client: {
-        include: {
-          user: { select: { firstName: true, lastName: true, email: true } },
-        },
-      },
-      professional: {
-        include: { user: { select: { firstName: true, lastName: true } } },
-      },
-      service: { select: { id: true, name: true, duration: true } },
-    },
-    orderBy: { slotDate: 'desc' },
-  });
+  return out;
 }

@@ -23,11 +23,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const actor = await sessionActorFromRequest(req);
-    const params = Object.fromEntries(req.nextUrl.searchParams);
-    const { page, limit } = querySchema.parse(params);
-
-    const result = await listPendingForProfessional(actor, page, limit);
-    return NextResponse.json(result, { status: 200 });
+    // The pending queue is inherently small (one professional's unapproved bookings),
+    // so the service returns it whole rather than paginating.
+    const professionalId = req.nextUrl.searchParams.get('professionalId');
+    const result = await listPendingForProfessional(
+      actor,
+      professionalId ? Number(professionalId) : undefined,
+    );
+    return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json(unauthorized('unauthorized', err.message), {
