@@ -372,7 +372,16 @@ Order by dependency, each behind its own PR with the old path still passing test
       the booking duplicates from the guest path: a public booking now produces the
       same rows KiviCare's own form does, visible in WP admin and blocking staff slots.
       The Professional → Doctor userId bridge is gone with the split id space.
-- [ ] **3.7** `payment.service.ts` → `wp_kc_bills` + keep `payment_orders`
+- [x] **3.7** `payment.service.ts` — `payment_orders` kept (Xendit hand-off state); the
+      appointment it settles is a `wp_kc_appointments` row, confirmed and released
+      through the plugin so KiviCare's status listeners still fire. Guest bookings now
+      get clinic- and doctor-scoped taxes, which the cuid split had made impossible.
+- [ ] **3.9** `custom-fields/service.ts` → `wp_kc_custom_fields` /
+      `wp_kc_custom_fields_data` (note the plural `fields` in the second name).
+      **Missed by the original plan** — the only 2a table still on the code path.
+      Bigger than it looks: neither table has a Prisma model yet, and
+      `CustomFieldData.fieldId` is a real FK to `CustomField`, so the relation has to
+      go before the ids can move.
 - [x] **3.8** `session-notes`, `progress`, `consent` → tables kept, FK reads swapped to
       the WP repos:
       - `session_notes.sessionId` / `.professionalId` now hold `wp_kc_appointments.id`
@@ -560,7 +569,7 @@ concurrently.
 | 1R — WP read layer | 2 days | |
 | 1W — Plugin write layer (PHP + client) | 3 days | added by D1 |
 | 2 — Re-key keeper tables | 2 days | |
-| 3 — Rewrite 13 services | 5 days | 3.1–3.6 done; 3.7 (payments) + 3.8 open |
+| 3 — Rewrite 13 services | 5 days | 3.1–3.8 done; 3.9 (custom fields) open |
 | 4 — Delete duplicates | 1 day | |
 | 5 — API contract | 1 day | ships with Phase 3 |
 | **Total** | **~14.5 days** | was ~11.5 before D1 |
