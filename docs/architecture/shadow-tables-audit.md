@@ -361,13 +361,17 @@ script deliberately refuses to touch it.
 
 Order by dependency, each behind its own PR with the old path still passing tests:
 
-- [ ] **3.1** `client.service.ts` → `wp_users` + `wp_usermeta` (the flagship case)
-- [ ] **3.2** `professional.service.ts` + `availability` + `service-assignment`
-- [ ] **3.3** `practice/service.ts` → `wp_kc_clinics`
-- [ ] **3.4** `public-catalog.service.ts` → `wp_kc_services`
-- [ ] **3.5** `session.service.ts` → `wp_kc_appointments` (largest; collapses the
-      three-way `appointments` / `sessions_booking` / `wp_kc_appointments` split)
-- [ ] **3.6** `public-booking.service.ts` → `wp_kc_appointments`
+- [x] **3.1** `client.service.ts` → `wp_users` + `wp_usermeta` (the flagship case)
+- [x] **3.2** `professional.service.ts` + `availability` + `service-assignment`
+- [x] **3.3** `practice/service.ts` → `wp_kc_clinics`
+- [x] **3.5** `session.service.ts` → `wp_kc_appointments` (largest; collapses the
+      three-way `appointments` / `sessions_booking` / `wp_kc_appointments` split).
+      Done before 3.4/3.6 — both public services read through it.
+- [x] **3.4** `public-catalog.service.ts` → `wp_kc_services`
+- [x] **3.6** `public-booking.service.ts` → `wp_kc_appointments`. Retires the last of
+      the booking duplicates from the guest path: a public booking now produces the
+      same rows KiviCare's own form does, visible in WP admin and blocking staff slots.
+      The Professional → Doctor userId bridge is gone with the split id space.
 - [ ] **3.7** `payment.service.ts` → `wp_kc_bills` + keep `payment_orders`
 - [ ] **3.8** `session-notes`, `progress`, `intervention-plan`, `consent` → keep tables,
       swap FK reads to WP repos
@@ -545,7 +549,7 @@ concurrently.
 | 1R — WP read layer | 2 days | |
 | 1W — Plugin write layer (PHP + client) | 3 days | added by D1 |
 | 2 — Re-key keeper tables | 2 days | |
-| 3 — Rewrite 13 services | 5 days | |
+| 3 — Rewrite 13 services | 5 days | 3.1–3.6 done; 3.7 (payments) + 3.8 open |
 | 4 — Delete duplicates | 1 day | |
 | 5 — API contract | 1 day | ships with Phase 3 |
 | **Total** | **~14.5 days** | was ~11.5 before D1 |

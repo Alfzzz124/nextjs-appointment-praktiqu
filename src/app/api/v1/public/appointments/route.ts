@@ -3,6 +3,7 @@ import {
   createPublicAppointment,
   createPublicAppointmentSchema,
   AppointmentInsertError,
+  EmailConflictError,
   HoldExpiredError,
   ProfessionalNotFoundError,
   ServiceNotFoundError,
@@ -51,6 +52,12 @@ export async function POST(req: NextRequest) {
     }
     if (err instanceof SlotConflictError) {
       const p = conflict('slot_conflict', 'Slot no longer available — please select another time');
+      return NextResponse.json(p, { status: p.status });
+    }
+    if (err instanceof EmailConflictError) {
+      // The address belongs to a doctor or an admin. Say only that it is taken — who
+      // owns it is not a guest's business.
+      const p = conflict('email_conflict', 'That email is already registered — please sign in');
       return NextResponse.json(p, { status: p.status });
     }
     if (err instanceof ServiceNotFoundError) {

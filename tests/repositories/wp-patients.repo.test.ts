@@ -13,6 +13,7 @@ import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
 import {
   CLIENT_STATUS,
+  findPatientByEmail,
   findPatientById,
   listPatients,
   PATIENT_ROLE,
@@ -156,6 +157,24 @@ describe('wp patients repository', () => {
 
   it('does not return a user who lacks the patient capability', async () => {
     expect(await findPatientById(BigInt(BASE + 2))).toBeNull();
+  });
+
+  describe('findPatientByEmail (public booking reuses a returning guest)', () => {
+    it('finds a patient by their address', async () => {
+      const patient = await findPatientByEmail('siti@test.local');
+      expect(patient!.id).toBe(BigInt(BASE + 1));
+    });
+
+    it('returns null for an address that belongs to a doctor', async () => {
+      // Role-filtered on purpose: booking a guest onto a doctor's user account would
+      // attach the appointment to the wrong person. The caller must see "no patient".
+      expect(await findPatientByEmail('dr.budi@test.local')).toBeNull();
+    });
+
+    it('returns null for an unknown address, and for an empty one', async () => {
+      expect(await findPatientByEmail('nobody@test.local')).toBeNull();
+      expect(await findPatientByEmail('   ')).toBeNull();
+    });
   });
 
   it('lists only users carrying the kiviCare_patient capability', async () => {

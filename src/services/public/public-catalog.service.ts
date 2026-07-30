@@ -1,82 +1,110 @@
-import { prisma } from '@/lib/prisma';
-import { ServiceStatus } from '@prisma/client';
+/**
+ * Public (unauthenticated) catalogue — backed by KiviCare's tables.
+ *
+ * Retires the `clinics`, `services`, `professional_service_assignments` and
+ * `static_data` shadow tables from this path. See
+ * docs/architecture/shadow-tables-audit.md.
+ *
+ * Everything here is world-readable, so the queries are deliberately narrow: only
+ * ACTIVE clinics, only services the doctor has marked public, and only the lookup
+ * types a booking form needs.
+ *
+ * Ids are `number` — `wp_kc_clinics.id`, `wp_users.ID`, `wp_kc_services.id`.
+ */
 import { SLOT_HOLD_TTL_MS } from '@/services/booking/slot-hold.service';
-import { verifyAppointmentToken } from '@/lib/public/appointment-token';
+import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { getPublicAppointmentById } from '@/services/public/public-booking.service';
+import { findClinicById, listClinics, type WpClinic } from '@/repositories/wp/clinics.repo';
+import { listServicesForDoctor } from '@/repositories/wp/services.repo';
+import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
+import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
 
 export interface PublicClinic {
-  id: string; name: string; email: string | null; telephoneNo: string | null;
-  address: string | null; city: string | null; state: string | null;
-  country: string | null; postalCode: string | null; specialties: unknown;
+  id: number;
+  name: string;
+  email: string | null;
+  telephoneNo: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  postalCode: string | null;
+  specialties: string[];
 }
 
-function toPublicClinic(c: {
-  id: string; name: string; email: string | null; telephoneNo: string | null;
-  address: string | null; city: string | null; state: string | null;
-  country: string | null; postalCode: string | null; specialties: unknown;
-}): PublicClinic {
+function toPublicClinic(c: WpClinic): PublicClinic {
   return {
-    id: c.id, name: c.name, email: c.email, telephoneNo: c.telephoneNo,
-    address: c.address, city: c.city, state: c.state, country: c.country,
-    postalCode: c.postalCode, specialties: c.specialties,
+    id: Number(c.id),
+    name: c.name ?? '',
+    email: c.email,
+    telephoneNo: c.telephone,
+    address: c.address,
+    city: c.city,
+    state: c.state,
+    country: c.country,
+    postalCode: c.postalCode,
+    specialties: c.specialties,
   };
 }
 
+/** Active clinics only — an inactive one must not appear on a public booking page. */
 export async function listPublicPractices(): Promise<PublicClinic[]> {
-  const clinics = await prisma.clinic.findMany({
-    where: { status: 1 },
-    orderBy: { name: 'asc' },
-    select: {
-      id: true, name: true, email: true, telephoneNo: true, address: true,
-      city: true, state: true, country: true, postalCode: true, specialties: true,
-    },
-  });
-  return clinics.map(toPublicClinic);
+  const { items } = await listClinics({ page: 1, perPage: 100 });
+  return items.map(toPublicClinic).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function getPublicPractice(id: string): Promise<PublicClinic | null> {
-  const clinic = await prisma.clinic.findFirst({
-    where: { id, status: 1 },
-    select: {
-      id: true, name: true, email: true, telephoneNo: true, address: true,
-      city: true, state: true, country: true, postalCode: true, specialties: true,
-    },
-  });
-  return clinic ? toPublicClinic(clinic) : null;
+export async function getPublicPractice(id: number): Promise<PublicClinic | null> {
+  const clinic = await findClinicById(BigInt(id));
+  // Checked here rather than left to the caller: this endpoint is unauthenticated, so
+  // a deactivated clinic must simply not exist to the public.
+  if (!clinic || !clinic.isActive) return null;
+  return toPublicClinic(clinic);
 }
 
 export interface PublicService {
-  id: string; name: string; description: string | null;
-  price: string; durationMinutes: number; serviceType: string;
+  id: number;
+  name: string;
+  price: string;
+  durationMinutes: number | null;
+  serviceType: string | null;
 }
 
 /**
- * Returns the professional's public services, or `null` when the professional
- * does not exist or is not ACTIVE — mirrors getPublicPractice so the route can
- * 404 on unknown ids (matches the sibling /slots route).
+ * A professional's publicly bookable services.
+ *
+ * Returns `null` when the professional does not exist or is not ACTIVE, so the route
+ * can 404 rather than showing an empty catalogue for someone merely inactive.
+ *
+ * `publicOnly` matters: KiviCare's mapping carries an `is_public` flag, and a service
+ * the doctor offers privately must not surface here.
  */
-export async function getPublicProfessionalServices(professionalId: string): Promise<PublicService[] | null> {
-  const professional = await prisma.professional.findUnique({
-    where: { id: professionalId },
-    select: { status: true },
-  });
-  if (!professional || professional.status !== 'ACTIVE') return null;
+export async function getPublicProfessionalServices(
+  professionalId: number,
+  clinicId?: number,
+): Promise<PublicService[] | null> {
+  const doctor = await findDoctorById(BigInt(professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
 
-  const assignments = await prisma.professionalServiceAssignment.findMany({
-    where: { professionalId, service: { status: ServiceStatus.ACTIVE, isPrivate: false } },
-    select: {
-      service: {
-        select: { id: true, name: true, description: true, price: true, durationMinutes: true, serviceType: true },
-      },
-    },
+  const rows = await listServicesForDoctor({
+    doctorId: BigInt(professionalId),
+    clinicId: clinicId !== undefined ? BigInt(clinicId) : undefined,
+    publicOnly: true,
   });
-  return assignments.map((a) => ({
-    id: a.service.id, name: a.service.name, description: a.service.description,
-    price: a.service.price.toString(), durationMinutes: a.service.durationMinutes,
-    serviceType: a.service.serviceType,
+
+  return rows.map((s) => ({
+    id: Number(s.serviceId),
+    name: s.nameAlias ?? s.name,
+    // The doctor's charge, not the catalogue list price — that is what a patient pays.
+    price: s.charges ?? '0',
+    durationMinutes: s.durationMinutes,
+    serviceType: s.type,
   }));
 }
 
+/**
+ * Enum values the app itself defines. These are PraktiQU concepts with no KiviCare
+ * lookup rows, so they stay hard-coded rather than being faked into wp_kc_static_data.
+ */
 const ENUM_STATIC = {
   gender: ['MALE', 'FEMALE', 'OTHER'],
   professionalType: ['PSIKOLOG_KLINIS', 'PSIKOLOG_ANAK', 'PSIKIATER', 'KONSELOR'],
@@ -87,19 +115,24 @@ export interface StaticDataResponse {
   gender: string[];
   professionalType: string[];
   serviceType: string[];
-  dynamic: Record<string, Array<{ label: string; value: string; extra: unknown }>>;
+  dynamic: Record<string, Array<{ label: string; value: string }>>;
 }
 
 export async function getPublicStaticData(): Promise<StaticDataResponse> {
-  const rows = await prisma.staticData.findMany({
-    where: { status: 1 },
-    orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }],
-    select: { type: true, label: true, value: true, extra: true },
-  });
+  // Only the lookup types a public booking form needs. Returning every type would
+  // expose whatever an add-on happens to keep in that shared table.
+  const types = [
+    STATIC_DATA_TYPE.SPECIALIZATION,
+    STATIC_DATA_TYPE.BLOOD_GROUP,
+    STATIC_DATA_TYPE.QUALIFICATION,
+  ];
+
   const dynamic: StaticDataResponse['dynamic'] = {};
-  for (const r of rows) {
-    (dynamic[r.type] ??= []).push({ label: r.label, value: r.value, extra: r.extra });
+  for (const type of types) {
+    const rows = await listStaticData({ type });
+    dynamic[type] = rows.map((r) => ({ label: r.label ?? '', value: r.value ?? '' }));
   }
+
   return { ...ENUM_STATIC, dynamic };
 }
 
@@ -117,10 +150,12 @@ export function getPublicBookingConfig(): PublicBookingConfig {
   };
 }
 
-// ── Rating prompt read (Task 7) ──────────────────────────────────────────────
+/* ------------------------------------------------------------------ */
+/* Rating prompt                                                       */
+/* ------------------------------------------------------------------ */
 
 export interface RatingPrompt {
-  appointmentId: string;
+  appointmentId: number;
   professionalName: string;
   service: string;
   canRate: boolean;
@@ -128,16 +163,19 @@ export interface RatingPrompt {
 }
 
 /**
- * Given a signed appointment token, return the context a rating widget needs.
- * There is no stored Rating model; `canRate` is derived from the appointment's
- * finished state. `getPublicAppointmentById` maps raw WP status 3 to 'CHECK_OUT',
- * which is the only "finished" status this system produces.
+ * Context a rating widget needs, from a signed appointment token.
+ *
+ * There is no stored Rating model; `canRate` is derived from the appointment being
+ * finished. CHECK_OUT is that state — and now the only one, since COMPLETED was folded
+ * into it when the statuses collapsed to KiviCare's five.
  */
 export async function getRatingPrompt(token: string): Promise<RatingPrompt | null> {
-  const id = verifyAppointmentToken(token);
-  if (!id) return null;
+  const id = verifyAppointmentIdToken(token);
+  if (id === null) return null;
+
   const appt = await getPublicAppointmentById(id);
   if (!appt) return null;
+
   const finished = appt.status === 'CHECK_OUT';
   return {
     appointmentId: appt.id,

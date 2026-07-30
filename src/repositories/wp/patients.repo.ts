@@ -188,6 +188,37 @@ export async function findPatientById(id: bigint): Promise<WpPatient | null> {
   return rows.length > 0 ? toPatient(rows[0]) : null;
 }
 
+/**
+ * Look a patient up by email address.
+ *
+ * Returns null when the address is unknown AND when it belongs to a user who is not a
+ * patient — a doctor or an admin. That distinction matters on the public booking path:
+ * a guest booking with a doctor's address must not silently attach the appointment to
+ * that doctor's user account. The caller sees "no patient", attempts a create, and gets
+ * the plugin's 409.
+ *
+ * WordPress treats `user_email` as unique (`email_exists`), so LIMIT 1 is exact.
+ */
+export async function findPatientByEmail(email: string): Promise<WpPatient | null> {
+  const trimmed = email.trim();
+  if (trimmed === '') return null;
+
+  const rows = await prisma.$queryRawUnsafe<RawRow[]>(
+    `SELECT ${USER_COLUMNS},
+            ${metaSelects(META_KEYS)},
+            (SELECT pcm.clinic_id FROM wp_kc_patient_clinic_mappings pcm
+              WHERE pcm.patient_id = u.ID ORDER BY pcm.id ASC LIMIT 1) AS clinic_id
+       FROM wp_users AS u
+       ${metaJoins(META_KEYS)}
+      WHERE u.user_email = ? AND ${HAS_ROLE_SQL}
+      LIMIT 1`,
+    trimmed,
+    ...ROLE_ARGS,
+  );
+
+  return rows.length > 0 ? toPatient(rows[0]) : null;
+}
+
 export async function listPatients(query: ListPatientsQuery): Promise<PaginatedPatients> {
   const { page, perPage, offset } = paginate(query.page, query.perPage);
 

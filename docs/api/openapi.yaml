@@ -7284,8 +7284,9 @@ paths:
       - name: id
         in: path
         required: true
+        description: KiviCare clinic id (`wp_kc_clinics.id`).
         schema:
-          type: string
+          type: integer
     get:
       tags:
         - public
@@ -7328,8 +7329,9 @@ paths:
       - name: id
         in: path
         required: true
+        description: WordPress user id of the professional (`wp_users.ID`).
         schema:
-          type: string
+          type: integer
     get:
       tags:
         - public

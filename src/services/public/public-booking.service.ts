@@ -1,26 +1,49 @@
-// src/services/public/public-booking.service.ts
-// Public booking business logic — writes to the app tables (Prisma models),
-// consistent with the public catalog (/public/professionals|services|slots)
-// which serves Professional/Service cuids.
-//
-// History: the original implementation was a verbatim KiviCare-era port that
-// ran `parseInt(professionalId)` and interpolated the result into raw
-// wp_kc_* SQL. The catalog serves cuids, so parseInt yielded NaN and every
-// create crashed with "Unknown column 'NaN'" (found 2026-07-13). The create
-// path now bridges Professional → Doctor by userId — the same pattern
-// feature-002's availability.service.getBookedRanges uses — so public
-// bookings also block slots in the authenticated slot API.
-import { AppointmentStatus, ServiceStatus, UserRole, VisitType } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+/**
+ * Public (guest) booking — writes into KiviCare's tables, via the plugin.
+ *
+ * Retires the last of the booking shadow tables from this path: `appointments`,
+ * `appointment_service_mappings`, `patients`, `patient_clinic_mappings`, `doctors` and
+ * `users`. A guest booking now produces exactly the same rows KiviCare's own booking
+ * form produces, so it is visible in the WP admin and blocks slots for staff.
+ *
+ * History worth keeping: the previous version bridged Professional → Doctor by userId
+ * and provisioned a `doctors` row on the fly, because the two id spaces could not be
+ * joined. With a single `wp_users` id space that bridge is gone — the professional id
+ * IS the doctor id.
+ *
+ * Writes go through the praktiqu-endpoint plugin, not raw SQL: `kc_patient_save` sends
+ * the welcome mail, and `kc_after_create_appointment` drives the booking notification,
+ * telemed link and followups. A guest booking that skipped them would be invisible to
+ * everyone but us. See docs/architecture/shadow-tables-audit.md §6 D1.
+ */
+import { z } from 'zod';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { signAppointmentToken } from '@/lib/public/appointment-token';
-import { z } from 'zod';
+import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
+import { cancelAppointment, createAppointment } from '@/repositories/wp/appointments.write';
+import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
+import { findServiceById, listServicesForDoctor } from '@/repositories/wp/services.repo';
+import { findPatientByEmail } from '@/repositories/wp/patients.repo';
+import { createPatient, updatePatient } from '@/repositories/wp/patients.write';
+import {
+  SESSION_STATUS,
+  type SessionStatus,
+  findSessionById,
+  fromKcStatus,
+} from '@/repositories/wp/sessions.repo';
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
+const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/;
 
 export const createPublicAppointmentSchema = z.object({
-  professionalId: z.string().min(1),
-  serviceId: z.string().min(1),
-  date: z.string().min(1),
-  startTime: z.string().min(1),
+  // Coerced: these are `wp_users.ID` / `wp_kc_services.id` integers, but they arrive as
+  // path-derived strings from every HTML form.
+  professionalId: z.coerce.number().int().positive(),
+  serviceId: z.coerce.number().int().positive(),
+  date: z.string().regex(DATE_RE, 'date must be YYYY-MM-DD'),
+  startTime: z.string().regex(TIME_RE, 'startTime must be HH:MM'),
   clientName: z.string().min(1).max(255),
   clientEmail: z.string().email(),
   clientMobile: z.string().min(1).max(32),
@@ -38,7 +61,7 @@ export class ProfessionalNotFoundError extends Error {
   readonly code = 'PROFESSIONAL_NOT_FOUND';
 }
 
-/** Raised when a service row cannot be found for the given professional/service. */
+/** Raised when the service is not one this professional offers publicly. */
 export class ServiceNotFoundError extends Error {
   readonly code = 'SERVICE_NOT_FOUND';
 }
@@ -48,14 +71,23 @@ export class SlotConflictError extends Error {
   readonly code = 'SLOT_CONFLICT';
 }
 
-/** Raised when the appointment INSERT fails. */
+/**
+ * Raised when the email belongs to a WordPress user who is not a patient — a doctor or
+ * an admin. Creating the appointment against that account would be wrong, and silently
+ * making them a patient worse.
+ */
+export class EmailConflictError extends Error {
+  readonly code = 'EMAIL_CONFLICT';
+}
+
+/** Raised when the appointment write fails. */
 export class AppointmentInsertError extends Error {
   readonly code = 'APPOINTMENT_INSERT_FAILED';
 }
 
 export interface CreatedAppointment {
-  id: string;
-  status: string;
+  id: number;
+  status: SessionStatus;
   date: string;
   startTime: string;
   service: string;
@@ -64,204 +96,163 @@ export interface CreatedAppointment {
   token: string;
 }
 
-/** Appointment states that block a slot (mirrors feature-002 getBookedRanges). */
-const BLOCKING_STATUSES: AppointmentStatus[] = [
-  AppointmentStatus.PENDING,
-  AppointmentStatus.BOOKED,
-  AppointmentStatus.CHECK_IN,
+/** Only a not-yet-attended appointment can be cancelled by the guest who booked it. */
+const CANCELLABLE_STATUSES: readonly SessionStatus[] = [
+  SESSION_STATUS.PENDING,
+  SESSION_STATUS.BOOKED,
 ];
 
-const CANCELLABLE_STATUSES: AppointmentStatus[] = [
-  AppointmentStatus.PENDING,
-  AppointmentStatus.BOOKED,
-];
+const DEFAULT_DURATION_MINUTES = 30;
 
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
-/** `@db.Time` columns carry HH:mm in the UTC time part (see getBookedRanges). */
-function timeOfDay(hhmm: string): Date {
-  return new Date(`1970-01-01T${hhmm}:00.000Z`);
+function withSeconds(time: string): string {
+  return time.length === 5 ? `${time}:00` : time;
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${pad(Math.floor(total / 60) % 24)}:${pad(total % 60)}:00`;
+}
+
+function splitName(full: string): { firstName: string; lastName: string } {
+  const parts = full.trim().split(/\s+/);
+  return {
+    firstName: parts[0] ?? full,
+    // WordPress is fine with an empty last name; KiviCare's display name just uses first.
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
+/**
+ * Resolve the guest to a `wp_users` patient, creating one if the address is new.
+ *
+ * A returning guest is matched by email and re-used — booking twice must not create a
+ * second patient record. Either way the patient ends up mapped to the clinic, which is
+ * what makes them visible to that clinic's staff.
+ */
+async function resolvePatient(
+  input: CreatePublicAppointmentInput,
+  clinicId: number,
+): Promise<number> {
+  const existing = await findPatientByEmail(input.clientEmail);
+
+  if (existing) {
+    // Idempotent on the plugin side: it inserts the clinic mapping only when absent.
+    await updatePatient(Number(existing.id), { clinicId });
+    return Number(existing.id);
+  }
+
+  const { firstName, lastName } = splitName(input.clientName);
+  try {
+    // No password: WordPress generates one and the kc_patient_save listener mails it,
+    // which is how a guest gets an account they can later log into.
+    const created = await createPatient({
+      email: input.clientEmail,
+      firstName,
+      lastName,
+      contactNumber: input.clientMobile,
+      clinicId,
+    });
+    return created.id;
+  } catch (err) {
+    // 409 here means the address exists but is not a patient — findPatientByEmail is
+    // role-filtered, so the two checks disagreeing is exactly that case.
+    if (err instanceof WpEndpointError && err.status === 409) {
+      throw new EmailConflictError('That email is already registered to another account');
+    }
+    throw err;
+  }
 }
 
 export async function createPublicAppointment(
   input: CreatePublicAppointmentInput,
 ): Promise<CreatedAppointment> {
-  // Verify slot hold is still active
   const hold = slotHoldService.get(input.holdKey);
   if (!hold) throw new HoldExpiredError('Slot hold expired');
 
-  const professional = await prisma.professional.findUnique({
-    where: { id: input.professionalId },
-    select: { id: true, userId: true, fullName: true, practiceId: true, status: true },
-  });
-  if (!professional || professional.status !== 'ACTIVE') {
+  const doctor = await findDoctorById(BigInt(input.professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) {
     throw new ProfessionalNotFoundError('Professional not found');
   }
 
-  // The public catalog only offers assigned, ACTIVE, non-private services —
-  // enforce the same constraint on the write path.
-  const assignment = await prisma.professionalServiceAssignment.findUnique({
-    where: {
-      professionalId_serviceId: {
-        professionalId: professional.id,
-        serviceId: input.serviceId,
-      },
-    },
-    select: {
-      service: {
-        select: {
-          id: true,
-          name: true,
-          durationMinutes: true,
-          price: true,
-          clinicId: true,
-          status: true,
-          isPrivate: true,
-        },
-      },
-    },
+  // The public catalogue only offers assigned, active, public services — the write path
+  // enforces the same constraint, so a guessed service id cannot book a private service.
+  const offered = await listServicesForDoctor({
+    doctorId: BigInt(input.professionalId),
+    publicOnly: true,
   });
-  const service = assignment?.service;
-  if (!service || service.status !== ServiceStatus.ACTIVE || service.isPrivate) {
+  const service = offered.find((s) => Number(s.serviceId) === input.serviceId && s.isActive);
+  if (!service) {
     throw new ServiceNotFoundError('Service not found for this professional');
   }
 
-  const clinicId = professional.practiceId ?? service.clinicId;
+  // The clinic comes from the doctor↔service mapping rather than the doctor: a doctor
+  // may work at several clinics, and the service they were booked for says which.
+  const clinicId = Number(service.clinicId);
   if (!clinicId) {
     throw new AppointmentInsertError('Professional is not attached to a practice');
   }
 
-  // Time bounds. *Utc fields mirror the public slots route (slot-generator),
-  // which builds slot instants from server-local wallclock — conflict checks
-  // must live in the same frame.
-  const [hh, mm] = input.startTime.split(':').map(Number);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) {
-    throw new AppointmentInsertError('Invalid startTime');
-  }
-  const startInstant = new Date(`${input.date}T00:00:00`);
-  if (Number.isNaN(startInstant.getTime())) {
-    throw new AppointmentInsertError('Invalid date');
-  }
-  startInstant.setHours(hh, mm, 0, 0);
-  const endInstant = new Date(startInstant.getTime() + service.durationMinutes * 60_000);
-  const endTotalMinutes = hh * 60 + mm + service.durationMinutes;
-  const endHHmm = `${pad(Math.floor(endTotalMinutes / 60) % 24)}:${pad(endTotalMinutes % 60)}`;
-  const slotDate = new Date(`${input.date}T00:00:00.000Z`);
+  const startTime = withSeconds(input.startTime);
+  const endTime = addMinutes(startTime, service.durationMinutes ?? DEFAULT_DURATION_MINUTES);
 
-  // Bridge Professional → Doctor by shared userId (appointments.doctor_id is
-  // an FK to doctors). Provision the row if this professional has none yet.
-  const doctor = await prisma.doctor.upsert({
-    where: { userId: professional.userId },
-    update: {},
-    create: { userId: professional.userId, status: 1 },
-    select: { id: true },
+  const clashes = await findConflictingAppointments({
+    doctorId: BigInt(input.professionalId),
+    date: input.date,
+    startTime,
+    endTime,
   });
-
-  // Get or create the client (User + Patient), then attach to the practice.
-  let user = await prisma.user.findUnique({
-    where: { email: input.clientEmail },
-    select: { id: true },
-  });
-  if (!user) {
-    const firstName = input.clientName.split(' ')[0];
-    const lastName = input.clientName.split(' ').slice(1).join(' ') || '-';
-    const base = (input.clientEmail.split('@')[0] || 'client').slice(0, 40);
-    let username = base;
-    while (await prisma.user.findUnique({ where: { username }, select: { id: true } })) {
-      username = `${base}-${Math.random().toString(36).slice(2, 8)}`;
-    }
-    user = await prisma.user.create({
-      data: {
-        email: input.clientEmail,
-        username,
-        firstName,
-        lastName,
-        displayName: input.clientName,
-        role: UserRole.CLIENT,
-      },
-      select: { id: true },
-    });
+  if (clashes.length > 0) {
+    // Release the hold: it is stale, and keeping it would block the guest from picking
+    // another time for the rest of the TTL.
+    slotHoldService.consume(input.holdKey);
+    throw new SlotConflictError('Slot no longer available');
   }
-  const patient = await prisma.patient.upsert({
-    where: { userId: user.id },
-    update: {},
-    create: { userId: user.id },
-    select: { id: true },
+
+  const patientId = await resolvePatient(input, clinicId);
+
+  // PENDING, deliberately: KiviCare withholds the "booked" email until an appointment
+  // is confirmed, and a guest booking is exactly what a practice wants to review first.
+  const created = await createAppointment({
+    clinicId,
+    doctorId: input.professionalId,
+    patientId,
+    startDate: input.date,
+    startTime,
+    endDate: input.date,
+    endTime,
+    description: input.notes,
+    serviceIds: [input.serviceId],
   });
-  await prisma.patientClinicMapping.upsert({
-    where: { patientId_clinicId: { patientId: patient.id, clinicId } },
-    update: {},
-    create: { patientId: patient.id, clinicId },
-  });
-
-  // Conflict-check + insert atomically.
-  let created: { id: string; status: AppointmentStatus };
-  try {
-    created = await prisma.$transaction(async (tx) => {
-      const clash = await tx.appointment.findFirst({
-        where: {
-          doctorId: doctor.id,
-          status: { in: BLOCKING_STATUSES },
-          appointmentStartUtc: { lt: endInstant },
-          appointmentEndUtc: { gt: startInstant },
-        },
-        select: { id: true },
-      });
-      if (clash) throw new SlotConflictError('Slot no longer available');
-
-      const appt = await tx.appointment.create({
-        data: {
-          clinicId,
-          doctorId: doctor.id,
-          patientId: patient.id,
-          appointmentStartDate: slotDate,
-          appointmentStartTime: timeOfDay(input.startTime),
-          appointmentEndDate: slotDate,
-          appointmentEndTime: timeOfDay(endHHmm),
-          appointmentStartUtc: startInstant,
-          appointmentEndUtc: endInstant,
-          appointmentTimezone: 'Asia/Jakarta',
-          visitType: VisitType.IN_PERSON,
-          description: input.notes ?? null,
-          status: AppointmentStatus.PENDING,
-        },
-        select: { id: true, status: true },
-      });
-
-      await tx.appointmentServiceMapping.create({
-        data: { appointmentId: appt.id, serviceId: service.id, price: service.price },
-      });
-
-      return appt;
-    });
-  } catch (err) {
-    if (err instanceof SlotConflictError) {
-      slotHoldService.consume(input.holdKey);
-    }
-    throw err;
-  }
 
   slotHoldService.consume(input.holdKey);
 
+  const professionalName =
+    [doctor.firstName, doctor.lastName].filter(Boolean).join(' ').trim() || doctor.displayName;
+
   return {
     id: created.id,
-    status: created.status,
+    status: fromKcStatus(created.status),
     date: input.date,
-    startTime: input.startTime,
-    service: service.name,
-    professionalName: professional.fullName,
+    startTime: startTime.slice(0, 5),
+    service: service.nameAlias ?? service.name,
+    professionalName,
     clientName: input.clientName,
     token: signAppointmentToken(created.id),
   };
 }
 
-// ── Public appointment lookup + cancel ───────────────────────────────────────
+/* ------------------------------------------------------------------ */
+/* Lookup + cancel                                                     */
+/* ------------------------------------------------------------------ */
 
 export interface PublicAppointmentView {
-  id: string;
-  status: string;
+  id: number;
+  status: SessionStatus;
   date: string;
   startTime: string;
   service: string;
@@ -276,74 +267,60 @@ export class NotCancellableError extends Error {
   readonly code = 'NOT_CANCELLABLE';
 }
 
-const APPOINTMENT_VIEW_SELECT = {
-  id: true,
-  status: true,
-  appointmentStartDate: true,
-  appointmentStartTime: true,
-  doctor: { select: { user: { select: { displayName: true } } } },
-  patient: { select: { user: { select: { displayName: true } } } },
-  services: { select: { service: { select: { name: true } } }, take: 1 },
-} as const;
+/**
+ * The service name for a booking.
+ *
+ * KiviCare keeps the service ids comma-joined in `visit_type`, and only the first is
+ * shown — a booking carries one service in practice.
+ */
+async function serviceNameFor(serviceIds: number[]): Promise<string> {
+  const first = serviceIds[0];
+  if (first === undefined) return 'Service';
+  const service = await findServiceById(BigInt(first));
+  return service?.name ?? 'Service';
+}
 
-type AppointmentViewRow = {
-  id: string;
-  status: AppointmentStatus;
-  appointmentStartDate: Date;
-  appointmentStartTime: Date;
-  doctor: { user: { displayName: string } } | null;
-  patient: { user: { displayName: string } } | null;
-  services: Array<{ service: { name: string } }>;
-};
+async function toView(id: number): Promise<PublicAppointmentView | null> {
+  const row = await findSessionById(id);
+  if (!row) return null;
 
-function toView(row: AppointmentViewRow): PublicAppointmentView {
-  const t = row.appointmentStartTime;
   return {
     id: row.id,
     status: row.status,
-    date: row.appointmentStartDate.toISOString().slice(0, 10),
-    startTime: `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`,
-    service: row.services[0]?.service.name ?? 'Service',
-    professionalName: row.doctor?.user.displayName ?? 'Professional',
-    clientName: row.patient?.user.displayName ?? 'Client',
+    date: row.slotDate ?? '',
+    startTime: (row.startTime ?? '').slice(0, 5),
+    service: await serviceNameFor(row.serviceIds),
+    professionalName: row.professionalName,
+    clientName: row.clientName,
   };
 }
 
-/** Read a public appointment by id (cuid). Returns null if no row. */
+/** Read a public appointment by KiviCare id. Returns null if there is no such row. */
 export async function getPublicAppointmentById(
-  id: string,
+  id: number,
 ): Promise<PublicAppointmentView | null> {
-  const row = await prisma.appointment.findUnique({
-    where: { id },
-    select: APPOINTMENT_VIEW_SELECT,
-  });
-  return row ? toView(row as AppointmentViewRow) : null;
+  return toView(id);
 }
 
 /**
- * Cancel a public appointment. Only PENDING and BOOKED appointments may be
- * cancelled; the row is then set to CANCELLED. Otherwise throws
- * NotCancellableError.
+ * Cancel a public appointment.
+ *
+ * Only PENDING and BOOKED may be cancelled — a checked-in or attended appointment is
+ * the practice's to close, and a cancelled one is already there.
  */
-export async function cancelPublicAppointment(
-  id: string,
-): Promise<PublicAppointmentView> {
-  const row = await prisma.appointment.findUnique({
-    where: { id },
-    select: APPOINTMENT_VIEW_SELECT,
-  });
-  if (!row) throw new AppointmentNotFoundError();
+export async function cancelPublicAppointment(id: number): Promise<PublicAppointmentView> {
+  const current = await findSessionById(id);
+  if (!current) throw new AppointmentNotFoundError();
 
-  if (!CANCELLABLE_STATUSES.includes(row.status as AppointmentStatus)) {
+  if (!CANCELLABLE_STATUSES.includes(current.status)) {
     throw new NotCancellableError();
   }
 
-  await prisma.appointment.update({
-    where: { id },
-    data: { status: AppointmentStatus.CANCELLED },
-  });
+  // Through the plugin: cancelling drives the cancellation email, telemed teardown and
+  // Pro's followup cancellation. It also writes status 0 — CANCELLED, not 1.
+  await cancelAppointment(id);
 
-  const updated = await getPublicAppointmentById(id);
+  const updated = await toView(id);
   if (!updated) throw new AppointmentNotFoundError();
   return updated;
 }
