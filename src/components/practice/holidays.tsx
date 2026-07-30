@@ -27,7 +27,7 @@ function formatDate(d: string) {
 export function Holidays({ practiceId, onError }: HolidaysProps) {
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
   const [loading, setLoading] = useState(true);
-  const [removing, setRemoving] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState<Set<number>>(new Set());
   const [addOpen, setAddOpen] = useState(false);
 
   // Add form state
@@ -53,7 +53,7 @@ export function Holidays({ practiceId, onError }: HolidaysProps) {
 
   useEffect(() => { void fetchHolidays(); }, [fetchHolidays]);
 
-  async function handleRemove(holidayId: string) {
+  async function handleRemove(holidayId: number) {
     setRemoving((prev) => new Set(prev).add(holidayId));
     try {
       const res = await fetch(`/api/v1/practices/${practiceId}/holidays/${holidayId}`, {

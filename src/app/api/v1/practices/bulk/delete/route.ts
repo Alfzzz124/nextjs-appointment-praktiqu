@@ -8,7 +8,8 @@ import { forbidden } from '@/lib/problem-details';
 import { bulkDeletePractices } from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
-const schema = z.object({ ids: z.array(z.string()).min(1) });
+const schema = z.object({ ids: // wp_kc_clinics ids — numeric since practices moved to KiviCare (D2).
+    z.array(z.coerce.number().int().positive()).min(1) });
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const { actor } = ctx as any;

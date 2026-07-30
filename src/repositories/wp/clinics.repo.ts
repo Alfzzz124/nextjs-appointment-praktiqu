@@ -7,7 +7,8 @@
  * still earns its place: it normalises `status` to a boolean, decodes the
  * `specialties` LongText JSON, and keeps the WP column names out of the app.
  *
- * Reads only. Writes go through the praktiqu-endpoint plugin's REST layer (D1).
+ * Reads AND writes are direct SQL. KiviCare registers no listener for its clinic
+ * hooks, so a direct write skips nothing — see the Writes section below.
  */
 import { prisma } from '@/lib/db';
 import { paginate } from './wp-user';
@@ -28,6 +29,13 @@ export type WpClinic = {
   specialties: string[];
   isActive: boolean;
   clinicAdminId: bigint;
+  countryCode: string | null;
+  countryCallingCode: string | null;
+  /**
+   * Decoded `extra` blob. KiviCare has no columns for timezone, logo or business
+   * hours, so those round-trip through here rather than through a schema change.
+   */
+  extra: Record<string, unknown>;
   createdAt: Date;
 };
 
@@ -59,8 +67,21 @@ type ClinicRow = {
   specialties: string | null;
   status: number;
   clinicAdminId: bigint;
+  countryCode: string | null;
+  countryCallingCode: string | null;
+  extra: string | null;
   createdAt: Date;
 };
+
+function decodeExtra(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 /**
  * `specialties` is a LongText column holding a JSON array — sometimes of strings,
@@ -102,6 +123,9 @@ function toClinic(row: ClinicRow): WpClinic {
     specialties: decodeSpecialties(row.specialties),
     isActive: row.status === STATUS_ACTIVE,
     clinicAdminId: row.clinicAdminId,
+    countryCode: row.countryCode,
+    countryCallingCode: row.countryCallingCode,
+    extra: decodeExtra(row.extra),
     createdAt: row.createdAt,
   };
 }
@@ -119,6 +143,9 @@ const SELECT = {
   specialties: true,
   status: true,
   clinicAdminId: true,
+  countryCode: true,
+  countryCallingCode: true,
+  extra: true,
   createdAt: true,
 } as const;
 
@@ -154,4 +181,114 @@ export async function listClinics(query: ListClinicsQuery): Promise<PaginatedCli
   ]);
 
   return { items: (rows as ClinicRow[]).map(toClinic), total, page, perPage };
+}
+
+/* ------------------------------------------------------------------ */
+/* Writes                                                              */
+/* ------------------------------------------------------------------ */
+/**
+ * Direct SQL. KiviCare declares `kc_clinic_delete` and `kcpro_clinic_update` but
+ * registers no listener for either, so a direct write skips nothing — same evidence
+ * that justified it for clinic sessions and holidays.
+ */
+
+export type UpdateClinicInput = {
+  name?: string;
+  email?: string | null;
+  telephone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  postalCode?: string | null;
+  countryCode?: string | null;
+  countryCallingCode?: string | null;
+  status?: 0 | 1;
+  /**
+   * Merged into the `extra` LongText JSON, not replaced.
+   *
+   * `timezone`, `logoUrl` and `businessHours` have no columns on KiviCare's table and
+   * live here. Replacing the blob would drop whichever of them the caller omitted, and
+   * would also discard keys KiviCare itself may have written.
+   */
+  extra?: Record<string, unknown>;
+};
+
+const COLUMN_FOR: Record<string, string> = {
+  name: 'name',
+  email: 'email',
+  telephone: 'telephone_no',
+  address: 'address',
+  city: 'city',
+  state: 'state',
+  country: 'country',
+  postalCode: 'postal_code',
+  countryCode: 'country_code',
+  countryCallingCode: 'country_calling_code',
+  status: 'status',
+};
+
+export async function updateClinic(id: bigint, input: UpdateClinicInput): Promise<boolean> {
+  const sets: string[] = [];
+  const args: unknown[] = [];
+
+  for (const [key, column] of Object.entries(COLUMN_FOR)) {
+    const value = (input as Record<string, unknown>)[key];
+    if (value !== undefined) {
+      sets.push(`\`${column}\` = ?`);
+      args.push(value);
+    }
+  }
+
+  if (input.extra !== undefined) {
+    const row = await prisma.kcClinic.findUnique({ where: { id }, select: { extra: true } });
+    let existing: Record<string, unknown> = {};
+    if (row?.extra) {
+      try {
+        const parsed = JSON.parse(row.extra);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) existing = parsed;
+      } catch {
+        // A malformed blob is replaced rather than allowed to block the update; the
+        // caller's fields are the ones that matter and the old value was unreadable.
+      }
+    }
+    sets.push('`extra` = ?');
+    args.push(JSON.stringify({ ...existing, ...input.extra }));
+  }
+
+  if (sets.length === 0) return false;
+
+  const affected = await prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_clinics SET ${sets.join(', ')} WHERE id = ?`,
+    ...args,
+    id,
+  );
+  return affected > 0;
+}
+
+export async function setClinicStatus(ids: bigint[], status: 0 | 1): Promise<number> {
+  if (ids.length === 0) return 0;
+  return prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_clinics SET status = ? WHERE id IN (${ids.map(() => '?').join(',')})`,
+    status,
+    ...ids,
+  );
+}
+
+/** People attached to a clinic, across all three KiviCare mapping tables. */
+export async function listClinicMembers(clinicId: bigint): Promise<
+  Array<{ userId: bigint; role: 'doctor' | 'receptionist' | 'patient' }>
+> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ user_id: bigint | number; role: string }>>(
+    `SELECT doctor_id AS user_id, 'doctor' AS role FROM wp_kc_doctor_clinic_mappings WHERE clinic_id = ?
+     UNION ALL
+     SELECT receptionist_id, 'receptionist' FROM wp_kc_receptionist_clinic_mappings WHERE clinic_id = ?
+     UNION ALL
+     SELECT patient_id, 'patient' FROM wp_kc_patient_clinic_mappings WHERE clinic_id = ?`,
+    clinicId, clinicId, clinicId,
+  );
+  return rows.map((r) => ({
+    userId: BigInt(r.user_id),
+    role: r.role as 'doctor' | 'receptionist' | 'patient',
+  }));
 }

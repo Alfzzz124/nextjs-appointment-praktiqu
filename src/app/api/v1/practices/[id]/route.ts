@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
   if ('response' in gate) return gate.response;
 
   try {
-    const dto = await getPractice(params.id);
+    const dto = await getPractice(Number(params.id));
     return NextResponse.json({ data: dto }, { status: 200 });
   } catch (err) {
     if (err instanceof PracticeNotFoundError) {
@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
   }
 
   try {
-    const dto = await updatePractice(params.id, body, { actorId: null });
+    const dto = await updatePractice(Number(params.id), body, { actorId: null });
     return NextResponse.json({ data: dto }, { status: 200 });
   } catch (err) {
     if (err instanceof PracticeNotFoundError) {
@@ -99,7 +99,7 @@ export async function DELETE(_req: NextRequest, { params }: Params): Promise<Nex
   if ('response' in gate) return gate.response;
 
   try {
-    await updatePractice(params.id, { status: 0 }, { actorId: null });
+    await updatePractice(Number(params.id), { status: 0 }, { actorId: null });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     if (err instanceof PracticeNotFoundError) {

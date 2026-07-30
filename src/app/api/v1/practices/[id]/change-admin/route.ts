@@ -49,7 +49,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   }
 
   try {
-    await changePracticeAdmin(params.id, parsed.data.newAdminId);
+    await changePracticeAdmin(Number(params.id), Number(parsed.data.newAdminId));
     return NextResponse.json({ message: 'Practice admin updated' }, { status: 200 });
   } catch (err) {
     if (err instanceof PracticeNotFoundError) {

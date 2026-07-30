@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import {
   bulkDeletePractices,
@@ -7,12 +7,26 @@ import {
   listPracticeUsers,
 } from '@/services/practice/service';
 
-let practice1Id: string;
+/** wp_kc_clinics.id — numeric since practices moved to KiviCare (D2). */
+let practice1Id: number;
+
+/** Test-owned clinic id, below billing's TEST_MARKER range. */
+const SEED_CLINIC = 7_800_001;
 
 beforeAll(async () => {
-  const practice = await prisma.clinic.findFirst();
-  if (!practice) throw new Error('Need at least 1 practice/clinic in DB');
-  practice1Id = practice.id;
+  // Seeds its own clinic rather than reading the shadow `clinics` table, which is
+  // empty now that practices come from wp_kc_clinics.
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinics WHERE id = ?`, SEED_CLINIC);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_clinics (id, name, status, clinic_admin_id, clinic_logo, created_at)
+     VALUES (?, 'Practices Suite Clinic', 1, 1, 0, NOW())`,
+    SEED_CLINIC,
+  );
+  practice1Id = SEED_CLINIC;
+});
+
+afterAll(async () => {
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinics WHERE id = ?`, SEED_CLINIC);
 });
 
 describe('bulkDeletePractices', () => {

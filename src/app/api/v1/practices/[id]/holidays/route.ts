@@ -78,7 +78,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
   const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
 
-  const holidays = await listHolidays(params.id).catch((e) => e);
+  const holidays = await listHolidays(Number(params.id)).catch((e) => e);
   const handled = handleError(holidays instanceof Error ? holidays : null, `/api/v1/practices/${params.id}/holidays`, 'GET');
   if (handled) return handled;
   return NextResponse.json({ data: holidays }, { status: 200 });
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     );
   }
 
-  const dto = await addHoliday(params.id, body, { actorId: null }).catch((e) => e);
+  const dto = await addHoliday(Number(params.id), body, { actorId: null }).catch((e) => e);
   const handled = handleError(dto, `/api/v1/practices/${params.id}/holidays`, 'POST');
   if (handled) return handled;
   return NextResponse.json({ data: dto }, { status: 201 });
@@ -116,7 +116,7 @@ export async function DELETE(_req: NextRequest, { params }: HolidayParams): Prom
   const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
 
-  const ok = await removeHoliday(params.id, params.holidayId, { actorId: null }).catch((e) => e);
+  const ok = await removeHoliday(Number(params.id), Number(params.holidayId), { actorId: null }).catch((e) => e);
   const handled = handleError(
     ok instanceof Error ? ok : null,
     `/api/v1/practices/${params.id}/holidays/${params.holidayId}`,

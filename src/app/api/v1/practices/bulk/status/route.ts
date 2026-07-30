@@ -9,7 +9,8 @@ import { bulkSetPracticeStatus } from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
 const schema = z.object({
-  ids: z.array(z.string()).min(1),
+  ids: // wp_kc_clinics ids — numeric since practices moved to KiviCare (D2).
+    z.array(z.coerce.number().int().positive()).min(1),
   status: z.union([z.literal(0), z.literal(1)]),
 });
 
