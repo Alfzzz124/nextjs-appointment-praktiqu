@@ -40,12 +40,27 @@ table; but nobody should be surprised by the label later.
 
 ## 3. Decisions
 
-**D1 — Completion state lives in `wp_kc_custom_field_data`.**
-`module_type = 'prescription'`, `module_id` = the prescription id, `fields_data` a JSON
-blob holding `{status, completedAt}`. This is KiviCare's own extension point, so it adds
-no table, touches no clinical column, and survives plugin updates. Rejected: a small
+**D1 — Completion state lives in `wp_kc_custom_fields_data`** (plural `fields`).
+Confirmed present on staging, MyISAM, 169 live rows. KiviCare's own extension point, so
+it adds no table, touches no clinical column, and survives plugin updates. Rejected: a
 PraktiQU side table (adds a table while we are removing them), and encoding into
 `instruction` (corrupts a clinical field).
+
+Two constraints make it safe, both discovered by reading how KiviCare queries it:
+
+- **`module_type` must be `praktiqu_recommendation_status`** — a namespaced value of our
+  own, matching the `praktiqu_*` convention already used in `wp_usermeta`.
+  **Not `prescription_module`**, even though that is a real KiviCare module type: using
+  it would invite KiviCare Pro's custom-field UI to render our JSON as its own field
+  values. Every KiviCare read *and* the delete in `KCPatientControllerFilters.php:170`
+  are scoped by `module_type`, so a value they never use is invisible and untouchable
+  to them.
+- **`field_id` must be NULL.** `KCCustomField::getData()` is the one query in the plugin
+  not scoped by `module_type` — it matches on `field_id` alone. A NULL never matches it,
+  which closes the only leak path.
+
+Verified against `wp_kc_custom_fields_data` module types in live use:
+`appointment_module` (114) and `patient_encounter_module` (55). Neither collides.
 
 **D2 — Endpoint paths stay, payloads change.**
 `/api/v1/session-notes` and `/api/v1/intervention-plans` keep their URLs. Bodies become
@@ -82,10 +97,11 @@ tables; we built a parallel feature nobody used, exactly as with `clients` vs
 
 **Gate 3 → moot.** Nothing to re-key.
 
-**Gate 1 → still open, my error.** The audit queried `wp_kc_custom_field_data`; the real
-KiviCare table is **`wp_kc_custom_fields_data`** (plural `fields`, confirmed in
-`2025_05_04_CreateCustomFieldDataTable.php:11`). Its absence from the E0 output proves
-nothing. Re-check before building D1 on it.
+**Gate 1 → closed, D1 holds.** The first audit queried `wp_kc_custom_field_data`; the
+real KiviCare table is **`wp_kc_custom_fields_data`** (plural `fields`, per
+`2025_05_04_CreateCustomFieldDataTable.php:11`). Re-measured: it exists, MyISAM, 169
+rows, `module_type` ∈ {`appointment_module` 114, `patient_encounter_module` 55}. See D1
+for the two constraints that keep our rows out of KiviCare's way.
 
 ### 4a. The engine finding — MyISAM changes the design
 
@@ -103,10 +119,15 @@ no foreign keys**, which has three consequences this migration must respect:
 3. **Table-level write locking.** A slow write to `wp_kc_medical_history` blocks every
    other write to that table, not just the affected rows.
 
-Point 2 needs auditing beyond this migration: `markBillPaid` in
-`src/services/payments/payment.service.ts` wraps `kcBill`, `kcPatientEncounter` and
-`kcAppointment` updates in `prisma.$transaction` and relies on that for atomicity.
-Confirm those tables' engines and, if MyISAM, treat the guarantee as absent.
+Point 2 is **confirmed, and it is a live defect outside this migration.** `wp_kc_bills`,
+`wp_kc_bill_items` and `wp_kc_appointments` are all MyISAM (measured 2026-07-30).
+`markBillPaid` in `src/services/payments/payment.service.ts` wraps updates to the bill,
+the encounter and the appointment in `prisma.$transaction` and relies on it for
+atomicity that the storage engine cannot provide. A failure between those three writes
+leaves a bill marked paid with the encounter or appointment untouched, and nothing
+rolls back. Needs its own fix: order the writes so the earliest one is the one that can
+be safely retried, and make the whole thing re-runnable — the payment path already
+re-applies side effects idempotently, so the repair hook exists.
 
 ## 5. A defect this work has to fix
 
