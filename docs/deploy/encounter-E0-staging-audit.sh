@@ -72,7 +72,7 @@ EOF
 run() { mysql --defaults-extra-file="$CNF" --table -e "$1" "$DB_NAME" 2>&1; }
 
 echo "=== STEP 1 — which tables exist ==========================================="
-echo "(wp_kc_custom_field_data is the one decision D1 depends on)"
+echo "(wp_kc_custom_fields_data is the one decision D1 depends on)"
 run "
 SELECT table_name, table_rows AS estimated_rows, engine
   FROM information_schema.tables
@@ -81,7 +81,7 @@ SELECT table_name, table_rows AS estimated_rows, engine
                       'wp_kc_patient_encounters','wp_kc_medical_history','wp_kc_prescription',
                       'wp_kc_medical_problems','wp_kc_patient_encounters_template',
                       'wp_kc_patient_encounters_template_mapping',
-                      'wp_kc_custom_fields','wp_kc_custom_field_data')
+                      'wp_kc_custom_fields','wp_kc_custom_fields_data')
  ORDER BY table_name;"
 
 echo
@@ -95,7 +95,7 @@ SET @sql = (SELECT GROUP_CONCAT(
  WHERE table_schema = '$DB_NAME'
    AND table_name IN ('session_notes','intervention_plans','recommendation_items',
                       'wp_kc_patient_encounters','wp_kc_medical_history','wp_kc_prescription',
-                      'wp_kc_medical_problems','wp_kc_custom_fields','wp_kc_custom_field_data'));
+                      'wp_kc_medical_problems','wp_kc_custom_fields','wp_kc_custom_fields_data'));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;"
 
 echo

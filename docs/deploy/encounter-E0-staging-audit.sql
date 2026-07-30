@@ -16,7 +16,7 @@
 -- ===========================================================================
 -- STEP 1 — which tables exist at all?
 --
--- The gate that matters: `wp_kc_custom_field_data` is ABSENT from the local
+-- The gate that matters: `wp_kc_custom_fields_data` is ABSENT from the local
 -- database. Decision D1 stores recommendation-item completion state in it. If it
 -- is missing here too, D1 falls back to a small PraktiQU-owned side table.
 --
@@ -43,7 +43,7 @@ SELECT table_name,
        'wp_kc_patient_encounters_template_mapping',
        -- the D1 gate
        'wp_kc_custom_fields',
-       'wp_kc_custom_field_data'
+       'wp_kc_custom_fields_data'
    )
  ORDER BY table_name;
 
@@ -75,7 +75,7 @@ SET @sql = (
          'wp_kc_prescription',
          'wp_kc_medical_problems',
          'wp_kc_custom_fields',
-         'wp_kc_custom_field_data'
+         'wp_kc_custom_fields_data'
      )
 );
 

@@ -57,18 +57,56 @@ a flow rewrite) and running both surfaces (defers the break and doubles the code
 The local database is empty (`wp_users` = 0, and 8 of the `wp_kc_*` tables are absent),
 so it answers nothing. Staging holds the real rows. Step 0 counts them.
 
-## 4. Blockers to clear first
+## 4. E0 results (staging `praktiqu_wp314`, measured 2026-07-30)
 
-These are verification gates, not tasks — each can change the plan.
+| Table | Rows | Engine |
+|---|---|---|
+| `session_notes` | **0** | InnoDB |
+| `intervention_plans` | **0** | InnoDB |
+| `recommendation_items` | **0** | InnoDB |
+| `wp_kc_patient_encounters` | **319** | MyISAM |
+| `wp_kc_medical_history` | **1167** | MyISAM |
+| `wp_kc_prescription` | **88** | MyISAM |
+| `wp_kc_patient_encounters_template` | 47 | MyISAM |
+| `wp_kc_patient_encounters_template_mapping` | 15 | MyISAM |
+| `wp_kc_medical_problems` | 0 | MyISAM |
+| `wp_kc_custom_fields` | 1 | MyISAM |
 
-1. **Does `wp_kc_custom_field_data` exist on staging?** It is missing locally. D1 is
-   built on it. If KiviCare's migration never ran there, D1 falls back to the side table.
-2. **How many rows in `session_notes` / `intervention_plans` / `recommendation_items` on
-   staging?** Zero means no migration script at all.
-3. **Do any of those rows reference sessions that no longer exist?** Their `sessionId` is
-   an unconstrained string that used to hold an `appointments` cuid. Rows pointing at
-   the old shadow table cannot be mapped to an encounter and must be reported, not
-   silently dropped.
+**This settles the argument.** Our three tables are empty — nobody has ever written a
+SOAP note through PraktiQU. Meanwhile clinicians have recorded **319 encounters and
+1167 medical-history entries** in KiviCare. The real clinical record was never in our
+tables; we built a parallel feature nobody used, exactly as with `clients` vs
+`wp_users`. There is no data to preserve and no user habit to break.
+
+**Gate 2 → phase E6 is deleted.** No migration script is needed.
+
+**Gate 3 → moot.** Nothing to re-key.
+
+**Gate 1 → still open, my error.** The audit queried `wp_kc_custom_field_data`; the real
+KiviCare table is **`wp_kc_custom_fields_data`** (plural `fields`, confirmed in
+`2025_05_04_CreateCustomFieldDataTable.php:11`). Its absence from the E0 output proves
+nothing. Re-check before building D1 on it.
+
+### 4a. The engine finding — MyISAM changes the design
+
+Every `wp_kc_*` table is **MyISAM**; ours are InnoDB. MyISAM has **no transactions and
+no foreign keys**, which has three consequences this migration must respect:
+
+1. **A note is not one atomic write.** An encounter plus its `medical_history` children
+   cannot be committed together. A crash mid-write leaves an encounter with some of its
+   entries. Writes must be ordered so the partial state is coherent — parent first,
+   children after — and reads must tolerate an encounter with zero entries.
+2. **`BEGIN`/`COMMIT` around these tables is theatre.** Wrapping them in
+   `prisma.$transaction` compiles and runs, silently guaranteeing nothing. Any such
+   wrapper is a false comfort and should be replaced by explicit ordering plus a repair
+   path, not left in place looking safe.
+3. **Table-level write locking.** A slow write to `wp_kc_medical_history` blocks every
+   other write to that table, not just the affected rows.
+
+Point 2 needs auditing beyond this migration: `markBillPaid` in
+`src/services/payments/payment.service.ts` wraps `kcBill`, `kcPatientEncounter` and
+`kcAppointment` updates in `prisma.$transaction` and relies on that for atomicity.
+Confirm those tables' engines and, if MyISAM, treat the guarantee as absent.
 
 ## 5. A defect this work has to fix
 
@@ -82,9 +120,8 @@ the plugin as part of this work — the same D1 rule as patients and appointment
 
 ## 6. Phases
 
-**Phase E0 — Count (blocking).**
-Read-only queries against staging for the three gates in §4. Output: row counts, a
-sample of unmappable rows, and a yes/no on `wp_kc_custom_field_data`. No code.
+**Phase E0 — Count (blocking).** ✅ done 2026-07-30, except the D1 gate (§4).
+Results in §4. Queries kept in `docs/deploy/encounter-E0-staging-audit.{sql,sh}`.
 
 **Phase E1 — Plugin write routes.**
 Add `praktiqu-endpoint` routes for encounters, medical history and prescriptions, each
@@ -113,10 +150,8 @@ Regenerate `openapi.yaml`, update the Postman collection, and hand the Laravel t
 field-level diff. Ships together with E3/E4 — there is no interim release where both
 shapes are valid.
 
-**Phase E6 — Data migration (only if E0 says so).**
-A dry-run-first script: read the old rows, write encounters/history/prescriptions
-through the plugin, report anything unmappable. Never deletes the source rows — the old
-tables stay until the whole shadow-table DROP happens.
+**~~Phase E6 — Data migration.~~ Deleted.** E0 measured 0 rows in all three tables.
+There is nothing to migrate.
 
 ## 7. Not in scope
 
