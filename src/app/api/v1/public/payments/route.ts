@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { verifyAppointmentToken } from '@/lib/public/appointment-token';
+import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import {
   initiatePublicPayment,
   AppointmentNotFoundError,
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(p, { status: p.status });
   }
 
-  const appointmentId = verifyAppointmentToken(parsed.data.token);
+  const appointmentId = verifyAppointmentIdToken(parsed.data.token);
   if (!appointmentId) {
     const p = badRequest('invalid_token', 'Invalid or expired appointment token');
     return NextResponse.json(p, { status: p.status });
