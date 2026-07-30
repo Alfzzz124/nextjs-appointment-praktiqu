@@ -16,8 +16,10 @@ import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { getPublicAppointmentById } from '@/services/public/public-booking.service';
 import { findClinicById, listClinics, type WpClinic } from '@/repositories/wp/clinics.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
-import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
+import { PROFESSIONAL_STATUS, findDoctorById, listDoctors } from '@/repositories/wp/doctors.repo';
 import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
+import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
+import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
 
 export interface PublicClinic {
   id: number;
@@ -61,6 +63,102 @@ export async function getPublicPractice(id: number): Promise<PublicClinic | null
   return toPublicClinic(clinic);
 }
 
+export interface PublicProfessional {
+  id: number;
+  fullName: string;
+  professionalType: string | null;
+  biography: string | null;
+  specialties: string[];
+  /**
+   * The next day this professional has working hours, and when those start.
+   *
+   * Availability, not a free slot: it says the practice is open to them that day, not
+   * that 09:00 is unbooked. The booking widget calls the slots endpoint for the real
+   * answer. (The previous implementation claimed a bookable slot while passing an empty
+   * booking list, so it named a time that could already be taken.)
+   */
+  nextAvailable: { date: string; startTime: string } | null;
+}
+
+/** How far ahead `nextAvailable` looks before giving up. */
+const NEXT_AVAILABLE_HORIZON_DAYS = 14;
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Active professionals for the public directory.
+ *
+ * Capped at 50, as before — this is a browse page, not an export.
+ */
+export async function listPublicProfessionals(
+  opts: { specialty?: string; clinicId?: number } = {},
+): Promise<PublicProfessional[]> {
+  const { items } = await listDoctors({
+    page: 1,
+    perPage: 50,
+    statuses: [PROFESSIONAL_STATUS.ACTIVE],
+    specialty: opts.specialty,
+    clinicIds: opts.clinicId !== undefined ? [BigInt(opts.clinicId)] : undefined,
+  });
+
+  // The repository's specialty filter is a LIKE over the whole basic_data blob and can
+  // over-match; re-check against the decoded list so the answer is exact.
+  const specialty = opts.specialty?.trim().toLowerCase();
+  const doctors = specialty
+    ? items.filter((d) => d.specialties.some((s) => s.toLowerCase() === specialty))
+    : items;
+
+  // One query for the whole page. Per-doctor lookups here were 50 round-trips.
+  const sessions =
+    doctors.length === 0
+      ? []
+      : await listClinicSessions({ doctorIds: doctors.map((d) => d.id) });
+
+  const byDoctor = new Map<string, typeof sessions>();
+  for (const s of sessions) {
+    if (s.doctorId === null) continue;
+    const key = s.doctorId.toString();
+    const list = byDoctor.get(key);
+    if (list) list.push(s);
+    else byDoctor.set(key, [s]);
+  }
+
+  const today = new Date();
+  return doctors.map((d) => ({
+    id: Number(d.id),
+    fullName:
+      [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.displayName || d.email,
+    professionalType: d.professionalType,
+    biography: d.description,
+    specialties: d.specialties,
+    nextAvailable: nextAvailableFor(byDoctor.get(d.id.toString()) ?? [], today),
+  }));
+}
+
+function nextAvailableFor(
+  sessions: Array<{ day: string | null; startTime: string | null }>,
+  from: Date,
+): { date: string; startTime: string } | null {
+  if (sessions.length === 0) return null;
+
+  for (let i = 0; i < NEXT_AVAILABLE_HORIZON_DAYS; i += 1) {
+    const d = new Date(from);
+    d.setDate(d.getDate() + i);
+    const date = isoDate(d);
+    const day = dayOfWeekFor(date);
+
+    const earliest = sessions
+      .filter((s) => s.day === day && s.startTime)
+      .map((s) => s.startTime!)
+      .sort()[0];
+
+    if (earliest) return { date, startTime: earliest };
+  }
+  return null;
+}
+
 export interface PublicService {
   id: number;
   name: string;
@@ -99,6 +197,52 @@ export async function getPublicProfessionalServices(
     durationMinutes: s.durationMinutes,
     serviceType: s.type,
   }));
+}
+
+export interface PublicSlot {
+  date: string;
+  /** `HH:MM:SS`, local clinic time — the basis KiviCare stores appointments in. */
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * Bookable slots for one professional, service and date.
+ *
+ * `null` means there is no such active professional, or the service is not one they
+ * offer publicly — a 404 either way, distinct from "no slots that day" (`[]`).
+ *
+ * Unlike the previous implementation this subtracts real bookings and off days: it
+ * shares `generateSlots` with the authenticated slot API, so the public page and the
+ * staff calendar cannot disagree about what is free.
+ */
+export async function getPublicSlots(opts: {
+  professionalId: number;
+  date: string;
+  serviceId: number;
+  clinicId?: number;
+}): Promise<PublicSlot[] | null> {
+  const doctor = await findDoctorById(BigInt(opts.professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
+
+  const offered = await listServicesForDoctor({
+    doctorId: BigInt(opts.professionalId),
+    clinicId: opts.clinicId !== undefined ? BigInt(opts.clinicId) : undefined,
+    publicOnly: true,
+  });
+  const mapping = offered.find((s) => Number(s.serviceId) === opts.serviceId && s.isActive);
+  if (!mapping) return null;
+
+  // Which clinic the slots belong to comes from the mapping: a doctor may work at
+  // several, and the service they were asked about says which one this is.
+  const slots = await generateSlots(
+    opts.professionalId,
+    opts.date,
+    opts.serviceId,
+    Number(mapping.clinicId),
+  );
+
+  return slots.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime }));
 }
 
 /**

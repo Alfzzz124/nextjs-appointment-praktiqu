@@ -115,6 +115,15 @@ export type ListDoctorsQuery = {
   /** Including ACTIVE also matches doctors with no status meta (KiviCare-created). */
   statuses?: readonly ProfessionalStatus[];
   professionalTypes?: readonly ProfessionalType[];
+  /**
+   * Narrow to doctors listing this specialty.
+   *
+   * Specialties live inside the `basic_data` JSON blob, which has no index and no
+   * per-value column, so this can only be a LIKE over the whole blob — it may
+   * over-match another field holding the same word. Callers that need an exact answer
+   * should re-filter the page against the decoded `specialties` array.
+   */
+  specialty?: string;
 };
 
 export type PaginatedDoctors = {
@@ -247,6 +256,12 @@ export async function listDoctors(query: ListDoctorsQuery): Promise<PaginatedDoc
       where.push(`m_${PROFESSIONAL_TYPE_META_KEY}.meta_value IN (${ph})`);
       args.push(...query.professionalTypes);
     }
+  }
+
+  const specialty = query.specialty?.trim();
+  if (specialty) {
+    where.push('m_basic_data.meta_value LIKE ?');
+    args.push(likeTerm(specialty));
   }
 
   const whereSql = where.join(' AND ');

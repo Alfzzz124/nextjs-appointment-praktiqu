@@ -108,11 +108,18 @@ function assertDay(value: string): DayOfWeek {
 export async function listClinicSessions(query: {
   clinicId?: bigint;
   doctorId?: bigint;
+  /**
+   * Several doctors at once, for listing pages that would otherwise run one query per
+   * row. An empty array returns nothing rather than everything — same rule as every
+   * other id filter here.
+   */
+  doctorIds?: bigint[];
   day?: string;
 }): Promise<WpClinicSession[]> {
   const where: Record<string, unknown> = {};
   if (query.clinicId !== undefined) where.clinicId = query.clinicId;
   if (query.doctorId !== undefined) where.doctorId = query.doctorId;
+  if (query.doctorIds !== undefined) where.doctorId = { in: query.doctorIds };
   if (query.day !== undefined) where.day = assertDay(query.day);
 
   const rows = await prisma.kcClinicSession.findMany({

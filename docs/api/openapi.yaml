@@ -7316,6 +7316,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: clinicId
+          in: query
+          required: false
+          description: Restrict to professionals mapped to this clinic.
+          schema:
+            type: integer
       responses:
         '200':
           description: Success
@@ -7323,6 +7329,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StandardResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
       security: []
   /api/v1/public/professionals/{id}/services:
     parameters:
@@ -7353,25 +7361,42 @@ paths:
       - name: id
         in: path
         required: true
+        description: WordPress user id of the professional (`wp_users.ID`).
         schema:
-          type: string
+          type: integer
     get:
       tags:
         - public
       summary: Slots (GET) — professionals
       operationId: get_api_v1_public_professionals_id_slots
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        Bookable slots for one professional, service and date, with real bookings
+        and off days already subtracted.
+
+
+        **Response envelope:** standard / RFC-7807 problem+json
       parameters:
         - name: date
           in: query
           required: false
+          description: '`YYYY-MM-DD`. Defaults to today.'
           schema:
             type: string
+            format: date
         - name: serviceId
           in: query
-          required: false
+          required: true
+          description: >-
+            Required: the slot length is the professional's own duration for this
+            service, so there is no honest default.
           schema:
-            type: string
+            type: integer
+        - name: clinicId
+          in: query
+          required: false
+          description: Disambiguates a professional who works at more than one clinic.
+          schema:
+            type: integer
       responses:
         '200':
           description: Success
@@ -7379,6 +7404,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StandardResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
       security: []
