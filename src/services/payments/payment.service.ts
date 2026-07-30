@@ -287,18 +287,65 @@ export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<v
   await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
 }
 
+/** KiviCare encounter status: 1 = open, 0 = closed. */
+const ENCOUNTER_CLOSED = 0;
+
+/**
+ * Settle a bill: close the encounter, check the appointment out, mark the bill paid.
+ *
+ * Deliberately NOT wrapped in `prisma.$transaction`. Every table it touches —
+ * `wp_kc_bills`, `wp_kc_patient_encounters`, `wp_kc_appointments` — is MyISAM, which
+ * has no transactions. The old wrapper compiled, ran, and guaranteed nothing; keeping
+ * it would only make the code look safe. Atomicity is replaced by ordering plus
+ * re-runnability.
+ *
+ * **The order matters and is the actual fix.** The bill's `paid` flag is written LAST,
+ * because it doubles as the "everything succeeded" marker that the guard above reads.
+ * The old code wrote it FIRST: a failure between that write and the encounter update
+ * left the bill paid with the encounter still open, and the guard then short-circuited
+ * every retry — so the inconsistency was permanent. Now a failure anywhere leaves the
+ * bill unpaid, and the next `ensurePaidSideEffectsApplied` redoes the lot.
+ *
+ * The two downstream writes are absolute sets, not increments, so repeating them is
+ * harmless — which is what makes the retry safe.
+ *
+ * Returns true when it changed something, so the caller only cancels the auto-cancel
+ * job on a run that did real work.
+ */
 async function markBillPaid(billId: string, encounterId: string | null): Promise<boolean> {
-  return prisma.$transaction(async (tx: typeof prisma) => {
-    const bill = await tx.kcBill.findUnique({ where: { id: BigInt(billId) } });
-    if (!bill || bill.paymentStatus === 'paid') return false; // already applied
-    await tx.kcBill.update({ where: { id: BigInt(billId) }, data: { paymentStatus: 'paid' } });
-    const encId = encounterId ? BigInt(encounterId) : bill.encounterId;
-    await tx.kcPatientEncounter.update({ where: { id: encId }, data: { status: 0 } });
-    if (bill.appointmentId) {
-      await tx.kcAppointment.updateMany({ where: { id: bill.appointmentId }, data: { status: 3 } as any });
-    }
-    return true;
+  const bill = await prisma.kcBill.findUnique({ where: { id: BigInt(billId) } });
+  if (!bill) return false;
+
+  const encId = encounterId ? BigInt(encounterId) : bill.encounterId;
+  const encounter = await prisma.kcPatientEncounter.findUnique({
+    where: { id: encId },
+    select: { status: true },
   });
+
+  // Fully settled already — the common case on a repeat status poll. Checked against
+  // the encounter too, not just the bill, so a row left half-applied by the previous
+  // ordering is detected and repaired below rather than declared done.
+  if (bill.paymentStatus === 'paid' && encounter?.status === ENCOUNTER_CLOSED) return false;
+
+  await prisma.kcPatientEncounter.update({
+    where: { id: encId },
+    data: { status: ENCOUNTER_CLOSED },
+  });
+
+  if (bill.appointmentId) {
+    await prisma.kcAppointment.updateMany({
+      where: { id: bill.appointmentId },
+      data: { status: APPOINTMENT_STATUS.CHECK_OUT },
+    });
+  }
+
+  // Last: this is the marker the guard reads.
+  await prisma.kcBill.update({
+    where: { id: BigInt(billId) },
+    data: { paymentStatus: 'paid' },
+  });
+
+  return true;
 }
 
 export async function applyPaidSideEffectsSession(order: PaymentOrder): Promise<void> {

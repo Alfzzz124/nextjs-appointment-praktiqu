@@ -15,7 +15,7 @@ const db = vi.hoisted(() => {
   const d: any = {
     paymentOrder: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
     kcBill: { update: vi.fn(), findUnique: vi.fn() },
-    kcPatientEncounter: { update: vi.fn() },
+    kcPatientEncounter: { update: vi.fn(), findUnique: vi.fn() },
     kcAppointment: { updateMany: vi.fn() },
     kcUser: { findUnique: vi.fn() },
   };
@@ -282,6 +282,102 @@ describe('cancelIfStillPending — auto-cancel guard', () => {
     await cancelIfStillPending({ source: 'session', appointmentId: null, wcOrderId: 42 } as any);
 
     expect(appointments.cancelAppointment).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyPaidSideEffectsSession — settling a bill without transactions', () => {
+  const BILL = '77';
+  const ENCOUNTER = 91n;
+  const APPOINTMENT = 5150n;
+
+  function order() {
+    return { source: 'session', billId: BILL, encounterId: null, wcOrderId: 42 } as never;
+  }
+
+  function billRow(paymentStatus: string) {
+    return { id: BigInt(BILL), paymentStatus, encounterId: ENCOUNTER, appointmentId: APPOINTMENT };
+  }
+
+  it('closes the encounter, checks the appointment out, and marks the bill paid', async () => {
+    db.kcBill.findUnique.mockResolvedValue(billRow('unpaid'));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ status: 1 });
+    const { applyPaidSideEffectsSession } = await import('@/services/payments/payment.service');
+
+    await applyPaidSideEffectsSession(order());
+
+    expect(db.kcPatientEncounter.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: ENCOUNTER }, data: { status: 0 } }),
+    );
+    expect(db.kcAppointment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: APPOINTMENT }, data: { status: 3 } }),
+    );
+    expect(db.kcBill.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: BigInt(BILL) }, data: { paymentStatus: 'paid' } }),
+    );
+    expect(jobsClient.jobs.cancel).toHaveBeenCalled();
+  });
+
+  it('writes the bill’s paid flag LAST', async () => {
+    // The whole fix. The flag doubles as the "everything succeeded" marker, so writing
+    // it first — as the old code did — made a mid-way failure permanent: the bill read
+    // as paid, the guard short-circuited, and the encounter stayed open forever.
+    db.kcBill.findUnique.mockResolvedValue(billRow('unpaid'));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ status: 1 });
+    const { applyPaidSideEffectsSession } = await import('@/services/payments/payment.service');
+
+    await applyPaidSideEffectsSession(order());
+
+    const encounterAt = db.kcPatientEncounter.update.mock.invocationCallOrder[0];
+    const appointmentAt = db.kcAppointment.updateMany.mock.invocationCallOrder[0];
+    const billAt = db.kcBill.update.mock.invocationCallOrder[0];
+    expect(billAt).toBeGreaterThan(encounterAt);
+    expect(billAt).toBeGreaterThan(appointmentAt);
+  });
+
+  it('never wraps MyISAM tables in a transaction that cannot hold', async () => {
+    // wp_kc_bills / _patient_encounters / _appointments are all MyISAM: $transaction
+    // there guarantees nothing and only makes the code look safe.
+    db.kcBill.findUnique.mockResolvedValue(billRow('unpaid'));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ status: 1 });
+    const { applyPaidSideEffectsSession } = await import('@/services/payments/payment.service');
+
+    await applyPaidSideEffectsSession(order());
+
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('repairs a row left half-applied by the old ordering', async () => {
+    // Bill already paid but the encounter never closed — the exact state the previous
+    // code could strand, and then refuse to retry.
+    db.kcBill.findUnique.mockResolvedValue(billRow('paid'));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ status: 1 });
+    const { applyPaidSideEffectsSession } = await import('@/services/payments/payment.service');
+
+    await applyPaidSideEffectsSession(order());
+
+    expect(db.kcPatientEncounter.update).toHaveBeenCalled();
+  });
+
+  it('does nothing when the bill is already fully settled', async () => {
+    db.kcBill.findUnique.mockResolvedValue(billRow('paid'));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ status: 0 });
+    const { applyPaidSideEffectsSession } = await import('@/services/payments/payment.service');
+
+    await applyPaidSideEffectsSession(order());
+
+    expect(db.kcPatientEncounter.update).not.toHaveBeenCalled();
+    expect(db.kcBill.update).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the bill does not exist', async () => {
+    db.kcBill.findUnique.mockResolvedValue(null);
+    const { applyPaidSideEffectsSession } = await import('@/services/payments/payment.service');
+
+    await applyPaidSideEffectsSession(order());
+
+    expect(db.kcPatientEncounter.update).not.toHaveBeenCalled();
+    expect(db.kcBill.update).not.toHaveBeenCalled();
   });
 });
 
