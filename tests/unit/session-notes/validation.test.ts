@@ -15,7 +15,7 @@ import {
 describe('createSessionNoteSchema', () => {
   it('accepts valid content string', () => {
     const result = createSessionNoteSchema.safeParse({
-      sessionId: 'ses_abc123',
+      sessionId: '5150',
       content: 'Patient showed improvement in anxiety levels.',
     });
     expect(result.success).toBe(true);
@@ -23,7 +23,7 @@ describe('createSessionNoteSchema', () => {
 
   it('accepts valid SOAP input', () => {
     const result = createSessionNoteSchema.safeParse({
-      sessionId: 'ses_abc123',
+      sessionId: '5150',
       soap: { subjective: 'Sore throat', objective: 'T=37.8', assessment: 'Viral', plan: 'Rest' },
     });
     expect(result.success).toBe(true);
@@ -34,14 +34,24 @@ describe('createSessionNoteSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects a non-numeric sessionId', () => {
+    // The column still holds text, but the value is now wp_kc_appointments.id — a
+    // leftover cuid would otherwise reach findSessionById as NaN.
+    const result = createSessionNoteSchema.safeParse({
+      sessionId: 'ses_abc123',
+      content: 'test',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects empty content', () => {
-    const result = createSessionNoteSchema.safeParse({ sessionId: 'ses_abc123', content: '' });
+    const result = createSessionNoteSchema.safeParse({ sessionId: '5150', content: '' });
     expect(result.success).toBe(false);
   });
 
   it('rejects content exceeding 50 000 chars', () => {
     const result = createSessionNoteSchema.safeParse({
-      sessionId: 'ses_abc123',
+      sessionId: '5150',
       content: 'x'.repeat(50_001),
     });
     expect(result.success).toBe(false);
@@ -79,7 +89,7 @@ describe('listSessionNotesQuerySchema', () => {
       page: 3,
       limit: 50,
       search: 'anxiety',
-      clientId: 'clt_xyz',
+      clientId: '461',
       dateFrom: '2026-01-01',
       dateTo: '2026-06-30',
       status: 'OPEN',
@@ -90,6 +100,10 @@ describe('listSessionNotesQuerySchema', () => {
   it('rejects limit over 100', () => {
     const result = listSessionNotesQuerySchema.safeParse({ limit: 101 });
     expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-numeric clientId', () => {
+    expect(listSessionNotesQuerySchema.safeParse({ clientId: 'clt_xyz' }).success).toBe(false);
   });
 
   it('rejects invalid status', () => {

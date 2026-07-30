@@ -1,9 +1,19 @@
-// src/services/progress/service.ts
+/**
+ * Client progress — the session timeline reads KiviCare's appointments.
+ *
+ * Goals and milestones stay in our own tables: they are PraktiQU concepts with no
+ * KiviCare equivalent. Only the session half moved off the `appointments` shadow
+ * table. See docs/architecture/shadow-tables-audit.md.
+ *
+ * `clientId` is a `wp_users.ID`. `goals.clientId` is a free-form String column with no
+ * foreign key, so it holds that id as text.
+ */
 import type { PrismaClient } from '@prisma/client';
+import { listSessions } from '@/repositories/wp/sessions.repo';
 
 export interface ProgressEntry {
-  id: string;
-  clientId: string;
+  id: number;
+  clientId: number;
   type: string;
   title: string;
   description?: string | null;
@@ -13,46 +23,34 @@ export interface ProgressEntry {
 export class ProgressService {
   constructor(private prisma: PrismaClient) {}
 
-  async getClientTimeline(clientId: string, limit = 50) {
-    const [sessions, notes, plans] = await Promise.all([
-      this.prisma.appointment.findMany({
-        where: { patientId: clientId },
-        orderBy: { appointmentStartDate: 'desc' },
-        take: limit,
-        include: { doctor: { include: { user: true } }, services: true },
-      }),
-      this.prisma.sessionNote.findMany({
-        where: { /* sessionId in sessions */ },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-      }),
-      this.prisma.interventionPlan.findMany({
-        where: { clientId },
-        orderBy: { createdAt: 'desc' },
-        include: { items: true },
-        take: limit,
-      }),
-    ]);
+  /**
+   * The client's sessions, newest first.
+   *
+   * Sessions only, as before. The previous version also queried `sessionNote` with an
+   * empty `where` — a full-table scan whose result was never read — and intervention
+   * plans it likewise discarded. Both are dropped rather than left running; folding
+   * them into the timeline is a separate change.
+   */
+  async getClientTimeline(clientId: number, limit = 50): Promise<ProgressEntry[]> {
+    const { items } = await listSessions({ page: 1, perPage: limit, clientId });
 
-    const entries: ProgressEntry[] = [];
-
-    for (const appt of sessions) {
-      entries.push({
-        id: appt.id,
-        clientId,
-        type: 'session',
-        title: `Session: ${appt.status}`,
-        description: appt.description ?? undefined,
-        occurredAt: appt.appointmentStartDate,
-      });
-    }
+    const entries: ProgressEntry[] = items.map((s) => ({
+      id: s.id,
+      clientId,
+      type: 'session',
+      title: `Session: ${s.status}`,
+      description: s.description ?? undefined,
+      // slotDate is the local clinic date; a row without one cannot be placed on a
+      // timeline, so it falls back to when the appointment was created.
+      occurredAt: s.slotDate ? new Date(`${s.slotDate}T00:00:00Z`) : s.createdAt,
+    }));
 
     return entries.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
   }
 
-  async getGoals(clientId: string) {
+  async getGoals(clientId: number) {
     return this.prisma.goal.findMany({
-      where: { clientId },
+      where: { clientId: String(clientId) },
       orderBy: { createdAt: 'desc' },
       include: { milestones: { orderBy: { sortOrder: 'asc' } } },
     });

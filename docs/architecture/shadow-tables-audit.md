@@ -373,8 +373,19 @@ Order by dependency, each behind its own PR with the old path still passing test
       same rows KiviCare's own form does, visible in WP admin and blocking staff slots.
       The Professional → Doctor userId bridge is gone with the split id space.
 - [ ] **3.7** `payment.service.ts` → `wp_kc_bills` + keep `payment_orders`
-- [ ] **3.8** `session-notes`, `progress`, `intervention-plan`, `consent` → keep tables,
-      swap FK reads to WP repos
+- [x] **3.8** `session-notes`, `progress`, `consent` → tables kept, FK reads swapped to
+      the WP repos:
+      - `session_notes.sessionId` / `.professionalId` now hold `wp_kc_appointments.id`
+        and `wp_users.ID` as text (both were already unconstrained String columns).
+        CLINIC_ADMIN listing is scoped by the clinic's doctor roster instead of by an
+        unbounded `IN` list of every appointment id in the clinic.
+      - `progress` reads the client timeline from `wp_kc_appointments`.
+      - `consent_forms.practiceId` now holds `wp_kc_clinics.id`, checked on create.
+        `consent_signatures.clientId` still references `users.id` — it has a real FK,
+        so repointing it is a schema change (Phase 4), not a code one.
+      - `intervention-plan` needed no change: it only touches its own two tables, and
+        its `sessionId` is an opaque unconstrained string that now carries the
+        KiviCare id like the others.
 
 ### Phase 4 — Delete (~1 day)
 

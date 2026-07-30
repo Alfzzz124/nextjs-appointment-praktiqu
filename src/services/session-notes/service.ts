@@ -11,8 +11,15 @@
  * Spec source: specs/008-session-notes/spec.md, plan.md.
  */
 
-import type { PrismaClient, AppointmentStatus } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { logging } from '@/lib/logging';
+import { listClinicMembers } from '@/repositories/wp/clinics.repo';
+import {
+  SESSION_STATUS,
+  findSessionById,
+  listSessions,
+  type SessionStatus,
+} from '@/repositories/wp/sessions.repo';
 import {
   type CreateSessionNoteInput,
   type UpdateSessionNoteInput,
@@ -24,10 +31,23 @@ import {
 export const SESSION_NOTE_SUMMARY_MAX = 200;
 
 /** Sessions in these statuses can have notes created / edited. */
-const EDITABLE_SESSION_STATUSES: AppointmentStatus[] = ['CHECK_IN', 'CHECK_OUT'];
+const EDITABLE_SESSION_STATUSES: SessionStatus[] = [
+  SESSION_STATUS.CHECK_IN,
+  SESSION_STATUS.CHECK_OUT,
+];
 
 /** Sessions in these statuses lock the note. */
-const LOCKED_SESSION_STATUSES: AppointmentStatus[] = ['CANCELLED'];
+const LOCKED_SESSION_STATUSES: SessionStatus[] = [SESSION_STATUS.CANCELLED];
+
+/**
+ * How many of a client's sessions the `clientId` filter considers.
+ *
+ * `session_notes.sessionId` is a plain string column with no relation to
+ * `wp_kc_appointments`, so filtering by client means resolving their session ids first.
+ * One client's history fits well inside this; a practice's would not, which is why
+ * clinic scoping goes through professionals instead.
+ */
+const CLIENT_SESSION_LOOKUP_CAP = 500;
 
 export class SessionNoteAccessError extends Error {
   status: number;
@@ -39,7 +59,15 @@ export class SessionNoteAccessError extends Error {
 }
 
 export interface SessionNoteActor {
+  /** Auth-mirror id (a cuid). Identifies the actor in the audit log. */
   userId: string;
+  /**
+   * The same person's `wp_users.ID`.
+   *
+   * Authorship is compared on this, not on `userId`: a note's `professionalId` is a
+   * KiviCare doctor id, and the two id spaces do not match.
+   */
+  wpUserId: number;
   role: 'SUPER_ADMIN' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'RECEPTIONIST' | 'CLIENT';
   ip: string | null;
   userAgent: string | null;
@@ -48,8 +76,8 @@ export interface SessionNoteActor {
 
 export interface SessionNoteActorScope {
   actor: SessionNoteActor;
-  /** clinicId of the actor (for CLINIC_ADMIN scoping). */
-  clinicId?: string | null;
+  /** `wp_kc_clinics.id` of the actor (for CLINIC_ADMIN scoping). */
+  clinicId?: number | null;
 }
 
 export class SessionNoteService {
@@ -60,10 +88,7 @@ export class SessionNoteService {
   // ---------------------------------------------------------------------
 
   async create(input: CreateSessionNoteInput, scope: SessionNoteActorScope) {
-    const session = await this.prisma.appointment.findUnique({
-      where: { id: input.sessionId },
-      select: { id: true, status: true, doctorId: true, clinicId: true },
-    });
+    const session = await findSessionById(Number(input.sessionId));
 
     if (!session) {
       throw new SessionNoteAccessError('Session not found', 404);
@@ -88,7 +113,9 @@ export class SessionNoteService {
     const note = await this.prisma.sessionNote.create({
       data: {
         sessionId: input.sessionId,
-        professionalId: session.doctorId,
+        // Stored as text: the column has no FK and never did. The value is now the
+        // KiviCare doctor id (wp_users.ID) rather than a `doctors` cuid.
+        professionalId: String(session.professionalId),
         content,
         summary: buildSummary(content, SESSION_NOTE_SUMMARY_MAX),
       },
@@ -145,14 +172,18 @@ export class SessionNoteService {
     // RBAC scoping: professionals see only their own; CLINIC_ADMIN / SUPER_ADMIN
     // see all notes within their clinic / globally.
     if (actor.role === 'PROFESSIONAL') {
-      where.professionalId = actor.userId;
+      where.professionalId = String(actor.wpUserId);
     } else if (actor.role === 'CLINIC_ADMIN' && scope.clinicId) {
-      const sessionIds = await this.prisma.appointment.findMany({
-        where: { clinicId: scope.clinicId },
-        select: { id: true },
-      });
-      const ids = sessionIds.map((s) => s.id);
-      where.sessionId = { in: ids };
+      // Scoped by the clinic's professionals, not by its sessions. The old query
+      // loaded every appointment id in the clinic into one IN list, which grows
+      // without bound; the doctor roster is a handful of rows and gives the same
+      // answer, since a note's author is by definition the session's doctor.
+      const members = await listClinicMembers(BigInt(scope.clinicId));
+      const doctorIds = members
+        .filter((m) => m.role === 'doctor')
+        .map((m) => m.userId.toString());
+      // A clinic with no doctors must see nothing, not everything.
+      where.professionalId = { in: doctorIds };
     } else if (actor.role !== 'SUPER_ADMIN') {
       // RECEPTIONIST / CLIENT → no listing access.
       return { data: [], pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: query.limit } };
@@ -160,12 +191,12 @@ export class SessionNoteService {
 
     if (query.status) where.status = query.status;
     if (query.clientId) {
-      const sessionIds = await this.prisma.appointment.findMany({
-        where: { patientId: query.clientId },
-        select: { id: true },
+      const { items } = await listSessions({
+        page: 1,
+        perPage: CLIENT_SESSION_LOOKUP_CAP,
+        clientId: Number(query.clientId),
       });
-      const ids = sessionIds.map((s) => s.id);
-      where.sessionId = { in: ids };
+      where.sessionId = { in: items.map((s) => String(s.id)) };
     }
     if (query.search) {
       where.content = { contains: query.search };
@@ -203,7 +234,9 @@ export class SessionNoteService {
     if (!note) {
       throw new SessionNoteAccessError('Session note not found', 404);
     }
-    this.assertCanEdit(note, scope);
+    // Awaited: without it the promise was dropped and the "session is locked" check
+    // never blocked an edit — the authorship checks inside threw into nothing too.
+    await this.assertCanEdit(note, scope);
 
     const content = input.soap ? formatSoapToContent(input.soap) : (input.content ?? '');
 
@@ -269,7 +302,7 @@ export class SessionNoteService {
   // ---------------------------------------------------------------------
 
   private assertCanCreate(
-    session: { status: AppointmentStatus; doctorId: string; clinicId: string },
+    session: { status: SessionStatus; professionalId: number; clinicId: number },
     scope: SessionNoteActorScope,
   ) {
     const { actor } = scope;
@@ -281,7 +314,7 @@ export class SessionNoteService {
       );
     }
 
-    if (actor.role === 'PROFESSIONAL' && session.doctorId !== actor.userId) {
+    if (actor.role === 'PROFESSIONAL' && session.professionalId !== actor.wpUserId) {
       throw new SessionNoteAccessError(
         'Professional is not assigned to this session',
         403,
@@ -300,7 +333,7 @@ export class SessionNoteService {
     const { actor } = scope;
     if (actor.role === 'SUPER_ADMIN') return;
     if (actor.role === 'CLINIC_ADMIN') return; // clinic scoping handled in route layer
-    if (actor.role === 'PROFESSIONAL' && professionalId === actor.userId) return;
+    if (actor.role === 'PROFESSIONAL' && professionalId === String(actor.wpUserId)) return;
     throw new SessionNoteAccessError('Not allowed to read this session note', 403);
   }
 
@@ -316,7 +349,7 @@ export class SessionNoteService {
         403,
       );
     }
-    if (note.professionalId !== actor.userId) {
+    if (note.professionalId !== String(actor.wpUserId)) {
       throw new SessionNoteAccessError(
         'Professional did not create this session note',
         403,
@@ -328,11 +361,8 @@ export class SessionNoteService {
         409,
       );
     }
-    // Lock when the session reaches COMPLETED.
-    const session = await this.prisma.appointment.findUnique({
-      where: { id: note.sessionId },
-      select: { status: true },
-    });
+    // Lock once the session is no longer editable.
+    const session = await findSessionById(Number(note.sessionId));
     if (session && LOCKED_SESSION_STATUSES.includes(session.status)) {
       throw new SessionNoteAccessError(
         'Session note is locked because the session is no longer editable',
@@ -353,7 +383,7 @@ export class SessionNoteService {
         403,
       );
     }
-    if (note.professionalId !== actor.userId) {
+    if (note.professionalId !== String(actor.wpUserId)) {
       throw new SessionNoteAccessError(
         'Professional did not create this session note',
         403,

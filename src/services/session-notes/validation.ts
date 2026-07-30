@@ -17,9 +17,19 @@ export const sessionNoteSoapSchema = z.object({
   plan: z.string().max(10_000, 'Plan section too long').default(''),
 });
 
+/**
+ * A KiviCare appointment id, carried as text.
+ *
+ * `session_notes.sessionId` is a string column and stays one, but the value is now
+ * `wp_kc_appointments.id`. Digits are required so a stray identifier cannot become NaN
+ * on the way to SQL.
+ */
+const numericId = (field: string) =>
+  z.string().regex(/^\d+$/, `${field} must be a numeric id`);
+
 export const createSessionNoteSchema = z
   .object({
-    sessionId: z.string().min(1, 'sessionId is required'),
+    sessionId: numericId('sessionId'),
     content: z
       .string()
       .min(1, 'Notes content cannot be empty')
@@ -50,7 +60,7 @@ export const listSessionNotesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().optional(),
-  clientId: z.string().optional(),
+  clientId: numericId('clientId').optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   status: noteStatusSchema.optional(),
