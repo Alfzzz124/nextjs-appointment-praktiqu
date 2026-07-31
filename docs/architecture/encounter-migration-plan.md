@@ -150,10 +150,17 @@ firing the hooks KiviCare declares. Mirrors the existing patient/appointment
 controllers. Includes moving the existing `createEncounter`/`updateEncounter` onto them
 (§5).
 
-**Phase E2 — Repositories.**
-`src/repositories/wp/medical-history.repo.ts` and `prescriptions.repo.ts` — reads direct
-SQL, writes via E1 — plus contract tests in the 7.8M–8.9M id range like the others.
-`encounters` already has a service; it gains a repo only if E1 forces the split.
+**Phase E2 — Repositories. DONE.**
+Smaller than planned, because E1 already shipped the writes
+(`replaceEncounterHistory`, `replaceEncounterPrescriptions` in `encounters.write.ts`)
+and `billing/medical-history.service.ts` already reads the table with an `encounterId`
+filter. Building the two repositories as scoped would have duplicated working code.
+
+What was actually missing was the *narrow* read: one encounter's rows, typed, in order,
+with no RBAC scope object and no name joins — the encounter-shaped features authorise
+through the encounter itself. That is `src/repositories/wp/clinical-records.repo.ts`,
+named to match the plugin controller it pairs with, plus batching helpers so a timeline
+does not run one query per encounter. 13 DB-backed contract tests.
 
 **Phase E3 — Session notes onto the encounter.**
 Rewrite `src/services/session-notes/service.ts`: a note becomes an encounter plus its
