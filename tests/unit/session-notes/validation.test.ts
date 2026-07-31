@@ -1,6 +1,8 @@
 /**
- * Unit tests for the Session Notes validation module.
- * Tests the Zod schemas, SOAP formatting, and summary builder.
+ * Session Notes validation.
+ *
+ * SOAP is gone (phase E3): a note is a KiviCare encounter now, and its body is typed
+ * `entries` — problem / observation / note — which KiviCare's own views render.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -8,7 +10,7 @@ import {
   createSessionNoteSchema,
   updateSessionNoteSchema,
   listSessionNotesQuerySchema,
-  formatSoapToContent,
+  entriesToContent,
   buildSummary,
 } from '@/services/session-notes/validation';
 
@@ -21,12 +23,28 @@ describe('createSessionNoteSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts valid SOAP input', () => {
+  it('accepts typed entries instead of SOAP', () => {
     const result = createSessionNoteSchema.safeParse({
       sessionId: '5150',
-      soap: { subjective: 'Sore throat', objective: 'T=37.8', assessment: 'Viral', plan: 'Rest' },
+      entries: [
+        { type: 'problem', title: 'Kecemasan sosial' },
+        { type: 'observation', title: 'Kontak mata membaik' },
+      ],
     });
     expect(result.success).toBe(true);
+  });
+
+  it('rejects an entry type KiviCare does not know', () => {
+    const result = createSessionNoteSchema.safeParse({
+      sessionId: '5150',
+      entries: [{ type: 'subjective', title: 'Sore throat' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('requires either content or an entry', () => {
+    expect(createSessionNoteSchema.safeParse({ sessionId: '5150' }).success).toBe(false);
+    expect(createSessionNoteSchema.safeParse({ sessionId: '5150', entries: [] }).success).toBe(false);
   });
 
   it('rejects missing sessionId', () => {
@@ -64,16 +82,17 @@ describe('updateSessionNoteSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts SOAP input', () => {
+  it('accepts entries', () => {
     const result = updateSessionNoteSchema.safeParse({
-      soap: { subjective: 'S', objective: 'O', assessment: 'A', plan: 'P' },
+      entries: [{ type: 'note', title: 'Ringkasan sesi' }],
     });
     expect(result.success).toBe(true);
   });
 
-  it('rejects empty content', () => {
-    const result = updateSessionNoteSchema.safeParse({ content: '' });
-    expect(result.success).toBe(false);
+  it('accepts empty content, which clears the encounter description', () => {
+    // Unlike create, an update to '' is meaningful: it blanks the summary text while
+    // leaving the typed entries in place.
+    expect(updateSessionNoteSchema.safeParse({ content: '' }).success).toBe(true);
   });
 });
 
@@ -112,33 +131,25 @@ describe('listSessionNotesQuerySchema', () => {
   });
 });
 
-describe('formatSoapToContent', () => {
-  it('formats SOAP sections with headers', () => {
-    const result = formatSoapToContent({
-      subjective: 'Client reports increased anxiety',
-      objective: 'Observed tense posture',
-      assessment: 'GAD worsening',
-      plan: 'Increase session frequency to weekly',
-    });
-    expect(result).toContain('SUBJECTIVE:');
-    expect(result).toContain('OBJECTIVE:');
-    expect(result).toContain('ASSESSMENT:');
-    expect(result).toContain('PLAN:');
+describe('entriesToContent', () => {
+  it('flattens the description and entries into one searchable body', () => {
+    const out = entriesToContent('Sesi berjalan lancar', [
+      { type: 'problem', title: 'Kecemasan sosial' },
+      { type: 'note', title: 'Klien lebih terbuka' },
+    ]);
+    expect(out).toContain('Sesi berjalan lancar');
+    expect(out).toContain('PROBLEM: Kecemasan sosial');
+    expect(out).toContain('NOTE: Klien lebih terbuka');
   });
 
-  it('trims empty sections', () => {
-    const result = formatSoapToContent({
-      subjective: 'Client reports increased anxiety',
-      objective: '',
-      assessment: '',
-      plan: '',
-    });
-    expect(result).not.toMatch(/^OBJECTIVE:\s*$/m);
+  it('omits an absent description rather than leaving a blank line', () => {
+    const out = entriesToContent(null, [{ type: 'note', title: 'Hanya catatan' }]);
+    expect(out).toBe('NOTE: Hanya catatan');
   });
 
-  it('returns empty string when all sections empty', () => {
-    const result = formatSoapToContent({ subjective: '', objective: '', assessment: '', plan: '' });
-    expect(result).toBe('');
+  it('returns an empty string when there is nothing recorded', () => {
+    expect(entriesToContent(null, [])).toBe('');
+    expect(entriesToContent('   ', [])).toBe('');
   });
 });
 

@@ -10,7 +10,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import {
   SessionNoteAccessError,
   SessionNoteService,
@@ -23,8 +22,7 @@ import { callerFromHeaders } from '@/lib/auth/session-notes-caller';
 
 export const dynamic = 'force-dynamic';
 
-const prisma = new PrismaClient();
-const service = new SessionNoteService(prisma);
+const service = new SessionNoteService();
 
 function problemResponse(err: SessionNoteAccessError): NextResponse {
   return NextResponse.json(

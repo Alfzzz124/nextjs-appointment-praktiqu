@@ -7,7 +7,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import {
   SessionNoteAccessError,
   SessionNoteService,
@@ -16,8 +15,7 @@ import { callerFromHeaders } from '@/lib/auth/session-notes-caller';
 
 export const dynamic = 'force-dynamic';
 
-const prisma = new PrismaClient();
-const service = new SessionNoteService(prisma);
+const service = new SessionNoteService();
 
 function problemResponse(err: SessionNoteAccessError): NextResponse {
   return NextResponse.json(
@@ -35,9 +33,19 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
+  // Note ids are wp_kc_patient_encounters.id integers; refuse a non-numeric segment
+  // rather than querying with NaN.
+  const noteId = Number(params.id);
+  if (!Number.isSafeInteger(noteId) || noteId <= 0) {
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Not Found', status: 404 },
+      { status: 404 },
+    );
+  }
+
   try {
     const caller = await callerFromHeaders(req);
-    const note = await service.close(params.id, { actor: caller, clinicId: caller.clinicId });
+    const note = await service.close(noteId, { actor: caller, clinicId: caller.clinicId });
     return NextResponse.json(note);
   } catch (err) {
     if (err instanceof SessionNoteAccessError) return problemResponse(err);

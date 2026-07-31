@@ -1,6 +1,6 @@
 # Encounter migration — retiring `session_notes`, `intervention_plans`, `recommendation_items`
 
-**Status:** planned, not started
+**Status:** E0–E3 done; E4 (intervention plans) and E5 (contract) open
 **Decided:** 2026-07-30
 **Depends on:** the Phase 3 work in `shadow-tables-audit.md` (done, commits `8520d69`…`aa7b366`)
 
@@ -162,11 +162,23 @@ through the encounter itself. That is `src/repositories/wp/clinical-records.repo
 named to match the plugin controller it pairs with, plus batching helpers so a timeline
 does not run one query per encounter. 13 DB-backed contract tests.
 
-**Phase E3 — Session notes onto the encounter.**
-Rewrite `src/services/session-notes/service.ts`: a note becomes an encounter plus its
-`medical_history` children. `summary` is derived on read rather than stored. SOAP
-formatting and its validation schema are deleted, not deprecated. Authorship and the
-lock rules already read the WP session (done in Phase 3.8) and carry over unchanged.
+**Phase E3 — Session notes onto the encounter. DONE.**
+A note is now the encounter for the session's appointment; the note id IS the encounter
+id. Body = `description` + typed `medical_history` entries. OPEN/CLOSED = status 1/0.
+`summary` is derived on read — there is no column, and a stored copy would drift from
+the text it summarises. SOAP and `formatSoapToContent` are deleted, not deprecated.
+
+Two things fell out of the rewrite:
+
+- CLINIC_ADMIN listing is scoped by `clinic_id` directly now. An encounter carries one;
+  `session_notes` did not, which is why the previous version had to resolve the clinic's
+  doctor roster first.
+- `?search=` moved out of SQL. The text lives across `description` plus N history rows,
+  so there is no single column to match on; the page is filtered after the read.
+
+Closing a note calls `closeEncounter`, which fires `kc_encounter_closed` — the listener
+that mails the patient their notes and prescription, and which nothing in KiviCare core
+or Pro had ever triggered.
 
 **Phase E4 — Intervention plans onto the encounter.**
 Rewrite `src/services/intervention-plan/service.ts`: the plan *is* the encounter, items

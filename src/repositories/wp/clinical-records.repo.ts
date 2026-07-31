@@ -22,6 +22,134 @@ export { HISTORY_TYPE };
 export type { HistoryType };
 
 /* ------------------------------------------------------------------ */
+/* Encounters                                                          */
+/* ------------------------------------------------------------------ */
+
+export type WpEncounter = {
+  id: number;
+  clinicId: number;
+  doctorId: number;
+  patientId: number;
+  appointmentId: number | null;
+  description: string | null;
+  /** 1 = open, 0 = closed. */
+  status: number;
+  addedBy: number;
+  encounterDate: Date | null;
+  createdAt: Date | null;
+};
+
+const ENCOUNTER_SELECT = {
+  id: true,
+  clinicId: true,
+  doctorId: true,
+  patientId: true,
+  appointmentId: true,
+  description: true,
+  status: true,
+  addedBy: true,
+  encounterDate: true,
+  createdAt: true,
+} as const;
+
+type EncounterRow = {
+  id: bigint;
+  clinicId: bigint;
+  doctorId: bigint;
+  patientId: bigint;
+  appointmentId: bigint | null;
+  description: string | null;
+  status: number | null;
+  addedBy: bigint;
+  encounterDate: Date | null;
+  createdAt: Date | null;
+};
+
+function toEncounter(r: EncounterRow): WpEncounter {
+  return {
+    id: Number(r.id),
+    clinicId: Number(r.clinicId),
+    doctorId: Number(r.doctorId),
+    patientId: Number(r.patientId),
+    appointmentId: r.appointmentId === null ? null : Number(r.appointmentId),
+    description: r.description,
+    status: Number(r.status ?? 0),
+    addedBy: Number(r.addedBy),
+    encounterDate: r.encounterDate,
+    createdAt: r.createdAt,
+  };
+}
+
+/**
+ * The encounter recording one appointment — the "session note" of that session.
+ *
+ * KiviCare puts no unique index on `appointment_id`, so duplicates are possible in
+ * principle. The lowest id wins, so the answer is at least deterministic and matches
+ * whichever row KiviCare's own UI created first.
+ */
+export async function findEncounterByAppointmentId(
+  appointmentId: number,
+): Promise<WpEncounter | null> {
+  const row = await prisma.kcPatientEncounter.findFirst({
+    where: { appointmentId: BigInt(appointmentId) },
+    select: ENCOUNTER_SELECT,
+    orderBy: { id: 'asc' },
+  });
+  return row ? toEncounter(row as EncounterRow) : null;
+}
+
+export async function findEncounterById(id: number): Promise<WpEncounter | null> {
+  const row = await prisma.kcPatientEncounter.findUnique({
+    where: { id: BigInt(id) },
+    select: ENCOUNTER_SELECT,
+  });
+  return row ? toEncounter(row as EncounterRow) : null;
+}
+
+export type ListEncountersQuery = {
+  page: number;
+  perPage: number;
+  /** Restrict to these clinics. An empty array yields nothing, never everything. */
+  clinicIds?: number[];
+  doctorId?: number;
+  patientId?: number;
+  status?: number;
+};
+
+export async function listEncounters(
+  query: ListEncountersQuery,
+): Promise<{ items: WpEncounter[]; total: number }> {
+  const where: Record<string, unknown> = {};
+
+  if (query.clinicIds !== undefined) {
+    // An access-control filter: "scoped to no clinics" must return nothing.
+    where.clinicId =
+      query.clinicIds.length === 0
+        ? { in: [] }
+        : { in: query.clinicIds.map((n) => BigInt(n)) };
+  }
+  if (query.doctorId !== undefined) where.doctorId = BigInt(query.doctorId);
+  if (query.patientId !== undefined) where.patientId = BigInt(query.patientId);
+  if (query.status !== undefined) where.status = query.status;
+
+  const perPage = Math.min(100, Math.max(1, Math.trunc(query.perPage)));
+  const page = Math.max(1, Math.trunc(query.page));
+
+  const [rows, total] = await Promise.all([
+    prisma.kcPatientEncounter.findMany({
+      where,
+      select: ENCOUNTER_SELECT,
+      orderBy: { id: 'desc' },
+      skip: (page - 1) * perPage,
+      take: perPage,
+    }),
+    prisma.kcPatientEncounter.count({ where }),
+  ]);
+
+  return { items: (rows as EncounterRow[]).map(toEncounter), total };
+}
+
+/* ------------------------------------------------------------------ */
 /* Medical history                                                     */
 /* ------------------------------------------------------------------ */
 

@@ -8,7 +8,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import {
   SessionNoteAccessError,
   SessionNoteService,
@@ -17,8 +16,7 @@ import { callerFromHeaders } from '@/lib/auth/session-notes-caller';
 
 export const dynamic = 'force-dynamic';
 
-const prisma = new PrismaClient();
-const service = new SessionNoteService(prisma);
+const service = new SessionNoteService();
 
 function problemResponse(err: SessionNoteAccessError): NextResponse {
   return NextResponse.json(
@@ -36,9 +34,18 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
+  // The session id is a wp_kc_appointments.id integer.
+  const sessionId = Number(params.id);
+  if (!Number.isSafeInteger(sessionId) || sessionId <= 0) {
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Not Found', status: 404 },
+      { status: 404 },
+    );
+  }
+
   try {
     const caller = await callerFromHeaders(req);
-    const note = await service.getBySessionId(params.id, {
+    const note = await service.getBySessionId(sessionId, {
       actor: caller,
       clinicId: caller.clinicId,
     });

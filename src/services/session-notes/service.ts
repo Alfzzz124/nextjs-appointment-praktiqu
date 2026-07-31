@@ -1,53 +1,66 @@
 /**
- * Session Notes service — feature 008.
+ * Session Notes — a note IS a KiviCare encounter (phase E3).
  *
- * Responsibilities:
- *   - Enforce note-creation rules (only on CHECK_IN/CHECK_OUT sessions).
- *   - Enforce authorship (only the professional on the session writes).
- *   - Lock notes when the session is COMPLETED or the note is closed.
- *   - Build & persist the 200-char summary for feature 014.
- *   - Emit audit events on every create / update / close.
+ * Retires the `session_notes` table. It held 0 rows on staging while clinicians had
+ * recorded 319 encounters and 1167 medical-history entries in KiviCare: we had built a
+ * parallel clinical record nobody used, invisible to every KiviCare screen.
  *
- * Spec source: specs/008-session-notes/spec.md, plan.md.
+ * The mapping, and why each half fits:
+ *   note                → `wp_kc_patient_encounters` row for the session's appointment
+ *                         (both are one-per-session)
+ *   note id             → the encounter id
+ *   note body           → the encounter's `description` plus typed
+ *                         `wp_kc_medical_history` entries (problem/observation/note)
+ *   OPEN / CLOSED       → encounter `status` 1 / 0
+ *   summary             → derived on read; there is no column, and a stored copy would
+ *                         drift from the text it summarises
+ *
+ * SOAP is gone. It was ours, not KiviCare's, and its four fixed sections could not be
+ * rendered by KiviCare's encounter view, templates or print output.
+ *
+ * Writes go through the plugin, because KiviCare fires listeners on encounter changes —
+ * including `kc_encounter_closed`, which mails the patient their notes and prescription.
+ *
+ * Ids are `number` throughout: `wp_kc_appointments.id` for a session,
+ * `wp_kc_patient_encounters.id` for a note.
  */
 
-import type { PrismaClient } from '@prisma/client';
 import { logging } from '@/lib/logging';
-import { listClinicMembers } from '@/repositories/wp/clinics.repo';
+import { findSessionById } from '@/repositories/wp/sessions.repo';
 import {
-  SESSION_STATUS,
-  findSessionById,
-  listSessions,
-  type SessionStatus,
-} from '@/repositories/wp/sessions.repo';
+  findEncounterByAppointmentId,
+  findEncounterById,
+  listEncounterHistory,
+  listEncounters,
+  listHistoryForEncounters,
+  type WpEncounter,
+} from '@/repositories/wp/clinical-records.repo';
 import {
-  type CreateSessionNoteInput,
-  type UpdateSessionNoteInput,
-  type ListSessionNotesQuery,
+  ENCOUNTER_STATUS,
+  HISTORY_TYPE,
+  closeEncounter,
+  createEncounter,
+  replaceEncounterHistory,
+  updateEncounter,
+  type HistoryEntry,
+  type HistoryType,
+} from '@/repositories/wp/encounters.write';
+import {
   buildSummary,
-  formatSoapToContent,
+  entriesToContent,
+  type CreateSessionNoteInput,
+  type ListSessionNotesQuery,
+  type SessionNoteEntry,
+  type UpdateSessionNoteInput,
 } from './validation';
 
 export const SESSION_NOTE_SUMMARY_MAX = 200;
 
 /** Sessions in these statuses can have notes created / edited. */
-const EDITABLE_SESSION_STATUSES: SessionStatus[] = [
-  SESSION_STATUS.CHECK_IN,
-  SESSION_STATUS.CHECK_OUT,
-];
+const EDITABLE_SESSION_STATUSES = ['CHECK_IN', 'CHECK_OUT'];
 
 /** Sessions in these statuses lock the note. */
-const LOCKED_SESSION_STATUSES: SessionStatus[] = [SESSION_STATUS.CANCELLED];
-
-/**
- * How many of a client's sessions the `clientId` filter considers.
- *
- * `session_notes.sessionId` is a plain string column with no relation to
- * `wp_kc_appointments`, so filtering by client means resolving their session ids first.
- * One client's history fits well inside this; a practice's would not, which is why
- * clinic scoping goes through professionals instead.
- */
-const CLIENT_SESSION_LOOKUP_CAP = 500;
+const LOCKED_SESSION_STATUSES = ['CANCELLED'];
 
 export class SessionNoteAccessError extends Error {
   status: number;
@@ -64,8 +77,8 @@ export interface SessionNoteActor {
   /**
    * The same person's `wp_users.ID`.
    *
-   * Authorship is compared on this, not on `userId`: a note's `professionalId` is a
-   * KiviCare doctor id, and the two id spaces do not match.
+   * Authorship is compared on this: an encounter's author is a KiviCare doctor id, and
+   * the two id spaces do not match.
    */
   wpUserId: number;
   role: 'SUPER_ADMIN' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'RECEPTIONIST' | 'CLIENT';
@@ -80,83 +93,143 @@ export interface SessionNoteActorScope {
   clinicId?: number | null;
 }
 
-export class SessionNoteService {
-  constructor(private prisma: PrismaClient) {}
+/**
+ * Normalise validated entries into the write repository's shape.
+ *
+ * The zod schema already requires both fields, but the project compiles with
+ * `strictNullChecks: false`, under which `z.infer` marks every property optional — so
+ * TypeScript cannot see the guarantee. Rather than assert it away, the values are made
+ * definite here. Empty titles are dropped, which is what the plugin does server-side
+ * anyway: they render as blank rows in KiviCare's encounter view.
+ */
+function toHistoryEntries(
+  entries: ReadonlyArray<{ type?: string; title?: string }> | undefined,
+): HistoryEntry[] {
+  return (entries ?? [])
+    .map((e) => ({
+      type: (e.type ?? HISTORY_TYPE.NOTE) as HistoryType,
+      title: (e.title ?? '').trim(),
+    }))
+    .filter((e) => e.title !== '');
+}
 
+/** The shape callers have always received, rebuilt from the encounter. */
+export interface SessionNoteDTO {
+  id: number;
+  sessionId: string;
+  professionalId: string;
+  clientId: number;
+  clinicId: number;
+  summary: string;
+  content: string;
+  entries: SessionNoteEntry[];
+  status: 'OPEN' | 'CLOSED';
+  createdAt: Date | null;
+}
+
+function toDTO(
+  encounter: WpEncounter,
+  entries: ReadonlyArray<{ type: string; title: string }>,
+): SessionNoteDTO {
+  const content = entriesToContent(encounter.description, entries);
+  return {
+    id: encounter.id,
+    // Kept as text for the callers that have always read it that way; the value is the
+    // appointment id.
+    sessionId: encounter.appointmentId === null ? '' : String(encounter.appointmentId),
+    professionalId: String(encounter.doctorId),
+    clientId: encounter.patientId,
+    clinicId: encounter.clinicId,
+    summary: buildSummary(content, SESSION_NOTE_SUMMARY_MAX),
+    content,
+    entries: entries.map((e) => ({ type: e.type as SessionNoteEntry['type'], title: e.title })),
+    status: encounter.status === ENCOUNTER_STATUS.CLOSED ? 'CLOSED' : 'OPEN',
+    createdAt: encounter.createdAt,
+  };
+}
+
+export class SessionNoteService {
   // ---------------------------------------------------------------------
   // Create
   // ---------------------------------------------------------------------
 
   async create(input: CreateSessionNoteInput, scope: SessionNoteActorScope) {
     const session = await findSessionById(Number(input.sessionId));
-
     if (!session) {
       throw new SessionNoteAccessError('Session not found', 404);
     }
 
     this.assertCanCreate(session, scope);
 
-    const existing = await this.prisma.sessionNote.findUnique({
-      where: { sessionId: input.sessionId },
-    });
+    // One encounter per appointment, as one note per session. KiviCare's own UI may
+    // have created it already — that is a conflict, not a second note.
+    const existing = await findEncounterByAppointmentId(Number(input.sessionId));
     if (existing) {
-      throw new SessionNoteAccessError(
-        'Session notes already exist for this session',
-        409,
-      );
+      throw new SessionNoteAccessError('Session notes already exist for this session', 409);
     }
 
-    const content = input.soap
-      ? formatSoapToContent(input.soap)
-      : (input.content ?? '');
-
-    const note = await this.prisma.sessionNote.create({
-      data: {
-        sessionId: input.sessionId,
-        // Stored as text: the column has no FK and never did. The value is now the
-        // KiviCare doctor id (wp_users.ID) rather than a `doctors` cuid.
-        professionalId: String(session.professionalId),
-        content,
-        summary: buildSummary(content, SESSION_NOTE_SUMMARY_MAX),
-      },
+    const created = await createEncounter({
+      clinicId: session.clinicId,
+      doctorId: session.professionalId,
+      patientId: session.clientId,
+      appointmentId: Number(input.sessionId),
+      description: input.content ?? '',
+      // Credit the clinician, not the service token: without this the plugin's
+      // get_current_user_id() records 0 and the author is lost.
+      addedBy: scope.actor.wpUserId,
     });
+
+    const entries = toHistoryEntries(input.entries);
+    if (entries.length > 0) {
+      await replaceEncounterHistory({
+        encounterId: created.id,
+        patientId: session.clientId,
+        entries,
+        addedBy: scope.actor.wpUserId,
+      });
+    }
 
     await logging.audit('session_note.create', {
       userId: scope.actor.userId,
       resource: 'session_note',
-      resourceId: note.id,
+      resourceId: String(created.id),
       ip: scope.actor.ip,
       userAgent: scope.actor.userAgent,
       requestId: scope.actor.requestId,
       path: '/api/v1/session-notes',
       method: 'POST',
       statusCode: 201,
-      metadata: { sessionId: note.sessionId, professionalId: note.professionalId },
+      metadata: { sessionId: input.sessionId, professionalId: session.professionalId },
     });
 
-    return note;
+    return this.load(created.id);
   }
 
   // ---------------------------------------------------------------------
   // Read
   // ---------------------------------------------------------------------
 
-  async getById(id: string, scope: SessionNoteActorScope) {
-    const note = await this.prisma.sessionNote.findUnique({ where: { id } });
-    if (!note) {
+  private async load(encounterId: number): Promise<SessionNoteDTO> {
+    const encounter = await findEncounterById(encounterId);
+    if (!encounter) {
       throw new SessionNoteAccessError('Session note not found', 404);
     }
+    const entries = await listEncounterHistory(encounterId);
+    return toDTO(encounter, entries);
+  }
+
+  async getById(id: number, scope: SessionNoteActorScope): Promise<SessionNoteDTO> {
+    const note = await this.load(id);
     this.assertCanRead(note.professionalId, scope);
     return note;
   }
 
-  async getBySessionId(sessionId: string, scope: SessionNoteActorScope) {
-    const note = await this.prisma.sessionNote.findUnique({
-      where: { sessionId },
-    });
-    if (!note) {
+  async getBySessionId(sessionId: number, scope: SessionNoteActorScope): Promise<SessionNoteDTO> {
+    const encounter = await findEncounterByAppointmentId(sessionId);
+    if (!encounter) {
       throw new SessionNoteAccessError('Session note not found', 404);
     }
+    const note = await this.load(encounter.id);
     this.assertCanRead(note.professionalId, scope);
     return note;
   }
@@ -166,52 +239,55 @@ export class SessionNoteService {
   // ---------------------------------------------------------------------
 
   async list(query: ListSessionNotesQuery, scope: SessionNoteActorScope) {
-    const where: Record<string, unknown> = {};
     const { actor } = scope;
 
-    // RBAC scoping: professionals see only their own; CLINIC_ADMIN / SUPER_ADMIN
-    // see all notes within their clinic / globally.
+    let doctorId: number | undefined;
+    let clinicIds: number[] | undefined;
+
     if (actor.role === 'PROFESSIONAL') {
-      where.professionalId = String(actor.wpUserId);
-    } else if (actor.role === 'CLINIC_ADMIN' && scope.clinicId) {
-      // Scoped by the clinic's professionals, not by its sessions. The old query
-      // loaded every appointment id in the clinic into one IN list, which grows
-      // without bound; the doctor roster is a handful of rows and gives the same
-      // answer, since a note's author is by definition the session's doctor.
-      const members = await listClinicMembers(BigInt(scope.clinicId));
-      const doctorIds = members
-        .filter((m) => m.role === 'doctor')
-        .map((m) => m.userId.toString());
-      // A clinic with no doctors must see nothing, not everything.
-      where.professionalId = { in: doctorIds };
+      doctorId = actor.wpUserId;
+    } else if (actor.role === 'CLINIC_ADMIN') {
+      // Scoped by the clinic itself now — an encounter carries `clinic_id`, so the
+      // roster round-trip the old session_notes table needed is gone.
+      clinicIds = scope.clinicId ? [scope.clinicId] : [];
     } else if (actor.role !== 'SUPER_ADMIN') {
       // RECEPTIONIST / CLIENT → no listing access.
-      return { data: [], pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: query.limit } };
+      return {
+        data: [],
+        pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: query.limit },
+      };
     }
 
-    if (query.status) where.status = query.status;
-    if (query.clientId) {
-      const { items } = await listSessions({
-        page: 1,
-        perPage: CLIENT_SESSION_LOOKUP_CAP,
-        clientId: Number(query.clientId),
-      });
-      where.sessionId = { in: items.map((s) => String(s.id)) };
-    }
-    if (query.search) {
-      where.content = { contains: query.search };
-    }
+    // A client filter narrows to that patient's encounters directly; the old code had
+    // to resolve their session ids first because notes carried no patient column.
+    const patientId = query.clientId ? Number(query.clientId) : undefined;
 
-    const total = await this.prisma.sessionNote.count({ where });
-    const items = await this.prisma.sessionNote.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+    const { items, total } = await listEncounters({
+      page: query.page,
+      perPage: query.limit,
+      doctorId,
+      clinicIds,
+      patientId,
+      status:
+        query.status === undefined
+          ? undefined
+          : query.status === 'CLOSED'
+            ? ENCOUNTER_STATUS.CLOSED
+            : ENCOUNTER_STATUS.OPEN,
     });
 
+    const historyByEncounter = await listHistoryForEncounters(items.map((e) => e.id));
+    let data = items.map((e) => toDTO(e, historyByEncounter.get(e.id) ?? []));
+
+    // Search happens here, not in SQL: the text now lives across `description` plus N
+    // medical_history rows, so there is no single column to match on.
+    if (query.search) {
+      const needle = query.search.toLowerCase();
+      data = data.filter((n) => n.content.toLowerCase().includes(needle));
+    }
+
     return {
-      data: items,
+      data,
       pagination: {
         currentPage: query.page,
         totalPages: Math.max(1, Math.ceil(total / query.limit)),
@@ -225,33 +301,29 @@ export class SessionNoteService {
   // Update
   // ---------------------------------------------------------------------
 
-  async update(
-    id: string,
-    input: UpdateSessionNoteInput,
-    scope: SessionNoteActorScope,
-  ) {
-    const note = await this.prisma.sessionNote.findUnique({ where: { id } });
-    if (!note) {
-      throw new SessionNoteAccessError('Session note not found', 404);
-    }
-    // Awaited: without it the promise was dropped and the "session is locked" check
-    // never blocked an edit — the authorship checks inside threw into nothing too.
+  async update(id: number, input: UpdateSessionNoteInput, scope: SessionNoteActorScope) {
+    const note = await this.load(id);
     await this.assertCanEdit(note, scope);
 
-    const content = input.soap ? formatSoapToContent(input.soap) : (input.content ?? '');
+    if (input.content !== undefined) {
+      await updateEncounter(id, { description: input.content });
+    }
 
-    const updated = await this.prisma.sessionNote.update({
-      where: { id },
-      data: {
-        content,
-        summary: buildSummary(content, SESSION_NOTE_SUMMARY_MAX),
-      },
-    });
+    if (input.entries !== undefined) {
+      // Replace, not append: editing rewrites the record wholesale, and a retried
+      // request must not duplicate every line.
+      await replaceEncounterHistory({
+        encounterId: id,
+        patientId: note.clientId,
+        entries: toHistoryEntries(input.entries),
+        addedBy: scope.actor.wpUserId,
+      });
+    }
 
     await logging.audit('session_note.update', {
       userId: scope.actor.userId,
       resource: 'session_note',
-      resourceId: id,
+      resourceId: String(id),
       ip: scope.actor.ip,
       userAgent: scope.actor.userAgent,
       requestId: scope.actor.requestId,
@@ -260,32 +332,29 @@ export class SessionNoteService {
       statusCode: 200,
     });
 
-    return updated;
+    return this.load(id);
   }
 
   // ---------------------------------------------------------------------
   // Close (lock)
   // ---------------------------------------------------------------------
 
-  async close(id: string, scope: SessionNoteActorScope) {
-    const note = await this.prisma.sessionNote.findUnique({ where: { id } });
-    if (!note) {
-      throw new SessionNoteAccessError('Session note not found', 404);
-    }
+  async close(id: number, scope: SessionNoteActorScope) {
+    const note = await this.load(id);
     if (note.status === 'CLOSED') {
       return note; // idempotent
     }
-    this.assertCanClose(note, scope);
+    this.assertCanClose(note.professionalId, scope);
 
-    const closed = await this.prisma.sessionNote.update({
-      where: { id },
-      data: { status: 'CLOSED', closedAt: new Date() },
-    });
+    // Through the plugin: this is what finally fires `kc_encounter_closed`, the hook
+    // whose listener mails the patient their notes and prescription. Nothing in
+    // KiviCare core or Pro ever triggered it, so that email had never been sent.
+    await closeEncounter(id);
 
     await logging.audit('session_note.close', {
       userId: scope.actor.userId,
       resource: 'session_note',
-      resourceId: id,
+      resourceId: String(id),
       ip: scope.actor.ip,
       userAgent: scope.actor.userAgent,
       requestId: scope.actor.requestId,
@@ -294,7 +363,7 @@ export class SessionNoteService {
       statusCode: 200,
     });
 
-    return closed;
+    return this.load(id);
   }
 
   // ---------------------------------------------------------------------
@@ -302,12 +371,16 @@ export class SessionNoteService {
   // ---------------------------------------------------------------------
 
   private assertCanCreate(
-    session: { status: SessionStatus; professionalId: number; clinicId: number },
+    session: { status: string; professionalId: number; clinicId: number },
     scope: SessionNoteActorScope,
   ) {
     const { actor } = scope;
 
-    if (actor.role !== 'PROFESSIONAL' && actor.role !== 'SUPER_ADMIN' && actor.role !== 'CLINIC_ADMIN') {
+    if (
+      actor.role !== 'PROFESSIONAL' &&
+      actor.role !== 'SUPER_ADMIN' &&
+      actor.role !== 'CLINIC_ADMIN'
+    ) {
       throw new SessionNoteAccessError(
         'Only the assigned professional can create session notes',
         403,
@@ -315,10 +388,7 @@ export class SessionNoteService {
     }
 
     if (actor.role === 'PROFESSIONAL' && session.professionalId !== actor.wpUserId) {
-      throw new SessionNoteAccessError(
-        'Professional is not assigned to this session',
-        403,
-      );
+      throw new SessionNoteAccessError('Professional is not assigned to this session', 403);
     }
 
     if (!EDITABLE_SESSION_STATUSES.includes(session.status)) {
@@ -337,32 +407,21 @@ export class SessionNoteService {
     throw new SessionNoteAccessError('Not allowed to read this session note', 403);
   }
 
-  private async assertCanEdit(
-    note: { status: string; professionalId: string; sessionId: string },
-    scope: SessionNoteActorScope,
-  ) {
+  private async assertCanEdit(note: SessionNoteDTO, scope: SessionNoteActorScope) {
     const { actor } = scope;
     if (actor.role === 'SUPER_ADMIN') return; // admins may force-unlock in extreme cases
     if (actor.role !== 'PROFESSIONAL') {
-      throw new SessionNoteAccessError(
-        'Only the assigned professional can edit session notes',
-        403,
-      );
+      throw new SessionNoteAccessError('Only the assigned professional can edit session notes', 403);
     }
     if (note.professionalId !== String(actor.wpUserId)) {
-      throw new SessionNoteAccessError(
-        'Professional did not create this session note',
-        403,
-      );
+      throw new SessionNoteAccessError('Professional did not create this session note', 403);
     }
     if (note.status === 'CLOSED') {
-      throw new SessionNoteAccessError(
-        'Session note is closed and cannot be edited',
-        409,
-      );
+      throw new SessionNoteAccessError('Session note is closed and cannot be edited', 409);
     }
-    // Lock once the session is no longer editable.
-    const session = await findSessionById(Number(note.sessionId));
+
+    // Lock once the session itself is no longer editable.
+    const session = note.sessionId ? await findSessionById(Number(note.sessionId)) : null;
     if (session && LOCKED_SESSION_STATUSES.includes(session.status)) {
       throw new SessionNoteAccessError(
         'Session note is locked because the session is no longer editable',
@@ -371,10 +430,7 @@ export class SessionNoteService {
     }
   }
 
-  private assertCanClose(
-    note: { professionalId: string },
-    scope: SessionNoteActorScope,
-  ) {
+  private assertCanClose(professionalId: string, scope: SessionNoteActorScope) {
     const { actor } = scope;
     if (actor.role === 'SUPER_ADMIN') return;
     if (actor.role !== 'PROFESSIONAL') {
@@ -383,11 +439,8 @@ export class SessionNoteService {
         403,
       );
     }
-    if (note.professionalId !== String(actor.wpUserId)) {
-      throw new SessionNoteAccessError(
-        'Professional did not create this session note',
-        403,
-      );
+    if (professionalId !== String(actor.wpUserId)) {
+      throw new SessionNoteAccessError('Professional did not create this session note', 403);
     }
   }
 }
