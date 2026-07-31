@@ -1,6 +1,12 @@
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
+import {
+  ENCOUNTER_STATUS,
+  createEncounter as wpCreateEncounter,
+  setEncounterStatus,
+  updateEncounter as wpUpdateEncounter,
+} from '@/repositories/wp/encounters.write';
 
 export interface EncounterScope {
   clinicId?: bigint;
@@ -137,22 +143,21 @@ export async function createEncounter(input: EncounterCreateInput, kc: KcActor):
 
   if (!clinicId || clinicId <= 0n) throw new KcError('clinicId is required', 400);
 
-  const created = await prisma.kcPatientEncounter.create({
-    data: {
-      patientId: BigInt(input.patientId),
-      appointmentId: input.appointmentId != null ? BigInt(input.appointmentId) : null,
-      clinicId,
-      doctorId,
-      encounterDate: input.encounterDate ? new Date(input.encounterDate) : new Date(),
-      description: input.description ?? null,
-      status: 1, // open
-      addedBy: kc.wpUserId,
-      createdAt: new Date(),
-      templateId: input.templateId != null ? BigInt(input.templateId) : null,
-    },
-    select: { id: true },
+  // Through the plugin, not Prisma: `kc_encounter_save` carries KiviCare's own
+  // bookkeeping, and a direct INSERT fires none of it.
+  const created = await wpCreateEncounter({
+    clinicId: Number(clinicId),
+    doctorId: Number(doctorId),
+    patientId: input.patientId,
+    appointmentId: input.appointmentId,
+    encounterDate: input.encounterDate,
+    description: input.description,
+    templateId: input.templateId,
+    // The service token has no logged-in user on the WordPress side, so the author
+    // has to be stated explicitly or the row records 0.
+    addedBy: Number(kc.wpUserId),
   });
-  return { id: Number(created.id) };
+  return { id: created.id };
 }
 
 export interface EncounterUpdateInput {
@@ -163,14 +168,19 @@ export interface EncounterUpdateInput {
 
 export async function updateEncounter(id: number, input: EncounterUpdateInput, scope: EncounterScope | null): Promise<void> {
   await getEncounter(id, scope); // scope + existence check (throws 404)
-  await prisma.kcPatientEncounter.update({
-    where: { id: BigInt(id) },
-    data: {
-      description: input.description ?? undefined,
-      encounterDate: input.encounterDate ? new Date(input.encounterDate) : undefined,
-      status: input.status ?? undefined,
-    },
-  });
+
+  if (input.description !== undefined || input.encounterDate !== undefined) {
+    await wpUpdateEncounter(id, {
+      description: input.description,
+      encounterDate: input.encounterDate,
+    });
+  }
+
+  // Status moves separately: closing an encounter is what mails the patient their
+  // notes and prescription, so it cannot ride along in a column update.
+  if (input.status !== undefined) {
+    await setEncounterStatus(id, input.status === 0 ? ENCOUNTER_STATUS.CLOSED : ENCOUNTER_STATUS.OPEN);
+  }
 }
 
 export async function deleteEncounter(id: number, scope: EncounterScope | null): Promise<void> {
@@ -189,15 +199,33 @@ export async function bulkDeleteEncounters(ids: number[], scope: EncounterScope 
   return r.count;
 }
 
+/**
+ * Bulk open/close, scoped to what the actor may touch.
+ *
+ * The scope is resolved with one query, but the status changes go through the plugin
+ * one at a time: closing is what mails the patient their notes, and an `updateMany`
+ * would silently skip every one of those notifications.
+ */
 export async function bulkSetEncounterStatus(ids: number[], status: number, scope: EncounterScope | null): Promise<number> {
   if (status !== 0 && status !== 1) throw new KcError('Invalid status', 400);
   if (ids.length === 0) return 0;
+
   const where: any = { id: { in: ids.map((n) => BigInt(n)) } };
   if (scope?.clinicId !== undefined) where.clinicId = scope.clinicId;
   if (scope?.doctorId !== undefined) where.doctorId = scope.doctorId;
   if (scope?.patientId !== undefined) where.patientId = scope.patientId;
-  const r = await prisma.kcPatientEncounter.updateMany({ where, data: { status } });
-  return r.count;
+
+  // Ids the actor is actually allowed to change. Out-of-scope ids are dropped here
+  // rather than sent to the plugin, which has no view of our scoping rules.
+  const allowed = await prisma.kcPatientEncounter.findMany({ where, select: { id: true } });
+
+  const target = status === 0 ? ENCOUNTER_STATUS.CLOSED : ENCOUNTER_STATUS.OPEN;
+  let changed = 0;
+  for (const row of allowed) {
+    await setEncounterStatus(Number(row.id), target);
+    changed++;
+  }
+  return changed;
 }
 
 export async function exportEncounters(p: EncounterListParams, scope: EncounterScope | null) {

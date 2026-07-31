@@ -33,6 +33,8 @@ require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-patients
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-appointments.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-receptionists.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-doctors.php';
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-clinical-records.php';
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-encounters.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-settings.php';
 
 /**
