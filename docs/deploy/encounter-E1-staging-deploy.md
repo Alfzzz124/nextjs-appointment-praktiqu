@@ -41,7 +41,7 @@ Then swap it in:
 cd ~/appointment.praktiqu.com/wp-content/mu-plugins \
   && rm -rf praktiqu-endpoint \
   && mv ~/pe-staging/praktiqu-endpoint . \
-  && ls praktiqu-endpoint/includes | wc -l   # expect 15
+  && ls praktiqu-endpoint/includes | wc -l   # expect 14
 ```
 
 Confirm the plugin still boots and the new routes are registered:
