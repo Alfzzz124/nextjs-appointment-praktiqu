@@ -41,6 +41,22 @@ vi.mock('@prisma/client', () => {
   return { PrismaClient: vi.fn(() => mockPrisma) };
 });
 
+// ── Custom-field repository mock ─────────────────────────────────────────────
+// Custom fields moved off the shadow tables onto KiviCare's own, so the routes no
+// longer touch PrismaClient.customField at all.
+vi.mock('@/repositories/wp/custom-fields.repo', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/custom-fields.repo')>()),
+  findCustomFieldById: vi.fn(async () => ({
+    id: 7, moduleType: 'client', doctorId: 0, label: 'Catatan', fieldType: 'text',
+    options: [], placeholder: null, isRequired: false, isActive: true, createdAt: null,
+  })),
+  setCustomFieldValue: vi.fn(async () => 1),
+  setCustomFieldStatus: vi.fn(async () => 2),
+  listCustomFieldValues: vi.fn(async () => [
+    { id: 1, fieldId: 7, moduleType: 'client', moduleId: 17, value: 'hello', createdAt: null },
+  ]),
+}));
+
 // ── Import routes AFTER mock ─────────────────────────────────────────────────
 import { DELETE } from '@/app/api/v1/consent-forms/[id]/route';
 import { POST as consentStatusPost } from '@/app/api/v1/consent-forms/status/route';
@@ -132,13 +148,10 @@ describe('POST /api/v1/consent-forms/status', () => {
 
 describe('POST /api/v1/custom-fields/status', () => {
   it('returns 200 with updated count', async () => {
-    const db = getMockPrisma();
-    db.customField.updateMany.mockResolvedValue({ count: 2 });
-
     const res = await cfStatusPost(
       makeReq('http://localhost/api/v1/custom-fields/status', {
         method: 'POST',
-        body: JSON.stringify({ ids: ['f1', 'f2'], status: 0 }),
+        body: JSON.stringify({ ids: [7, 8], status: 0 }),
         headers: { 'content-type': 'application/json' },
       }),
     );
@@ -154,13 +167,10 @@ describe('POST /api/v1/custom-fields/status', () => {
 
 describe('POST /api/v1/custom-fields/save-data', () => {
   it('returns 200 with Saved message', async () => {
-    const db = getMockPrisma();
-    db.customFieldData.upsert.mockResolvedValue({});
-
     const res = await cfSaveData(
       makeReq('http://localhost/api/v1/custom-fields/save-data', {
         method: 'POST',
-        body: JSON.stringify({ entityType: 'client', entityId: 'c1', fieldId: 'f1', value: 'hello' }),
+        body: JSON.stringify({ entityType: 'client', entityId: 17, fieldId: 7, value: 'hello' }),
         headers: { 'content-type': 'application/json' },
       }),
     );
@@ -187,11 +197,8 @@ describe('POST /api/v1/custom-fields/save-data', () => {
 
 describe('GET /api/v1/custom-fields/get-data', () => {
   it('returns 200 with items array', async () => {
-    const db = getMockPrisma();
-    db.customFieldData.findMany.mockResolvedValue([{ fieldId: 'f1', fieldValue: 'hello' }]);
-
     const res = await cfGetData(
-      makeReq('http://localhost/api/v1/custom-fields/get-data?entityType=client&entityId=c1'),
+      makeReq('http://localhost/api/v1/custom-fields/get-data?entityType=client&entityId=17'),
     );
     expect(res.status).toBe(200);
     const json = await res.json();

@@ -376,12 +376,25 @@ Order by dependency, each behind its own PR with the old path still passing test
       appointment it settles is a `wp_kc_appointments` row, confirmed and released
       through the plugin so KiviCare's status listeners still fire. Guest bookings now
       get clinic- and doctor-scoped taxes, which the cuid split had made impossible.
-- [ ] **3.9** `custom-fields/service.ts` → `wp_kc_custom_fields` /
+- [x] **3.9** `custom-fields/service.ts` → `wp_kc_custom_fields` /
       `wp_kc_custom_fields_data` (note the plural `fields` in the second name).
-      **Missed by the original plan** — the only 2a table still on the code path.
-      Bigger than it looks: neither table has a Prisma model yet, and
-      `CustomFieldData.fieldId` is a real FK to `CustomField`, so the relation has to
-      go before the ids can move.
+      **Missed by the original plan**, and it was the `clients` failure repeated: our
+      copies held 0 rows on staging while KiviCare's held 169 real values (114 on
+      appointments, 55 on encounters), and the service read the empty copies.
+      - `wp_kc_custom_fields` stores ONE field definition per row inside the `fields`
+        JSON column — `SettingsController/CustomFields.php:520` writes
+        `json_encode($fields[0])`, not the array. That grain matches our old table, so
+        the migration was a value mapping rather than a reshape.
+      - `isRequired` and `status` are written as STRINGS ('0'/'1') in that JSON, and
+        `name` duplicates `label` — omitting it renders the field blank in WP admin.
+      - Module vocabulary maps `client`→`patient_module`,
+        `appointment`→`appointment_module`, `session_note`→`patient_encounter_module`,
+        the same equivalence the encounter plan rests on.
+      - `clinicId` is gone from the API: KiviCare scopes custom fields by DOCTOR
+        (`module_id`) and has no clinic column, so the old filter could never have been
+        honoured. Replaced by `doctorId`.
+      - Direct SQL, not the plugin: KiviCare declares no `do_action` anywhere in its
+        custom-field paths, so a direct write skips no listener.
 - [x] **3.8** `session-notes`, `progress`, `consent` → tables kept, FK reads swapped to
       the WP repos:
       - `session_notes.sessionId` / `.professionalId` now hold `wp_kc_appointments.id`
@@ -569,7 +582,7 @@ concurrently.
 | 1R — WP read layer | 2 days | |
 | 1W — Plugin write layer (PHP + client) | 3 days | added by D1 |
 | 2 — Re-key keeper tables | 2 days | |
-| 3 — Rewrite 13 services | 5 days | 3.1–3.8 done; 3.9 (custom fields) open |
+| 3 — Rewrite 13 services | 5 days | **done** — 3.1–3.9 |
 | 4 — Delete duplicates | 1 day | |
 | 5 — API contract | 1 day | ships with Phase 3 |
 | **Total** | **~14.5 days** | was ~11.5 before D1 |

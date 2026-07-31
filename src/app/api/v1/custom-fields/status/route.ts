@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { CustomFieldService } from '@/services/custom-fields/service';
 import { withAuth } from '@/lib/auth';
 import { forbidden } from '@/lib/problem-details';
 
-const prisma = new PrismaClient();
-const service = new CustomFieldService(prisma);
+const service = new CustomFieldService();
 
 export const POST = withAuth(async (req, ctx) => {
   const { actor } = ctx;

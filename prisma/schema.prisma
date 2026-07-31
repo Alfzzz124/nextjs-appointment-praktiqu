@@ -1698,6 +1698,43 @@ model KcStaticData {
   @@map("wp_kc_static_data")
 }
 
+/// KiviCare's custom field definitions. One row per FIELD — `fields` holds a single
+/// field object as JSON, not an array (SettingsController/CustomFields.php:520 stores
+/// `json_encode($fields[0])`). Backs the `custom_fields` shadow table.
+///
+/// `module_id` scopes a field to one doctor; 0 means every doctor.
+model KcCustomField {
+  id         BigInt    @id @default(autoincrement())
+  moduleType String?   @map("module_type")
+  moduleId   BigInt?   @map("module_id")
+  /// JSON: { label, type, name, options[], file_upload_type[], isRequired, placeholder, status }
+  fields     String?   @db.LongText
+  status     Int       @default(0) @db.UnsignedTinyInt
+  createdAt  DateTime? @map("created_at")
+
+  @@index([moduleType])
+  @@map("wp_kc_custom_fields")
+}
+
+/// Values captured for a custom field on one entity. Backs `custom_field_data`.
+///
+/// `module_id` is the entity the value belongs to (an appointment id, an encounter id),
+/// NOT the doctor scope that `KcCustomField.moduleId` carries — the same column name
+/// means different things in the two tables.
+model KcCustomFieldData {
+  id         BigInt    @id @default(autoincrement())
+  moduleType String?   @map("module_type")
+  moduleId   BigInt    @map("module_id") @db.UnsignedBigInt
+  /// JSON-encoded value. Scalar, array or object depending on the field type.
+  fieldsData String?   @map("fields_data") @db.LongText
+  createdAt  DateTime? @map("created_at")
+  fieldId    BigInt?   @map("field_id") @db.UnsignedBigInt
+
+  @@index([moduleType, moduleId])
+  @@index([fieldId])
+  @@map("wp_kc_custom_fields_data")
+}
+
 model KcOption {
   optionId    BigInt @id @default(autoincrement()) @map("option_id")
   optionName  String @map("option_name")

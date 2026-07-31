@@ -1,13 +1,12 @@
 /**
  * /api/v1/custom-fields
  *
- * GET  — list field definitions (filter by entityType, clinicId, status)
+ * GET  — list field definitions (filter by entityType, doctorId, status)
  * POST — create a new field definition
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRoles, requireAuth } from '@/lib/auth/route-guards';
-import { PrismaClient } from '@prisma/client';
 import {
   CustomFieldService,
   CustomFieldError,
@@ -16,8 +15,7 @@ import {
   type ModuleType,
 } from '@/services/custom-fields/service';
 
-const prisma = new PrismaClient();
-const service = new CustomFieldService(prisma);
+const service = new CustomFieldService();
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +25,16 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const moduleTypeRaw = searchParams.get('entityType') ?? searchParams.get('moduleType');
-  const clinicId = searchParams.get('clinicId') ?? undefined;
+  // KiviCare scopes custom fields by doctor, not by clinic — `wp_kc_custom_fields`
+  // has no clinic column, so the old `clinicId` filter could never have applied.
+  const doctorRaw = searchParams.get('doctorId');
+  const doctorId = doctorRaw === null ? undefined : Number(doctorRaw);
+  if (doctorId !== undefined && (!Number.isSafeInteger(doctorId) || doctorId < 0)) {
+    return NextResponse.json(
+      { type: 'about:blank', title: 'doctorId must be a non-negative integer', status: 400 },
+      { status: 400 },
+    );
+  }
   const statusRaw = searchParams.get('status');
   const status = statusRaw !== null ? Number(statusRaw) : undefined;
 
@@ -44,7 +51,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const items = await service.listFields({ moduleType: moduleTypeRaw as ModuleType | undefined, clinicId, status });
+    const items = await service.listFields({ moduleType: moduleTypeRaw as ModuleType | undefined, doctorId, status });
     return NextResponse.json({ items });
   } catch (err) {
     if (err instanceof CustomFieldError) {

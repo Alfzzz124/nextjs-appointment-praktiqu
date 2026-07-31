@@ -1,18 +1,35 @@
 /**
- * Custom Field service (016).
+ * Custom fields — backed by KiviCare's `wp_kc_custom_fields` / `wp_kc_custom_fields_data`.
  *
- * Source of truth: specs/016-custom-fields/spec.md
+ * Retires the `custom_fields` / `custom_field_data` shadow tables. Those repeated the
+ * `clients` failure exactly: our copies held 0 rows while KiviCare's held 169 real
+ * values (114 on appointments, 55 on encounters), and this service read the empty
+ * copies. See docs/architecture/shadow-tables-audit.md (Phase 3.9).
  *
  * `CustomField` is the *definition* of a field (label, type, options, required).
- * `CustomFieldData` is the per-record *value* bound to an entity (client,
- * appointment, session note).
+ * Values are bound to an entity — a client, an appointment, an encounter.
  *
- * All Prisma access is funnelled through a single injected client so unit
- * tests can pass a stub.
+ * Validation stays here: it is our behaviour, not KiviCare's. `validateValue` is
+ * unchanged. Only the storage moved.
+ *
+ * Ids are `number`: `wp_kc_custom_fields.id` for a field, and the entity's own id for
+ * `moduleId`.
  */
 
 import { z } from 'zod';
-import type { PrismaClient } from '@prisma/client';
+import {
+  MODULE_TYPE_TO_KC,
+  createCustomField,
+  deleteCustomFieldValues,
+  findCustomFieldById,
+  listCustomFieldValues,
+  listCustomFields,
+  setCustomFieldStatus,
+  setCustomFieldValue,
+  updateCustomField,
+  type ModuleType,
+  type WpCustomField,
+} from '@/repositories/wp/custom-fields.repo';
 
 // Field types — must match spec FR-15.01
 export const FIELD_TYPES = [
@@ -29,8 +46,8 @@ export const FIELD_TYPES = [
 export type FieldType = (typeof FIELD_TYPES)[number];
 
 /** Entity types a custom field can attach to. */
-export const MODULE_TYPES = ['client', 'appointment', 'session_note'] as const;
-export type ModuleType = (typeof MODULE_TYPES)[number];
+export const MODULE_TYPES = Object.keys(MODULE_TYPE_TO_KC) as [ModuleType, ...ModuleType[]];
+export type { ModuleType };
 
 // ----------------------------------------------------------------
 // Schemas (Zod)
@@ -39,32 +56,32 @@ export type ModuleType = (typeof MODULE_TYPES)[number];
 export const customFieldCreateSchema = z.object({
   moduleType: z.enum(MODULE_TYPES),
   fieldLabel: z.string().min(1).max(255),
-  fieldName: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z][a-z0-9_]*$/, 'fieldName must be snake_case (a-z0-9_)')
-    .optional(),
   fieldType: z.enum(FIELD_TYPES),
   options: z.array(z.string().min(1).max(200)).max(50).optional(),
   placeholder: z.string().max(255).optional(),
   isRequired: z.boolean().default(false),
-  clinicId: z.string().optional(),
-  order: z.number().int().min(0).max(10_000).default(0),
+  /**
+   * Restrict the field to one doctor; omit or 0 for every doctor.
+   *
+   * Replaces the old `clinicId`. KiviCare scopes custom fields by doctor
+   * (`wp_kc_custom_fields.module_id`) and has no clinic scoping for them at all, so the
+   * old field could never have been honoured by the storage it now writes to.
+   */
+  doctorId: z.number().int().min(0).optional(),
 });
 
 export const customFieldUpdateSchema = customFieldCreateSchema.partial();
 
 export const customFieldValueSchema = z.object({
   moduleType: z.enum(MODULE_TYPES),
-  moduleId: z.string().min(1),
-  fieldId: z.string().min(1),
+  moduleId: z.coerce.number().int().positive(),
+  fieldId: z.coerce.number().int().positive(),
   fieldValue: z.unknown(),
 });
 
 export const customFieldBulkValuesSchema = z.object({
   values: z
-    .record(z.string().min(1), z.unknown())
+    .record(z.string().regex(/^\d+$/, 'field id must be numeric'), z.unknown())
     .refine((v) => Object.keys(v).length > 0, 'values cannot be empty'),
 });
 
@@ -104,46 +121,67 @@ export class CustomFieldError extends Error {
 }
 
 // ----------------------------------------------------------------
-// Service
+// DTOs
 // ----------------------------------------------------------------
 
+export interface CustomFieldDTO {
+  id: number;
+  moduleType: ModuleType | null;
+  fieldLabel: string;
+  fieldType: string;
+  options: string[] | null;
+  placeholder: string | null;
+  isRequired: boolean;
+  doctorId: number;
+  status: number;
+}
+
 export interface CustomFieldWithValue {
-  field: {
-    id: string;
-    moduleType: ModuleType;
-    fieldLabel: string;
-    fieldType: FieldType;
-    options: string[] | null;
-    placeholder: string | null;
-    isRequired: boolean;
-    clinicId: string | null;
-    order: number;
-    status: number;
-  };
+  field: CustomFieldDTO;
   value: unknown | null;
 }
 
-export class CustomFieldService {
-  constructor(private prisma: PrismaClient) {}
+function toDTO(f: WpCustomField): CustomFieldDTO {
+  return {
+    id: f.id,
+    moduleType: f.moduleType,
+    fieldLabel: f.label,
+    fieldType: f.fieldType,
+    options: f.options.length > 0 ? f.options : null,
+    placeholder: f.placeholder,
+    isRequired: f.isRequired,
+    doctorId: f.doctorId,
+    status: f.isActive ? 1 : 0,
+  };
+}
 
+// ----------------------------------------------------------------
+// Service
+// ----------------------------------------------------------------
+
+export class CustomFieldService {
   // ---------- Field definitions ----------
 
-  async listFields(opts: { moduleType?: ModuleType; clinicId?: string; status?: number } = {}) {
-    return this.prisma.customField.findMany({
-      where: {
-        status: opts.status ?? 1,
-        ...(opts.moduleType ? { moduleType: opts.moduleType } : {}),
-        ...(opts.clinicId ? { clinicId: opts.clinicId } : {}),
-      },
-      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+  async listFields(
+    opts: { moduleType?: ModuleType; doctorId?: number; status?: number } = {},
+  ): Promise<CustomFieldDTO[]> {
+    // Read wide, then filter: `status: 0` means "show me the inactive ones", which the
+    // repository's active-only default would otherwise hide.
+    const fields = await listCustomFields({
+      moduleType: opts.moduleType,
+      doctorId: opts.doctorId,
+      includeInactive: opts.status !== 1,
     });
+    const wanted = opts.status ?? 1;
+    return fields.filter((f) => (f.isActive ? 1 : 0) === wanted).map(toDTO);
   }
 
-  async getField(id: string) {
-    return this.prisma.customField.findUnique({ where: { id } });
+  async getField(id: number): Promise<CustomFieldDTO | null> {
+    const f = await findCustomFieldById(id);
+    return f ? toDTO(f) : null;
   }
 
-  async createField(data: CustomFieldCreate) {
+  async createField(data: CustomFieldCreate): Promise<CustomFieldDTO> {
     const parsed = customFieldCreateSchema.parse(data);
     if (
       (parsed.fieldType === 'select' || parsed.fieldType === 'multi-select') &&
@@ -155,80 +193,104 @@ export class CustomFieldService {
         400,
       );
     }
-    const existing = await this.prisma.customField.findFirst({
-      where: { moduleType: parsed.moduleType, fieldLabel: parsed.fieldLabel, status: 1 },
-    });
-    if (existing) {
+
+    // Uniqueness is a check-then-write: KiviCare's table has no unique index on
+    // (module_type, label), so this narrows the race window rather than closing it.
+    const existing = await listCustomFields({ moduleType: parsed.moduleType });
+    if (existing.some((f) => f.label === parsed.fieldLabel)) {
       throw new CustomFieldError(
         CustomFieldErrorCodes.FIELD_NAME_TAKEN,
         'a custom field with this label already exists for the entity type',
         409,
       );
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.prisma.customField.create({ data: parsed as any });
-  }
 
-  async updateField(id: string, data: CustomFieldUpdate) {
-    const parsed = customFieldUpdateSchema.parse(data);
-    return this.prisma.customField.update({ where: { id }, data: parsed });
-  }
-
-  async deleteField(id: string) {
-    return this.prisma.customField.update({ where: { id }, data: { status: 0 } });
-  }
-
-  // ---------- Field values ----------
-
-  async getValues(moduleType: ModuleType, moduleId: string) {
-    return this.prisma.customFieldData.findMany({
-      where: { moduleType, moduleId },
-      include: { field: true },
+    const id = await createCustomField({
+      moduleType: parsed.moduleType,
+      label: parsed.fieldLabel,
+      fieldType: parsed.fieldType,
+      options: parsed.options,
+      placeholder: parsed.placeholder ?? null,
+      isRequired: parsed.isRequired,
+      doctorId: parsed.doctorId,
     });
+
+    const created = await findCustomFieldById(id);
+    if (!created) {
+      throw new CustomFieldError(
+        CustomFieldErrorCodes.FIELD_NOT_FOUND,
+        'field was created but could not be read back',
+        502,
+      );
+    }
+    return toDTO(created);
   }
 
+  async updateField(id: number, data: CustomFieldUpdate): Promise<CustomFieldDTO> {
+    const parsed = customFieldUpdateSchema.parse(data);
+    const ok = await updateCustomField(id, {
+      moduleType: parsed.moduleType,
+      label: parsed.fieldLabel,
+      fieldType: parsed.fieldType,
+      options: parsed.options,
+      placeholder: parsed.placeholder,
+      isRequired: parsed.isRequired,
+      doctorId: parsed.doctorId,
+    });
+    if (!ok) {
+      throw new CustomFieldError(
+        CustomFieldErrorCodes.FIELD_NOT_FOUND,
+        'custom field not found',
+        404,
+      );
+    }
+    return (await this.getField(id))!;
+  }
+
+  /** Soft delete — status 0, matching KiviCare's own convention rather than DELETE. */
+  async deleteField(id: number): Promise<void> {
+    const changed = await setCustomFieldStatus([id], 0);
+    if (changed === 0) {
+      throw new CustomFieldError(
+        CustomFieldErrorCodes.FIELD_NOT_FOUND,
+        'custom field not found',
+        404,
+      );
+    }
+  }
+
+  /** Hard delete of a field's stored values. Separate from deleteField, which is soft. */
+  async purgeFieldValues(fieldId: number): Promise<number> {
+    return deleteCustomFieldValues(fieldId);
+  }
+
+  // ---------- Values ----------
+
+  async getValues(moduleType: ModuleType, moduleId: number) {
+    return listCustomFieldValues({ moduleType, moduleId });
+  }
+
+  /**
+   * Every active field for the entity type, each with its stored value (or null).
+   *
+   * Fields with no value are included — that is what lets a form render blanks for
+   * fields this entity has never had filled in.
+   */
   async getValuesWithFields(
     moduleType: ModuleType,
-    moduleId: string,
+    moduleId: number,
   ): Promise<CustomFieldWithValue[]> {
-    const fields = await this.prisma.customField.findMany({
-      where: { moduleType, status: 1 },
-      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    }) as Array<{
-      id: string;
-      moduleType: string;
-      fieldLabel: string;
-      fieldType: string;
-      options: unknown;
-      placeholder: string | null;
-      isRequired: boolean;
-      clinicId: string | null;
-      order: number;
-      status: number;
-    }>;
-    const values = await this.prisma.customFieldData.findMany({ where: { moduleType, moduleId } }) as Array<{ fieldId: string; fieldValue: unknown }>;
-    const valueByFieldId = new Map(values.map((v) => [v.fieldId, v.fieldValue]));
-    return fields.map((f) => ({
-      field: {
-        id: f.id,
-        moduleType: f.moduleType as ModuleType,
-        fieldLabel: f.fieldLabel,
-        fieldType: f.fieldType as FieldType,
-        options: Array.isArray(f.options) ? (f.options as string[]) : null,
-        placeholder: f.placeholder,
-        isRequired: f.isRequired,
-        clinicId: f.clinicId,
-        order: f.order,
-        status: f.status,
-      },
-      value: valueByFieldId.get(f.id) ?? null,
-    }));
+    const [fields, values] = await Promise.all([
+      listCustomFields({ moduleType }),
+      listCustomFieldValues({ moduleType, moduleId }),
+    ]);
+    const byFieldId = new Map(values.map((v) => [v.fieldId, v.value]));
+    return fields.map((f) => ({ field: toDTO(f), value: byFieldId.get(f.id) ?? null }));
   }
 
   async setValue(input: CustomFieldValueInput) {
     const parsed = customFieldValueSchema.parse(input);
-    // Validate against the field's definition
-    const field = await this.prisma.customField.findUnique({ where: { id: parsed.fieldId } });
+    const field = await findCustomFieldById(parsed.fieldId);
     if (!field) {
       throw new CustomFieldError(
         CustomFieldErrorCodes.FIELD_NOT_FOUND,
@@ -241,104 +303,67 @@ export class CustomFieldService {
       parsed.fieldValue,
     );
     if (err) {
-      throw new CustomFieldError(
-        CustomFieldErrorCodes.VALUE_VALIDATION_FAILED,
-        err,
-        400,
-      );
+      throw new CustomFieldError(CustomFieldErrorCodes.VALUE_VALIDATION_FAILED, err, 400);
     }
-    return this.prisma.customFieldData.upsert({
-      where: {
-        moduleType_moduleId_fieldId: {
-          moduleType: parsed.moduleType,
-          moduleId: parsed.moduleId,
-          fieldId: parsed.fieldId,
-        },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      create: parsed as any,
-      update: { fieldValue: parsed.fieldValue as never },
+
+    const id = await setCustomFieldValue({
+      moduleType: parsed.moduleType,
+      moduleId: parsed.moduleId,
+      fieldId: parsed.fieldId,
+      value: parsed.fieldValue,
     });
+    return { id, fieldId: parsed.fieldId, moduleId: parsed.moduleId, value: parsed.fieldValue };
   }
 
-  /** Bulk-set multiple field values for a single entity. */
-  async setBulkValues(
-    moduleType: ModuleType,
-    moduleId: string,
-    input: CustomFieldBulkValues,
-  ) {
+  /**
+   * Set several values on one entity.
+   *
+   * Not wrapped in a transaction: `wp_kc_custom_fields_data` is MyISAM, so one would
+   * guarantee nothing — the same trap that made `markBillPaid` look safe. Instead every
+   * field is validated BEFORE the first write, so a rejected batch writes nothing at
+   * all, which is the property the transaction was there for.
+   */
+  async setBulkValues(moduleType: ModuleType, moduleId: number, input: CustomFieldBulkValues) {
     const parsed = customFieldBulkValuesSchema.parse(input);
-    const fieldIds = Object.keys(parsed.values);
-    const fields = await this.prisma.customField.findMany({
-      where: { id: { in: fieldIds }, moduleType, status: 1 },
+    const fieldIds = Object.keys(parsed.values).map(Number);
+
+    const found = await Promise.all(fieldIds.map((id) => findCustomFieldById(id)));
+    const missing = fieldIds.filter((id, i) => {
+      const f = found[i];
+      return !f || f.moduleType !== moduleType || !f.isActive;
     });
-    if (fields.length !== fieldIds.length) {
-      const found = new Set(fields.map((f: { id: string }) => f.id));
-      const missing = fieldIds.filter((id) => !found.has(id));
+    if (missing.length > 0) {
       throw new CustomFieldError(
         CustomFieldErrorCodes.FIELD_NOT_FOUND,
         `unknown field(s): ${missing.join(', ')}`,
         400,
       );
     }
-    for (const field of fields as Array<{ fieldType: string; options: unknown; isRequired: boolean; id: string }>) {
+
+    const fields = found as WpCustomField[];
+    for (const f of fields) {
       const err = this.validateValue(
-        { fieldType: field.fieldType, options: field.options, isRequired: field.isRequired },
-        parsed.values[field.id],
+        { fieldType: f.fieldType, options: f.options, isRequired: f.isRequired },
+        parsed.values[String(f.id)],
       );
       if (err) {
         throw new CustomFieldError(CustomFieldErrorCodes.VALUE_VALIDATION_FAILED, err, 400);
       }
     }
-    const ops = fields.map((field: { id: string }) =>
-      this.prisma.customFieldData.upsert({
-        where: {
-          moduleType_moduleId_fieldId: {
-            moduleType,
-            moduleId,
-            fieldId: field.id,
-          },
-        },
-        create: { moduleType, moduleId, fieldId: field.id, fieldValue: parsed.values[field.id] as never },
-        update: { fieldValue: parsed.values[field.id] as never },
-      }),
-    );
-    await this.prisma.$transaction(ops);
+
+    for (const f of fields) {
+      await setCustomFieldValue({
+        moduleType,
+        moduleId,
+        fieldId: f.id,
+        value: parsed.values[String(f.id)],
+      });
+    }
     return this.getValues(moduleType, moduleId);
   }
 
-  async bulkSetCustomFieldStatus(ids: string[], status: number): Promise<number> {
-    const result = await this.prisma.customField.updateMany({
-      where: { id: { in: ids } },
-      data: { status },
-    });
-    return result.count;
-  }
-
-  async saveCustomFieldData(
-    entityType: string,
-    entityId: string,
-    fieldId: string,
-    value: unknown,
-  ): Promise<void> {
-    await this.prisma.customFieldData.upsert({
-      where: {
-        moduleType_moduleId_fieldId: {
-          moduleType: entityType as ModuleType,
-          moduleId: entityId,
-          fieldId,
-        },
-      },
-      create: { moduleType: entityType as ModuleType, moduleId: entityId, fieldId, fieldValue: value as never },
-      update: { fieldValue: value as never },
-    });
-  }
-
-  async getCustomFieldData(entityType: string, entityId: string): Promise<unknown[]> {
-    return this.prisma.customFieldData.findMany({
-      where: { moduleType: entityType as ModuleType, moduleId: entityId },
-      include: { field: true },
-    });
+  async bulkSetCustomFieldStatus(ids: number[], status: number): Promise<number> {
+    return setCustomFieldStatus(ids, status === 1 ? 1 : 0);
   }
 
   /** Validate a value against its field definition. Returns null on success or an error message. */

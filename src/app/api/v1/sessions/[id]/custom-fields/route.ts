@@ -7,15 +7,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/route-guards';
-import { PrismaClient } from '@prisma/client';
 import {
   CustomFieldService,
   CustomFieldError,
   customFieldBulkValuesSchema,
 } from '@/services/custom-fields/service';
 
-const prisma = new PrismaClient();
-const service = new CustomFieldService(prisma);
+const service = new CustomFieldService();
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +25,18 @@ export async function GET(
   const gate = await requireAuth(_req);
   if ('response' in gate) return gate.response;
 
+  // The entity id is a WordPress/KiviCare integer; refuse a non-numeric segment
+  // instead of letting it reach SQL as NaN.
+  const entityId = Number(params.id);
+  if (!Number.isSafeInteger(entityId) || entityId <= 0) {
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Not Found', status: 404 },
+      { status: 404 },
+    );
+  }
+
   try {
-    const result = await service.getValuesWithFields('appointment', params.id);
+    const result = await service.getValuesWithFields('appointment', entityId);
     return NextResponse.json({ items: result });
   } catch (err) {
     if (err instanceof CustomFieldError) {
@@ -49,10 +57,20 @@ export async function PUT(
   const gate = await requireAuth(req);
   if ('response' in gate) return gate.response;
 
+  // The entity id is a WordPress/KiviCare integer; refuse a non-numeric segment
+  // instead of letting it reach SQL as NaN.
+  const entityId = Number(params.id);
+  if (!Number.isSafeInteger(entityId) || entityId <= 0) {
+    return NextResponse.json(
+      { type: 'about:blank', title: 'Not Found', status: 404 },
+      { status: 404 },
+    );
+  }
+
   try {
     const body = await req.json();
     const parsed = customFieldBulkValuesSchema.parse(body);
-    const result = await service.setBulkValues('appointment', params.id, parsed);
+    const result = await service.setBulkValues('appointment', entityId, parsed);
     return NextResponse.json(result);
   } catch (err: unknown) {
     if (err instanceof CustomFieldError) {
