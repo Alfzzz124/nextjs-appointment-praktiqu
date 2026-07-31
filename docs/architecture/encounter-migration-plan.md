@@ -1,6 +1,6 @@
 # Encounter migration — retiring `session_notes`, `intervention_plans`, `recommendation_items`
 
-**Status:** E0–E3 done; E4 (intervention plans) and E5 (contract) open
+**Status:** E0–E4 done; E5 (contract + front-end handover) open
 **Decided:** 2026-07-30
 **Depends on:** the Phase 3 work in `shadow-tables-audit.md` (done, commits `8520d69`…`aa7b366`)
 
