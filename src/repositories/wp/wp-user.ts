@@ -98,10 +98,40 @@ export function str(value: unknown): string | null {
   return s === '' ? null : s;
 }
 
+/**
+ * Keys KiviCare uses for the human-readable part of a list entry, most specific first.
+ *
+ * Measured against real staging data: specialties are `{id, label}`, qualifications are
+ * `{degree, university, year, file}`. `name` and `value` are generic fallbacks other
+ * KiviCare versions and add-ons use.
+ */
+const LABEL_KEYS = ['label', 'degree', 'name', 'value', 'title'] as const;
+
+/**
+ * The display label for one entry of a `basic_data` list.
+ *
+ * Entries are sometimes plain strings and sometimes objects, depending on the field and
+ * the KiviCare version that wrote them. An object with no recognised key yields null
+ * rather than `String(obj)` — which is how `[object Object]` reached the public
+ * professional directory before this existed.
+ */
+export function labelOf(entry: unknown): string | null {
+  if (entry === null || entry === undefined) return null;
+  if (typeof entry === 'object') {
+    const o = entry as Record<string, unknown>;
+    for (const key of LABEL_KEYS) {
+      const found = str(o[key]);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  return str(entry);
+}
+
 /** Coerce a `basic_data` field that KiviCare stores as an array (or `''` when unset). */
 export function strArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((v) => str(v)).filter((v): v is string => v !== null);
+  return value.map(labelOf).filter((v): v is string => v !== null);
 }
 
 /** Escape LIKE wildcards so a search for "100%" doesn't match every row. */

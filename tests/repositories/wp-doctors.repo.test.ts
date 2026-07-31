@@ -6,6 +6,7 @@
  * DoctorController.php:1079-1106.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { strArray } from '@/repositories/wp/wp-user';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
 import {
@@ -258,5 +259,35 @@ describe('wp doctors repository', () => {
       expect(items).toEqual([]);
       expect(total).toBe(0);
     });
+  });
+});
+
+/**
+ * Regression for what real staging data exposed and an empty local database could not:
+ * `specialties` and `qualifications` inside `basic_data` are arrays of OBJECTS, not
+ * strings. Stringifying them put "[object Object]" in the public professional directory.
+ */
+describe('basic_data list fields carry objects, not strings', () => {
+  it('reads the label out of a specialty entry', () => {
+    // Exactly the shape staging holds: [{"id":"27","label":"Psikolog"}]
+    expect(strArray([{ id: '27', label: 'Psikolog' }])).toEqual(['Psikolog']);
+  });
+
+  it('reads the degree out of a qualification entry', () => {
+    expect(
+      strArray([{ degree: 'S2 Profesi Psikolog', university: 'Universitas Padjadjaran', year: '2006' }]),
+    ).toEqual(['S2 Profesi Psikolog']);
+  });
+
+  it('still accepts plain strings, which older KiviCare versions wrote', () => {
+    expect(strArray(['Psikolog', 'Konselor'])).toEqual(['Psikolog', 'Konselor']);
+  });
+
+  it('drops an entry with no recognisable label instead of emitting [object Object]', () => {
+    expect(strArray([{ file: '' }, { id: '9' }])).toEqual([]);
+  });
+
+  it('returns an empty list for the empty string KiviCare writes when unset', () => {
+    expect(strArray('')).toEqual([]);
   });
 });

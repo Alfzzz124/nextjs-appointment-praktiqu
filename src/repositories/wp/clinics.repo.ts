@@ -11,7 +11,7 @@
  * hooks, so a direct write skips nothing — see the Writes section below.
  */
 import { prisma } from '@/lib/db';
-import { paginate } from './wp-user';
+import { labelOf, paginate } from './wp-user';
 
 /** KiviCare uses 1 = active, 0 = inactive across its tables. */
 const STATUS_ACTIVE = 1;
@@ -93,17 +93,9 @@ function decodeSpecialties(raw: string | null): string[] {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((entry) => {
-        if (typeof entry === 'string') return entry.trim();
-        if (entry && typeof entry === 'object') {
-          const o = entry as Record<string, unknown>;
-          const v = o.label ?? o.name ?? o.value;
-          return v === undefined || v === null ? '' : String(v).trim();
-        }
-        return '';
-      })
-      .filter((s) => s !== '');
+    // Same label extraction the user repositories use — the entries have the same
+    // `{id, label}` shape here as they do inside `basic_data`.
+    return parsed.map(labelOf).filter((s): s is string => s !== null);
   } catch {
     return [];
   }
