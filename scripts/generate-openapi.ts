@@ -41,12 +41,25 @@ import {
   updateClientSchema,
   updateStatusSchema,
 } from '../src/services/client/validation';
+import {
+  createSessionNoteSchema,
+  listSessionNotesQuerySchema,
+  sessionNoteEntrySchema,
+  updateSessionNoteSchema,
+} from '../src/services/session-notes/validation';
+import { AddItemInput, ListPlansQuery } from '../src/types/intervention-plan';
 
 const SPEC_PATH = resolve(process.cwd(), 'docs/api/openapi.yaml');
 const CHECK_ONLY = process.argv.includes('--check');
 
 /** Route-path prefixes this generator owns. Everything else is left alone. */
-const OWNED_PREFIXES = ['/api/v1/clients'];
+const OWNED_PREFIXES = [
+  '/api/v1/clients',
+  // Added in E5: E3 and E4 changed both payloads, so the hand-written entries for these
+  // were describing an API that no longer exists.
+  '/api/v1/session-notes',
+  '/api/v1/intervention-plans',
+];
 
 const registry = new OpenAPIRegistry();
 
@@ -397,6 +410,322 @@ for (const path of [
 /* ------------------------------------------------------------------ */
 /* Merge into the existing spec                                        */
 /* ------------------------------------------------------------------ */
+
+/* ==================================================================== */
+/* Session notes — a note IS a KiviCare encounter (E3)                  */
+/* ==================================================================== */
+
+/**
+ * A note id is an encounter id (`wp_kc_patient_encounters.id`). It was documented as a
+ * cuid; that stopped being true when notes became encounters.
+ */
+const noteIdParam = z
+  .coerce.number()
+  .int()
+  .positive()
+  .openapi({ param: { name: 'id', in: 'path' }, example: 91 });
+
+const sessionNoteSchema = z.object({
+  id: z.number().int().openapi({ example: 91, description: 'The encounter id.' }),
+  sessionId: z.string().openapi({ example: '5150', description: 'wp_kc_appointments.id.' }),
+  professionalId: z.string().openapi({ example: '29' }),
+  clientId: z.number().int().openapi({ example: 461 }),
+  clinicId: z.number().int().openapi({ example: 3 }),
+  summary: z.string().openapi({ description: 'Derived on read; there is no stored column.' }),
+  content: z.string().openapi({ description: 'Description and entries flattened.' }),
+  entries: z.array(sessionNoteEntrySchema),
+  status: z.enum(['OPEN', 'CLOSED']).openapi({ description: 'Encounter status 1/0.' }),
+  createdAt: z.string().datetime().nullable(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/session-notes',
+  tags: ['session-notes'],
+  summary: 'List session notes',
+  description:
+    'Notes are KiviCare encounters. A PROFESSIONAL sees their own; a CLINIC_ADMIN sees ' +
+    'their clinic\'s. `search` is applied after the read, because the text spans the ' +
+    'encounter description plus its medical-history rows and has no single column.',
+  security: auth,
+  request: { query: listSessionNotesQuerySchema },
+  responses: {
+    200: {
+      description: 'Paginated notes',
+      content: {
+        'application/json': {
+          schema: z.object({
+            data: z.array(sessionNoteSchema),
+            pagination: z.object({
+              currentPage: z.number().int(),
+              totalPages: z.number().int(),
+              totalItems: z.number().int(),
+              itemsPerPage: z.number().int(),
+            }),
+          }),
+        },
+      },
+    },
+    401: problem,
+    403: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/session-notes',
+  tags: ['session-notes'],
+  summary: 'Create a session note',
+  description:
+    'Creates the KiviCare encounter for the session\'s appointment. **`soap` is gone** — ' +
+    'its four fixed sections were ours and no KiviCare view could render them. Use ' +
+    '`entries` with KiviCare\'s own types instead.',
+  security: auth,
+  request: {
+    body: { content: { 'application/json': { schema: createSessionNoteSchema } }, required: true },
+  },
+  responses: {
+    201: { description: 'Created', content: { 'application/json': { schema: sessionNoteSchema } } },
+    400: problem,
+    401: problem,
+    403: problem,
+    409: { ...problem, description: 'An encounter already exists for this session' },
+    422: { ...problem, description: 'Session has not been attended yet' },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/session-notes/{id}',
+  tags: ['session-notes'],
+  summary: 'Read a session note',
+  security: auth,
+  request: { params: z.object({ id: noteIdParam }) },
+  responses: {
+    200: { description: 'The note', content: { 'application/json': { schema: sessionNoteSchema } } },
+    401: problem,
+    403: problem,
+    404: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/session-notes/{id}',
+  tags: ['session-notes'],
+  summary: 'Update a session note',
+  description: 'Entries are REPLACED, not appended, so a retried request cannot duplicate them.',
+  security: auth,
+  request: {
+    params: z.object({ id: noteIdParam }),
+    body: { content: { 'application/json': { schema: updateSessionNoteSchema } }, required: true },
+  },
+  responses: {
+    200: { description: 'Updated', content: { 'application/json': { schema: sessionNoteSchema } } },
+    400: problem,
+    401: problem,
+    403: problem,
+    404: problem,
+    409: { ...problem, description: 'Note is closed, or the session is no longer editable' },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/session-notes/{id}/close',
+  tags: ['session-notes'],
+  summary: 'Close a session note',
+  description:
+    'Closes the encounter, which fires KiviCare\'s `kc_encounter_closed` listener — the ' +
+    'one that mails the patient their notes and prescription. Idempotent.',
+  security: auth,
+  request: { params: z.object({ id: noteIdParam }) },
+  responses: {
+    200: { description: 'Closed', content: { 'application/json': { schema: sessionNoteSchema } } },
+    401: problem,
+    403: problem,
+    404: problem,
+  },
+});
+
+/* ==================================================================== */
+/* Intervention plans — a plan IS the same encounter (E4)               */
+/* ==================================================================== */
+
+const planIdParam = z
+  .coerce.number()
+  .int()
+  .positive()
+  .openapi({ param: { name: 'id', in: 'path' }, example: 91 });
+
+const itemIdParam = z
+  .coerce.number()
+  .int()
+  .positive()
+  .openapi({ param: { name: 'itemId', in: 'path' }, example: 700 });
+
+const recommendationItemSchema = z.object({
+  id: z.number().int().openapi({ example: 700, description: 'wp_kc_prescription.id.' }),
+  interventionPlanId: z.number().int().openapi({ example: 91 }),
+  description: z.string(),
+  frequency: z.string().nullable(),
+  durationDays: z
+    .number()
+    .int()
+    .nullable()
+    .openapi({
+      description:
+        'Null when the clinician typed words rather than a number — KiviCare stores ' +
+        'this as free text, and only a plain integer round-trips.',
+    }),
+  instructions: z.string().nullable(),
+  status: z.enum(['ACTIVE', 'COMPLETED']),
+  completedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime().nullable(),
+});
+
+const interventionPlanSchema = z.object({
+  id: z.number().int().openapi({ example: 91, description: 'The encounter id.' }),
+  sessionId: z.string().openapi({ example: '5150' }),
+  professionalId: z.string().openapi({ example: '29' }),
+  clientId: z.string().openapi({ example: '461' }),
+  status: z
+    .enum(['ACTIVE', 'COMPLETED'])
+    .openapi({ description: 'Derived from the items. An empty plan is ACTIVE.' }),
+  createdAt: z.string().datetime().nullable(),
+  items: z.array(recommendationItemSchema),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/intervention-plans',
+  tags: ['intervention-plans'],
+  summary: 'List intervention plans',
+  description:
+    'Page-based. `nextCursor` is gone: encounters have no stable cursor, and the old ' +
+    'one was an `intervention_plans` cuid that no longer exists.',
+  security: auth,
+  request: { query: ListPlansQuery },
+  responses: {
+    200: {
+      description: 'Plans',
+      content: {
+        'application/json': {
+          schema: z.object({
+            plans: z.array(interventionPlanSchema),
+            total: z.number().int(),
+            page: z.number().int(),
+            limit: z.number().int(),
+          }),
+        },
+      },
+    },
+    401: problem,
+    403: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/intervention-plans',
+  tags: ['intervention-plans'],
+  summary: 'Create an intervention plan',
+  description:
+    'A plan and a session note are two views of the SAME encounter. If a note already ' +
+    'exists for this session the encounter is REUSED rather than refused; 409 is ' +
+    'reserved for a plan that already carries recommendations.',
+  security: auth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            sessionId: z.string().regex(/^\d+$/).openapi({ example: '5150' }),
+            clientId: z.string().openapi({ example: '461' }),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Created or reused',
+      content: { 'application/json': { schema: interventionPlanSchema } },
+    },
+    400: problem,
+    401: problem,
+    403: problem,
+    404: { ...problem, description: 'Session not found' },
+    409: { ...problem, description: 'A plan with recommendations already exists' },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/intervention-plans/{id}',
+  tags: ['intervention-plans'],
+  summary: 'Read an intervention plan',
+  security: auth,
+  request: { params: z.object({ id: planIdParam }) },
+  responses: {
+    200: {
+      description: 'The plan',
+      content: { 'application/json': { schema: interventionPlanSchema } },
+    },
+    401: problem,
+    403: problem,
+    404: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/intervention-plans/{id}/items',
+  tags: ['intervention-plans'],
+  summary: 'Add a recommendation',
+  description:
+    'Stored as a `wp_kc_prescription` row. The plugin route replaces the whole set, so ' +
+    'existing items are resent with the new one appended — a retry cannot duplicate them.',
+  security: auth,
+  request: {
+    params: z.object({ id: planIdParam }),
+    body: { content: { 'application/json': { schema: AddItemInput } }, required: true },
+  },
+  responses: {
+    201: {
+      description: 'Created',
+      content: { 'application/json': { schema: recommendationItemSchema } },
+    },
+    400: problem,
+    401: problem,
+    403: problem,
+    404: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/intervention-plans/{id}/items/{itemId}/complete',
+  tags: ['intervention-plans'],
+  summary: 'Mark a recommendation complete',
+  description:
+    'Only the owning client. Completion is stored in `wp_kc_custom_fields_data` under a ' +
+    'PraktiQU-namespaced module type; the prescription row itself is never rewritten, ' +
+    'because KiviCare owns it. Idempotent.',
+  security: auth,
+  request: { params: z.object({ id: planIdParam, itemId: itemIdParam }) },
+  responses: {
+    200: {
+      description: 'Completed',
+      content: { 'application/json': { schema: recommendationItemSchema } },
+    },
+    401: problem,
+    403: problem,
+    404: problem,
+  },
+});
+
 
 type Spec = {
   paths?: Record<string, unknown>;

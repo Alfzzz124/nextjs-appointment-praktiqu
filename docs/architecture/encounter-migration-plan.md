@@ -1,6 +1,6 @@
 # Encounter migration — retiring `session_notes`, `intervention_plans`, `recommendation_items`
 
-**Status:** E0–E4 done; E5 (contract + front-end handover) open
+**Status:** E0–E5 done. Remaining: deploy to staging, and the Postman collection.
 **Decided:** 2026-07-30
 **Depends on:** the Phase 3 work in `shadow-tables-audit.md` (done, commits `8520d69`…`aa7b366`)
 
@@ -203,13 +203,17 @@ Two shape mismatches worth remembering:
 Listing moved from cursor to page pagination: `wp_kc_patient_encounters` has no stable
 cursor, and the old one was an `intervention_plans` cuid that no longer exists.
 
-**Phase E5 — Contract + front-end.**
-Regenerate `openapi.yaml`, update the Postman collection, and hand the Laravel team the
-field-level diff. Ships together with E3/E4 — there is no interim release where both
-shapes are valid.
+**Phase E5 — Contract + front-end. DONE (code side).**
+`scripts/generate-openapi.ts` now owns `/api/v1/session-notes` and
+`/api/v1/intervention-plans` as well as `/api/v1/clients` — 17 generated paths. Those two
+groups were the ones whose hand-written entries had become lies: the spec still described
+a `soap` body and a `nextCursor` response. Generated from the same Zod schemas the routes
+validate with, so they cannot drift again silently; `npm run openapi:check` fails CI if
+they do.
 
-**~~Phase E6 — Data migration.~~ Deleted.** E0 measured 0 rows in all three tables.
-There is nothing to migrate.
+`docs/handover/2026-07-31-frontend-breaking-changes.md` carries the field-level diff,
+split into what is live on staging (§1–§4) and what is merged but not yet deployed
+(§4a session notes, §4b plans). The Postman collection is still outstanding.
 
 ## 7. Not in scope
 

@@ -1,11 +1,17 @@
 # Front-end breaking changes — the KiviCare id migration
 
-Deployed to `staging2.praktiqu.com` on 2026-07-31. Shapes below were sampled from that
-deployment, not from the source, so they are what the API actually returns today.
-
 There is no compatibility shim and no version header. The break is deliberate and
 happens once (decision D2). Everything here is mechanical — field types and one
 vocabulary — none of it changes a flow.
+
+**Two states, so read the section headers.** §1–§4 are **live on
+`staging2.praktiqu.com`** and were sampled from that deployment rather than from the
+source, so they are what the API returns there today. **§4a and §4b are merged but NOT
+yet deployed** — they land with the next staging build. Test against them only after
+that deploy; until then staging still speaks the old session-note and plan payloads.
+
+`docs/api/openapi.yaml` is generated from the same Zod schemas the routes validate
+with, so it is the authoritative reference for every shape below.
 
 ---
 
@@ -133,6 +139,63 @@ not a generic error.
 
 ---
 
+## 4a. Session notes — SOAP is gone
+
+`POST /api/v1/session-notes` and `PATCH /api/v1/session-notes/{id}` no longer accept
+`soap`. A note is a KiviCare encounter now, and its body is typed entries using
+KiviCare's own vocabulary — which is what makes the note visible in KiviCare's encounter
+view, templates and print output. The four SOAP sections were ours alone and no KiviCare
+screen could render them.
+
+```jsonc
+// before
+{ "sessionId": "5150", "soap": { "subjective": "…", "objective": "…", "assessment": "…", "plan": "…" } }
+
+// now
+{
+  "sessionId": "5150",
+  "content": "Sesi berjalan lancar",              // optional free text → encounter description
+  "entries": [                                     // optional, repeatable, typed
+    { "type": "problem",     "title": "Kecemasan sosial" },
+    { "type": "observation", "title": "Kontak mata membaik" },
+    { "type": "note",        "title": "Klien lebih terbuka" }
+  ]
+}
+```
+
+At least one of `content` or `entries` is required. `type` must be one of
+`problem` / `observation` / `note` — anything else is a 422.
+
+The response gains `entries` and keeps `content` and `summary`, both now **derived** from
+the encounter rather than stored. **The note `id` is an integer** (the encounter id), and
+`PATCH` replaces entries rather than appending, so a retry cannot duplicate them.
+
+Closing a note (`POST /{id}/close`) now actually emails the patient their notes and
+prescription — that listener existed in KiviCare but nothing had ever triggered it.
+
+## 4b. Intervention plans — page-based, and ids are integers
+
+```jsonc
+// GET /api/v1/intervention-plans
+// before: { "plans": [...], "nextCursor": "clx…" }
+// now:    { "plans": [...], "total": 42, "page": 1, "limit": 20 }
+```
+
+Send `?page=` instead of `?cursor=`. Encounters have no stable cursor, and the old one
+was an `intervention_plans` cuid that no longer exists.
+
+Plan and item ids are integers. Two field-level notes:
+
+- **`durationDays` can be `null` even when a duration was set.** KiviCare stores it as
+  free text ("30 hari", "2 minggu"); only a plain number round-trips. Render the null as
+  "not specified" rather than 0.
+- **`status` is derived from the items**, not stored. An empty plan is `ACTIVE` — there
+  is nothing in it to have finished.
+
+One behaviour change worth knowing: creating a plan for a session that already has a
+session note now **succeeds and reuses that record**, because a plan and a note are two
+views of the same encounter. A `409` means the plan already carries recommendations.
+
 ## 5. What has NOT changed
 
 - Auth flow, token lifetimes, refresh, all `/auth/*` paths and shapes.
@@ -145,8 +208,9 @@ not a generic error.
 ## 6. Suggested order
 
 1. Grep for `user.id` used as a resource id → `user.wpUserId` (§2). Highest risk, silent.
-2. Drop `COMPLETED` / `REJECTED` from every status map (§3).
-3. Loosen id types from string to int, or keep them opaque — but stop *generating* or
+2. Replace the `soap` payload with `entries` (§4a), and `?cursor=` with `?page=` (§4b).
+3. Drop `COMPLETED` / `REJECTED` from every session-status map (§3).
+4. Loosen id types from string to int, or keep them opaque — but stop *generating* or
    *validating* them as cuids (§1).
-4. Add `serviceId` to slot lookups (§4).
-5. Clear any persisted ids before first run against the new staging.
+5. Add `serviceId` to slot lookups (§4).
+6. Clear any persisted ids before first run against the new staging.

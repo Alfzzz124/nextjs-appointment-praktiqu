@@ -4869,160 +4869,859 @@ paths:
       tags:
         - intervention-plans
       summary: List intervention plans
-      operationId: get_api_v1_intervention_plans
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        Page-based. `nextCursor` is gone: encounters have no stable cursor, and the old one was an
+        `intervention_plans` cuid that no longer exists.
+      security:
+        - bearerAuth: []
       parameters:
-        - name: cursor
-          in: query
-          required: false
-          schema:
+        - schema:
             type: string
-        - name: limit
-          in: query
+            enum:
+              - ACTIVE
+              - COMPLETED
           required: false
-          schema:
-            type: string
-        - name: status
+          name: status
           in: query
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            maximum: 100
+            default: 20
           required: false
-          schema:
-            type: string
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            default: 1
+          required: false
+          name: page
+          in: query
       responses:
         '200':
-          description: Success
+          description: Plans
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-      security: []
+                type: object
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: The encounter id.
+                          example: 91
+                        sessionId:
+                          type: string
+                          example: '5150'
+                        professionalId:
+                          type: string
+                          example: '29'
+                        clientId:
+                          type: string
+                          example: '461'
+                        status:
+                          type: string
+                          enum:
+                            - ACTIVE
+                            - COMPLETED
+                          description: Derived from the items. An empty plan is ACTIVE.
+                        createdAt:
+                          type: string
+                          nullable: true
+                          format: date-time
+                        items:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: integer
+                                description: wp_kc_prescription.id.
+                                example: 700
+                              interventionPlanId:
+                                type: integer
+                                example: 91
+                              description:
+                                type: string
+                              frequency:
+                                type: string
+                                nullable: true
+                              durationDays:
+                                type: integer
+                                nullable: true
+                                description: >-
+                                  Null when the clinician typed words rather than a number — KiviCare stores
+                                  this as free text, and only a plain integer round-trips.
+                              instructions:
+                                type: string
+                                nullable: true
+                              status:
+                                type: string
+                                enum:
+                                  - ACTIVE
+                                  - COMPLETED
+                              completedAt:
+                                type: string
+                                nullable: true
+                                format: date-time
+                              createdAt:
+                                type: string
+                                nullable: true
+                                format: date-time
+                            required:
+                              - id
+                              - interventionPlanId
+                              - description
+                              - frequency
+                              - durationDays
+                              - instructions
+                              - status
+                              - completedAt
+                              - createdAt
+                      required:
+                        - id
+                        - sessionId
+                        - professionalId
+                        - clientId
+                        - status
+                        - createdAt
+                        - items
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required:
+                  - plans
+                  - total
+                  - page
+                  - limit
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
     post:
       tags:
         - intervention-plans
-      summary: Create intervention plans
-      operationId: post_api_v1_intervention_plans
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
-      parameters:
-        - name: cursor
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
+      summary: Create an intervention plan
+      description: >-
+        A plan and a session note are two views of the SAME encounter. If a note already exists for this
+        session the encounter is REUSED rather than refused; 409 is reserved for a plan that already carries
+        recommendations.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                sessionId:
+                  type: string
+                  pattern: ^\d+$
+                  example: '5150'
+                clientId:
+                  type: string
+                  example: '461'
+              required:
+                - sessionId
+                - clientId
       responses:
         '201':
-          description: Success
+          description: Created or reused
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The encounter id.
+                    example: 91
+                  sessionId:
+                    type: string
+                    example: '5150'
+                  professionalId:
+                    type: string
+                    example: '29'
+                  clientId:
+                    type: string
+                    example: '461'
+                  status:
+                    type: string
+                    enum:
+                      - ACTIVE
+                      - COMPLETED
+                    description: Derived from the items. An empty plan is ACTIVE.
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: wp_kc_prescription.id.
+                          example: 700
+                        interventionPlanId:
+                          type: integer
+                          example: 91
+                        description:
+                          type: string
+                        frequency:
+                          type: string
+                          nullable: true
+                        durationDays:
+                          type: integer
+                          nullable: true
+                          description: >-
+                            Null when the clinician typed words rather than a number — KiviCare stores this as
+                            free text, and only a plain integer round-trips.
+                        instructions:
+                          type: string
+                          nullable: true
+                        status:
+                          type: string
+                          enum:
+                            - ACTIVE
+                            - COMPLETED
+                        completedAt:
+                          type: string
+                          nullable: true
+                          format: date-time
+                        createdAt:
+                          type: string
+                          nullable: true
+                          format: date-time
+                      required:
+                        - id
+                        - interventionPlanId
+                        - description
+                        - frequency
+                        - durationDays
+                        - instructions
+                        - status
+                        - completedAt
+                        - createdAt
+                required:
+                  - id
+                  - sessionId
+                  - professionalId
+                  - clientId
+                  - status
+                  - createdAt
+                  - items
+        '400':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '404':
+          description: Session not found
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '409':
+          description: A plan with recommendations already exists
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/intervention-plans/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
     get:
       tags:
         - intervention-plans
-      summary: Get intervention plans by id
-      operationId: get_api_v1_intervention_plans_id
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      summary: Read an intervention plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 91
+          required: true
+          name: id
+          in: path
       responses:
         '200':
-          description: Success
+          description: The plan
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The encounter id.
+                    example: 91
+                  sessionId:
+                    type: string
+                    example: '5150'
+                  professionalId:
+                    type: string
+                    example: '29'
+                  clientId:
+                    type: string
+                    example: '461'
+                  status:
+                    type: string
+                    enum:
+                      - ACTIVE
+                      - COMPLETED
+                    description: Derived from the items. An empty plan is ACTIVE.
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: wp_kc_prescription.id.
+                          example: 700
+                        interventionPlanId:
+                          type: integer
+                          example: 91
+                        description:
+                          type: string
+                        frequency:
+                          type: string
+                          nullable: true
+                        durationDays:
+                          type: integer
+                          nullable: true
+                          description: >-
+                            Null when the clinician typed words rather than a number — KiviCare stores this as
+                            free text, and only a plain integer round-trips.
+                        instructions:
+                          type: string
+                          nullable: true
+                        status:
+                          type: string
+                          enum:
+                            - ACTIVE
+                            - COMPLETED
+                        completedAt:
+                          type: string
+                          nullable: true
+                          format: date-time
+                        createdAt:
+                          type: string
+                          nullable: true
+                          format: date-time
+                      required:
+                        - id
+                        - interventionPlanId
+                        - description
+                        - frequency
+                        - durationDays
+                        - instructions
+                        - status
+                        - completedAt
+                        - createdAt
+                required:
+                  - id
+                  - sessionId
+                  - professionalId
+                  - clientId
+                  - status
+                  - createdAt
+                  - items
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '404':
-          $ref: '#/components/responses/NotFound'
-      security: []
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/intervention-plans/{id}/items:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
     post:
       tags:
         - intervention-plans
-      summary: Create items
-      operationId: post_api_v1_intervention_plans_id_items
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      summary: Add a recommendation
+      description: >-
+        Stored as a `wp_kc_prescription` row. The plugin route replaces the whole set, so existing items are
+        resent with the new one appended — a retry cannot duplicate them.
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 91
+          required: true
+          name: id
+          in: path
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 10000
+                frequency:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                durationDays:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                  maximum: 3650
+                instructions:
+                  type: string
+                  minLength: 1
+                  maxLength: 10000
+              required:
+                - description
       responses:
         '201':
-          description: Success
+          description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: wp_kc_prescription.id.
+                    example: 700
+                  interventionPlanId:
+                    type: integer
+                    example: 91
+                  description:
+                    type: string
+                  frequency:
+                    type: string
+                    nullable: true
+                  durationDays:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      Null when the clinician typed words rather than a number — KiviCare stores this as free
+                      text, and only a plain integer round-trips.
+                  instructions:
+                    type: string
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - ACTIVE
+                      - COMPLETED
+                  completedAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                required:
+                  - id
+                  - interventionPlanId
+                  - description
+                  - frequency
+                  - durationDays
+                  - instructions
+                  - status
+                  - completedAt
+                  - createdAt
+        '400':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/intervention-plans/{id}/items/{itemId}/complete:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: itemId
-        in: path
-        required: true
-        schema:
-          type: string
     patch:
       tags:
         - intervention-plans
-      summary: Complete (PATCH) — items
-      operationId: patch_api_v1_intervention_plans_id_items_itemId_complete
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
+      summary: Mark a recommendation complete
+      description: >-
+        Only the owning client. Completion is stored in `wp_kc_custom_fields_data` under a PraktiQU-namespaced
+        module type; the prescription row itself is never rewritten, because KiviCare owns it. Idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 91
+          required: true
+          name: id
+          in: path
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 700
+          required: true
+          name: itemId
+          in: path
       responses:
         '200':
-          description: Success
+          description: Completed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: wp_kc_prescription.id.
+                    example: 700
+                  interventionPlanId:
+                    type: integer
+                    example: 91
+                  description:
+                    type: string
+                  frequency:
+                    type: string
+                    nullable: true
+                  durationDays:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      Null when the clinician typed words rather than a number — KiviCare stores this as free
+                      text, and only a plain integer round-trips.
+                  instructions:
+                    type: string
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - ACTIVE
+                      - COMPLETED
+                  completedAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                required:
+                  - id
+                  - interventionPlanId
+                  - description
+                  - frequency
+                  - durationDays
+                  - instructions
+                  - status
+                  - completedAt
+                  - createdAt
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/medical-history:
     get:
       tags:
@@ -7370,8 +8069,8 @@ paths:
       summary: Slots (GET) — professionals
       operationId: get_api_v1_public_professionals_id_slots
       description: >-
-        Bookable slots for one professional, service and date, with real bookings
-        and off days already subtracted.
+        Bookable slots for one professional, service and date, with real bookings and off days already
+        subtracted.
 
 
         **Response envelope:** standard / RFC-7807 problem+json
@@ -7387,8 +8086,8 @@ paths:
           in: query
           required: true
           description: >-
-            Required: the slot length is the professional's own duration for this
-            service, so there is no honest default.
+            Required: the slot length is the professional's own duration for this service, so there is no
+            honest default.
           schema:
             type: integer
         - name: clinicId
@@ -7882,188 +8581,899 @@ paths:
       tags:
         - session-notes
       summary: List session notes
-      operationId: get_api_v1_session_notes
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        Notes are KiviCare encounters. A PROFESSIONAL sees their own; a CLINIC_ADMIN sees their clinic's.
+        `search` is applied after the read, because the text spans the encounter description plus its
+        medical-history rows and has no single column.
+      security:
+        - bearerAuth: []
       parameters:
-        - name: clientId
-          in: query
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            default: 1
           required: false
-          schema:
-            type: string
-        - name: dateFrom
+          name: page
           in: query
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            maximum: 100
+            default: 20
           required: false
-          schema:
-            type: string
-        - name: dateTo
+          name: limit
           in: query
-          required: false
-          schema:
+        - schema:
             type: string
-        - name: limit
+          required: false
+          name: search
           in: query
-          required: false
-          schema:
+        - schema:
             type: string
-        - name: page
+            pattern: ^\d+$
+          required: false
+          name: clientId
           in: query
-          required: false
-          schema:
+        - schema:
             type: string
-        - name: search
+          required: false
+          name: dateFrom
           in: query
-          required: false
-          schema:
+        - schema:
             type: string
-        - name: status
+          required: false
+          name: dateTo
           in: query
-          required: false
-          schema:
+        - schema:
             type: string
+            enum:
+              - OPEN
+              - CLOSED
+          required: false
+          name: status
+          in: query
       responses:
         '200':
-          description: Success
+          description: Paginated notes
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-      security: []
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: The encounter id.
+                          example: 91
+                        sessionId:
+                          type: string
+                          description: wp_kc_appointments.id.
+                          example: '5150'
+                        professionalId:
+                          type: string
+                          example: '29'
+                        clientId:
+                          type: integer
+                          example: 461
+                        clinicId:
+                          type: integer
+                          example: 3
+                        summary:
+                          type: string
+                          description: Derived on read; there is no stored column.
+                        content:
+                          type: string
+                          description: Description and entries flattened.
+                        entries:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              type:
+                                type: string
+                                enum:
+                                  - problem
+                                  - observation
+                                  - note
+                              title:
+                                type: string
+                                minLength: 1
+                                maxLength: 10000
+                            required:
+                              - type
+                              - title
+                        status:
+                          type: string
+                          enum:
+                            - OPEN
+                            - CLOSED
+                          description: Encounter status 1/0.
+                        createdAt:
+                          type: string
+                          nullable: true
+                          format: date-time
+                      required:
+                        - id
+                        - sessionId
+                        - professionalId
+                        - clientId
+                        - clinicId
+                        - summary
+                        - content
+                        - entries
+                        - status
+                        - createdAt
+                  pagination:
+                    type: object
+                    properties:
+                      currentPage:
+                        type: integer
+                      totalPages:
+                        type: integer
+                      totalItems:
+                        type: integer
+                      itemsPerPage:
+                        type: integer
+                    required:
+                      - currentPage
+                      - totalPages
+                      - totalItems
+                      - itemsPerPage
+                required:
+                  - data
+                  - pagination
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
     post:
       tags:
         - session-notes
-      summary: Create session notes
-      operationId: post_api_v1_session_notes
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
-      parameters:
-        - name: clientId
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: dateFrom
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: dateTo
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: page
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: search
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
+      summary: Create a session note
+      description: >-
+        Creates the KiviCare encounter for the session's appointment. **`soap` is gone** — its four fixed
+        sections were ours and no KiviCare view could render them. Use `entries` with KiviCare's own types
+        instead.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                sessionId:
+                  type: string
+                  pattern: ^\d+$
+                content:
+                  type: string
+                  maxLength: 50000
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - problem
+                          - observation
+                          - note
+                      title:
+                        type: string
+                        minLength: 1
+                        maxLength: 10000
+                    required:
+                      - type
+                      - title
+                  maxItems: 100
+              required:
+                - sessionId
       responses:
         '201':
-          description: Success
+          description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The encounter id.
+                    example: 91
+                  sessionId:
+                    type: string
+                    description: wp_kc_appointments.id.
+                    example: '5150'
+                  professionalId:
+                    type: string
+                    example: '29'
+                  clientId:
+                    type: integer
+                    example: 461
+                  clinicId:
+                    type: integer
+                    example: 3
+                  summary:
+                    type: string
+                    description: Derived on read; there is no stored column.
+                  content:
+                    type: string
+                    description: Description and entries flattened.
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - problem
+                            - observation
+                            - note
+                        title:
+                          type: string
+                          minLength: 1
+                          maxLength: 10000
+                      required:
+                        - type
+                        - title
+                  status:
+                    type: string
+                    enum:
+                      - OPEN
+                      - CLOSED
+                    description: Encounter status 1/0.
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                required:
+                  - id
+                  - sessionId
+                  - professionalId
+                  - clientId
+                  - clinicId
+                  - summary
+                  - content
+                  - entries
+                  - status
+                  - createdAt
+        '400':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '409':
+          description: An encounter already exists for this session
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+          description: Session has not been attended yet
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/session-notes/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
     get:
       tags:
         - session-notes
-      summary: Get session notes by id
-      operationId: get_api_v1_session_notes_id
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      summary: Read a session note
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 91
+          required: true
+          name: id
+          in: path
       responses:
         '200':
-          description: Success
+          description: The note
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The encounter id.
+                    example: 91
+                  sessionId:
+                    type: string
+                    description: wp_kc_appointments.id.
+                    example: '5150'
+                  professionalId:
+                    type: string
+                    example: '29'
+                  clientId:
+                    type: integer
+                    example: 461
+                  clinicId:
+                    type: integer
+                    example: 3
+                  summary:
+                    type: string
+                    description: Derived on read; there is no stored column.
+                  content:
+                    type: string
+                    description: Description and entries flattened.
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - problem
+                            - observation
+                            - note
+                        title:
+                          type: string
+                          minLength: 1
+                          maxLength: 10000
+                      required:
+                        - type
+                        - title
+                  status:
+                    type: string
+                    enum:
+                      - OPEN
+                      - CLOSED
+                    description: Encounter status 1/0.
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                required:
+                  - id
+                  - sessionId
+                  - professionalId
+                  - clientId
+                  - clinicId
+                  - summary
+                  - content
+                  - entries
+                  - status
+                  - createdAt
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '404':
-          $ref: '#/components/responses/NotFound'
-      security: []
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
     patch:
       tags:
         - session-notes
-      summary: Update session notes by id
-      operationId: patch_api_v1_session_notes_id
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      summary: Update a session note
+      description: Entries are REPLACED, not appended, so a retried request cannot duplicate them.
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 91
+          required: true
+          name: id
+          in: path
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                content:
+                  type: string
+                  maxLength: 50000
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - problem
+                          - observation
+                          - note
+                      title:
+                        type: string
+                        minLength: 1
+                        maxLength: 10000
+                    required:
+                      - type
+                      - title
+                  maxItems: 100
       responses:
         '200':
-          description: Success
+          description: Updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The encounter id.
+                    example: 91
+                  sessionId:
+                    type: string
+                    description: wp_kc_appointments.id.
+                    example: '5150'
+                  professionalId:
+                    type: string
+                    example: '29'
+                  clientId:
+                    type: integer
+                    example: 461
+                  clinicId:
+                    type: integer
+                    example: 3
+                  summary:
+                    type: string
+                    description: Derived on read; there is no stored column.
+                  content:
+                    type: string
+                    description: Description and entries flattened.
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - problem
+                            - observation
+                            - note
+                        title:
+                          type: string
+                          minLength: 1
+                          maxLength: 10000
+                      required:
+                        - type
+                        - title
+                  status:
+                    type: string
+                    enum:
+                      - OPEN
+                      - CLOSED
+                    description: Encounter status 1/0.
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                required:
+                  - id
+                  - sessionId
+                  - professionalId
+                  - clientId
+                  - clinicId
+                  - summary
+                  - content
+                  - entries
+                  - status
+                  - createdAt
+        '400':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '409':
+          description: Note is closed, or the session is no longer editable
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/session-notes/{id}/close:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
     post:
       tags:
         - session-notes
-      summary: Create close
-      operationId: post_api_v1_session_notes_id_close
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
+      summary: Close a session note
+      description: >-
+        Closes the encounter, which fires KiviCare's `kc_encounter_closed` listener — the one that mails the
+        patient their notes and prescription. Idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 0
+            exclusiveMinimum: true
+            example: 91
+          required: true
+          name: id
+          in: path
       responses:
-        '201':
-          description: Success
+        '200':
+          description: Closed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The encounter id.
+                    example: 91
+                  sessionId:
+                    type: string
+                    description: wp_kc_appointments.id.
+                    example: '5150'
+                  professionalId:
+                    type: string
+                    example: '29'
+                  clientId:
+                    type: integer
+                    example: 461
+                  clinicId:
+                    type: integer
+                    example: 3
+                  summary:
+                    type: string
+                    description: Derived on read; there is no stored column.
+                  content:
+                    type: string
+                    description: Description and entries flattened.
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - problem
+                            - observation
+                            - note
+                        title:
+                          type: string
+                          minLength: 1
+                          maxLength: 10000
+                      required:
+                        - type
+                        - title
+                  status:
+                    type: string
+                    enum:
+                      - OPEN
+                      - CLOSED
+                    description: Encounter status 1/0.
+                  createdAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                required:
+                  - id
+                  - sessionId
+                  - professionalId
+                  - clientId
+                  - clinicId
+                  - summary
+                  - content
+                  - entries
+                  - status
+                  - createdAt
+        '401':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
+        '403':
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
         '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-      security: []
+          description: RFC-7807 problem detail
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                required:
+                  - type
+                  - title
+                  - status
   /api/v1/sessions:
     get:
       tags:
