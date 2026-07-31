@@ -501,7 +501,13 @@ export async function cleanup() {
     ['wp_kc_medical_history', 'patient_id'],
     ['wp_kc_patient_encounters', 'patient_id'],
     ['wp_kc_appointments', 'patient_id'],
-    ['wp_kc_bills', 'patient_id'],
+    // wp_kc_bills has NO patient_id — not in KiviCare's CREATE TABLE, not in our
+    // KcBill model. This entry asked MySQL to delete by a column that has never
+    // existed, so it threw 1054, aborted cleanup(), and left 16 billing suites
+    // reporting their tests as SKIPPED. A bill reaches the test range through its
+    // encounter or its clinic instead.
+    ['wp_kc_bills', 'encounter_id'],
+    ['wp_kc_bills', 'clinic_id'],
     ['wp_kc_followups', 'patient_id'],
     ['wp_kc_followup_chains', 'patient_id'],
     ['wp_kc_patient_review', 'patient_id'],
