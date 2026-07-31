@@ -341,6 +341,113 @@ export async function findPrescriptionById(id: number): Promise<WpPrescription |
   return row ? toPrescription(row as PrescriptionRow) : null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Recommendation completion state (decision D1)                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * KiviCare has no column for "has the client done this yet" — a prescription is written
+ * and finished, not ticked off over time. The state lives in
+ * `wp_kc_custom_fields_data`, KiviCare's own extension point, under a module type it
+ * never uses.
+ *
+ * Two constraints keep our rows out of its way, both established by reading how the
+ * plugin queries that table:
+ *
+ * 1. **The module type must be ours.** Every KiviCare read, and the delete in
+ *    `KCPatientControllerFilters.php:170`, is scoped by `module_type`. A value they
+ *    never write is invisible and untouchable to them. It must NOT be
+ *    `prescription_module` — that IS a real KiviCare module type, and using it would
+ *    invite Pro's custom-field UI to render our JSON as its own field values.
+ * 2. **`field_id` must be NULL.** `KCCustomField::getData()` is the one query in the
+ *    plugin not scoped by module type; it matches on `field_id` alone. NULL never
+ *    matches it, which closes the only leak path.
+ */
+export const RECOMMENDATION_STATUS_MODULE = 'praktiqu_recommendation_status';
+
+export type RecommendationStatus = 'ACTIVE' | 'COMPLETED';
+
+export type RecommendationState = {
+  status: RecommendationStatus;
+  completedAt: Date | null;
+};
+
+function decodeState(raw: string | null): RecommendationState {
+  // Absent or unreadable reads as ACTIVE: an item nobody has ticked is simply not done,
+  // and a corrupt blob must not make it look finished.
+  if (!raw) return { status: 'ACTIVE', completedAt: null };
+  try {
+    const parsed = JSON.parse(raw) as { status?: string; completedAt?: string | null };
+    const status: RecommendationStatus = parsed?.status === 'COMPLETED' ? 'COMPLETED' : 'ACTIVE';
+    const completedAt =
+      status === 'COMPLETED' && parsed?.completedAt ? new Date(parsed.completedAt) : null;
+    return { status, completedAt: completedAt && !Number.isNaN(completedAt.getTime()) ? completedAt : null };
+  } catch {
+    return { status: 'ACTIVE', completedAt: null };
+  }
+}
+
+/** Completion state for a set of prescriptions. Absent ids read as ACTIVE. */
+export async function getRecommendationStates(
+  prescriptionIds: number[],
+): Promise<Map<number, RecommendationState>> {
+  const out = new Map<number, RecommendationState>();
+  if (prescriptionIds.length === 0) return out;
+
+  const rows = await prisma.kcCustomFieldData.findMany({
+    where: {
+      moduleType: RECOMMENDATION_STATUS_MODULE,
+      moduleId: { in: prescriptionIds.map((n) => BigInt(n)) },
+    },
+    select: { moduleId: true, fieldsData: true },
+    orderBy: { id: 'asc' },
+  });
+
+  for (const r of rows) out.set(Number(r.moduleId), decodeState(r.fieldsData));
+  return out;
+}
+
+/**
+ * Record whether a recommendation has been completed.
+ *
+ * Upserted by hand: the natural key has no unique index in KiviCare's schema, so
+ * Prisma cannot target it.
+ */
+export async function setRecommendationState(
+  prescriptionId: number,
+  state: RecommendationState,
+): Promise<void> {
+  const payload = JSON.stringify({
+    status: state.status,
+    completedAt: state.completedAt ? state.completedAt.toISOString() : null,
+  });
+
+  const existing = await prisma.kcCustomFieldData.findFirst({
+    where: { moduleType: RECOMMENDATION_STATUS_MODULE, moduleId: BigInt(prescriptionId) },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+
+  if (existing) {
+    await prisma.kcCustomFieldData.update({
+      where: { id: existing.id },
+      data: { fieldsData: payload },
+    });
+    return;
+  }
+
+  await prisma.kcCustomFieldData.create({
+    data: {
+      moduleType: RECOMMENDATION_STATUS_MODULE,
+      moduleId: BigInt(prescriptionId),
+      // NULL on purpose — see constraint 2 above.
+      fieldId: null,
+      fieldsData: payload,
+      createdAt: new Date(),
+    },
+  });
+}
+
 /**
  * Prescriptions for several encounters at once — the batching pair of
  * `listHistoryForEncounters`, for the same reason.

@@ -180,10 +180,28 @@ Closing a note calls `closeEncounter`, which fires `kc_encounter_closed` — the
 that mails the patient their notes and prescription, and which nothing in KiviCare core
 or Pro had ever triggered.
 
-**Phase E4 — Intervention plans onto the encounter.**
-Rewrite `src/services/intervention-plan/service.ts`: the plan *is* the encounter, items
-become prescriptions, completion state goes to custom field data per D1. Item
-completion stays a PraktiQU-only endpoint — KiviCare has no concept of it.
+**Phase E4 — Intervention plans onto the encounter. DONE.**
+The plan id IS the encounter id — **the same encounter a session note uses**. Both are
+one-per-session, so a plan and a note are two views of one row: creating a plan where a
+note exists reuses it rather than refusing, or the two features would be mutually
+exclusive on the same session. A 409 is reserved for a plan that already carries
+recommendations.
+
+Items are `wp_kc_prescription` rows. Completion state goes to `wp_kc_custom_fields_data`
+per D1, keyed on the prescription id — the prescription row itself is never rewritten,
+because KiviCare owns it.
+
+Two shape mismatches worth remembering:
+
+- `durationDays` is an integer for us and a varchar(199) for KiviCare, which holds
+  whatever the clinician typed ("30 hari", "2 minggu"). Only a plain number round-trips;
+  anything else reads back as null rather than as a wrong number.
+- Plan `status` is derived from the items, so it cannot be a SQL filter — the page is
+  filtered after the read. An empty plan is ACTIVE, not COMPLETED: there is nothing in
+  it to have finished.
+
+Listing moved from cursor to page pagination: `wp_kc_patient_encounters` has no stable
+cursor, and the old one was an `intervention_plans` cuid that no longer exists.
 
 **Phase E5 — Contract + front-end.**
 Regenerate `openapi.yaml`, update the Postman collection, and hand the Laravel team the

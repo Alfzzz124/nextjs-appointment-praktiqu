@@ -1,316 +1,312 @@
 /**
- * Unit tests for the InterventionPlan service.
+ * InterventionPlanService — a plan IS a KiviCare encounter (phase E4).
  *
- * Uses an in-memory stub Prisma client. No real DB. No Next.js runtime.
+ * The old suite stubbed `prisma.interventionPlan` / `prisma.recommendationItem`, two
+ * tables that held 0 rows on staging. The repositories are mocked here instead.
  *
- * Coverage:
- *   - createPlan: success, duplicate-sessionId 409, forbidden for client
- *   - getPlan: success, 404, professional/client/receptionist read access
- *   - listPlans: scoping by role
- *   - addItem: success, forbidden for client
- *   - completeItem: success, already-completed 409, wrong-plan 404, forbidden
+ * Worth pinning: a plan and a session note are two views of the SAME encounter, so
+ * creating a plan where a note already exists must reuse the row rather than refuse.
  */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import type { PlanStatus, ItemStatus, PrismaClient } from '@prisma/client';
+vi.mock('@/repositories/wp/sessions.repo', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/sessions.repo')>()),
+  findSessionById: vi.fn(),
+}));
+vi.mock('@/repositories/wp/clinical-records.repo', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/clinical-records.repo')>()),
+  findEncounterById: vi.fn(),
+  findEncounterByAppointmentId: vi.fn(),
+  listEncounterPrescriptions: vi.fn(),
+  listEncounters: vi.fn(),
+  listPrescriptionsForEncounters: vi.fn(),
+  getRecommendationStates: vi.fn(),
+  setRecommendationState: vi.fn(),
+}));
+vi.mock('@/repositories/wp/encounters.write', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/encounters.write')>()),
+  createEncounter: vi.fn(),
+  replaceEncounterPrescriptions: vi.fn(),
+}));
+vi.mock('@/lib/logging', () => ({
+  logging: { audit: vi.fn(), error: vi.fn(), activity: vi.fn(), system: vi.fn(), warn: vi.fn() },
+}));
+
 import {
-  createInterventionPlanService,
   InterventionPlanError,
+  InterventionPlanService,
   type Caller,
-  type InterventionPlanService,
 } from '@/services/intervention-plan/service';
-import { InterventionPlanErrorCodes } from '@/types/intervention-plan';
+import { findSessionById } from '@/repositories/wp/sessions.repo';
+import {
+  findEncounterByAppointmentId,
+  findEncounterById,
+  getRecommendationStates,
+  listEncounterPrescriptions,
+  listEncounters,
+  listPrescriptionsForEncounters,
+  setRecommendationState,
+} from '@/repositories/wp/clinical-records.repo';
+import {
+  createEncounter,
+  replaceEncounterPrescriptions,
+} from '@/repositories/wp/encounters.write';
 
-// -------------------------------------------------------------
-// In-memory Prisma stub
-// -------------------------------------------------------------
+const SESSION = 5150;
+const PLAN = 91; // = encounter id
+const ITEM = 700; // = prescription id
+const DOCTOR = 29;
+const CLIENT = 461;
+const CLINIC = 3;
 
-type Item = {
-  id: string;
-  interventionPlanId: string;
-  description: string;
-  frequency: string | null;
-  durationDays: number | null;
-  instructions: string | null;
-  status: ItemStatus;
-  completedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
+const professional: Caller = { userId: 'cuid-pro', wpUserId: DOCTOR, role: 'PROFESSIONAL' };
+const client: Caller = { userId: 'cuid-cli', wpUserId: CLIENT, role: 'CLIENT' };
+const otherClient: Caller = { userId: 'cuid-x', wpUserId: CLIENT + 1, role: 'CLIENT' };
+const receptionist: Caller = { userId: 'cuid-rec', wpUserId: 900, role: 'RECEPTIONIST' };
+const superAdmin: Caller = { userId: 'cuid-sa', wpUserId: 1, role: 'SUPER_ADMIN' };
 
-type Plan = {
-  id: string;
-  sessionId: string;
-  professionalId: string;
-  clientId: string;
-  status: PlanStatus;
-  createdAt: Date;
-  updatedAt: Date;
-  items: Item[];
-};
-
-class StubPrisma {
-  plans: Plan[] = [];
-  id = 0;
-
-  interventionPlan = {
-    findUnique: async ({ where }: { where: { id?: string; sessionId?: string } }) => {
-      const plan = this.plans.find(
-        (p) => (where.id && p.id === where.id) || (where.sessionId && p.sessionId === where.sessionId),
-      );
-      return plan ?? null;
-    },
-    create: async ({ data, include }: { data: Omit<Plan, 'id' | 'createdAt' | 'updatedAt' | 'items'> & { items?: { create: unknown[] } }; include?: { items: boolean } }) => {
-      const plan: Plan = {
-        id: `plan_${++this.id}`,
-        sessionId: data.sessionId,
-        professionalId: data.professionalId,
-        clientId: data.clientId,
-        // Real Prisma applies the schema's @default(ACTIVE); the stub must too.
-        status: data.status ?? 'ACTIVE',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        items: [],
-      };
-      this.plans.push(plan);
-      return include?.items ? plan : plan;
-    },
-    findMany: async ({
-      where,
-      include,
-      take,
-      cursor,
-      skip,
-      orderBy: _orderBy,
-    }: {
-      where?: Partial<Plan>;
-      include?: { items: boolean };
-      take?: number;
-      cursor?: { id: string };
-      skip?: number;
-      orderBy?: unknown;
-    }) => {
-      let rows = this.plans.filter((p) => {
-        if (!where) return true;
-        return Object.entries(where).every(([k, v]) => (p as unknown as Record<string, unknown>)[k] === v);
-      });
-      if (cursor) {
-        const idx = rows.findIndex((p) => p.id === cursor.id);
-        if (idx >= 0) rows = rows.slice(idx + (skip ?? 0));
-      }
-      return take ? rows.slice(0, take) : rows;
-    },
-  };
-
-  recommendationItem = {
-    findUnique: async ({ where }: { where: { id: string } }) => {
-      for (const p of this.plans) {
-        const item = p.items.find((i) => i.id === where.id);
-        if (item) return item;
-      }
-      return null;
-    },
-    create: async ({ data }: { data: Omit<Item, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'completedAt'> & Partial<Pick<Item, 'status' | 'completedAt'>> }) => {
-      const item: Item = {
-        id: `item_${++this.id}`,
-        interventionPlanId: data.interventionPlanId,
-        description: data.description,
-        frequency: data.frequency ?? null,
-        durationDays: data.durationDays ?? null,
-        instructions: data.instructions ?? null,
-        status: data.status ?? 'ACTIVE',
-        completedAt: data.completedAt ?? null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const plan = this.plans.find((p) => p.id === data.interventionPlanId);
-      plan?.items.push(item);
-      return item;
-    },
-    update: async ({ where, data }: { where: { id: string }; data: Partial<Item> }) => {
-      for (const p of this.plans) {
-        const idx = p.items.findIndex((i) => i.id === where.id);
-        if (idx >= 0) {
-          p.items[idx] = { ...p.items[idx]!, ...data, updatedAt: new Date() };
-          return p.items[idx]!;
-        }
-      }
-      throw new Error('item not found');
-    },
-  };
+function encounter() {
+  return {
+    id: PLAN,
+    clinicId: CLINIC,
+    doctorId: DOCTOR,
+    patientId: CLIENT,
+    appointmentId: SESSION,
+    description: null,
+    status: 1,
+    addedBy: DOCTOR,
+    encounterDate: null,
+    createdAt: new Date('2026-07-15T00:00:00Z'),
+  } as never;
 }
 
-// -------------------------------------------------------------
-// Helpers
-// -------------------------------------------------------------
+function prescription(id = ITEM, duration: string | null = '30') {
+  return {
+    id,
+    encounterId: PLAN,
+    patientId: CLIENT,
+    name: 'Journaling',
+    frequency: '3x seminggu',
+    duration,
+    instruction: 'Sebelum tidur',
+    addedBy: DOCTOR,
+    isFromTemplate: false,
+    createdAt: new Date('2026-07-15T00:00:00Z'),
+  } as never;
+}
 
-const professional: Caller = { userId: 'prof_1', role: 'PROFESSIONAL' };
-const client: Caller = { userId: 'client_1', role: 'CLIENT' };
-const otherClient: Caller = { userId: 'client_2', role: 'CLIENT' };
-const receptionist: Caller = { userId: 'rec_1', role: 'RECEPTIONIST' };
-const admin: Caller = { userId: 'admin_1', role: 'SUPER_ADMIN' };
-
-let stub: StubPrisma;
 let service: InterventionPlanService;
 
 beforeEach(() => {
-  stub = new StubPrisma();
-  // The service only calls PrismaClient methods we stub; cast is safe.
-  service = createInterventionPlanService(stub as unknown as PrismaClient);
+  vi.clearAllMocks();
+  service = new InterventionPlanService();
+  vi.mocked(findSessionById).mockResolvedValue({
+    id: SESSION,
+    clinicId: CLINIC,
+    professionalId: DOCTOR,
+    clientId: CLIENT,
+    status: 'CHECK_IN',
+  } as never);
+  vi.mocked(findEncounterByAppointmentId).mockResolvedValue(null);
+  vi.mocked(findEncounterById).mockResolvedValue(encounter());
+  vi.mocked(listEncounterPrescriptions).mockResolvedValue([]);
+  vi.mocked(getRecommendationStates).mockResolvedValue(new Map());
+  vi.mocked(listPrescriptionsForEncounters).mockResolvedValue(new Map());
+  vi.mocked(createEncounter).mockResolvedValue({ id: PLAN, status: 1 } as never);
 });
 
 describe('createPlan', () => {
-  it('creates a plan linked to a session', async () => {
-    const plan = await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-    expect(plan.sessionId).toBe('sess_1');
-    expect(plan.professionalId).toBe('prof_1');
-    expect(plan.clientId).toBe('client_1');
-    expect(plan.status).toBe('ACTIVE');
-    expect(plan.items).toEqual([]);
+  it('creates the encounter for the session', async () => {
+    const plan = await service.createPlan(
+      { sessionId: String(SESSION), clientId: String(CLIENT) },
+      professional,
+    );
+
+    expect(plan.id).toBe(PLAN);
+    expect(plan.sessionId).toBe(String(SESSION));
+    expect(vi.mocked(createEncounter).mock.calls[0][0].appointmentId).toBe(SESSION);
   });
 
-  it('rejects duplicate plan for the same session (409)', async () => {
-    await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
+  it('reuses the encounter a session note already created', async () => {
+    // A plan and a note are two views of the same row. Refusing here would make the
+    // two features mutually exclusive on the same session.
+    vi.mocked(findEncounterByAppointmentId).mockResolvedValue(encounter());
+
+    const plan = await service.createPlan(
+      { sessionId: String(SESSION), clientId: String(CLIENT) },
+      professional,
+    );
+
+    expect(plan.id).toBe(PLAN);
+    expect(createEncounter).not.toHaveBeenCalled();
+  });
+
+  it('409s when recommendations were already recorded', async () => {
+    vi.mocked(findEncounterByAppointmentId).mockResolvedValue(encounter());
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([prescription()]);
+
     await expect(
-      service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional),
-    ).rejects.toMatchObject({ code: InterventionPlanErrorCodes.PLAN_ALREADY_EXISTS, status: 409 });
+      service.createPlan({ sessionId: String(SESSION), clientId: String(CLIENT) }, professional),
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   it('forbids clients from creating plans', async () => {
     await expect(
-      service.createPlan({ sessionId: 'sess_x', clientId: 'client_1' }, client),
+      service.createPlan({ sessionId: String(SESSION), clientId: String(CLIENT) }, client),
     ).rejects.toBeInstanceOf(InterventionPlanError);
+  });
+
+  it('404s for an unknown session', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(null);
+    await expect(
+      service.createPlan({ sessionId: String(SESSION), clientId: String(CLIENT) }, professional),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });
 
 describe('getPlan', () => {
-  beforeEach(async () => {
-    await service.createPlan({ sessionId: 'sess_a', clientId: 'client_1' }, professional);
+  beforeEach(() => {
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([prescription()]);
   });
 
-  it('returns the plan to the owning professional', async () => {
-    const list = await service.listPlans(professional);
-    const plan = await service.getPlan(list.plans[0]!.id, professional);
-    expect(plan.id).toBe(list.plans[0]!.id);
+  it('maps a prescription onto a recommendation item', async () => {
+    const plan = await service.getPlan(PLAN, professional);
+
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0].description).toBe('Journaling');
+    expect(plan.items[0].frequency).toBe('3x seminggu');
+    expect(plan.items[0].durationDays).toBe(30);
+    expect(plan.items[0].instructions).toBe('Sebelum tidur');
+  });
+
+  it('reads durationDays as null when a clinician typed words', async () => {
+    // KiviCare's `duration` is a varchar and holds whatever was typed. Only a plain
+    // number round-trips; "2 minggu" must not become a wrong integer.
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([prescription(ITEM, '2 minggu')]);
+
+    const plan = await service.getPlan(PLAN, professional);
+    expect(plan.items[0].durationDays).toBeNull();
   });
 
   it('returns the plan to the owning client', async () => {
-    const list = await service.listPlans(professional);
-    const plan = await service.getPlan(list.plans[0]!.id, client);
-    expect(plan.id).toBe(list.plans[0]!.id);
+    expect((await service.getPlan(PLAN, client)).id).toBe(PLAN);
   });
 
-  it('returns the plan to a receptionist (read-only)', async () => {
-    const list = await service.listPlans(professional);
-    const plan = await service.getPlan(list.plans[0]!.id, receptionist);
-    expect(plan.id).toBe(list.plans[0]!.id);
+  it('returns the plan to a receptionist and a super admin', async () => {
+    expect((await service.getPlan(PLAN, receptionist)).id).toBe(PLAN);
+    expect((await service.getPlan(PLAN, superAdmin)).id).toBe(PLAN);
   });
 
-  it('forbids a different client from reading the plan', async () => {
-    const list = await service.listPlans(professional);
-    await expect(service.getPlan(list.plans[0]!.id, otherClient)).rejects.toMatchObject({
-      code: InterventionPlanErrorCodes.FORBIDDEN,
-      status: 403,
-    });
+  it('forbids a different client', async () => {
+    await expect(service.getPlan(PLAN, otherClient)).rejects.toMatchObject({ status: 403 });
   });
 
-  it('returns 404 for an unknown plan', async () => {
-    await expect(service.getPlan('missing', admin)).rejects.toMatchObject({
-      code: InterventionPlanErrorCodes.PLAN_NOT_FOUND,
-      status: 404,
-    });
+  it('404s for an unknown plan', async () => {
+    vi.mocked(findEncounterById).mockResolvedValue(null);
+    await expect(service.getPlan(PLAN, professional)).rejects.toMatchObject({ status: 404 });
   });
 });
 
-describe('listPlans', () => {
-  beforeEach(async () => {
-    await service.createPlan({ sessionId: 'sess_a', clientId: 'client_1' }, professional);
-    await service.createPlan({ sessionId: 'sess_b', clientId: 'client_2' }, professional);
+describe('plan status', () => {
+  it('is COMPLETED only when every item is', async () => {
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([
+      prescription(700),
+      prescription(701),
+    ]);
+    vi.mocked(getRecommendationStates).mockResolvedValue(
+      new Map([
+        [700, { status: 'COMPLETED', completedAt: new Date() }],
+        [701, { status: 'ACTIVE', completedAt: null }],
+      ]) as never,
+    );
+
+    expect((await service.getPlan(PLAN, professional)).status).toBe('ACTIVE');
   });
 
-  it('scopes to the calling professional', async () => {
-    const { plans } = await service.listPlans(professional);
-    expect(plans).toHaveLength(2);
-  });
-
-  it('scopes to the calling client', async () => {
-    const { plans } = await service.listPlans(client);
-    expect(plans).toHaveLength(1);
-    expect(plans[0]!.clientId).toBe('client_1');
-  });
-
-  it('returns all plans to a super admin', async () => {
-    const { plans } = await service.listPlans(admin);
-    expect(plans).toHaveLength(2);
+  it('is not COMPLETED when the plan is empty', async () => {
+    // Nothing has been finished, because there is nothing in it.
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([]);
+    expect((await service.getPlan(PLAN, professional)).status).toBe('ACTIVE');
   });
 });
 
 describe('addItem', () => {
-  it('adds a recommendation item as the owning professional', async () => {
-    const { plans } = await service.listPlans(
-      await (async () => {
-        await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-        return professional;
-      })(),
-    );
-    const item = await service.addItem(
-      plans[0]!.id,
-      { description: 'Daily journaling', frequency: 'Daily', durationDays: 30 },
-      professional,
-    );
-    expect(item.description).toBe('Daily journaling');
-    expect(item.frequency).toBe('Daily');
-    expect(item.durationDays).toBe(30);
-    expect(item.status).toBe('ACTIVE');
+  it('resends existing items with the new one appended', async () => {
+    // The plugin route replaces the whole set, so a retry must leave the same rows
+    // rather than duplicating every recommendation.
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([prescription()]);
+
+    await service.addItem(PLAN, { description: 'Latihan napas' }, professional);
+
+    const sent = vi.mocked(replaceEncounterPrescriptions).mock.calls[0][0];
+    expect(sent.items.map((i) => i.name)).toEqual(['Journaling', 'Latihan napas']);
+    expect(sent.encounterId).toBe(PLAN);
   });
 
   it('forbids a client from adding items', async () => {
-    await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-    const { plans } = await service.listPlans(professional);
-    await expect(
-      service.addItem(plans[0]!.id, { description: 'X' }, client),
-    ).rejects.toMatchObject({ code: InterventionPlanErrorCodes.FORBIDDEN, status: 403 });
+    await expect(service.addItem(PLAN, { description: 'x' }, client)).rejects.toMatchObject({
+      status: 403,
+    });
   });
 });
 
 describe('completeItem', () => {
-  it('lets the owning client mark an item COMPLETED', async () => {
-    await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-    const { plans } = await service.listPlans(professional);
-    const item = await service.addItem(plans[0]!.id, { description: 'X' }, professional);
-    const completed = await service.completeItem(plans[0]!.id, item.id, {}, client);
-    expect(completed.status).toBe('COMPLETED');
-    expect(completed.completedAt).toBeInstanceOf(Date);
+  beforeEach(() => {
+    vi.mocked(listEncounterPrescriptions).mockResolvedValue([prescription()]);
   });
 
-  it('rejects double-completion (409)', async () => {
-    await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-    const { plans } = await service.listPlans(professional);
-    const item = await service.addItem(plans[0]!.id, { description: 'X' }, professional);
-    await service.completeItem(plans[0]!.id, item.id, {}, client);
-    await expect(
-      service.completeItem(plans[0]!.id, item.id, {}, client),
-    ).rejects.toMatchObject({ code: InterventionPlanErrorCodes.ITEM_ALREADY_COMPLETED, status: 409 });
+  it('records completion in the custom-field store, not on the prescription', async () => {
+    const item = await service.completeItem(PLAN, ITEM, client);
+
+    expect(item.status).toBe('COMPLETED');
+    expect(item.completedAt).toBeInstanceOf(Date);
+    expect(vi.mocked(setRecommendationState).mock.calls[0][0]).toBe(ITEM);
+    // The prescription row itself is never rewritten — KiviCare owns it.
+    expect(replaceEncounterPrescriptions).not.toHaveBeenCalled();
   });
 
-  it('forbids the professional from completing on behalf of the client', async () => {
-    await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-    const { plans } = await service.listPlans(professional);
-    const item = await service.addItem(plans[0]!.id, { description: 'X' }, professional);
-    await expect(
-      service.completeItem(plans[0]!.id, item.id, {}, professional),
-    ).rejects.toMatchObject({ code: InterventionPlanErrorCodes.FORBIDDEN, status: 403 });
+  it('is idempotent', async () => {
+    vi.mocked(getRecommendationStates).mockResolvedValue(
+      new Map([[ITEM, { status: 'COMPLETED', completedAt: new Date('2026-07-20') }]]) as never,
+    );
+
+    await service.completeItem(PLAN, ITEM, client);
+    expect(setRecommendationState).not.toHaveBeenCalled();
   });
 
-  it('returns 404 for an item belonging to a different plan', async () => {
-    await service.createPlan({ sessionId: 'sess_1', clientId: 'client_1' }, professional);
-    await service.createPlan({ sessionId: 'sess_2', clientId: 'client_1' }, professional);
-    const list = await service.listPlans(professional);
-    const firstPlan = list.plans.find((p) => p.sessionId === 'sess_1')!;
-    const secondPlan = list.plans.find((p) => p.sessionId === 'sess_2')!;
-    const item = await service.addItem(firstPlan.id, { description: 'X' }, professional);
-    await expect(
-      service.completeItem(secondPlan.id, item.id, {}, client),
-    ).rejects.toMatchObject({ code: InterventionPlanErrorCodes.ITEM_NOT_FOUND, status: 404 });
+  it('only the owning client may complete', async () => {
+    await expect(service.completeItem(PLAN, ITEM, professional)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(service.completeItem(PLAN, ITEM, otherClient)).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  it('404s for an item outside the plan', async () => {
+    await expect(service.completeItem(PLAN, 99999, client)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('listPlans', () => {
+  beforeEach(() => {
+    vi.mocked(listEncounters).mockResolvedValue({ items: [encounter()], total: 1 } as never);
+  });
+
+  it('scopes to the calling professional', async () => {
+    await service.listPlans(professional);
+    expect(vi.mocked(listEncounters).mock.calls[0][0].doctorId).toBe(DOCTOR);
+  });
+
+  it('scopes to the calling client', async () => {
+    await service.listPlans(client);
+    expect(vi.mocked(listEncounters).mock.calls[0][0].patientId).toBe(CLIENT);
+  });
+
+  it('does not scope a super admin', async () => {
+    await service.listPlans(superAdmin);
+    const q = vi.mocked(listEncounters).mock.calls[0][0];
+    expect(q.doctorId).toBeUndefined();
+    expect(q.patientId).toBeUndefined();
   });
 });

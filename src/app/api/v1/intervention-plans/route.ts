@@ -26,19 +26,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const parsed = ListPlansQuery.safeParse({
       status: url.searchParams.get('status') ?? undefined,
       limit: url.searchParams.get('limit') ?? undefined,
-      cursor: url.searchParams.get('cursor') ?? undefined,
+      page: url.searchParams.get('page') ?? undefined,
     });
     if (!parsed.success) {
       return validationProblemResponse(parsed.error.flatten());
     }
 
     const status = parsed.data.status ? PlanStatusEnum.parse(parsed.data.status) : undefined;
-    const { plans, nextCursor } = await interventionPlanService.listPlans(caller, {
+    const { plans, total } = await interventionPlanService.listPlans(caller, {
       status,
       limit: parsed.data.limit,
-      cursor: parsed.data.cursor,
+      page: parsed.data.page,
     });
-    return NextResponse.json({ plans, nextCursor });
+    return NextResponse.json({ plans, total, page: parsed.data.page, limit: parsed.data.limit });
   } catch (err) {
     if (err instanceof InterventionPlanError) return problemResponse(err);
     return NextResponse.json({ title: 'internal_error', status: 500 }, { status: 500 });
@@ -53,7 +53,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!parsed.success) {
       return validationProblemResponse(parsed.error.flatten());
     }
-    const plan = await interventionPlanService.createPlan(parsed.data, caller);
+    // Rebuilt explicitly: the project compiles with `strictNullChecks: false`, under
+    // which z.infer marks both fields optional even though the schema requires them.
+    const plan = await interventionPlanService.createPlan(
+      { sessionId: String(parsed.data.sessionId), clientId: String(parsed.data.clientId) },
+      caller,
+    );
     return NextResponse.json(plan, { status: 201 });
   } catch (err) {
     if (err instanceof InterventionPlanError) return problemResponse(err);

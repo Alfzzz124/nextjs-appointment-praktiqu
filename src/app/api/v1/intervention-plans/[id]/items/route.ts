@@ -25,7 +25,24 @@ export async function POST(req: NextRequest, ctx: RouteContext): Promise<NextRes
     if (!parsed.success) {
       return validationProblemResponse(parsed.error.flatten());
     }
-    const item = await interventionPlanService.addItem(ctx.params.id, parsed.data, caller);
+    // Plan and item ids are KiviCare integers (encounter id, prescription id).
+    const planId = Number(ctx.params.id);
+    if (!Number.isSafeInteger(planId) || planId <= 0) {
+      return NextResponse.json({ title: 'not_found', status: 404 }, { status: 404 });
+    }
+
+    // Rebuilt explicitly — `strictNullChecks: false` makes z.infer mark `description`
+    // optional even though the schema requires it.
+    const item = await interventionPlanService.addItem(
+      planId,
+      {
+        description: String(parsed.data.description),
+        frequency: parsed.data.frequency,
+        durationDays: parsed.data.durationDays,
+        instructions: parsed.data.instructions,
+      },
+      caller,
+    );
     return NextResponse.json(item, { status: 201 });
   } catch (err) {
     if (err instanceof InterventionPlanError) return problemResponse(err);
