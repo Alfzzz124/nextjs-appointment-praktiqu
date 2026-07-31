@@ -3,9 +3,24 @@
 Two artifacts, deployed in this order. The plugin first: it is additive, so the app
 keeps working without it, while the app's new code is useless until the routes exist.
 
-**No Prisma changes in this release.** Nothing was added to `schema.prisma`, so the
-`prisma generate` step that the payment deploy needed (and that broke it when skipped)
-does not apply here. A `.next`-only deploy is complete.
+**`prisma generate` IS required — read this before skipping it.**
+
+That was true when this runbook covered E1 alone. It is false for the deploy that
+actually shipped, which carries all of Phase 3 as well. `schema.prisma` gained
+`KcStaticData` (and lost `Client`), and an **added** model is exactly what broke the
+payment deploy: the generated client lives in the nodevenv's `node_modules`, ships in
+neither the `.next` tarball nor the plugin, so `prisma.kcStaticData` is `undefined` at
+runtime and `/api/v1/public/static-data` answers an opaque 500 while every pre-existing
+model keeps working.
+
+So section 2 must also copy `prisma/schema.prisma` up and regenerate. Removing a model
+is harmless by comparison — nothing references `prisma.client` any more — but
+regenerating covers both directions, and it is idempotent, so run it whenever
+`schema.prisma` differs at all rather than trying to judge which direction it moved.
+
+**Do NOT run `prisma/manual/2026-07-27-drop-clients-shadow-table.sql` on staging.**
+The shadow tables stay standing until staging is verified working — the user's explicit
+call. A leftover `clients` table costs disk and nothing else, since no code reads it.
 
 ## 0. Before anything
 
@@ -63,6 +78,15 @@ cd ~/staging2.praktiqu.com \
   && mv .next .next.bak-$(date +%F-%H%M) \
   && tar xzf ~/next-build.tar.gz \
   && mkdir -p .next/cache
+```
+
+Then the Prisma client, **before** the restart — see the warning at the top:
+
+```bash
+# schema.prisma must already be uploaded to ~/staging2.praktiqu.com/prisma/
+source /home/praktiqu/nodevenv/staging2.praktiqu.com/20/bin/activate \
+  && cd ~/staging2.praktiqu.com \
+  && ./node_modules/.bin/prisma generate
 ```
 
 Restart Passenger:
