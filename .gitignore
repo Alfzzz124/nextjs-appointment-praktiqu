@@ -56,3 +56,7 @@ logs/
 .mcp.json
 # Added by code-review-graph
 .code-review-graph/
+.deploy-artifacts/
+
+# Generated from docs/api/openapi.yaml by `npm run postman` — derived, not source.
+docs/api/postman-collection.json

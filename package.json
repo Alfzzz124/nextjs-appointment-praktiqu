@@ -17,7 +17,8 @@
     "db:migrate": "npm run db:guard && prisma migrate dev",
     "db:reset": "npm run db:guard && prisma migrate reset",
     "openapi": "tsx scripts/generate-openapi.ts",
-    "openapi:check": "tsx scripts/generate-openapi.ts --check"
+    "openapi:check": "tsx scripts/generate-openapi.ts --check",
+    "postman": "openapi-to-postmanv2 -s docs/api/openapi.yaml -o docs/api/postman-collection.json -p -O folderStrategy=Tags,requestParametersResolution=Example,exampleParametersResolution=Example"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
