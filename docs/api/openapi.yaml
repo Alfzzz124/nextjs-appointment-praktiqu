@@ -22,7 +22,10 @@ info:
     name: PraktiQU
     url: https://praktiqu.com
 servers:
-  - url: https://staging.praktiqu.com
+  # staging2, not staging. `staging.praktiqu.com` is a different site and answers 404
+  # for every /api/v1 path — a generated Postman collection pointed there fails on
+  # every request, which looks like a broken API rather than a wrong host.
+  - url: https://staging2.praktiqu.com
     description: Staging
   - url: http://localhost:3000
     description: Local
