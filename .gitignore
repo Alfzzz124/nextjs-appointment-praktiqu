@@ -47,6 +47,13 @@ prisma/*.db-journal
 
 # OS
 Thumbs.db
+# NTFS alternate data streams, created whenever a file is downloaded on Windows and
+# opened through WSL. 379 of them arrived with the two vendored projects below.
+*:Zone.Identifier
+*:SmartScreen
+
+# Agent worktrees — 100 MB of repo copies, and each carries its own .git.
+.claude/worktrees/
 
 # Logs
 *.log
