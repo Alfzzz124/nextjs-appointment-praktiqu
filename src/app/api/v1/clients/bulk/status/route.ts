@@ -6,14 +6,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { bulkSetClientStatus } from '@/services/client/client.service';
-import { ClientStatus } from '@prisma/client';
+import { CLIENT_STATUS } from '@/repositories/wp/patients.repo';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
 const schema = z.object({
-  ids: z.array(z.string()).min(1),
-  status: z.nativeEnum(ClientStatus),
+  // WP user ids — numeric since the client store moved to wp_users (D2).
+  ids: z.array(z.coerce.number().int().positive()).min(1),
+  status: z.enum([CLIENT_STATUS.ACTIVE, CLIENT_STATUS.INACTIVE, CLIENT_STATUS.ARCHIVED]),
 });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

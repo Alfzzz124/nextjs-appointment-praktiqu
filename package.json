@@ -11,7 +11,14 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:guard": "node scripts/guard-db.mjs",
+    "db:push": "npm run db:guard && prisma db push",
+    "db:migrate": "npm run db:guard && prisma migrate dev",
+    "db:reset": "npm run db:guard && prisma migrate reset",
+    "openapi": "tsx scripts/generate-openapi.ts",
+    "openapi:check": "tsx scripts/generate-openapi.ts --check",
+    "postman": "openapi-to-postmanv2 -s docs/api/openapi.yaml -o docs/api/postman-collection.json -p -O folderStrategy=Tags,requestParametersResolution=Example,exampleParametersResolution=Example"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -30,6 +37,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@playwright/test": "^1.60.0",
     "@types/node": "^20.16.10",
     "@types/papaparse": "^5.5.2",
@@ -42,6 +50,7 @@
     "postcss": "^8.4.49",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.5"
   }

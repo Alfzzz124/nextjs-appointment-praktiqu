@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAppointmentToken } from '@/lib/public/appointment-token';
+import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import {
   cancelPublicAppointment,
   AppointmentNotFoundError,
@@ -10,7 +10,7 @@ import { badRequest, notFound, conflict } from '@/lib/problem-details';
 export const dynamic = 'force-dynamic';
 
 export async function POST(_req: NextRequest, { params }: { params: { token: string } }) {
-  const id = verifyAppointmentToken(params.token);
+  const id = verifyAppointmentIdToken(params.token);
   if (!id) {
     const p = badRequest('invalid_token', 'Invalid or expired appointment token');
     return NextResponse.json(p, { status: p.status });

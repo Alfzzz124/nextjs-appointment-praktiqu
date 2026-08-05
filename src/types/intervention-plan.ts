@@ -120,10 +120,15 @@ export type CompleteItemInput = z.infer<typeof CompleteItemInput>;
 // List query
 // -------------------------------------------------------------
 
+/**
+ * Page-based since plans became encounters (E4): `wp_kc_patient_encounters` has no
+ * stable cursor to page on, and the old `cursor` was an `intervention_plans` cuid that
+ * no longer exists.
+ */
 export const ListPlansQuery = z.object({
   status: PlanStatusEnum.optional(),
   limit: z.coerce.number().int().positive().max(100).default(20),
-  cursor: z.string().min(1).optional(),
+  page: z.coerce.number().int().positive().default(1),
 });
 export type ListPlansQuery = z.infer<typeof ListPlansQuery>;
 

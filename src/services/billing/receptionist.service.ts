@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
+import { WpEndpointError } from '@/lib/wp-endpoint';
+import { createReceptionistViaPlugin } from '@/repositories/wp/receptionists.write';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { ReceptionistScope } from '@/services/billing/staff-scope';
 
@@ -59,43 +61,44 @@ export async function getReceptionist(id: number, scope: ReceptionistScope | nul
 
 export interface ReceptionistCreateInput { name: string; email: string; clinicId?: number; }
 
-/** Full WP provisioning inside ONE interactive transaction (LAST_INSERT_ID is connection-safe). */
+/**
+ * Provision a receptionist through the WordPress plugin.
+ *
+ * This used to write wp_users + usermeta + the clinic mapping in one raw transaction.
+ * That produced an account nobody could use: `user_pass` was set to a placeholder
+ * (`!disabled-<username>`) which is not a valid WordPress hash, so `wp_check_password`
+ * always failed and no flow ever set a real one; and because `kc_receptionist_save`
+ * never fired, the welcome email that would have delivered a password never went out
+ * either. Every receptionist created this way was locked out and never told they
+ * existed.
+ *
+ * `POST /praktiqu/v1/receptionists` hashes a real password via `wp_insert_user` and
+ * fires the hook. See docs/architecture/shadow-tables-audit.md §6 Q1.
+ */
 export async function createReceptionist(input: ReceptionistCreateInput, kc: KcActor): Promise<{ id: number }> {
   const clinicId = kc.actor.role === 'SUPER_ADMIN' ? BigInt(input.clinicId ?? 0) : (kc.clinicId ?? BigInt(input.clinicId ?? 0));
   if (!clinicId || clinicId <= 0n) throw new KcError('clinicId is required', 400);
 
-  // Email uniqueness
+  // Checked here as well as in the plugin so the caller gets our error shape, and to
+  // avoid a pointless round trip on the common duplicate case.
   const existing = await prisma.$queryRawUnsafe<any[]>(`SELECT ID FROM wp_users WHERE user_email = ? LIMIT 1`, input.email);
   if (existing[0]) throw new KcError('A user with this email already exists', 409);
 
-  const username = input.email.split('@')[0].slice(0, 60);
-  const first = input.name.split(' ')[0];
-  const last = input.name.split(' ').slice(1).join(' ') || '-';
-  // Non-loginable placeholder hash; real auth is via the WP plugin. (No secret material.)
-  const placeholderHash = '!disabled-' + username.slice(0, 20);
-
-  const newId = await prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      `INSERT INTO wp_users (user_login, user_pass, user_nicename, display_name, user_email, user_url, user_registered, user_activation_key, user_status)
-       VALUES (?, ?, ?, ?, ?, '', NOW(), '', 0)`,
-      username, placeholderHash, username, input.name, input.email,
-    );
-    const idRow = await tx.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
-    const wpId = Number(idRow[0].id);
-    await tx.$executeRawUnsafe(
-      `INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES
-       (?, 'first_name', ?), (?, 'last_name', ?),
-       (?, 'wp_capabilities', 'a:1:{s:21:"kiviCare_receptionist";b:1;}'),
-       (?, 'wp_user_level', '0')`,
-      wpId, first, wpId, last, wpId, wpId,
-    );
-    await tx.$executeRawUnsafe(
-      `INSERT INTO wp_kc_receptionist_clinic_mappings (receptionist_id, clinic_id, created_at) VALUES (?, ?, NOW())`,
-      wpId, clinicId,
-    );
-    return wpId;
-  });
-  return { id: newId };
+  try {
+    const created = await createReceptionistViaPlugin({
+      name: input.name,
+      email: input.email,
+      clinicId: Number(clinicId),
+    });
+    return { id: created.id };
+  } catch (err) {
+    if (err instanceof WpEndpointError) {
+      // Surface the plugin's status rather than collapsing everything to a 500 —
+      // a duplicate email must stay a 409.
+      throw new KcError(err.message, err.status >= 400 && err.status < 600 ? err.status : 502);
+    }
+    throw err;
+  }
 }
 
 export interface ReceptionistUpdateInput { name?: string; }

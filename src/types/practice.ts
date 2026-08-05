@@ -134,7 +134,8 @@ export type PracticeUpdateInput = z.infer<typeof practiceUpdateSchema>;
 
 /** Wire shape returned by the practice service to API routes. */
 export interface PracticeDTO {
-  id: string;
+  /** `wp_kc_clinics.id` — numeric since practices moved to KiviCare's table (D2). */
+  id: number;
   name: string;
   email: string | null;
   telephoneNo: string | null;
@@ -150,12 +151,17 @@ export interface PracticeDTO {
   status: PracticeStatusValue;
   businessHours: BusinessHours[];
   createdAt: string;
+  /**
+   * KiviCare's clinics table has no `updated_at`, so this mirrors `createdAt` rather
+   * than reporting a time nothing recorded.
+   */
   updatedAt: string;
 }
 
 export interface HolidayDTO {
-  id: string;
-  practiceId: string;
+  /** `wp_kc_clinic_schedule.id`. */
+  id: number;
+  practiceId: number;
   title: string;
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD

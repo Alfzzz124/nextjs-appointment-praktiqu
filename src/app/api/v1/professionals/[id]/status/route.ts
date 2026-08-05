@@ -15,6 +15,12 @@ import {
 } from '@/services/professional/professional.service';
 import { ProfessionalStatus } from '@prisma/client';
 import type { Actor } from '@/lib/auth';
+import {
+  canEdit,
+  invalidIdResponse,
+  parseProfessionalId,
+  scopeFor,
+} from '@/services/professional/route-scope';
 
 type RouteParams = { params: { id: string } };
 
@@ -24,7 +30,8 @@ type RouteParams = { params: { id: string } };
 
 export const PATCH = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
   // T018: SUPER_ADMIN all, CLINIC_ADMIN own practice
   if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
@@ -34,15 +41,18 @@ export const PATCH = withAuth(async (req: NextRequest, ctx: RouteParams) => {
     );
   }
 
-  const professional = await getProfessional(id);
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
-
-  // CLINIC_ADMIN: can only affect their own practice
-  if (actor.role === 'CLINIC_ADMIN' && actor.practiceId !== professional.practiceId) {
-    return NextResponse.json(forbidden('Cannot change status of professional outside your practice'), { status: 403 });
+  // A CLINIC_ADMIN may only act on professionals mapped to their own clinic.
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(
+      forbidden('Cannot change status of a professional outside your clinic'),
+      { status: 403 },
+    );
   }
+
 
   // FR-013: Professional cannot self-deactivate
   if (actor.role === 'PROFESSIONAL') {

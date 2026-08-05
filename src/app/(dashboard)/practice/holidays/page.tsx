@@ -32,7 +32,7 @@ async function getCurrentPracticeId(): Promise<string> {
 export default async function PracticeHolidaysPage() {
   try {
     const practiceId = await getCurrentPracticeId();
-    const practice = await getPractice(practiceId);
+    const practice = await getPractice(Number(practiceId));
 
     return (
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -43,7 +43,7 @@ export default async function PracticeHolidaysPage() {
           </p>
         </div>
         <Holidays
-          practiceId={practice.id}
+          practiceId={String(practice.id)}
           onError={(msg) => {
             console.error('[practice/holidays]', msg);
           }}

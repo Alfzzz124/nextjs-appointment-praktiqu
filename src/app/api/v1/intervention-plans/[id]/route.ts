@@ -20,7 +20,13 @@ export interface RouteContext {
 export async function GET(req: NextRequest, ctx: RouteContext): Promise<NextResponse> {
   try {
     const caller = await callerFromRequest(req);
-    const plan = await interventionPlanService.getPlan(ctx.params.id, caller);
+    // Plan and item ids are KiviCare integers (encounter id, prescription id).
+    const planId = Number(ctx.params.id);
+    if (!Number.isSafeInteger(planId) || planId <= 0) {
+      return NextResponse.json({ title: 'not_found', status: 404 }, { status: 404 });
+    }
+
+    const plan = await interventionPlanService.getPlan(planId, caller);
     return NextResponse.json(plan);
   } catch (err) {
     if (err instanceof InterventionPlanError) return problemResponse(err);

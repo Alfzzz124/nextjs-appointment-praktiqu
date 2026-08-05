@@ -1,36 +1,57 @@
-// tests/unit/progress/service.test.ts
+/**
+ * ProgressService — the session timeline now reads KiviCare's appointments.
+ *
+ * Goals stay on our own table, so those still go through the injected client.
+ */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ProgressService } from '@/services/progress/service';
 
-function makePrisma() {
-  return {
-    appointment: { findMany: vi.fn().mockResolvedValue([]) },
-    sessionNote: { findMany: vi.fn().mockResolvedValue([]) },
-    interventionPlan: { findMany: vi.fn().mockResolvedValue([]) },
-    goal: { findMany: vi.fn().mockResolvedValue([]), update: vi.fn().mockResolvedValue({ id: 'g1', isAchieved: true }) },
-  } as any;
-}
+vi.mock('@/repositories/wp/sessions.repo', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/sessions.repo')>()),
+  listSessions: vi.fn(),
+}));
+
+import { ProgressService } from '@/services/progress/service';
+import { listSessions } from '@/repositories/wp/sessions.repo';
+
+const CLIENT = 461;
+
+const goal = {
+  findMany: vi.fn(),
+  update: vi.fn(),
+};
 
 describe('ProgressService', () => {
   let svc: ProgressService;
-  let prisma: ReturnType<typeof makePrisma>;
 
-  beforeEach(() => { prisma = makePrisma(); svc = new ProgressService(prisma); });
-
-  it('gets empty timeline for new client', async () => {
-    const timeline = await svc.getClientTimeline('new-client');
-    expect(Array.isArray(timeline)).toBe(true);
-    expect(timeline).toHaveLength(0);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listSessions).mockResolvedValue({ items: [], total: 0 });
+    goal.findMany.mockResolvedValue([]);
+    goal.update.mockResolvedValue({ id: 'g1', isAchieved: true });
+    svc = new ProgressService({ goal } as never);
   });
 
-  it('gets goals for client', async () => {
-    await svc.getGoals('c1');
-    expect(prisma.goal.findMany).toHaveBeenCalled();
+  it('gets an empty timeline for a new client', async () => {
+    expect(await svc.getClientTimeline(CLIENT)).toEqual([]);
   });
 
-  it('marks goal achieved', async () => {
+  it('scopes the timeline to the client', async () => {
+    await svc.getClientTimeline(CLIENT, 10);
+    expect(vi.mocked(listSessions).mock.calls[0][0]).toMatchObject({
+      clientId: CLIENT,
+      perPage: 10,
+    });
+  });
+
+  it('gets goals for a client', async () => {
+    await svc.getGoals(CLIENT);
+    // goals.clientId is a String column with no FK, so the id goes in as text.
+    expect(goal.findMany.mock.calls[0][0].where).toEqual({ clientId: String(CLIENT) });
+  });
+
+  it('marks a goal achieved', async () => {
     const result = await svc.markGoalAchieved('g1');
-    expect(prisma.goal.update).toHaveBeenCalledWith({
+    expect(goal.update).toHaveBeenCalledWith({
       where: { id: 'g1' },
       data: expect.objectContaining({ isAchieved: true, achievedAt: expect.any(Date) }),
     });

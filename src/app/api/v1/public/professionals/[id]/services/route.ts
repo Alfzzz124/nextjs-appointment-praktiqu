@@ -5,8 +5,16 @@ import { notFound } from '@/lib/problem-details';
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  // A professional id is a wp_users.ID integer; anything else is a 404 rather than a
+  // NaN query.
+  const id = Number(params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    const p = notFound('professional_not_found', 'No active professional with that id');
+    return NextResponse.json(p, { status: p.status });
+  }
+
   try {
-    const services = await getPublicProfessionalServices(params.id);
+    const services = await getPublicProfessionalServices(id);
     if (services === null) {
       const p = notFound('professional_not_found', 'No active professional with that id');
       return NextResponse.json(p, { status: p.status });

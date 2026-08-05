@@ -11,6 +11,7 @@
 
 import { NextRequest } from 'next/server';
 import { getActor, AuthError } from '@/lib/auth';
+import { resolveKcActor } from '@/services/billing/kc-actor';
 import { InterventionPlanError } from '@/services/intervention-plan/service';
 import type { Caller } from '@/services/intervention-plan/service';
 
@@ -35,5 +36,18 @@ export async function callerFromRequest(req: NextRequest): Promise<Caller> {
   if (!ALLOWED_ROLES.includes(actor.role as Caller['role'])) {
     throw new InterventionPlanError('forbidden', 'invalid role', 403);
   }
-  return { userId: actor.id, role: actor.role as Caller['role'] };
+  // Plans are encounters now, and an encounter's doctor/patient are WordPress ids.
+  // Ownership cannot be compared against the auth cuid.
+  let kc;
+  try {
+    kc = await resolveKcActor(actor);
+  } catch {
+    throw new InterventionPlanError('forbidden', 'user is not linked to a WordPress account', 403);
+  }
+
+  return {
+    userId: actor.id,
+    wpUserId: Number(kc.wpUserId),
+    role: actor.role as Caller['role'],
+  };
 }

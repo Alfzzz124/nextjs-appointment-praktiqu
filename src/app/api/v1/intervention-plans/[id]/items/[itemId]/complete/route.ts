@@ -26,12 +26,17 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
     if (!parsed.success) {
       return validationProblemResponse(parsed.error.flatten());
     }
-    const item = await interventionPlanService.completeItem(
-      ctx.params.id,
-      ctx.params.itemId,
-      parsed.data,
-      caller,
-    );
+    // Plan and item ids are KiviCare integers (encounter id, prescription id).
+    const planId = Number(ctx.params.id);
+    if (!Number.isSafeInteger(planId) || planId <= 0) {
+      return NextResponse.json({ title: 'not_found', status: 404 }, { status: 404 });
+    }
+    const itemId = Number(ctx.params.itemId);
+    if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+      return NextResponse.json({ title: 'not_found', status: 404 }, { status: 404 });
+    }
+
+    const item = await interventionPlanService.completeItem(planId, itemId, caller);
     return NextResponse.json(item);
   } catch (err) {
     if (err instanceof InterventionPlanError) return problemResponse(err);

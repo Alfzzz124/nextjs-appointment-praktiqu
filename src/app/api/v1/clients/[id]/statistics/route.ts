@@ -7,6 +7,15 @@ import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { prisma } from '@/lib/db';
 import { getClientStatistics } from '@/services/client/client.service';
+import { resolveKcActor } from '@/services/billing/kc-actor';
+import { findPatientById } from '@/repositories/wp/patients.repo';
+
+/** Client ids are numeric now (D2); reject anything else before it becomes NaN. */
+function parseClientId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 
 export const dynamic = 'force-dynamic';
 
@@ -17,13 +26,24 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
     const actor = await getActor(req);
     const { id } = await params;
 
-    const client = await prisma.client.findUnique({ where: { id }, select: { userId: true } });
-    if (!client) {
+    const clientId = parseClientId(id);
+    if (clientId === null) {
+      return NextResponse.json(
+        { type: '/errors/validation-error', title: 'Invalid client id', status: 400 },
+        { status: 400 },
+      );
+    }
+    // Authorise against WordPress, not the retired `clients` table: a patient is a
+    // wp_users row, and the JWT subject is a cuid in the auth mirror rather than the
+    // patient id — so self-access compares resolved WordPress ids.
+    const kc = await resolveKcActor(actor);
+    const patient = await findPatientById(BigInt(clientId));
+    if (!patient) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
     const isStaff = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role);
-    const isSelf = actor.role === 'CLIENT' && client.userId === actor.id;
+    const isSelf = actor.role === 'CLIENT' && patient.id === kc.wpUserId;
 
     if (!isStaff && !isSelf) {
       return NextResponse.json(
@@ -32,7 +52,7 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
       );
     }
 
-    const stats = await getClientStatistics(id);
+    const stats = await getClientStatistics(clientId);
     return NextResponse.json({ data: stats }, { status: 200 });
   } catch (err) {
     console.error('[GET /clients/:id/statistics]', err);

@@ -2,7 +2,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/route-guards';
 import { PrismaClient } from '@prisma/client';
-import { ConsentService, consentFormCreateSchema } from '@/services/consent/service';
+import {
+  ConsentService,
+  ConsentServiceError,
+  consentFormCreateSchema,
+} from '@/services/consent/service';
 
 const prisma = new PrismaClient();
 const service = new ConsentService(prisma);
@@ -30,6 +34,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (err: any) {
     if (err?.name === 'ZodError') return NextResponse.json({ type: 'about:blank', title: 'Validation failed', status: 400 }, { status: 400 });
+    if (err instanceof ConsentServiceError) {
+      return NextResponse.json(
+        { type: 'about:blank', title: err.code, status: err.status, detail: err.message },
+        { status: err.status },
+      );
+    }
     return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
   }
 }

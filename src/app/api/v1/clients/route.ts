@@ -47,12 +47,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return fieldErrorResponse(createClientSchema, parsed.error);
     }
 
-    // SUPER_ADMIN must pass practiceId in body.
-    const practiceId = actor.role === 'SUPER_ADMIN'
-      ? (typeof body === 'object' && body !== null ? (body as Record<string, unknown>).practiceId as string | undefined : undefined)
-      : undefined;
+    // SUPER_ADMIN must name the WordPress clinic in the body; everyone else has one
+    // derived from their own clinic mapping.
+    const rawClinicId =
+      actor.role === 'SUPER_ADMIN' && typeof body === 'object' && body !== null
+        ? Number((body as Record<string, unknown>).clinicId)
+        : undefined;
+    const clinicId = Number.isFinite(rawClinicId) ? rawClinicId : undefined;
 
-    const result = await createClient({ actor, input: parsed.data, practiceId });
+    const result = await createClient({ actor, input: parsed.data, clinicId });
     return NextResponse.json({ data: result }, { status: 201 });
   } catch (err) {
     return handleServiceError(err);

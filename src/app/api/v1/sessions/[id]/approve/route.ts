@@ -11,6 +11,19 @@ import { unauthorized } from '@/lib/problem-details';
 import { SessionStatus } from '@prisma/client';
 import { transitionSession } from '@/services/session/session.service';
 
+/** Session ids are numeric now (D2); reject anything else before it becomes NaN. */
+function parseSessionId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+const invalidSessionId = () =>
+  NextResponse.json(
+    { type: '/errors/validation-error', title: 'Invalid session id', status: 400 },
+    { status: 400 },
+  );
+
+
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +32,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   try {
-    const { id } = await params;
+    const { id: rawId } = await params;
+    const id = parseSessionId(rawId);
+    if (id === null) return invalidSessionId();
     const actor = await sessionActorFromRequest(_req);
     const session = await transitionSession({
       actor,

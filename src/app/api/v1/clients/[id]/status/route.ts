@@ -10,6 +10,13 @@ import { unauthorized } from '@/lib/problem-details';
 import { setStatus, ClientServiceError } from '@/services/client/client.service';
 import { updateStatusSchema, formatFieldErrors } from '@/services/client/validation';
 
+/** Client ids are numeric now (D2); reject anything else before it becomes NaN. */
+function parseClientId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+
 export const dynamic = 'force-dynamic';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -37,7 +44,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
         { status: 422 },
       );
     }
-    const result = await setStatus({ actor, id, to: parsed.data.status });
+    const clientId = parseClientId(id);
+    if (clientId === null) {
+      return NextResponse.json(
+        { type: '/errors/validation-error', title: 'Invalid client id', status: 400 },
+        { status: 400 },
+      );
+    }
+    const result = await setStatus({ actor, id: clientId, to: parsed.data.status });
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     return handleServiceError(err);

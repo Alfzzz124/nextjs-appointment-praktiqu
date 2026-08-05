@@ -9,15 +9,19 @@ const prisma = new PrismaClient();
 const svc = new ProgressService(prisma);
 
 export default async function ClientProgressPage({ params }: { params: { clientId?: string } }) {
-  const clientId = params?.clientId ?? '';
+  // A client id is a wp_users.ID integer; a missing or malformed segment renders the
+  // empty state rather than reaching the database.
+  const clientId = Number(params?.clientId);
   let timeline: Awaited<ReturnType<typeof svc.getClientTimeline>> = [];
   let goals: Awaited<ReturnType<typeof svc.getGoals>> = [];
 
-  try {
-    timeline = await svc.getClientTimeline(clientId as string);
-    goals = await svc.getGoals(clientId as string);
-  } catch {
-    // Database tables may not exist yet
+  if (Number.isSafeInteger(clientId) && clientId > 0) {
+    try {
+      timeline = await svc.getClientTimeline(clientId);
+      goals = await svc.getGoals(clientId);
+    } catch {
+      // Database tables may not exist yet
+    }
   }
 
   return (

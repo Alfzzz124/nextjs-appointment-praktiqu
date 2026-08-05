@@ -4,7 +4,7 @@ import { sessionActorFromRequest } from '@/lib/auth/session-actor';
 import { AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { SessionStatus, UserRole } from '@prisma/client';
-import { exportSessions } from '@/services/session/session.service';
+import { exportSessions, normaliseStatus } from '@/services/session/session.service';
 import { z } from 'zod';
 
 
@@ -20,13 +20,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const rawStatus = searchParams.get('status');
     const statusParsed = z.nativeEnum(SessionStatus).optional().safeParse(rawStatus ?? undefined);
     const params = {
-      practiceId:
-        actor.role === UserRole.SUPER_ADMIN
-          ? (searchParams.get('practiceId') ?? undefined)
-          : (actor.practiceId ?? undefined),
-      status: statusParsed.success ? statusParsed.data : undefined,
-      from: searchParams.get('from') ? new Date(searchParams.get('from')!) : undefined,
-      to: searchParams.get('to') ? new Date(searchParams.get('to')!) : undefined,
+      clinicId:
+        actor.role === UserRole.SUPER_ADMIN && searchParams.get('clinicId')
+          ? Number(searchParams.get('clinicId'))
+          : undefined,
+      // normaliseStatus folds the two retired names, so an old client asking for
+      // COMPLETED or REJECTED still gets sensible results.
+      status: statusParsed.success ? (normaliseStatus(statusParsed.data) ?? undefined) : undefined,
+      // Dates stay as YYYY-MM-DD; KiviCare stores local dates.
+      dateFrom: searchParams.get('from') ?? undefined,
+      dateTo: searchParams.get('to') ?? undefined,
     };
     const data = await exportSessions(params);
     return NextResponse.json(

@@ -1,38 +1,53 @@
 /**
- * Practice service — encapsulates all business logic for Practice and Holiday
- * resources. Routes and components call into this layer rather than touching
- * Prisma directly so that:
- *   - validation lives in one place (Zod)
- *   - audit logging is consistent (lib/logging)
- *   - tests can mock a single boundary
+ * Practice service — backed by KiviCare's `wp_kc_clinics`.
  *
- * The "Practice" maps to the KiviCare `Clinic` table.
+ * A "practice" is a KiviCare clinic. The `clinics` shadow table duplicated it, and
+ * `holiday_list` / `clinic_schedules` duplicated `wp_kc_clinic_schedule`. See
+ * docs/architecture/shadow-tables-audit.md.
+ *
+ * Reads and writes are both direct SQL. KiviCare declares clinic and holiday hooks but
+ * registers no listener for any of them, so a direct write skips nothing — the same
+ * evidence that justified it for clinic sessions.
+ *
+ * Ids are `number` (`wp_kc_clinics.id`).
  */
 
-import type { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/db';
 import { logging } from '@/lib/logging';
+import {
+  findClinicById,
+  listClinicMembers,
+  listClinics as listClinicRows,
+  setClinicStatus,
+  updateClinic,
+  type WpClinic,
+} from '@/repositories/wp/clinics.repo';
+import {
+  OFF_DAY_MODULE,
+  createOffDay,
+  deleteOffDay,
+  listClinicOffDays,
+  type WpOffDay,
+} from '@/repositories/wp/off-days.repo';
 import {
   HolidayDTO,
   PracticeDTO,
-  PracticeUpdateInput,
   holidayInputSchema,
   practiceUpdateSchema,
 } from '@/types/practice';
 
-// ============================================================
-// Errors
-// ============================================================
+/* ------------------------------------------------------------------ */
+/* Errors                                                              */
+/* ------------------------------------------------------------------ */
 
 export class PracticeNotFoundError extends Error {
-  constructor(public readonly id: string) {
+  constructor(public readonly id: number) {
     super(`Practice ${id} not found`);
     this.name = 'PracticeNotFoundError';
   }
 }
 
 export class HolidayNotFoundError extends Error {
-  constructor(public readonly id: string) {
+  constructor(public readonly id: number) {
     super(`Holiday ${id} not found`);
     this.name = 'HolidayNotFoundError';
   }
@@ -41,241 +56,207 @@ export class HolidayNotFoundError extends Error {
 export class PracticeValidationError extends Error {
   constructor(
     message: string,
-    public readonly issues: ReadonlyArray<{ path: string; message: string }>,
+    public readonly issues: Array<{ path: string; message: string }>,
   ) {
     super(message);
     this.name = 'PracticeValidationError';
   }
 }
 
-// ============================================================
-// Internal helpers
-// ============================================================
+/* ------------------------------------------------------------------ */
+/* Mapping                                                             */
+/* ------------------------------------------------------------------ */
 
-/** Module type for Holiday rows attached to a Practice (KiviCare uses polymorphic). */
-const PRACTICE_MODULE = 'clinic';
+type BusinessHours = PracticeDTO['businessHours'][number];
 
-type PrismaLike = Pick<typeof prisma, 'clinic' | 'holiday'>;
-
-/** Allow tests to inject a Prisma stub. Default: the singleton client. */
-function client(injected?: PrismaLike): PrismaLike {
-  return injected ?? prisma;
+function readBusinessHours(extra: Record<string, unknown>): BusinessHours[] {
+  const value = extra.businessHours;
+  return Array.isArray(value) ? (value as BusinessHours[]) : [];
 }
 
-/** Convert the `extra` JSON blob (if any) to a safe settings object. */
-function readExtra(
-  extra: unknown,
-): { businessHours?: PracticeDTO['businessHours'] } {
-  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) {
-    return {};
-  }
-  const obj = extra as Record<string, unknown>;
-  const businessHours = obj.businessHours;
-  if (!Array.isArray(businessHours)) return {};
-  // Trust the shape — it was written via our service.
-  return { businessHours: businessHours as PracticeDTO['businessHours'] };
-}
-
-function toDTO(record: {
-  id: string;
-  name: string;
-  email: string | null;
-  telephoneNo: string | null;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  postalCode: string | null;
-  countryCode: string | null;
-  countryCallingCode: string | null;
-  extra: unknown;
-  status: number;
-  createdAt: Date;
-  updatedAt: Date;
-}): PracticeDTO {
-  const { businessHours = [] } = readExtra(record.extra);
-  // `logoUrl` and `timezone` are not first-class columns on the KiviCare Clinic
-  // table, so we round-trip them through `extra`. New fields can be added there
-  // without a schema migration.
-  const extra = (record.extra ?? {}) as Record<string, unknown>;
+function toPracticeDTO(c: WpClinic): PracticeDTO {
+  // timezone, logoUrl and businessHours have no columns on KiviCare's table and
+  // round-trip through `extra`, so adding fields needs no schema change.
+  const extra = c.extra;
   return {
-    id: record.id,
-    name: record.name,
-    email: record.email,
-    telephoneNo: record.telephoneNo,
-    address: record.address,
-    city: record.city,
-    state: record.state,
-    country: record.country,
-    postalCode: record.postalCode,
-    countryCode: record.countryCode,
-    countryCallingCode: record.countryCallingCode,
-    timezone: typeof extra.timezone === 'string' ? (extra.timezone as string) : null,
-    logoUrl: typeof extra.logoUrl === 'string' ? (extra.logoUrl as string) : null,
-    status: record.status === 1 ? 1 : 0,
-    businessHours,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
+    id: Number(c.id),
+    name: c.name ?? '',
+    email: c.email,
+    telephoneNo: c.telephone,
+    address: c.address,
+    city: c.city,
+    state: c.state,
+    country: c.country,
+    postalCode: c.postalCode,
+    countryCode: c.countryCode,
+    countryCallingCode: c.countryCallingCode,
+    timezone: typeof extra.timezone === 'string' ? extra.timezone : null,
+    logoUrl: typeof extra.logoUrl === 'string' ? extra.logoUrl : null,
+    status: c.isActive ? 1 : 0,
+    businessHours: readBusinessHours(extra),
+    createdAt: c.createdAt.toISOString(),
+    // KiviCare's clinics table has no updated_at column. Mirroring createdAt is
+    // honest; inventing `now()` would not be.
+    updatedAt: c.createdAt.toISOString(),
   };
 }
 
-function toHolidayDTO(record: {
-  id: string;
-  moduleId: string;
-  title: string;
-  startDate: Date;
-  endDate: Date;
-  isAllDay: boolean;
-  startTime: Date | null;
-  endTime: Date | null;
-}): HolidayDTO {
-  // `@db.Time` values come back as Dates whose UTC time part is the stored HH:mm.
-  const toHHmm = (t: Date | null): string | null =>
-    t ? t.toISOString().slice(11, 16) : null;
+/** `HH:MM:SS` → `HH:mm`, the shape this DTO has always used. */
+function toHHmm(t: string | null): string | null {
+  return t ? t.slice(0, 5) : null;
+}
+
+function toHolidayDTO(o: WpOffDay): HolidayDTO {
   return {
-    id: record.id,
-    practiceId: record.moduleId,
-    title: record.title,
-    startDate: record.startDate.toISOString().slice(0, 10),
-    endDate: record.endDate.toISOString().slice(0, 10),
-    isAllDay: record.isAllDay,
-    startTime: toHHmm(record.startTime),
-    endTime: toHHmm(record.endTime),
+    id: Number(o.id),
+    practiceId: Number(o.moduleId),
+    title: o.description ?? '',
+    startDate: o.startDate ?? '',
+    endDate: o.endDate ?? o.startDate ?? '',
+    // Inverted deliberately: KiviCare's `time_specific` true means a PARTIAL closure.
+    isAllDay: !o.timeSpecific,
+    startTime: toHHmm(o.startTime),
+    endTime: toHHmm(o.endTime),
   };
 }
 
-// ============================================================
-// Public API
-// ============================================================
+/* ------------------------------------------------------------------ */
+/* Practices                                                           */
+/* ------------------------------------------------------------------ */
 
 export interface ListOptions {
   page?: number;
   limit?: number;
-  status?: number;
+  search?: string;
+  includeInactive?: boolean;
 }
 
-/** List practices (paginated). */
 export async function listPractices(
   options: ListOptions = {},
-  injected?: PrismaLike,
-): Promise<{ data: PracticeDTO[]; total: number; page: number; limit: number }> {
-  const page = Math.max(1, options.page ?? 1);
-  const limit = Math.min(100, Math.max(1, options.limit ?? 20));
-  const db = client(injected);
-
-  const where: { status?: number } = {};
-  if (typeof options.status === 'number') where.status = options.status;
-
-  const [rows, total] = await Promise.all([
-    db.clinic.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    db.clinic.count({ where }),
-  ]);
-
-  return {
-    data: rows.map(toDTO),
-    total,
-    page,
-    limit,
-  };
+): Promise<{ data: PracticeDTO[]; total: number }> {
+  const { items, total } = await listClinicRows({
+    page: options.page ?? 1,
+    perPage: options.limit ?? 20,
+    search: options.search,
+    includeInactive: options.includeInactive,
+  });
+  return { data: items.map(toPracticeDTO), total };
 }
 
-/** Get a single practice by ID. Throws PracticeNotFoundError if missing. */
-export async function getPractice(id: string, injected?: PrismaLike): Promise<PracticeDTO> {
-  const db = client(injected);
-  const row = await db.clinic.findUnique({ where: { id } });
-  if (!row) throw new PracticeNotFoundError(id);
-  return toDTO(row);
+export async function getPractice(id: number): Promise<PracticeDTO> {
+  const clinic = await findClinicById(BigInt(id));
+  if (!clinic) throw new PracticeNotFoundError(id);
+  return toPracticeDTO(clinic);
 }
 
-/**
- * Update a practice. Validates input via Zod, preserves existing fields
- * (PATCH semantics), and writes an audit log entry.
- */
 export async function updatePractice(
-  id: string,
+  id: number,
   input: unknown,
   options: { actorId?: string | null } = {},
-  injected?: PrismaLike,
 ): Promise<PracticeDTO> {
   const parsed = practiceUpdateSchema.safeParse(input);
   if (!parsed.success) {
     throw new PracticeValidationError(
-      'Invalid practice update',
+      'Invalid practice input',
       parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
     );
   }
-  const patch = parsed.data;
-  const db = client(injected);
+  const data = parsed.data;
 
-  const before = await db.clinic.findUnique({ where: { id } });
-  if (!before) throw new PracticeNotFoundError(id);
+  const existing = await findClinicById(BigInt(id));
+  if (!existing) throw new PracticeNotFoundError(id);
 
-  // Build the column-level update. `extra` merges with existing JSON.
-  const existingExtra = (before.extra ?? {}) as Record<string, unknown>;
-  const mergedExtra: Record<string, unknown> = { ...existingExtra };
-  if (patch.timezone !== undefined) mergedExtra.timezone = patch.timezone;
-  if (patch.logoUrl !== undefined) mergedExtra.logoUrl = patch.logoUrl;
-  if (patch.businessHours !== undefined) mergedExtra.businessHours = patch.businessHours;
+  // Only the extra-backed fields actually supplied are merged, so a partial update
+  // cannot blank the others out of the shared blob.
+  const extra: Record<string, unknown> = {};
+  if (data.timezone !== undefined) extra.timezone = data.timezone;
+  if (data.logoUrl !== undefined) extra.logoUrl = data.logoUrl;
+  if (data.businessHours !== undefined) extra.businessHours = data.businessHours;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: Record<string, unknown> = {};
-  if (patch.name !== undefined) data.name = patch.name;
-  if (patch.email !== undefined) data.email = patch.email;
-  if (patch.telephoneNo !== undefined) data.telephoneNo = patch.telephoneNo;
-  if (patch.address !== undefined) data.address = patch.address;
-  if (patch.city !== undefined) data.city = patch.city;
-  if (patch.state !== undefined) data.state = patch.state;
-  if (patch.country !== undefined) data.country = patch.country;
-  if (patch.postalCode !== undefined) data.postalCode = patch.postalCode;
-  if (patch.countryCode !== undefined) data.countryCode = patch.countryCode;
-  if (patch.countryCallingCode !== undefined) data.countryCallingCode = patch.countryCallingCode;
-  if (patch.status !== undefined) data.status = patch.status;
-  // Only write extra if it actually changed
-  if (Object.keys(mergedExtra).length !== Object.keys(existingExtra).length || JSON.stringify(mergedExtra) !== JSON.stringify(existingExtra)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data.extra = mergedExtra as any;
-  }
+  await updateClinic(BigInt(id), {
+    name: data.name,
+    email: data.email,
+    telephone: data.telephoneNo,
+    address: data.address,
+    city: data.city,
+    state: data.state,
+    country: data.country,
+    postalCode: data.postalCode,
+    countryCode: data.countryCode,
+    countryCallingCode: data.countryCallingCode,
+    status: data.status === undefined ? undefined : data.status === 1 ? 1 : 0,
+    extra: Object.keys(extra).length > 0 ? extra : undefined,
+  });
 
-  const after = await db.clinic.update({ where: { id }, data });
   await logging.audit('practice.update', {
     userId: options.actorId ?? null,
     resource: 'practice',
-    resourceId: id,
-    metadata: { changedKeys: Object.keys(patch) },
+    resourceId: String(id),
+    metadata: { fields: Object.keys(data) },
   });
-  return toDTO(after);
+
+  return getPractice(id);
 }
 
-// ============================================================
-// Holidays
-// ============================================================
-
-/** List all holidays for a practice. Returns [] if the practice has none. */
-export async function listHolidays(
-  practiceId: string,
-  injected?: PrismaLike,
-): Promise<HolidayDTO[]> {
-  const db = client(injected);
-  const practice = await db.clinic.findUnique({ where: { id: practiceId }, select: { id: true } });
-  if (!practice) throw new PracticeNotFoundError(practiceId);
-  const rows = await db.holiday.findMany({
-    where: { moduleType: PRACTICE_MODULE, moduleId: practiceId },
-    orderBy: { startDate: 'asc' },
-  });
-  return rows.map(toHolidayDTO);
+/** Soft-delete: sets status to 0. */
+export async function bulkDeletePractices(ids: number[]): Promise<number> {
+  return setClinicStatus(ids.map((i) => BigInt(i)), 0);
 }
 
-/** Add a holiday to a practice. */
+export async function bulkSetPracticeStatus(ids: number[], status: number): Promise<number> {
+  return setClinicStatus(ids.map((i) => BigInt(i)), status === 1 ? 1 : 0);
+}
+
+export async function exportPractices(params: { status?: number } = {}): Promise<PracticeDTO[]> {
+  const out: PracticeDTO[] = [];
+  for (let page = 1; ; page += 1) {
+    const { items, total } = await listClinicRows({ page, perPage: 100, includeInactive: true });
+    out.push(...items.map(toPracticeDTO));
+    if (items.length === 0 || out.length >= total) break;
+  }
+  return params.status === undefined ? out : out.filter((p) => p.status === params.status);
+}
+
+/** Everyone mapped to a practice, across KiviCare's three mapping tables. */
+export async function listPracticeUsers(
+  practiceId: number,
+): Promise<Array<{ userId: number; role: string }>> {
+  const clinic = await findClinicById(BigInt(practiceId));
+  if (!clinic) throw new PracticeNotFoundError(practiceId);
+
+  const members = await listClinicMembers(BigInt(practiceId));
+  return members.map((m) => ({ userId: Number(m.userId), role: m.role }));
+}
+
+export async function changePracticeAdmin(practiceId: number, newAdminId: number): Promise<void> {
+  const clinic = await findClinicById(BigInt(practiceId));
+  if (!clinic) throw new PracticeNotFoundError(practiceId);
+
+  // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields, so
+  // it is set explicitly rather than widening that type for one caller.
+  const { prisma } = await import('@/lib/db');
+  await prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_clinics SET clinic_admin_id = ? WHERE id = ?`,
+    newAdminId,
+    practiceId,
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Holidays                                                            */
+/* ------------------------------------------------------------------ */
+
+export async function listHolidays(practiceId: number): Promise<HolidayDTO[]> {
+  const clinic = await findClinicById(BigInt(practiceId));
+  if (!clinic) throw new PracticeNotFoundError(practiceId);
+
+  return (await listClinicOffDays(BigInt(practiceId))).map(toHolidayDTO);
+}
+
 export async function addHoliday(
-  practiceId: string,
+  practiceId: number,
   input: unknown,
   options: { actorId?: string | null } = {},
-  injected?: PrismaLike,
 ): Promise<HolidayDTO> {
   const parsed = holidayInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -292,125 +273,61 @@ export async function addHoliday(
     ]);
   }
 
-  const db = client(injected);
-  const practice = await db.clinic.findUnique({ where: { id: practiceId }, select: { id: true } });
-  if (!practice) throw new PracticeNotFoundError(practiceId);
+  const clinic = await findClinicById(BigInt(practiceId));
+  if (!clinic) throw new PracticeNotFoundError(practiceId);
 
-  const created = await db.holiday.create({
-    data: {
-      moduleType: PRACTICE_MODULE,
-      moduleId: practiceId,
-      title: data.title,
-      startDate: new Date(`${data.startDate}T00:00:00.000Z`),
-      endDate: new Date(`${data.endDate}T00:00:00.000Z`),
-      isAllDay: data.isAllDay,
-      startTime: data.startTime ?? null,
-      endTime: data.endTime ?? null,
-    },
+  // A part-day closure needs both bounds, or the slot generator cannot tell what it
+  // covers and would have to treat it as a full day.
+  const timeSpecific = !data.isAllDay;
+  if (timeSpecific && (!data.startTime || !data.endTime)) {
+    throw new PracticeValidationError('A part-day holiday needs both startTime and endTime', [
+      { path: 'startTime', message: 'Required when isAllDay is false' },
+    ]);
+  }
+
+  const withSeconds = (t: string | null | undefined): string | undefined =>
+    t ? (t.length === 5 ? `${t}:00` : t) : undefined;
+
+  const id = await createOffDay({
+    module: OFF_DAY_MODULE.CLINIC,
+    moduleId: BigInt(practiceId),
+    startDate: data.startDate,
+    endDate: data.endDate,
+    timeSpecific,
+    startTime: withSeconds(data.startTime),
+    endTime: withSeconds(data.endTime),
+    description: data.title,
   });
+
   await logging.audit('practice.holiday.add', {
     userId: options.actorId ?? null,
     resource: 'holiday',
-    resourceId: created.id,
+    resourceId: String(id),
     metadata: { practiceId, title: data.title, startDate: data.startDate, endDate: data.endDate },
   });
+
+  const created = (await listClinicOffDays(BigInt(practiceId))).find((o) => o.id === id);
+  if (!created) throw new HolidayNotFoundError(Number(id));
   return toHolidayDTO(created);
 }
 
-// ============================================================
-// Bulk operations
-// ============================================================
-
-/** Soft-delete practices by setting status to 0 (inactive). */
-export async function bulkDeletePractices(ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  const result = await prisma.clinic.updateMany({
-    where: { id: { in: ids } },
-    data: { status: 0 },
-  });
-  return result.count;
-}
-
-/** Set status on multiple practices at once. */
-export async function bulkSetPracticeStatus(ids: string[], status: number): Promise<number> {
-  if (ids.length === 0) return 0;
-  const result = await prisma.clinic.updateMany({
-    where: { id: { in: ids } },
-    data: { status },
-  });
-  return result.count;
-}
-
-/** Export all practices (optionally filtered by status). */
-export async function exportPractices(params: { status?: number }): Promise<unknown[]> {
-  const where: { status?: number } = {};
-  if (typeof params.status === 'number') where.status = params.status;
-  return prisma.clinic.findMany({ where, orderBy: { name: 'asc' } });
-}
-
-/** List users associated with a practice via junction tables and ClinicAdmin. */
-export async function listPracticeUsers(practiceId: string): Promise<unknown[]> {
-  const [doctorMappings, receptionistMappings, patientMappings, admin] = await Promise.all([
-    prisma.doctorClinicMapping.findMany({
-      where: { clinicId: practiceId },
-      select: { doctor: { select: { user: { select: { id: true, email: true, role: true, createdAt: true } } } } },
-    }),
-    prisma.receptionistClinicMapping.findMany({
-      where: { clinicId: practiceId },
-      select: { receptionist: { select: { user: { select: { id: true, email: true, role: true, createdAt: true } } } } },
-    }),
-    prisma.patientClinicMapping.findMany({
-      where: { clinicId: practiceId },
-      select: { patient: { select: { user: { select: { id: true, email: true, role: true, createdAt: true } } } } },
-    }),
-    prisma.clinic.findUnique({
-      where: { id: practiceId },
-      select: { clinicAdmin: { select: { id: true, email: true, role: true, createdAt: true } } },
-    }),
-  ]);
-
-  const seen = new Set<string>();
-  const users: { id: string; email: string; role: string; createdAt: Date }[] = [];
-
-  const add = (u: { id: string; email: string; role: string; createdAt: Date } | null | undefined) => {
-    if (!u || seen.has(u.id)) return;
-    seen.add(u.id);
-    users.push(u);
-  };
-
-  doctorMappings.forEach((m) => add(m.doctor.user));
-  receptionistMappings.forEach((m) => add(m.receptionist.user));
-  patientMappings.forEach((m) => add(m.patient.user));
-  if (admin) add(admin.clinicAdmin);
-
-  return users;
-}
-
-/** Update the clinic admin for a practice. */
-export async function changePracticeAdmin(practiceId: string, newAdminId: string): Promise<void> {
-  await prisma.clinic.update({
-    where: { id: practiceId },
-    data: { clinicAdminId: newAdminId },
-  });
-}
-
-/** Remove a holiday by ID. Returns true if a row was deleted. */
 export async function removeHoliday(
-  practiceId: string,
-  holidayId: string,
+  practiceId: number,
+  holidayId: number,
   options: { actorId?: string | null } = {},
-  injected?: PrismaLike,
 ): Promise<boolean> {
-  const db = client(injected);
-  const existing = await db.holiday.findUnique({ where: { id: holidayId } });
-  if (!existing || existing.moduleType !== PRACTICE_MODULE || existing.moduleId !== practiceId) {
-    throw new HolidayNotFoundError(holidayId);
-  }
-  await db.holiday.delete({ where: { id: holidayId } });
+  // Scoped by clinic, so one practice cannot delete another's closure by id alone.
+  const ok = await deleteOffDay({
+    id: BigInt(holidayId),
+    module: OFF_DAY_MODULE.CLINIC,
+    moduleId: BigInt(practiceId),
+  });
+  if (!ok) throw new HolidayNotFoundError(holidayId);
+
   await logging.audit('practice.holiday.remove', {
     userId: options.actorId ?? null,
     resource: 'holiday',
-    resourceId: holidayId,
+    resourceId: String(holidayId),
     metadata: { practiceId },
   });
   return true;

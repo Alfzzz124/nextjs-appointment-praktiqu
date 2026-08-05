@@ -1,78 +1,64 @@
 /**
- * GET /api/v1/professionals/[id] — read a professional
- * PATCH /api/v1/professionals/[id] — partial update
+ * GET    /api/v1/professionals/[id] — read a professional
+ * PATCH  /api/v1/professionals/[id] — partial update
  * DELETE /api/v1/professionals/[id] — soft-delete (set INACTIVE)
  *
- * T014: GET endpoint
- * T015: PATCH endpoint
- * T018: RBAC authorization
+ * A professional IS a `wp_users` row with the `kiviCare_doctor` capability, so `id` is
+ * a numeric `wp_users.ID`. Self-access compares RESOLVED WordPress ids: the JWT subject
+ * is a cuid in the auth mirror and is never equal to a professional's id.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { withAuth } from '@/lib/auth';
+import { withAuth, type Actor } from '@/lib/auth';
 import { notFound, forbidden, validationError } from '@/lib/problem-details';
 import {
   getProfessional,
   updateProfessional,
   deactivateProfessional,
-  listProfessionals,
   isServiceError,
 } from '@/services/professional/professional.service';
+import {
+  canEdit,
+  canView,
+  invalidIdResponse,
+  parseProfessionalId,
+  scopeFor,
+} from '@/services/professional/route-scope';
 
 type RouteParams = { params: { id: string } };
 
-// ============================================
-// GET /api/v1/professionals/:id
-// ============================================
-
-export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
+export const GET = withAuth(async (_req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  const professional = await getProfessional(id);
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
-
-  // RBAC: SUPER_ADMIN all, CLINIC_ADMIN own practice, PROFESSIONAL self, RECEPTIONIST own practice read-only
-  const canView =
-    actor.role === 'SUPER_ADMIN' ||
-    actor.role === 'CLINIC_ADMIN' ||
-    (actor.role === 'PROFESSIONAL' && actor.id === professional.userId) ||
-    (actor.role === 'RECEPTIONIST' && actor.practiceId === professional.practiceId);
-
-  if (!canView) {
+  if (!canView(scope, actor.role)) {
     return NextResponse.json(forbidden('Cannot view this professional'), { status: 403 });
   }
 
-  return NextResponse.json(professional);
+  return NextResponse.json(await getProfessional(id));
 });
-
-// ============================================
-// PATCH /api/v1/professionals/:id
-// ============================================
 
 export const PATCH = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
-  const professional = await getProfessional(id);
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
-
-  // Determine if this is a self-edit (US2)
-  const isSelfEdit = actor.role === 'PROFESSIONAL' && actor.id === professional.userId;
-
-  if (isSelfEdit) {
-    // US2: Professional can only edit biography, specialties, contactInfo
-    // Cannot self-deactivate (FR-013)
-  } else {
-    // SUPER_ADMIN / CLINIC_ADMIN: can update more fields
-    if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
-      return NextResponse.json(forbidden('Cannot update this professional'), { status: 403 });
-    }
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(forbidden('Cannot update this professional'), { status: 403 });
   }
+
+  // A professional editing their own profile is restricted to biography, specialties
+  // and contact number — the service rejects anything else rather than stripping it.
+  const isSelfEdit = actor.role === 'PROFESSIONAL' && scope.isSelf;
 
   let body: unknown;
   try {
@@ -82,9 +68,8 @@ export const PATCH = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   }
 
   try {
-    await updateProfessional(id, body, actor.id, isSelfEdit);
-    const updated = await getProfessional(id);
-    return NextResponse.json(updated ?? { ok: true });
+    const updated = await updateProfessional(id, body as Record<string, unknown>, actor.id, isSelfEdit);
+    return NextResponse.json(updated);
   } catch (err) {
     if (isServiceError(err)) {
       if (err._tag === 'validation') {
@@ -96,36 +81,36 @@ export const PATCH = withAuth(async (req: NextRequest, ctx: RouteParams) => {
       if (err._tag === 'not_found') {
         return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
       }
+      if (err._tag === 'forbidden') {
+        return NextResponse.json(forbidden(err.message), { status: 403 });
+      }
+      if (err._tag === 'conflict') {
+        return NextResponse.json(
+          { type: '/errors/conflict', title: err.message, status: 409, code: err.code },
+          { status: 409 },
+        );
+      }
     }
     throw err;
   }
 });
 
-// ============================================
-// DELETE /api/v1/professionals/:id (soft-delete)
-// ============================================
-
-export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
+export const DELETE = withAuth(async (_req: NextRequest, ctx: RouteParams) => {
   const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const { id } = ctx.params;
+  const id = parseProfessionalId(ctx.params.id);
+  if (id === null) return invalidIdResponse();
 
+  // FR-013: a professional cannot deactivate themselves, so this is admin-only. Checked
+  // before the lookup, since the answer does not depend on the target.
   if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
     return NextResponse.json(forbidden('Cannot deactivate this professional'), { status: 403 });
   }
 
-  const professional = await getProfessional(id);
-  if (!professional) {
+  const scope = await scopeFor(actor, id);
+  if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
-  }
-
-  // FR-013: Professional cannot self-deactivate
-  if (actor.role === 'PROFESSIONAL') {
-    return NextResponse.json(forbidden('Professional cannot self-deactivate'), { status: 403 });
   }
 
   await deactivateProfessional(id, actor.id);
   return NextResponse.json({ ok: true });
 });
-
-// Need to import Actor type
-import type { Actor } from '@/lib/auth';

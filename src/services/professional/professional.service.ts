@@ -1,318 +1,79 @@
 /**
- * Professional Service — core business logic for Feature 002.
+ * Professional service — backed by WordPress, not the `professionals` shadow table.
  *
- * T007: create, read, update, list, deactivate, activate methods
- * T031: self-edit field restriction (US2)
- * T046: practice-scoped query (US4)
+ * A professional IS a `wp_users` row carrying the `kiviCare_doctor` capability. The
+ * `professionals` and `doctors` shadow tables were mirrors kept in sync by an importer
+ * that Phase 4 deletes. See docs/architecture/shadow-tables-audit.md.
  *
- * Uses Prisma for DB, Zod for validation, audit.ts for state-change logging.
+ *  - Reads  → `repositories/wp/doctors.repo.ts` (direct SQL, as `billing/*` does)
+ *  - Writes → `repositories/wp/doctors.write.ts` → plugin REST, so `kc_doctor_save`
+ *             fires the welcome email, KiviCare's bookkeeping and Pro's custom fields.
+ *  - Type, registration number and status live in `praktiqu_*` usermeta: KiviCare has
+ *    no field for them, and its own `wp_users.user_status` is self-contradictory.
+ *
+ * Ids are `number` (`wp_users.ID`) — the same D2 break applied to clients.
  */
 
-import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import {
+  PROFESSIONAL_STATUS,
+  findDoctorById,
+  listDoctors,
+  type ProfessionalStatus,
+  type ProfessionalType,
+  type WpDoctor,
+} from '@/repositories/wp/doctors.repo';
+import { createDoctor, updateDoctor } from '@/repositories/wp/doctors.write';
+import { WpEndpointError } from '@/lib/wp-endpoint';
+import {
   createProfessionalInputSchema,
-  updateProfessionalInputSchema,
-  selfUpdateProfessionalInputSchema,
-  statusChangeInputSchema,
   professionalListQuerySchema,
-  checkUniqueRegistrationNumber,
+  statusChangeInputSchema,
   checkUniqueEmail,
+  checkUniqueRegistrationNumber,
   buildFieldErrors,
 } from './validation';
-import {
-  professionalAudit,
-  statusChangeAudit,
-} from '@/lib/audit';
-import { Prisma, ProfessionalStatus } from '@prisma/client';
+import { professionalAudit, statusChangeAudit } from '@/lib/audit';
 
-// ============================================
-// Types
-// ============================================
+export { PROFESSIONAL_STATUS };
+export type { ProfessionalStatus, ProfessionalType };
+
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
+/* ------------------------------------------------------------------ */
 
 export interface ProfessionalListParams {
   page?: number;
   pageSize?: number;
   search?: string;
   status?: ProfessionalStatus;
-  practiceId?: string;
+  /** WordPress clinic id (`wp_kc_clinics.id`). */
+  clinicId?: number;
   sortBy?: 'fullName' | 'email' | 'createdAt' | 'status';
   sortOrder?: 'asc' | 'desc';
 }
 
 export interface PaginatedResult<T> {
   data: T[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
-  };
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
 }
 
-// ============================================
-// Create (T007, T022)
-// ============================================
-
-export async function createProfessional(
-  input: z.infer<typeof createProfessionalInputSchema>,
-  actorId: string,
-): Promise<{ id: string }> {
-  // Validate uniqueness (T023, T024)
-  await checkUniqueRegistrationNumber(input.registrationNumber);
-  await checkUniqueEmail(input.email);
-
-  const data = createProfessionalInputSchema.parse(input);
-
-  const professional = await prisma.professional.create({
-    data: {
-      userId: data.userId,
-      practiceId: data.practiceId ?? null,
-      fullName: data.fullName,
-      email: data.email,
-      professionalType: data.professionalType,
-      registrationNumber: data.registrationNumber,
-      status: ProfessionalStatus.PENDING_ACTIVATION,
-      biography: data.biography ?? null,
-      specialties: data.specialties ?? null,
-      contactInfo: (data.contactInfo as Prisma.InputJsonValue) ?? null,
-    },
-  });
-
-  // T022: WP user provisioning — WordPress user account already exists
-  // (linked via userId). We don't call WP directly; the WP plugin handles
-  // sync via the WordPress webhook system (see src/lib/jobs/webhook-handler.ts).
-
-  // Audit log (FR-012)
-  await professionalAudit('professional.created', {
-    professionalId: professional.id,
-    actorId,
-    after: {
-      userId: professional.userId,
-      fullName: professional.fullName,
-      professionalType: professional.professionalType,
-      status: professional.status,
-    },
-  });
-
-  return { id: professional.id };
+/** API-facing shape, assembled from `wp_users` + `wp_usermeta`. */
+export interface Professional {
+  id: number;
+  fullName: string;
+  email: string;
+  professionalType: ProfessionalType | null;
+  registrationNumber: string | null;
+  status: ProfessionalStatus;
+  biography: string | null;
+  specialties: string[];
+  qualifications: string[];
+  yearsOfExperience: string | null;
+  contactNumber: string | null;
+  timezone: string | null;
+  createdAt: Date;
 }
-
-// ============================================
-// Read (T007)
-// ============================================
-
-export async function getProfessional(id: string) {
-  return prisma.professional.findUnique({
-    where: { id },
-    include: {
-      practice: { select: { id: true, name: true } },
-      serviceAssignments: {
-        include: {
-          service: { select: { id: true, name: true, duration: true, status: true } },
-        },
-      },
-      _count: {
-        select: {
-          availability: true,
-          offDays: true,
-        },
-      },
-    },
-  });
-}
-
-/**
- * Get professional by userId (for self-service profile).
- */
-export async function getProfessionalByUserId(userId: string) {
-  return prisma.professional.findUnique({
-    where: { userId },
-    include: {
-      practice: { select: { id: true, name: true, timezone: true } },
-      availability: { orderBy: { dayOfWeek: 'asc' } },
-      offDays: { orderBy: { startDate: 'desc' } },
-      serviceAssignments: {
-        include: {
-          service: { select: { id: true, name: true, duration: true, status: true, price: true } },
-        },
-      },
-    },
-  });
-}
-
-// ============================================
-// Update (T007, T031)
-// ============================================
-
-export async function updateProfessional(
-  id: string,
-  input: unknown,
-  actorId: string,
-  isSelfEdit = false,
-): Promise<void> {
-  let validated: z.infer<typeof updateProfessionalInputSchema>;
-
-  if (isSelfEdit) {
-    // T031: Self-edit restrictions — only biography, specialties, contactInfo (US2)
-    const result = selfUpdateProfessionalInputSchema.safeParse(input);
-    if (!result.success) {
-      const err = result.error;
-      throw {
-        _tag: 'validation' as const,
-        errors: buildFieldErrors(err.issues),
-      };
-    }
-    validated = result.data;
-  } else {
-    const result = updateProfessionalInputSchema.safeParse(input);
-    if (!result.success) {
-      const err = result.error;
-      throw {
-        _tag: 'validation' as const,
-        errors: buildFieldErrors(err.issues),
-      };
-    }
-    validated = result.data;
-  }
-
-  if (Object.keys(validated).length === 0) {
-    return; // nothing to update
-  }
-
-  const existing = await prisma.professional.findUnique({ where: { id } });
-  if (!existing) {
-    throw { _tag: 'not_found' as const };
-  }
-
-  await prisma.professional.update({
-    where: { id },
-    data: {
-      fullName: validated.fullName ?? undefined,
-      biography: validated.biography ?? undefined,
-      specialties: validated.specialties ?? undefined,
-      contactInfo: validated.contactInfo ? (validated.contactInfo as Prisma.InputJsonValue) : undefined,
-      practiceId: validated.practiceId !== undefined ? validated.practiceId ?? undefined : undefined,
-    },
-  });
-
-  // AUDIT (FR-012)
-  await professionalAudit('professional.updated', {
-    professionalId: id,
-    actorId,
-    before: {
-      fullName: existing.fullName,
-      biography: existing.biography,
-      specialties: existing.specialties,
-    },
-    after: validated,
-  });
-}
-
-// ============================================
-// List (T007, T046, T012)
-// ============================================
-
-export async function listProfessionals(
-  params: ProfessionalListParams,
-  actorPracticeId?: string | null,
-): Promise<PaginatedResult<unknown>> {
-  const parsed = professionalListQuerySchema.safeParse(params);
-  if (!parsed.success) {
-    throw { _tag: 'validation' as const, errors: buildFieldErrors(parsed.error.issues) };
-  }
-  const { page, pageSize, search, status, practiceId, sortBy, sortOrder } = parsed.data;
-
-  const where: Record<string, unknown> = {};
-
-  // T046: Practice-scoped query — Clinic Admin sees only their practice's professionals
-  if (actorPracticeId) {
-    where.practiceId = actorPracticeId;
-  } else if (practiceId) {
-    where.practiceId = practiceId;
-  }
-
-  if (status) {
-    where.status = status;
-  }
-
-  if (search) {
-    where.OR = [
-      { fullName: { contains: search, mode: 'insensitive' } },
-      { email: { contains: search, mode: 'insensitive' } },
-      { registrationNumber: { contains: search, mode: 'insensitive' } },
-    ];
-  }
-
-  const [items, totalItems] = await Promise.all([
-    prisma.professional.findMany({
-      where,
-      include: {
-        practice: { select: { id: true, name: true } },
-      },
-      orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.professional.count({ where }),
-  ]);
-
-  return {
-    data: items,
-    pagination: {
-      page,
-      pageSize,
-      totalItems,
-      totalPages: Math.ceil(totalItems / pageSize),
-    },
-  };
-}
-
-// ============================================
-// Status Change (T007, T015, T046)
-// ============================================
-
-export async function setProfessionalStatus(
-  id: string,
-  newStatus: ProfessionalStatus,
-  actorId: string,
-): Promise<void> {
-  const parsed = statusChangeInputSchema.safeParse({ status: newStatus });
-  if (!parsed.success) {
-    throw { _tag: 'validation' as const, errors: buildFieldErrors(parsed.error.issues) };
-  }
-
-  const existing = await prisma.professional.findUnique({ where: { id } });
-  if (!existing) {
-    throw { _tag: 'not_found' as const };
-  }
-
-  if (existing.status === newStatus) return; // no-op
-
-  await prisma.professional.update({
-    where: { id },
-    data: { status: newStatus },
-  });
-
-  // AUDIT (FR-012)
-  await statusChangeAudit(id, actorId, existing.status, newStatus);
-}
-
-// ============================================
-// Deactivate / Activate (T007)
-// ============================================
-
-export async function deactivateProfessional(id: string, actorId: string): Promise<void> {
-  await setProfessionalStatus(id, ProfessionalStatus.INACTIVE, actorId);
-}
-
-export async function activateProfessional(id: string, actorId: string): Promise<void> {
-  await setProfessionalStatus(id, ProfessionalStatus.ACTIVE, actorId);
-}
-
-// ============================================
-// Error types for route handlers
-// ============================================
 
 export type ServiceError =
   | { _tag: 'validation'; errors: Record<string, string[]> }
@@ -324,54 +85,346 @@ export function isServiceError(err: unknown): err is ServiceError {
   return typeof err === 'object' && err !== null && '_tag' in err;
 }
 
-// ============================================
-// Bulk operations
-// ============================================
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+function composeName(d: WpDoctor): string {
+  const composed = [d.firstName, d.lastName].filter(Boolean).join(' ').trim();
+  return composed || d.displayName || d.email;
+}
+
+export function toProfessional(d: WpDoctor): Professional {
+  return {
+    id: Number(d.id),
+    fullName: composeName(d),
+    email: d.email,
+    professionalType: d.professionalType,
+    registrationNumber: d.registrationNumber,
+    status: d.status,
+    biography: d.description,
+    specialties: d.specialties,
+    qualifications: d.qualifications,
+    yearsOfExperience: d.yearsOfExperience,
+    contactNumber: d.mobileNumber,
+    timezone: d.timezone,
+    createdAt: d.registeredAt,
+  };
+}
+
+/** Map a plugin transport failure onto this service's error shape. */
+function rethrowWpError(err: unknown): never {
+  if (err instanceof WpEndpointError) {
+    throw {
+      _tag: 'conflict' as const,
+      code: err.status === 409 ? 'conflict' : 'wp_write_failed',
+      message: err.message,
+    };
+  }
+  throw err;
+}
+
+function asValidationError(err: unknown): never {
+  if (err instanceof z.ZodError) {
+    throw { _tag: 'validation' as const, errors: buildFieldErrors(err.issues) };
+  }
+  throw err;
+}
+
+/* ------------------------------------------------------------------ */
+/* Create                                                              */
+/* ------------------------------------------------------------------ */
+
+export async function createProfessional(
+  input: z.infer<typeof createProfessionalInputSchema>,
+  actorId: string,
+  clinicIdOverride?: number,
+): Promise<{ id: number }> {
+  const parsed = createProfessionalInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw { _tag: 'validation' as const, errors: buildFieldErrors(parsed.error.issues) };
+  }
+  const data = parsed.data;
+
+  try {
+    await checkUniqueRegistrationNumber(data.registrationNumber);
+    await checkUniqueEmail(data.email);
+  } catch (err) {
+    asValidationError(err);
+  }
+
+  const [firstName, ...rest] = data.fullName.trim().split(/\s+/);
+
+  let created;
+  try {
+    created = await createDoctor({
+      email: data.email,
+      firstName: firstName ?? data.fullName,
+      lastName: rest.join(' '),
+      professionalType: data.professionalType as ProfessionalType,
+      registrationNumber: data.registrationNumber,
+      description: data.biography ?? undefined,
+      specialties: data.specialties as string[] | undefined,
+      clinicId: clinicIdOverride ?? data.clinicId,
+    });
+  } catch (err) {
+    rethrowWpError(err);
+  }
+
+  await professionalAudit('professional.created', {
+    professionalId: String(created.id),
+    actorId,
+    after: {
+      fullName: data.fullName,
+      professionalType: created.professionalType,
+      status: created.status,
+    },
+  });
+
+  return { id: created.id };
+}
+
+/* ------------------------------------------------------------------ */
+/* Read                                                                */
+/* ------------------------------------------------------------------ */
+
+export async function getProfessional(id: number): Promise<Professional | null> {
+  const doctor = await findDoctorById(BigInt(id));
+  return doctor ? toProfessional(doctor) : null;
+}
 
 /**
- * Soft-deletes professionals by setting status to INACTIVE.
- * Named "delete" to match the KiviCare API convention (/doctors/bulk/delete).
+ * Self-service lookup. The JWT subject is a cuid in the auth mirror, so callers must
+ * resolve it to a WordPress id (via `resolveKcActor`) before calling this.
  */
-export async function bulkDeleteProfessionals(ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  const result = await prisma.professional.updateMany({
-    where: { id: { in: ids } },
-    data: { status: ProfessionalStatus.INACTIVE },
+export async function getProfessionalByWpUserId(wpUserId: number): Promise<Professional | null> {
+  return getProfessional(wpUserId);
+}
+
+export async function listProfessionals(
+  params: ProfessionalListParams,
+  actorClinicId?: number | null,
+): Promise<PaginatedResult<Professional>> {
+  const parsed = professionalListQuerySchema.safeParse(params);
+  if (!parsed.success) {
+    throw { _tag: 'validation' as const, errors: buildFieldErrors(parsed.error.issues) };
+  }
+  const { page, pageSize, search, status, sortBy, sortOrder } = parsed.data;
+
+  // A scoped actor never widens past their own clinic, even if the query names another.
+  const clinicId = actorClinicId ?? parsed.data.clinicId;
+
+  const { items, total } = await listDoctors({
+    page,
+    perPage: pageSize,
+    search,
+    clinicIds: clinicId !== undefined && clinicId !== null ? [BigInt(clinicId)] : undefined,
+    statuses: status ? [status as ProfessionalStatus] : undefined,
   });
-  return result.count;
+
+  const data = items.map(toProfessional);
+
+  // Sorted here rather than in SQL: fullName and status are assembled from wp_usermeta
+  // with fallbacks, and duplicating that logic in SQL would let the two drift. A page
+  // is at most 100 rows.
+  const dir = sortOrder === 'desc' ? -1 : 1;
+  data.sort((a, b) => {
+    if (sortBy === 'createdAt') return (a.createdAt.getTime() - b.createdAt.getTime()) * dir;
+    const av = String(a[sortBy] ?? '');
+    const bv = String(b[sortBy] ?? '');
+    return av.localeCompare(bv) * dir;
+  });
+
+  return {
+    data,
+    pagination: {
+      page,
+      pageSize,
+      totalItems: total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Update                                                              */
+/* ------------------------------------------------------------------ */
+
+/** Fields a professional may change on their own profile (US2). */
+const SELF_EDITABLE = new Set(['biography', 'specialties', 'contactNumber']);
+
+export async function updateProfessional(
+  id: number,
+  input: Record<string, unknown>,
+  actorId: string,
+  isSelfEdit = false,
+): Promise<Professional> {
+  const existing = await findDoctorById(BigInt(id));
+  if (!existing) throw { _tag: 'not_found' as const };
+
+  if (isSelfEdit) {
+    const rejected = Object.keys(input).filter((k) => !SELF_EDITABLE.has(k));
+    if (rejected.length > 0) {
+      // Rejected rather than silently stripped: registrationNumber and
+      // professionalType are read-only for the professional themselves.
+      throw {
+        _tag: 'forbidden' as const,
+        message: `Not editable on your own profile: ${rejected.join(', ')}`,
+      };
+    }
+  }
+
+  if (typeof input.registrationNumber === 'string') {
+    try {
+      await checkUniqueRegistrationNumber(input.registrationNumber, id);
+    } catch (err) {
+      asValidationError(err);
+    }
+  }
+  if (typeof input.email === 'string') {
+    try {
+      await checkUniqueEmail(input.email, id);
+    } catch (err) {
+      asValidationError(err);
+    }
+  }
+
+  const payload: Parameters<typeof updateDoctor>[1] = {};
+  if (typeof input.fullName === 'string') {
+    const [first, ...rest] = input.fullName.trim().split(/\s+/);
+    payload.firstName = first;
+    payload.lastName = rest.join(' ');
+  }
+  if (typeof input.email === 'string') payload.email = input.email;
+  if (typeof input.registrationNumber === 'string') payload.registrationNumber = input.registrationNumber;
+  if (typeof input.professionalType === 'string') {
+    payload.professionalType = input.professionalType as ProfessionalType;
+  }
+  // null clears the field, so `=== null` must reach the plugin as ''.
+  if (typeof input.biography === 'string' || input.biography === null) {
+    payload.description = (input.biography as string | null) ?? '';
+  }
+  if (Array.isArray(input.specialties)) payload.specialties = input.specialties as string[];
+  if (Array.isArray(input.qualifications)) payload.qualifications = input.qualifications as string[];
+  if (typeof input.contactNumber === 'string') payload.contactNumber = input.contactNumber;
+  if (typeof input.timezone === 'string') payload.timezone = input.timezone;
+  if (typeof input.clinicId === 'number') payload.clinicId = input.clinicId;
+
+  if (Object.keys(payload).length > 0) {
+    try {
+      await updateDoctor(id, payload);
+    } catch (err) {
+      rethrowWpError(err);
+    }
+  }
+
+  await professionalAudit('professional.updated', {
+    professionalId: String(id),
+    actorId,
+    after: { fields: Object.keys(payload) },
+  });
+
+  const updated = await findDoctorById(BigInt(id));
+  if (!updated) throw { _tag: 'not_found' as const };
+  return toProfessional(updated);
+}
+
+/* ------------------------------------------------------------------ */
+/* Status                                                              */
+/* ------------------------------------------------------------------ */
+
+export async function setProfessionalStatus(
+  id: number,
+  newStatus: ProfessionalStatus,
+  actorId: string,
+): Promise<void> {
+  const parsed = statusChangeInputSchema.safeParse({ status: newStatus });
+  if (!parsed.success) {
+    throw { _tag: 'validation' as const, errors: buildFieldErrors(parsed.error.issues) };
+  }
+
+  const existing = await findDoctorById(BigInt(id));
+  if (!existing) throw { _tag: 'not_found' as const };
+  if (existing.status === newStatus) return;
+
+  try {
+    await updateDoctor(id, { status: newStatus });
+  } catch (err) {
+    rethrowWpError(err);
+  }
+
+  await statusChangeAudit(String(id), actorId, existing.status, newStatus);
+}
+
+export async function deactivateProfessional(id: number, actorId: string): Promise<void> {
+  await setProfessionalStatus(id, PROFESSIONAL_STATUS.INACTIVE, actorId);
+}
+
+export async function activateProfessional(id: number, actorId: string): Promise<void> {
+  await setProfessionalStatus(id, PROFESSIONAL_STATUS.ACTIVE, actorId);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bulk                                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sequential, not parallel: each call is an HTTP round trip that fires KiviCare hooks.
+ * Individual failures are counted rather than thrown, so one bad id cannot abandon the
+ * batch with no report of how far it got.
+ */
+async function bulkApplyStatus(ids: number[], status: ProfessionalStatus): Promise<number> {
+  let applied = 0;
+  for (const id of ids) {
+    try {
+      await updateDoctor(id, { status });
+      applied += 1;
+    } catch {
+      // Swallowed deliberately — the returned count is the caller's signal.
+    }
+  }
+  return applied;
+}
+
+/** Soft-delete: sets INACTIVE. Named to match KiviCare's /doctors/bulk/delete. */
+export async function bulkDeleteProfessionals(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  return bulkApplyStatus(ids, PROFESSIONAL_STATUS.INACTIVE);
 }
 
 export async function bulkSetProfessionalStatus(
-  ids: string[],
+  ids: number[],
   status: ProfessionalStatus,
 ): Promise<number> {
   if (ids.length === 0) return 0;
-  const result = await prisma.professional.updateMany({
-    where: { id: { in: ids } },
-    data: { status },
-  });
-  return result.count;
+  return bulkApplyStatus(ids, status);
 }
 
-// ============================================
-// Export
-// ============================================
+/* ------------------------------------------------------------------ */
+/* Export                                                              */
+/* ------------------------------------------------------------------ */
 
 export interface ProfessionalExportParams {
-  practiceId?: string;
+  clinicId?: number;
   status?: ProfessionalStatus;
 }
 
+const EXPORT_PAGE = 100;
+
 export async function exportProfessionals(
   params: ProfessionalExportParams,
-): Promise<unknown[]> {
-  const where: Record<string, unknown> = {};
-  if (params.practiceId) where.practiceId = params.practiceId;
-  if (params.status) where.status = params.status;
-
-  return prisma.professional.findMany({
-    where,
-    include: { practice: { select: { id: true, name: true } } },
-    orderBy: { fullName: 'asc' },
-  });
+): Promise<Professional[]> {
+  const out: Professional[] = [];
+  for (let page = 1; ; page += 1) {
+    const { items, total } = await listDoctors({
+      page,
+      perPage: EXPORT_PAGE,
+      clinicIds: params.clinicId ? [BigInt(params.clinicId)] : undefined,
+      statuses: params.status ? [params.status] : undefined,
+    });
+    out.push(...items.map(toProfessional));
+    // items.length === 0 also guards against a total that shrinks mid-sweep.
+    if (items.length === 0 || out.length >= total) break;
+  }
+  return out.sort((a, b) => a.fullName.localeCompare(b.fullName));
 }

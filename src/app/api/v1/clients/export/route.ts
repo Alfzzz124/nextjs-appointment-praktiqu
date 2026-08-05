@@ -6,12 +6,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { exportClients } from '@/services/client/client.service';
-import { ClientStatus } from '@prisma/client';
+import { CLIENT_STATUS } from '@/repositories/wp/patients.repo';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-const statusSchema = z.nativeEnum(ClientStatus).optional();
+const statusSchema = z.enum([CLIENT_STATUS.ACTIVE, CLIENT_STATUS.INACTIVE, CLIENT_STATUS.ARCHIVED]).optional();
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -32,12 +32,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const practiceId =
+    const clinicIdRaw =
       actor.role === 'SUPER_ADMIN'
-        ? (req.nextUrl.searchParams.get('practiceId') ?? undefined)
-        : (actor.practiceId ?? undefined);
+        ? (req.nextUrl.searchParams.get('clinicId') ?? undefined)
+        : undefined;
 
-    const rows = await exportClients({ practiceId, status: parsedStatus.data });
+    // Non-super-admins are scoped by the service via resolveKcActor; only a
+    // SUPER_ADMIN may name a clinic explicitly.
+    const clinicId = clinicIdRaw !== undefined ? Number(clinicIdRaw) : undefined;
+    const rows = await exportClients({
+      clinicId: Number.isFinite(clinicId) ? clinicId : undefined,
+      status: parsedStatus.data,
+    });
 
     return new NextResponse(JSON.stringify(rows), {
       status: 200,

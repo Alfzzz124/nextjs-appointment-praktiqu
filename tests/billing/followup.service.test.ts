@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { assertTestDb, seedFollowupChain, seedFollowup, cleanup } from './fixtures';
+import { prisma } from '@/lib/db';
 import {
   createChain, getChain, createFollowup, getFollowup, listFollowups,
   completeFollowup, bulkSetFollowupStatus, listDueFollowups, listActivity,
@@ -18,7 +19,19 @@ const scopePro = { doctorId: BigInt(DOCTOR) };
 const scopeOtherPro = { doctorId: BigInt(OTHER_DOCTOR) };
 
 describe('followup.service', () => {
-  beforeAll(async () => { assertTestDb(); await cleanup(); });
+  beforeAll(async () => {
+    assertTestDb();
+    await cleanup();
+
+    // sendReminderNow reads the patient's email from wp_users. Nothing seeded that row,
+    // so the reminder test could only ever fail with "Patient has no email address on
+    // file". cleanup() removes it again via the TEST_MARKER range.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO wp_users (ID, user_login, user_pass, user_nicename, display_name, user_email, user_url, user_registered, user_activation_key, user_status)
+       VALUES (?, ?, '', ?, ?, ?, '', NOW(), '', 0)`,
+      PATIENT, `patient${PATIENT}`, `patient${PATIENT}`, 'Followup Patient', `patient${PATIENT}@test.local`,
+    );
+  });
   afterAll(cleanup);
 
   it('createChain → createFollowup enforces chain_id + in-scope chain', async () => {

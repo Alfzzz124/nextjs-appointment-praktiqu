@@ -18,8 +18,8 @@ vi.mock('@/services/professional/service-assignment.service', () => ({
   exportDoctorServices: vi.fn().mockResolvedValue([
     {
       id: 'assign-1',
-      professionalId: 'prof-1',
-      serviceId: 'svc-1',
+      doctorId: 8100001,
+      serviceId: 101,
       serviceName: 'Consultation',
       serviceDuration: 30,
       serviceStatus: 1,
@@ -37,7 +37,9 @@ import { POST as bulkStatusPost } from '@/app/api/v1/professionals/[id]/services
 import { GET as exportGet } from '@/app/api/v1/professionals/[id]/services/export/route';
 import { getActor } from '@/lib/auth';
 
-const PROF_ID = 'prof-1';
+// Numeric wp_users.ID since professionals moved to WordPress (D2). The routes now
+// reject a non-numeric id with 400 before reaching the service.
+const PROF_ID = '8100001';
 
 function makeReq(method: string, url: string, body?: unknown): NextRequest {
   return new NextRequest(url, {
@@ -50,7 +52,7 @@ function makeReq(method: string, url: string, body?: unknown): NextRequest {
 describe('POST /professionals/[id]/services/bulk/delete', () => {
   it('returns 200 with count on success', async () => {
     const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/delete`, {
-      serviceIds: ['svc-1', 'svc-2', 'svc-3'],
+      serviceIds: [101, 102, 103],
     });
     const res = await bulkDeletePost(req, { params: { id: PROF_ID } });
     expect(res.status).toBe(200);
@@ -61,7 +63,7 @@ describe('POST /professionals/[id]/services/bulk/delete', () => {
   it('returns 403 for non-admin role', async () => {
     vi.mocked(getActor).mockResolvedValueOnce({ id: 'user-2', role: 'RECEPTIONIST', practiceId: 'p-1' } as never);
     const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/delete`, {
-      serviceIds: ['svc-1'],
+      serviceIds: [101],
     });
     const res = await bulkDeletePost(req, { params: { id: PROF_ID } });
     expect(res.status).toBe(403);
@@ -71,7 +73,7 @@ describe('POST /professionals/[id]/services/bulk/delete', () => {
 describe('POST /professionals/[id]/services/bulk/status', () => {
   it('returns 200 with count on success', async () => {
     const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/status`, {
-      serviceIds: ['svc-1', 'svc-2'],
+      serviceIds: [101, 102],
       status: 'active',
     });
     const res = await bulkStatusPost(req, { params: { id: PROF_ID } });
@@ -97,7 +99,9 @@ describe('GET /professionals/[id]/services/export', () => {
     expect(res.headers.get('content-disposition')).toMatch(/attachment/);
     const body = await res.json();
     expect(Array.isArray(body)).toBe(true);
-    expect(body[0]).toMatchObject({ professionalId: PROF_ID });
+    // The export now returns the doctor's WordPress id under `doctorId`; there is no
+    // separate professional entity to key on any more.
+    expect(body[0]).toMatchObject({ doctorId: Number(PROF_ID) });
   });
 
   it('returns 403 for non-admin role', async () => {

@@ -59,6 +59,50 @@ function serviceToken(): string {
   return token;
 }
 
+/** Base for every plugin route, e.g. `${WP_API_BASE}/patients`. */
+export const WP_API_BASE = `${WP_ENDPOINT}/wp-json/praktiqu/v1`;
+
+/**
+ * JSON request against the plugin, with the service token attached.
+ *
+ * Every caller previously repeated the same fetch → check `ok` → parse → rethrow
+ * dance; this centralises it so error shapes stay consistent. WordPress reports
+ * errors as `{ code, message, data: { status } }`, so surface `message` when present
+ * rather than dumping the raw body.
+ */
+export async function wpRequestJson<T>(
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const res = await fetch(`${WP_API_BASE}${path}`, {
+    method: init.method ?? 'GET',
+    headers: {
+      'X-PraktiQU-Service-Token': serviceToken(),
+      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+  });
+
+  const raw = await res.text();
+
+  if (!res.ok) {
+    let message = raw || res.statusText;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.message === 'string') message = parsed.message;
+    } catch {
+      // Not JSON — a PHP fatal or an HTML error page. Keep the raw text.
+    }
+    throw new WpEndpointError(`${path} failed ${res.status}: ${message}`, res.status);
+  }
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new WpEndpointError(`${path} returned invalid JSON`, res.status);
+  }
+}
+
 export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWcOrderResult> {
   const res = await fetch(`${WP_PAYMENTS_BASE}/order`, {
     method: 'POST',

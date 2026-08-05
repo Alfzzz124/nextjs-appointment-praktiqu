@@ -9,8 +9,9 @@ vi.mock('@/services/payments/payment.service', () => ({
   PaymentAlreadyInitiatedError: class PaymentAlreadyInitiatedError extends Error {},
   UnknownOrderError: class UnknownOrderError extends Error {},
 }));
+// Tokens carry wp_kc_appointments.id now; a non-numeric payload fails closed.
 vi.mock('@/lib/public/appointment-token', () => ({
-  verifyAppointmentToken: vi.fn((t: string) => (t === 'bad' ? null : 'appt_1')),
+  verifyAppointmentIdToken: vi.fn((t: string) => (t === 'bad' ? null : 5150)),
 }));
 
 import { POST as initiate } from '@/app/api/v1/public/payments/route';
@@ -34,6 +35,8 @@ describe('POST /public/payments', () => {
     const res = await initiate(req({ token: 'good' }));
     expect(res.status).toBe(201);
     expect((await res.json()).data.checkoutUrl).toBe('https://wp/checkout/1');
+    // The numeric id reaches the service, not the raw token payload.
+    expect(svc.initiatePublicPayment).toHaveBeenCalledWith(5150);
   });
 
   it('409 when the appointment is not pending', async () => {

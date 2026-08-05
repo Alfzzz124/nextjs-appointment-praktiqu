@@ -1,0 +1,23 @@
+-- Phase 4.1 — drop the `clients` shadow table.
+--
+-- A client is a `wp_users` row carrying the kiviCare_patient capability. The `clients`
+-- table duplicated that concept and, on the restored production copy, held 0 rows while
+-- 752 real patients lived in wp_users — so the client API was blind to all of them.
+-- See docs/architecture/shadow-tables-audit.md.
+--
+-- Safe to drop because:
+--   * `prisma.client` has zero references left in src/ (client.service.ts, the
+--     statistics route and access-control.ts all read wp_users now).
+--   * The table is empty in every database checked (dev copy, test).
+--
+-- Scoped SQL, applied deliberately — NEVER `prisma db push`, which would diff the whole
+-- schema against a live WordPress database. See scripts/guard-db.mjs.
+--
+-- Verify before running:
+--   SELECT COUNT(*) FROM clients;        -- expect 0
+--
+-- Rollback: none. The table is empty and its schema is recoverable from git history
+-- (prisma/schema.prisma before commit "feat(clients): read and write clients from
+-- wp_users"). Restoring it would not restore data, because there was never any.
+
+DROP TABLE IF EXISTS `clients`;

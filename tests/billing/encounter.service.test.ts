@@ -1,4 +1,50 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+
+/**
+ * Encounter WRITES go through the praktiqu-endpoint plugin now (phase E1), so they
+ * need a live WordPress and a service token. This suite is about the service's own
+ * logic — scoping, status transitions, bulk operations — so the plugin hop is replaced
+ * with the equivalent direct write and everything else still hits the real test DB.
+ *
+ * This test had been failing silently since E1: a broken cleanup() aborted beforeAll,
+ * and vitest reported the whole suite as SKIPPED rather than failed.
+ */
+vi.mock('@/repositories/wp/encounters.write', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/repositories/wp/encounters.write')>();
+  const { prisma } = await import('@/lib/db');
+  return {
+    ...actual,
+    createEncounter: vi.fn(async (input: Record<string, unknown>) => {
+      const created = await prisma.kcPatientEncounter.create({
+        data: {
+          patientId: BigInt(input.patientId as number),
+          clinicId: BigInt(input.clinicId as number),
+          doctorId: BigInt(input.doctorId as number),
+          appointmentId: input.appointmentId ? BigInt(input.appointmentId as number) : null,
+          encounterDate: new Date(),
+          description: (input.description as string) ?? null,
+          status: 1,
+          addedBy: BigInt(input.doctorId as number),
+          createdAt: new Date(),
+        },
+        select: { id: true },
+      });
+      return { id: Number(created.id), status: 1, notified: false };
+    }),
+    updateEncounter: vi.fn(async (id: number, input: Record<string, unknown>) => {
+      await prisma.kcPatientEncounter.update({
+        where: { id: BigInt(id) },
+        data: { description: (input.description as string) ?? undefined },
+      });
+      return { id, updated: Object.keys(input) };
+    }),
+    setEncounterStatus: vi.fn(async (id: number, status: number) => {
+      await prisma.kcPatientEncounter.update({ where: { id: BigInt(id) }, data: { status } });
+      return { id, status, closed: status === 0, notified: false };
+    }),
+  };
+});
+
 import { assertTestDb, seedEncounter, cleanup } from './fixtures';
 import {
   listEncounters, getEncounter, createEncounter, updateEncounter,

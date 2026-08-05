@@ -25,15 +25,29 @@ function toRupiah(n: number): number {
 }
 
 /**
- * Public/guest booking amount. Only GLOBAL taxes (clinicId -1/null) apply —
- * app-table Clinic cuids have no bridge to the legacy wp_kc numeric clinic id
- * that clinic-scoped kcTax rows are keyed on, so clinic-specific taxes are out
- * of scope until that bridge exists.
+ * Public/guest booking amount.
+ *
+ * Clinic- and doctor-scoped taxes now apply. They could not before: the booking lived
+ * in the `appointments` shadow table under a Clinic cuid, and `wp_kc_tax` rows are
+ * keyed on the numeric KiviCare clinic id, so every guest booking was charged global
+ * taxes only. With one id space the scope ids pass straight through. Callers that
+ * genuinely have no clinic still get the global set.
  */
-export async function computePublicAmount(service: { name: string; price: number | string }): Promise<ComputedAmount> {
+export async function computePublicAmount(service: {
+  name: string;
+  price: number | string;
+  /** `wp_kc_services.id` — lets a service-scoped tax match. */
+  serviceId?: number;
+  clinicId?: number;
+  doctorId?: number;
+}): Promise<ComputedAmount> {
   const price = toNum(service.price);
   const { total_tax, calculated_taxes } = await calculateTax({
-    serviceItems: [{ serviceId: 0, service_name: service.name, price, quantity: 1 }],
+    clinic_id: service.clinicId,
+    doctor_id: service.doctorId,
+    serviceItems: [
+      { serviceId: service.serviceId ?? 0, service_name: service.name, price, quantity: 1 },
+    ],
   });
   const taxes: PaymentTaxLine[] = calculated_taxes.map((t) => ({ name: t.tax_name, amount: toRupiah(t.tax_amount) }));
   return {
@@ -173,12 +187,15 @@ export async function markExpired(wcOrderId: number): Promise<PaymentOrder | nul
 // that transition yet, so no markCancelled() is defined until one does —
 // avoids dead exported code (YAGNI).
 
-import { AppointmentStatus } from '@prisma/client';
 import { signAppointmentToken } from '@/lib/public/appointment-token';
 import { createWcOrder, getWcOrderStatus } from '@/lib/wp-endpoint';
 import { jobs } from '@/lib/jobs/client';
 import { getBill } from '@/services/billing/bill.service';
 import { logging } from '@/lib/logging';
+import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
+import { cancelAppointment, setAppointmentStatus } from '@/repositories/wp/appointments.write';
+import { listServicesForDoctor } from '@/repositories/wp/services.repo';
+import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
 
 export class AppointmentNotFoundError extends Error {}
 export class AppointmentNotPendingError extends Error {}
@@ -198,40 +215,55 @@ export interface PaymentStatusView {
   expectedAmount: number;
 }
 
-export async function initiatePublicPayment(appointmentId: string): Promise<{ checkoutUrl: string }> {
-  const appt = await prisma.appointment.findUnique({
-    where: { id: appointmentId },
-    select: {
-      id: true,
-      status: true,
-      patient: { select: { user: { select: { displayName: true, email: true } } } },
-      services: { take: 1, select: { price: true, service: { select: { name: true } } } },
-    },
-  });
+export async function initiatePublicPayment(appointmentId: number): Promise<{ checkoutUrl: string }> {
+  const appt = await findSessionById(appointmentId);
   if (!appt) throw new AppointmentNotFoundError();
-  if (appt.status !== AppointmentStatus.PENDING) throw new AppointmentNotPendingError();
+  if (appt.status !== SESSION_STATUS.PENDING) throw new AppointmentNotPendingError();
 
-  const existing = await getPaymentOrderByAppointment(appointmentId);
+  const orderKey = String(appointmentId);
+  const existing = await getPaymentOrderByAppointment(orderKey);
   if (existing && existing.status === 'pending') throw new PaymentAlreadyInitiatedError();
 
-  const svc = appt.services[0];
-  const serviceName = svc?.service.name ?? 'Service';
-  const servicePrice = svc ? Number(svc.price) : 0;
-  const { expectedAmount, items, taxes } = await computePublicAmount({ name: serviceName, price: servicePrice });
+  // The charge is the doctor's own price for the service, from the mapping — the same
+  // number the booking page quoted. KiviCare keeps the service ids in `visit_type`; a
+  // public booking carries exactly one.
+  const serviceId = appt.serviceIds[0];
+  const offered = serviceId
+    ? await listServicesForDoctor({
+        doctorId: BigInt(appt.professionalId),
+        clinicId: BigInt(appt.clinicId),
+      })
+    : [];
+  const mapping = offered.find((s) => Number(s.serviceId) === serviceId);
+
+  const serviceName = mapping ? (mapping.nameAlias ?? mapping.name) : 'Service';
+  const servicePrice = mapping ? toNum(mapping.charges ?? 0) : 0;
+  const { expectedAmount, items, taxes } = await computePublicAmount({
+    name: serviceName,
+    price: servicePrice,
+    serviceId,
+    clinicId: appt.clinicId,
+    doctorId: appt.professionalId,
+  });
 
   const token = signAppointmentToken(appointmentId);
   const wcOrder = await createWcOrder({
     source: 'public',
-    appointmentId,
-    customerName: appt.patient?.user.displayName ?? 'Guest',
-    customerEmail: appt.patient?.user.email ?? '',
+    appointmentId: orderKey,
+    customerName: appt.clientName || 'Guest',
+    customerEmail: appt.clientEmail,
     items,
     taxes,
     returnUrl: `${APP_URL}/book/payment/success?appt=${token}`,
     cancelUrl: `${APP_URL}/book/payment/cancel?appt=${token}`,
   });
 
-  await createPaymentOrder({ source: 'public', appointmentId, wcOrderId: wcOrder.orderId, expectedAmount });
+  await createPaymentOrder({
+    source: 'public',
+    appointmentId: orderKey,
+    wcOrderId: wcOrder.orderId,
+    expectedAmount,
+  });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',
     runAt: new Date(Date.now() + AUTO_CANCEL_MS),
@@ -243,26 +275,77 @@ export async function initiatePublicPayment(appointmentId: string): Promise<{ ch
 
 export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
   if (!order.appointmentId) return;
-  const result = await prisma.appointment.updateMany({
-    where: { id: order.appointmentId, status: AppointmentStatus.PENDING },
-    data: { status: AppointmentStatus.BOOKED },
-  });
-  if (result.count === 0) return; // already applied — nothing left to do
+
+  // Read-then-write rather than a guarded UPDATE, because confirming goes through the
+  // plugin: KiviCare's status listeners send the confirmation mail and provision the
+  // telemed link. Re-entering with an already-BOOKED appointment is the idempotent
+  // case and stops here.
+  const appt = await findSessionById(Number(order.appointmentId));
+  if (!appt || appt.status !== SESSION_STATUS.PENDING) return;
+
+  await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED);
   await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
 }
 
+/** KiviCare encounter status: 1 = open, 0 = closed. */
+const ENCOUNTER_CLOSED = 0;
+
+/**
+ * Settle a bill: close the encounter, check the appointment out, mark the bill paid.
+ *
+ * Deliberately NOT wrapped in `prisma.$transaction`. Every table it touches —
+ * `wp_kc_bills`, `wp_kc_patient_encounters`, `wp_kc_appointments` — is MyISAM, which
+ * has no transactions. The old wrapper compiled, ran, and guaranteed nothing; keeping
+ * it would only make the code look safe. Atomicity is replaced by ordering plus
+ * re-runnability.
+ *
+ * **The order matters and is the actual fix.** The bill's `paid` flag is written LAST,
+ * because it doubles as the "everything succeeded" marker that the guard above reads.
+ * The old code wrote it FIRST: a failure between that write and the encounter update
+ * left the bill paid with the encounter still open, and the guard then short-circuited
+ * every retry — so the inconsistency was permanent. Now a failure anywhere leaves the
+ * bill unpaid, and the next `ensurePaidSideEffectsApplied` redoes the lot.
+ *
+ * The two downstream writes are absolute sets, not increments, so repeating them is
+ * harmless — which is what makes the retry safe.
+ *
+ * Returns true when it changed something, so the caller only cancels the auto-cancel
+ * job on a run that did real work.
+ */
 async function markBillPaid(billId: string, encounterId: string | null): Promise<boolean> {
-  return prisma.$transaction(async (tx: typeof prisma) => {
-    const bill = await tx.kcBill.findUnique({ where: { id: BigInt(billId) } });
-    if (!bill || bill.paymentStatus === 'paid') return false; // already applied
-    await tx.kcBill.update({ where: { id: BigInt(billId) }, data: { paymentStatus: 'paid' } });
-    const encId = encounterId ? BigInt(encounterId) : bill.encounterId;
-    await tx.kcPatientEncounter.update({ where: { id: encId }, data: { status: 0 } });
-    if (bill.appointmentId) {
-      await tx.kcAppointment.updateMany({ where: { id: bill.appointmentId }, data: { status: 3 } as any });
-    }
-    return true;
+  const bill = await prisma.kcBill.findUnique({ where: { id: BigInt(billId) } });
+  if (!bill) return false;
+
+  const encId = encounterId ? BigInt(encounterId) : bill.encounterId;
+  const encounter = await prisma.kcPatientEncounter.findUnique({
+    where: { id: encId },
+    select: { status: true },
   });
+
+  // Fully settled already — the common case on a repeat status poll. Checked against
+  // the encounter too, not just the bill, so a row left half-applied by the previous
+  // ordering is detected and repaired below rather than declared done.
+  if (bill.paymentStatus === 'paid' && encounter?.status === ENCOUNTER_CLOSED) return false;
+
+  await prisma.kcPatientEncounter.update({
+    where: { id: encId },
+    data: { status: ENCOUNTER_CLOSED },
+  });
+
+  if (bill.appointmentId) {
+    await prisma.kcAppointment.updateMany({
+      where: { id: bill.appointmentId },
+      data: { status: APPOINTMENT_STATUS.CHECK_OUT },
+    });
+  }
+
+  // Last: this is the marker the guard reads.
+  await prisma.kcBill.update({
+    where: { id: BigInt(billId) },
+    data: { paymentStatus: 'paid' },
+  });
+
+  return true;
 }
 
 export async function applyPaidSideEffectsSession(order: PaymentOrder): Promise<void> {
@@ -286,10 +369,12 @@ async function ensurePaidSideEffectsApplied(order: PaymentOrder): Promise<void> 
 
 export async function cancelIfStillPending(order: PaymentOrder): Promise<void> {
   if (order.source === 'public' && order.appointmentId) {
-    await prisma.appointment.updateMany({
-      where: { id: order.appointmentId, status: AppointmentStatus.PENDING },
-      data: { status: AppointmentStatus.CANCELLED },
-    });
+    const appt = await findSessionById(Number(order.appointmentId));
+    // Only an unpaid, unconfirmed booking is released. A BOOKED appointment means the
+    // payment landed after all, and cancelling it here would drop a paid session.
+    if (appt && appt.status === SESSION_STATUS.PENDING) {
+      await cancelAppointment(Number(order.appointmentId));
+    }
   }
   // Session/staff flow: an expired unpaid bill simply stays unpaid — staff
   // bookings don't hold a slot the way public PENDING appointments do.
@@ -335,8 +420,8 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
   return order;
 }
 
-export async function checkPublicPaymentStatus(appointmentId: string): Promise<PaymentStatusView> {
-  const order = await getPaymentOrderByAppointment(appointmentId);
+export async function checkPublicPaymentStatus(appointmentId: number): Promise<PaymentStatusView> {
+  const order = await getPaymentOrderByAppointment(String(appointmentId));
   if (!order) throw new UnknownOrderError('No payment found for this appointment');
   const reconciled = await reconcileIfStale(order);
   return { status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };

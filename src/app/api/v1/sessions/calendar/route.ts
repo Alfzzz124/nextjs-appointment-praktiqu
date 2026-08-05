@@ -28,8 +28,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const params = Object.fromEntries(req.nextUrl.searchParams);
     const { view, date, professionalId } = calendarQuerySchema.parse(params);
 
-    const refDate = date ? new Date(`${date}T00:00:00.000Z`) : new Date();
-    const result = await getCalendar(actor, view, refDate, professionalId ?? null);
+    // The service takes YYYY-MM-DD directly; KiviCare stores local dates, so round-
+    // tripping through Date only risks a timezone shift.
+    const refDate = date ?? new Date().toISOString().slice(0, 10);
+    const result = await getCalendar(
+      actor,
+      view,
+      refDate,
+      professionalId !== undefined ? Number(professionalId) : null,
+    );
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     if (err instanceof AuthError) {

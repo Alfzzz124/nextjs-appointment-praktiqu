@@ -1,0 +1,184 @@
+/* Port dari app/globals.css FE Next.js + kelas komponen bersama supaya Blade
+   tidak dipenuhi inline style seperti JSX aslinya. Palet: #425FAD (primer),
+   #1E2A52 (panel gelap), #E9ECF5 (latar). */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+button { font-family: inherit; }
+[x-cloak] { display: none !important; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #CDD3E4; border-radius: 99px; }
+
+@keyframes rtup { from { transform: translateY(10px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+@keyframes rtpop { 0% { transform: scale(.7); opacity: 0 } 60% { transform: scale(1.08) } 100% { transform: scale(1); opacity: 1 } }
+@keyframes pqup { from { transform: translateY(8px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+@keyframes pqfade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pqtoast { from { transform: translateY(14px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.anim-up { animation: pqup .25s ease; }
+.anim-rtup { animation: rtup .3s ease; }
+
+/* focus rings */
+.inp-blue:focus { border-color: #425FAD !important; box-shadow: 0 0 0 3px rgba(66,95,173,.12); }
+.inp-green:focus { border-color: #1F6F63 !important; box-shadow: 0 0 0 3px rgba(31,111,99,.12); }
+.fw-blue:focus-within { border-color: #425FAD !important; box-shadow: 0 0 0 3px rgba(66,95,173,.12); }
+.fw-green:focus-within { border-color: #1F6F63 !important; box-shadow: 0 0 0 3px rgba(31,111,99,.12); }
+
+.card-hover { transition: transform .15s, box-shadow .15s; }
+.card-hover:hover { transform: translateY(-3px); box-shadow: 0 10px 24px -12px rgba(66,95,173,.4); }
+
+/* ── input dasar ── */
+.inp { width: 100%; padding: 14px 16px; border: 1.5px solid #DDE1EC; border-radius: 13px; font-size: 14.5px; font-family: inherit; color: #1E2236; outline: none; background: #fff; }
+.inp-sm { width: 100%; padding: 12px 14px; border: 1.5px solid #DDE1EC; border-radius: 11px; font-size: 14px; font-family: inherit; color: #1E2236; outline: none; background: #fff; }
+.lbl { font-size: 12.5px; font-weight: 600; color: #4A4F6B; display: block; margin-bottom: 7px; }
+
+/* ── auth ── */
+.auth-wrap { min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center; background: #E9ECF5; padding: 40px; }
+.auth-card { width: 100%; max-width: 1100px; height: 720px; background: #fff; border-radius: 28px; overflow: hidden; display: flex; box-shadow: 0 40px 90px -30px rgba(30,42,82,.4); }
+.auth-brand { width: 452px; flex: none; background: #1E2A52; padding: 48px 46px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.auth-form-pad { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 48px 56px; }
+@media (max-width: 1000px) {
+  .auth-wrap { padding: 0; align-items: stretch; }
+  .auth-card { flex-direction: column; width: 100%; height: auto; min-height: 100vh; border-radius: 0; box-shadow: none; }
+  .auth-brand { width: 100%; flex: none; padding: 30px 28px; }
+  .auth-brand-detail { display: none; }
+  .auth-form-pad { padding: 38px 26px; justify-content: flex-start; }
+}
+@media (max-width: 440px) {
+  .auth-form-pad { padding: 30px 18px; }
+  .auth-brand { padding: 24px 20px; }
+}
+
+/* ── dashboard ── */
+.dash { display: flex; min-height: 100vh; background: #F5F6FA; }
+.pq-sidebar { width: 266px; flex: none; background: #fff; border-right: 1px solid #ECEEF3; display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; }
+.pq-content { flex: 1; padding: 26px 32px 44px; }
+@media (max-width: 980px) {
+  .pq-sidebar { display: none; }
+  .pq-content { padding: 20px 18px 36px; }
+}
+.section-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #AEB2C4; text-transform: uppercase; padding: 0 12px; margin: 18px 0 8px; }
+.nav-item { display: flex; align-items: center; gap: 13px; padding: 11px 13px; border-radius: 11px; color: #6B7186; font-size: 14.5px; font-weight: 500; text-decoration: none; cursor: pointer; margin-top: 3px; transition: all .15s; }
+.nav-item.active { background: #ECEFFB; color: #425FAD; font-weight: 600; }
+.card { background: #fff; border: 1px solid #ECEEF3; border-radius: 18px; padding: 18px; box-shadow: 0 1px 2px rgba(30,40,80,.04); }
+.card22 { background: #fff; border: 1px solid #ECEEF3; border-radius: 18px; padding: 22px; box-shadow: 0 1px 2px rgba(30,40,80,.04); }
+.tbl-wrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+.tbl th { background: #4E5DA5; color: #fff; font-size: 13px; font-weight: 600; text-align: left; padding: 14px 16px; }
+.tbl th:first-child { border-radius: 10px 0 0 10px; }
+.tbl th:last-child { border-radius: 0 10px 10px 0; }
+.tbl td { padding: 14px 16px; border-bottom: 1px solid #F0F1F6; font-size: 13px; color: #5A6076; vertical-align: middle; }
+.tbl .empty { padding: 30px; text-align: center; color: #9499AE; font-size: 13px; }
+.avatar { border-radius: 99px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+.badge { font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 8px; display: inline-block; }
+.badge.green { background: #E6F4EE; color: #1F8A5B; }
+.badge.salmon { background: #FDEDE6; color: #DC7A4E; }
+.badge.blue { background: #E8EFFB; color: #3B6FD0; }
+.badge.red { background: #FCE9E7; color: #E0594E; }
+.btn-red { background: #F2756A; color: #fff; border: none; border-radius: 11px; padding: 11px 18px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.btn-blue { background: #4E5DA5; color: #fff; border: none; border-radius: 11px; padding: 11px 18px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.btn-white { background: #fff; color: #3A3F5C; border: 1px solid #E4E6EF; border-radius: 11px; padding: 11px 18px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.btn-primary { background: #425FAD; color: #fff; border: none; border-radius: 11px; padding: 11px 22px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.filter-pill { border: 1px solid #E4E6EF; border-radius: 11px; padding: 11px 14px; font-size: 13.5px; color: #9499AE; background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; }
+.seg-wrap { display: flex; background: #fff; border: 1px solid #E7E9F2; border-radius: 13px; padding: 4px; gap: 2px; }
+.seg { background: transparent; color: #6B7186; font-weight: 500; border-radius: 9px; padding: 9px 16px; font-size: 13.5px; border: none; cursor: pointer; white-space: nowrap; transition: all .15s; }
+.seg.active { background: #425FAD; color: #fff; font-weight: 600; }
+.toggle { width: 40px; height: 22px; border-radius: 99px; padding: 2px; display: flex; align-items: center; background: #CBD2E0; cursor: pointer; transition: all .15s; }
+.toggle.on { background: #425FAD; justify-content: flex-end; }
+.toggle .knob { width: 18px; height: 18px; border-radius: 99px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.day-chip { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; background: #F4F5F9; color: #B8BDCE; border: 1px solid #EDEFF4; }
+.day-chip.on { background: #ECEFFB; color: #425FAD; border-color: #D5DCF5; }
+.breadcrumb { display: flex; align-items: center; gap: 9px; font-size: 13.5px; margin-bottom: 16px; color: #9499AE; }
+.breadcrumb b { color: #1E2236; font-weight: 700; }
+.page-title { font-size: 25px; font-weight: 800; color: #1E2236; letter-spacing: -.02em; }
+.search-box { border: 1px solid #E4E6EF; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 42px; background: #fff; min-width: 200px; }
+.search-box input { border: none; outline: none; font-family: inherit; font-size: 13.5px; color: #1E2236; width: 100%; background: transparent; }
+.toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 60; background: #1E2236; color: #fff; font-size: 13.5px; font-weight: 600; padding: 13px 22px; border-radius: 12px; box-shadow: 0 14px 34px -10px rgba(20,30,70,.5); animation: pqtoast .2s ease; }
+.modal-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(20,26,50,.45); display: flex; align-items: center; justify-content: center; padding: 24px; animation: pqfade .15s ease; }
+.modal-card { width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; background: #fff; border-radius: 20px; box-shadow: 0 40px 90px -30px rgba(20,30,70,.5); animation: pqup .2s ease; }
+
+/* ── kartu klinik ──
+   Nama & alamat panjangnya beda-beda per klinik, jadi tiap baris ditahan:
+   nama dan alamat dipotong 2 baris (teks penuh tetap ada di tooltip) dan
+   blok bawah didorong `margin-top:auto`. Hasilnya badge, garis, telepon, dan
+   pil link berdiri sejajar di semua kartu, bukan bergelombang. */
+.clinic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.clinic-card { display: flex; flex-direction: column; height: 100%; background: #fff; border: 1px solid #ECEEF3; border-radius: 16px; padding: 20px; box-shadow: 0 1px 2px rgba(30,40,80,.04); }
+.clinic-head { display: flex; align-items: flex-start; gap: 13px; }
+.clinic-avatar { width: 48px; height: 48px; border-radius: 13px; font-size: 15px; object-fit: cover; flex: none; }
+.clinic-id { flex: 1; min-width: 0; }
+.clinic-name { font-size: 15.5px; font-weight: 700; color: #1E2236; line-height: 1.32; min-height: 2.64em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.clinic-addr { margin-top: 14px; font-size: 12.5px; color: #8A90A6; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clinic-addr.kosong { color: #B8BDCE; font-style: italic; }
+.clinic-foot { margin-top: auto; padding-top: 16px; }
+.clinic-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #F0F1F6; padding-top: 13px; }
+.clinic-phone { font-size: 12.5px; color: #5A6076; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clinic-dokter { flex: none; font-size: 12px; font-weight: 700; color: #425FAD; background: #ECEFFB; border-radius: 7px; padding: 4px 9px; white-space: nowrap; }
+.clinic-dokter.nol { color: #9499AE; background: #F4F5F9; }
+/* nowrap + min-width:0 pada URL: tanpa ini slug panjang mendorong tombol
+   Salin/Preview turun ke baris kedua dan meluber keluar pil. */
+.clinic-link { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; margin-top: 12px; background: #F5F7FC; border: 1px solid #E4E8F4; border-radius: 10px; padding: 5px 6px 5px 11px; }
+/* Domainnya sama persis di semua kartu, jadi yang ditampilkan cukup path-nya.
+   Kalau host ikut dicetak, ia memakan lebar sampai slug — satu-satunya bagian
+   yang membedakan satu klinik dari yang lain — tinggal "terpadu.praktiqu.c…".
+   URL utuh tetap ada di tooltip dan itu juga yang disalin tombol Salin. */
+.clinic-url { flex: 1 1 auto; display: flex; min-width: 0; margin-right: 4px; font-size: 12px; }
+.clinic-url .garis { flex: none; color: #A2A8BC; font-weight: 600; }
+.clinic-url .slug { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #425FAD; font-weight: 700; }
+.clinic-act { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: none; border-radius: 8px; color: #7A8098; cursor: pointer; transition: background .15s, color .15s; }
+.clinic-act:hover { background: #E1E7F6; color: #425FAD; }
+
+/* ── booking ── */
+.bk-wrap { min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center; background: #E9ECF5; padding: 40px; }
+.bk-card { width: 1180px; max-width: 100%; height: 760px; background: #fff; border-radius: 28px; overflow: hidden; display: flex; box-shadow: 0 40px 90px -30px rgba(30,42,82,.4); }
+.bk-side { flex: none; background: #1E2A52; display: flex; flex-direction: column; }
+.bk-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.logo-chip { align-self: flex-start; display: inline-flex; align-items: center; background: #fff; border-radius: 11px; padding: 8px 14px; }
+.step-row { display: flex; align-items: center; gap: 14px; padding: 11px 12px; border-radius: 12px; cursor: pointer; transition: all .15s; }
+.step-row.active { background: rgba(66,95,173,.22); }
+.step-row.todo { cursor: default; }
+.step-circle { width: 28px; height: 28px; border-radius: 99px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; transition: all .15s; background: transparent; color: #8B95C0; border: 1.5px solid #3A3F5C; }
+.step-row.done .step-circle { background: #425FAD; color: #fff; border: none; }
+.step-row.active .step-circle { background: #fff; color: #1E2A52; border: none; }
+.step-lbl { font-size: 14px; font-weight: 500; color: #8B95C0; transition: all .15s; }
+.step-row.done .step-lbl { color: #AAB4DC; }
+.step-row.active .step-lbl { color: #fff; font-weight: 700; }
+.svc-card { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 16px; background: #fff; border: 1.5px solid #DDE1EC; box-shadow: 0 1px 2px rgba(30,42,82,.04); cursor: pointer; transition: all .15s; }
+.svc-card.sel { background: #ECEFFB; border-color: #425FAD; box-shadow: 0 0 0 1.5px #425FAD; }
+.radio { width: 22px; height: 22px; border-radius: 99px; flex: none; border: 2px solid #C8CDDE; background: #fff; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.svc-card.sel .radio, .pay-card.sel .radio { border-color: #425FAD; background: #425FAD; }
+.radio-dot { width: 10px; height: 10px; border-radius: 99px; background: #fff; }
+.mode-pill { padding: 9px 16px; border-radius: 9px; border: none; cursor: pointer; font-size: 13px; font-weight: 700; background: transparent; color: #7A7F9C; transition: all .15s; }
+.mode-pill.active { background: #fff; color: #425FAD; box-shadow: 0 1px 4px rgba(30,42,82,.1); }
+.date-card { flex: none; width: 62px; padding: 13px 0; border-radius: 14px; text-align: center; cursor: pointer; background: #fff; color: #4A4F6B; border: 1.5px solid #DDE1EC; transition: all .15s; }
+.date-card.sel { background: #425FAD; color: #fff; border-color: #425FAD; }
+.date-card.off { cursor: not-allowed; background: #F4F5F9; color: #C3C7D6; opacity: .6; }
+.time-card { padding: 13px 0; border-radius: 12px; text-align: center; cursor: pointer; font-size: 14px; font-weight: 600; background: #fff; color: #4A4F6B; border: 1.5px solid #DDE1EC; transition: all .15s; }
+.time-card.sel { background: #ECEFFB; color: #425FAD; border-color: #425FAD; }
+.choice-pill { flex: 1; padding: 13px 8px; border-radius: 12px; cursor: pointer; font-size: 13.5px; font-weight: 600; background: #fff; color: #4A4F6B; border: 1.5px solid #DDE1EC; transition: all .15s; }
+.choice-pill.active { background: #ECEFFB; color: #425FAD; border-color: #425FAD; }
+.pay-card { display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-radius: 14px; background: #fff; border: 1.5px solid #DDE1EC; cursor: pointer; transition: all .15s; }
+.pay-card.sel { background: #ECEFFB; border-color: #425FAD; box-shadow: 0 0 0 1.5px #425FAD; }
+/* Grid langkah pembayaran: pertahankan 2 kolom (metode | ringkasan) sampai
+   layar cukup sempit, baru menumpuk — supaya ringkasan tidak jadi blok tinggi
+   di bawah yang memaksa scroll & memotong judul/ringkasan. */
+.pay-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 560px) { .pay-grid { grid-template-columns: 1fr; } }
+.dark-pill { font-size: 12px; font-weight: 600; color: #fff; background: rgba(255,255,255,.12); padding: 7px 13px; border-radius: 99px; }
+.btn-next { padding: 14px 34px; border-radius: 13px; border: none; font-size: 15px; font-weight: 700; cursor: pointer; background: #425FAD; color: #fff; transition: background .2s; box-shadow: 0 8px 20px -8px rgba(66,95,173,.6); }
+.btn-next:disabled { background: #C3C9DD; cursor: not-allowed; box-shadow: none; }
+.btn-back { padding: 13px 22px; border-radius: 13px; border: 1.5px solid #DDE1EC; background: #fff; font-size: 14px; font-weight: 600; color: #4A4F6B; cursor: pointer; }
+
+/* booking responsif: sidebar gelap disembunyikan, kartu jadi satu kolom penuh */
+@media (max-width: 900px) {
+  .bk-wrap { padding: 0; align-items: stretch; }
+  .bk-card { flex-direction: column; height: auto; min-height: 100vh; border-radius: 0; box-shadow: none; width: 100%; }
+  .bk-side { width: 100% !important; padding: 20px 22px !important; }
+  .bk-side .bk-side-detail { display: none; }
+  .bk-main-pad { padding: 20px 22px 34px !important; }
+  .bk-head-pad { padding: 24px 22px 16px !important; }
+  .bk-foot-pad { padding: 16px 22px 24px !important; }
+  .grid-2col { grid-template-columns: 1fr !important; }
+}

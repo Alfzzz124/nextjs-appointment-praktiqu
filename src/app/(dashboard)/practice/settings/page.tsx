@@ -35,7 +35,7 @@ async function getCurrentPracticeId(): Promise<string> {
 export default async function PracticeSettingsPage() {
   try {
     const practiceId = await getCurrentPracticeId();
-    const practice = await getPractice(practiceId);
+    const practice = await getPractice(Number(practiceId));
 
     return (
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -49,7 +49,7 @@ export default async function PracticeSettingsPage() {
           practice={practice}
           onSaved={(updated) => {
             // Invalidate the page cache on save so the next load shows fresh data
-            void logging.activity('practice.settings.saved', { resource: 'practice', resourceId: updated.id });
+            void logging.activity('practice.settings.saved', { resource: 'practice', resourceId: String(updated.id) });
           }}
           onError={(msg) => {
             console.error('[practice/settings] save error:', msg);

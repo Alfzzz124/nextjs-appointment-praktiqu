@@ -2,6 +2,19 @@ import { prisma } from '@/lib/db';
 
 const TEST_MARKER = 9_000_000; // ids in this range belong to tests
 
+/**
+ * Upper bound of this suite's id range.
+ *
+ * Cleanup used to delete `id >= TEST_MARKER` with no ceiling. Vitest runs suites
+ * concurrently against one shared database, so those deletes reached past this range
+ * and wiped other suites' fixtures mid-run — which is why the full-suite failure count
+ * moved between runs of identical code while each suite passed alone.
+ *
+ * Highest offset actually used by these fixtures is TEST_MARKER + 1300, so a 100k
+ * window is generous. Other suites own ranges below TEST_MARKER (8.3M-8.9M).
+ */
+const TEST_MARKER_END = TEST_MARKER + 100_000;
+
 export function assertTestDb(): void {
   const url = process.env.DATABASE_URL ?? '';
   if (!/test/i.test(url)) {
@@ -408,44 +421,105 @@ export async function seedConsent(data: Partial<{
   return { id };
 }
 
+/**
+ * Raw DELETE that tolerates a missing table.
+ *
+ * Several kc_* tables used by the followup, rating and GDPR features exist only on
+ * staging — no DDL for them lives in this repo, so a local test database does not have
+ * them. Before this, the first missing table made cleanup() throw, which aborted
+ * beforeAll and caused every billing suite's tests to be reported as SKIPPED rather
+ * than run. They looked green while testing nothing.
+ *
+ * Only MySQL 1146 ("table doesn't exist") is swallowed; anything else still throws,
+ * so a genuine cleanup failure is not hidden.
+ */
+async function deleteIfTableExists(sql: string): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(sql);
+  } catch (err: any) {
+    const code = err?.meta?.code ?? err?.code;
+    const message = String(err?.message ?? '');
+    const missing = code === '1146' || /doesn't exist|Unknown table/i.test(message);
+    if (!missing) throw err;
+  }
+}
+
 export async function cleanup() {
   assertTestDb();
   // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
   // are matched by their TEST_MARKER-range clinic scope / *.import.test email.
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER} AND clinic_id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER} AND clinic_id < ${TEST_MARKER_END}`);
   // FK-safe order: leaf tables reference encounters, so delete them first.
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER}`);
-  await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_appointments WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_bills WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_clinic_sessions WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // Followups: FK-safe order (activity log + reminders reference followups; followups reference chains).
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} OR followup_id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // GDPR: consents + consent-versions (TEST_MARKER-range). NEVER touch wp_kc_gdpr_audit_log (checksum chain).
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER}`);
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  // Versions created through the service get AUTO_INCREMENT ids, which fall outside the
+  // TEST_MARKER range and so survived cleanup — version_number then kept climbing across
+  // runs (a test expecting 1 saw 11). Also match the test-owned consent_type.
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE consent_type LIKE '%test%'`);
   // Soft-delete markers written by softDeleteSubject on TEST_MARKER-range subjects.
-  await prisma.$executeRawUnsafe(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
-  await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcTax.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcBillItem.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcBill.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcTaxData.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
-  await prisma.kcClinic.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER) } } });
+  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND user_id < ${TEST_MARKER_END} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
+  await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcMedicalHistory.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcPatientEncounter.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcTax.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcBillItem.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcBill.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcTaxData.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  await prisma.kcClinic.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
+  /**
+   * Rows created THROUGH THE SERVICES rather than by a seed helper get AUTO_INCREMENT
+   * ids, which fall below TEST_MARKER and so survived every delete above. They then
+   * accumulated across runs and broke any assertion counting rows in scope — 44 stray
+   * prescriptions had built up by the time this was found.
+   *
+   * These deletes match on the foreign keys instead, which do point into the test range.
+   */
+  for (const [table, column] of [
+    ['wp_kc_prescription', 'patient_id'],
+    ['wp_kc_patient_medical_report', 'patient_id'],
+    ['wp_kc_medical_history', 'patient_id'],
+    ['wp_kc_patient_encounters', 'patient_id'],
+    ['wp_kc_appointments', 'patient_id'],
+    // wp_kc_bills has NO patient_id — not in KiviCare's CREATE TABLE, not in our
+    // KcBill model. This entry asked MySQL to delete by a column that has never
+    // existed, so it threw 1054, aborted cleanup(), and left 16 billing suites
+    // reporting their tests as SKIPPED. A bill reaches the test range through its
+    // encounter or its clinic instead.
+    ['wp_kc_bills', 'encounter_id'],
+    ['wp_kc_bills', 'clinic_id'],
+    ['wp_kc_followups', 'patient_id'],
+    ['wp_kc_followup_chains', 'patient_id'],
+    ['wp_kc_patient_review', 'patient_id'],
+    ['wp_kc_clinic_sessions', 'clinic_id'],
+    ['wp_kc_doctor_clinic_mappings', 'clinic_id'],
+    ['wp_kc_receptionist_clinic_mappings', 'clinic_id'],
+    ['wp_kc_patient_clinic_mappings', 'clinic_id'],
+  ] as const) {
+    await deleteIfTableExists(
+      `DELETE FROM ${table} WHERE ${column} >= ${TEST_MARKER} AND ${column} < ${TEST_MARKER_END}`,
+    );
+  }
+
   await prisma.user.deleteMany({ where: { id: { startsWith: 'test-' } } });
 }

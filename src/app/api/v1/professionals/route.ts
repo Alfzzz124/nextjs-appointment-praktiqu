@@ -16,9 +16,8 @@ import {
   isServiceError,
 } from '@/services/professional/professional.service';
 import type { ProfessionalStatus } from '@/types/professional';
-import {
-  professionalListQuerySchema,
-} from '@/services/professional/validation';
+import { professionalListQuerySchema } from '@/services/professional/validation';
+import { resolveKcActor } from '@/services/billing/kc-actor';
 
 // ============================================
 // GET /api/v1/professionals
@@ -46,7 +45,14 @@ export const GET = withAuth(async (req, ctx) => {
     sortOrder: searchParams.get('sortOrder') ?? undefined,
   };
 
-  const result = await listProfessionals(params as any, actor.practiceId);
+  // The JWT's practiceId is a cuid from the retired shadow schema; the actor's real
+  // clinic comes from their WordPress mappings. resolveKcActor does that lookup, and
+  // passing null lets a SUPER_ADMIN see every clinic.
+  const kc = await resolveKcActor(actor);
+  const result = await listProfessionals(
+    params as never,
+    kc.clinicId === null ? null : Number(kc.clinicId),
+  );
 
   return NextResponse.json(result);
 });
