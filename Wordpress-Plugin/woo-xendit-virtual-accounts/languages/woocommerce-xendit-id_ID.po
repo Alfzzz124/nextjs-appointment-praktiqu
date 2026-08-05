@@ -1,0 +1,200 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"POT-Creation-Date: 2022-09-06 09:34+0700\n"
+"PO-Revision-Date: 2023-08-09 19:45+0700\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: id\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Poedit 3.3.2\n"
+"X-Poedit-Basepath: .\n"
+
+msgid "Xendit payments in TEST mode. Disable \"Test Environment\" in settings to accept payments. Your Xendit account must also be activated. Learn more <a href=\"https://docs.xendit.co/getting-started/activate-account\" target=\"_blank\">here</a>"
+msgstr "Pembayaran dengan Xendit saat ini berada dalam mode TEST. Non-aktifkan \"Test Environment\" pada pengaturan untuk dapat menerima pembayaran riil. Pelajari lebih lanjut <a href=\"https://docs.xendit.co/getting-started/activate-account\" target=\"_blank\">disini.</a>"
+
+msgid "Test Mode"
+msgstr "Mode Test"
+
+msgid "Live Mode"
+msgstr "Mode Live"
+
+msgid "By using this payment method, you agree that all submitted data for your order will be processed by payment processor."
+msgstr "Dengan menggunakan metode pembayaran ini, anda setuju bahwa semua data yang berhubungan dengan order anda akan diproses oleh saluran pembayaran."
+
+msgid "Use Xendit to accept payments in South East Asia. See our <a href=\"https://docs.xendit.co/integrations/woocommerce/steps-to-integrate\" target=\"_blank\">documentation</a> for full description and integration instructions"
+msgstr "Gunakan Xendit untuk menerima pembayaran di Asia Tenggara. Kunjungi laman <a href=\"https://docs.xendit.co/id/integrations/woocommerce/steps-to-integrate\" target=\"_blank\">dokumentasi</a> kami untuk deskripsi dan instruksi lengkap seputar integrasi"
+
+msgid "Connect to Xendit"
+msgstr "Hubungkan ke Xendit"
+
+msgid "Connected"
+msgstr "Terhubung"
+
+msgid "Disconnect"
+msgstr "Hentikan Integrasi"
+
+msgid "Xendit Payment Gateway Options"
+msgstr "Opsi Xendit Payment Gateway"
+
+msgid "Enable"
+msgstr "Aktifkan"
+
+msgid "Enable Xendit Gateway"
+msgstr "Aktifkan Xendit Gateway"
+
+msgid "Test Environment"
+msgstr "Test Environment"
+
+msgid "Enable Test Environment - Please uncheck for processing real transaction"
+msgstr "Aktifkan Test Environment - Jangan dicentang untuk memproses transaksi riil"
+
+msgid "Xendit Public API Key"
+msgstr "Xendit Public API Key"
+
+msgid "Test public API key from Xendit. Found <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">here</a>"
+msgstr "Test public API Key dari Xendit. Temukan <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">disini</a>"
+
+msgid "Live public API key from Xendit. Found <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">here</a>"
+msgstr "Live public API Key dari Xendit. Temukan <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">disini</a>"
+
+msgid "Xendit Secret API Key"
+msgstr "Xendit Secret API Key"
+
+msgid "Test secret API key from Xendit. Found <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">here</a>"
+msgstr "Test secret API Key dari Xendit. Temukan <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">disini</a>"
+
+msgid "Live secret API key from Xendit. <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">Found here</a>"
+msgstr "Live secret API Key dari Xendit. Temukan <a href=\"https://dashboard.xendit.co/settings/developers#api-keys\" target=\"_blank\">disini</a>"
+
+msgid "External ID Format"
+msgstr "Format eksternal ID"
+
+msgid "External ID of the payment that will be created on Xendit, for example <b><span id=\"ext-id-example\"></span></b>.<br/> Must be between 6 to 54 characters"
+msgstr "Eksternal ID dari pembayaran yang akan Xendit terbitkan, contoh: <b><span id=\"ext-id-example\"></span></b>.<br/> Harus memenuhi limitasi 6 hingga 54 karakter"
+
+msgid "Oops, something wrong happened! Please try again"
+msgstr "Ups, telah terjadi kesalahan! Silakan coba kembali"
+
+msgid "Failed"
+msgstr "Gagal"
+
+msgid "Site Data Collection"
+msgstr "Kumpulan Data pada Situs"
+
+msgid "Allow Xendit to retrieve this store's plugin and environment information for debugging purposes. E.g. WordPress version, WooCommerce version"
+msgstr "Izinkan Xendit mengumpulkan informasi terkait plugin dan environment dari situs ini untuk keperluan debugging. Contoh: informasi terkait versi WordPress dan versi WooCommerce"
+
+msgid "Send site data to Xendit"
+msgstr "Kirim data situs ke xendit"
+
+msgid "Thank you! We have successfully collected all the basic information that we need to assist you with any issues you may have. All data will remain private & confidential"
+msgstr "Terima kasih! Kami telah berhasil mengumpulkan informasi penting yang dibutuhkan untuk membantu menyelesaikan isu yang Anda alami. Kami pastikan kerahasiaan data Anda tetap terjaga"
+
+msgid "Success"
+msgstr "Sukses"
+
+msgid "WooCommerce Order & Checkout Options"
+msgstr "Opsi Pesanan & Check-out WooCommerce"
+
+msgid "Successful Payment Status"
+msgstr "Status Pembayaran Berhasil"
+
+msgid "The status that WooCommerce should show when a payment is successful"
+msgstr "Status yang ditampilkan oleh WooCommerce saat pembayaran berhasil"
+
+msgid "Display Invoice Page After"
+msgstr "Tampilkan laman Invoice setelah"
+
+msgid "Choose \"Order received page\" to get better tracking of your order conversion if you are using an analytic platform"
+msgstr "Pilih \"Order received page\" untuk dapat melacak konversi pesanan dengan lebih baik jika Anda menggunakan platform analitik"
+
+msgid "XenPlatform Options"
+msgstr "Opsi XenPlatform"
+
+msgid "XenPlatform User"
+msgstr "Pengguna XenPlatform"
+
+msgid "Enable your XenPlatform Sub Account in WooCommerce"
+msgstr "Aktifkan sub-akun XenPlatform Anda di WooCommerce"
+
+msgid "On Behalf Of"
+msgstr "Atas nama"
+
+msgid "Your Xendit Sub Account Business ID. All transactions will be linked to this account"
+msgstr "Business ID dari Sub-akun Anda. Seluruh transaksi akan terhubung ke akun ini"
+
+msgid "Invoice Expire Time"
+msgstr "Waktu Kadaluarsa Invoice"
+
+msgid "Days"
+msgstr "Hari"
+
+msgid "Hours"
+msgstr "Jam"
+
+msgid "Minutes"
+msgstr "Menit"
+
+msgid "Payment Channel Name"
+msgstr "Nama Kanal Pembayaran"
+
+msgid "Your payment channel name will be changed into <strong><span class=\"channel-name-format\"></span></strong>"
+msgstr "Nama kanal pembayaran anda akan di ubah menjadi <strong><span class=\"channel-name-format\"></span></strong>"
+
+msgid "Change your payment description for <strong><span class=\"channel-name-format\"></span></strong>"
+msgstr "Ubah deskripsi pembayaran anda untuk <strong><span class=\"channel-name-format\"></span></strong>"
+
+msgid "Payment Description"
+msgstr "Deskripsi Pembayaran"
+
+msgid "Collect payment from %1$s on checkout page and get the report realtime on your Xendit Dashboard. <a href=\"%2$s\" target=\"_blank\">Sign In</a> or <a href=\"%3$s\" target=\"_blank\">sign up</a> on Xendit and integrate with your <a href=\"%4$s\" target=\"_blank\">Xendit keys</a>"
+msgstr "Terima pembayaran melalui %1$s pada laman checkout dan dapatkan laporan secara realtime pada Xendit Dashboard Anda. <a href=\"%2$s\" target=\"_blank\">masuk</a> atau <a href=\"%3$s\" target=\"_blank\">daftarkan</a> bisnis Anda ke Xendit dan integrasikan website Anda dengan <a href=\"%4$s\" target=\"_blank\">Xendit keys</a>"
+
+msgid "Settings"
+msgstr "Pengaturan"
+
+msgid "Support"
+msgstr "Bantuan"
+
+msgid "Extra information about a charge. This will appear on your customer’s credit card statement"
+msgstr "Informasi tambahan mengenai charge. Ini akan di tampilkan pada laporan penggunaan kartu kredit pemilik kartu"
+
+msgid "<strong>TEST MODE.</strong> The bank account numbers shown below are for testing only. Real payments will not be detected"
+msgstr "<strong>MODE TEST.</strong> Nomor rekening bank yang ditunjukkan di bawah ini hanya untuk pengujian. Pembayaran nyata tidak akan terdeteksi"
+
+msgid "<strong>TEST MODE</strong> - Real payment will not be detected"
+msgstr "<strong>MODE TEST</strong> - Pembayaran nyata tidak akan terdeteksi"
+
+msgid "Pay with your Direct Debit %1$s via <strong>Xendit</strong>"
+msgstr "Bayar menggunakan Direct Debit %1$s kamu melalui <strong>Xendit</strong>"
+
+msgid "Buy now and pay later with your %1$s via <strong>Xendit</strong>"
+msgstr "Beli sekarang dan bayar kemudian menggunakan %1$s kamu melalui <strong>Xendit</strong>"
+
+msgid "Pay at your nearest %1$s via <strong>Xendit</strong>"
+msgstr "Bayar pesanan dengan membayar di %1$s melalui <strong>Xendit</strong>"
+
+msgid "Pay with your %1$s account via <strong>Xendit</strong>"
+msgstr "Bayar dengan akun %1$s Anda melalui <strong>Xendit</strong>"
+
+msgid "Pay with bank transfer %1$s or virtual account via <strong>Xendit</strong>"
+msgstr "Bayar pesanan dengan transfer bank %1$s dengan virtual account melalui <strong>Xendit</strong>"
+
+msgid "Pay with your credit card via Xendit"
+msgstr "Bayar dengan kartu kredit anda melalui Xendit"
+
+msgid "Pay at %1$s"
+msgstr "Bayar di %1$s"
+
+msgid "Loading"
+msgstr "Memuat"
+
+msgid "Please finish your integration on Xendit"
+msgstr "Harap selesaikan integrasi anda di Xendit"
+
+msgid "Integration has been declined. Please try again"
+msgstr "Integrasi telah ditolak. Silakan coba lagi"
