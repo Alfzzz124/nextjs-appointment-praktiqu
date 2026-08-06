@@ -15,7 +15,10 @@ import {
   verifyAccessToken,
   type AccessTokenClaims,
 } from '@/lib/auth/jwt';
-import { toUserUpsertData, wpAuthenticate, wpChangePassword, wpGetUser, wpLookupByEmail, wpRegisterClient, type WpAuthSuccess } from '@/lib/auth/wp-auth';
+import { toUserUpsertData, wpAuthenticate, wpChangePassword, wpGetUser, wpLookupByEmail, type WpAuthSuccess } from '@/lib/auth/wp-auth';
+import { WP_ROLES } from '@/lib/auth/role-mapping';
+import { createPatient } from '@/repositories/wp/patients.write';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 import { audit } from '@/services/audit';
 import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey, type RateLimiter, type RateLimitVerdict } from '@/lib/rate-limit';
 
@@ -540,11 +543,25 @@ export interface RegisterInput {
   password: string;
   firstName: string;
   lastName: string;
+  contactNumber?: string;
   ip: string;
   userAgent: string;
 }
 
-export async function register(input: RegisterInput): Promise<{ userId: string }> {
+export interface RegisterResult extends IssuedTokens {
+  userId: string;
+  user: LoginResult['user'];
+}
+
+/**
+ * Create a patient account and sign them straight in.
+ *
+ * The WordPress row is written through the plugin's `/patients` route, not raw SQL:
+ * that is what runs `wp_insert_user` (a real password hash, so the account can actually
+ * log in) and fires `kc_patient_save` for KiviCare's own bookkeeping. No clinic mapping
+ * is created here — the first booking maps the patient to the clinic they book with.
+ */
+export async function register(input: RegisterInput): Promise<RegisterResult> {
   const email = normaliseEmail(input.email);
   validatePasswordStrength(input.password);
 
@@ -554,26 +571,41 @@ export async function register(input: RegisterInput): Promise<{ userId: string }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    await getRateLimiter().recordFailure(key);
+    getRateLimiter().recordFailure(key);
     throw new DuplicateEmailError();
   }
 
-  const wp = await wpRegisterClient({
-    email,
-    password: input.password,
-    firstName: input.firstName,
-    lastName: input.lastName,
-  });
-  if (!wp.ok) {
-    if (wp.error === 'duplicate') throw new DuplicateEmailError();
+  let patient;
+  try {
+    patient = await createPatient({
+      email,
+      password: input.password,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      ...(input.contactNumber ? { contactNumber: input.contactNumber } : {}),
+    });
+  } catch (err) {
+    getRateLimiter().recordFailure(key);
+    // The plugin answers 409 for any WordPress account on that address, patient or not.
+    if (err instanceof WpEndpointError && err.status === 409) throw new DuplicateEmailError();
     throw new WpUnavailableError();
   }
 
-  const upsert = toUserUpsertData(wp.wpUser, UserRole.CLIENT);
+  const wpUserId = BigInt(patient.id);
+  const profile = {
+    email,
+    username: patient.username,
+    firstName: patient.firstName,
+    lastName: patient.lastName,
+    displayName: `${patient.firstName} ${patient.lastName}`.trim() || email,
+    role: UserRole.CLIENT,
+    wpRole: WP_ROLES.PATIENT,
+    status: 1,
+  };
   const user = await prisma.user.upsert({
-    where: { wpUserId: wp.wpUser.wpUserId },
-    update: { ...upsert.update, role: UserRole.CLIENT },
-    create: { ...upsert.create, role: UserRole.CLIENT, email, firstName: input.firstName, lastName: input.lastName, displayName: `${input.firstName} ${input.lastName}`.trim() || email },
+    where: { wpUserId },
+    update: profile,
+    create: { wpUserId, ...profile },
   });
 
   await audit.register({
@@ -582,8 +614,24 @@ export async function register(input: RegisterInput): Promise<{ userId: string }
     ip: input.ip,
     timestamp: new Date().toISOString(),
   });
+
+  const tokens = await issueTokensForUser(user, input.ip, input.userAgent);
   getRateLimiter().recordSuccess(key);
-  return { userId: user.id };
+
+  return {
+    userId: user.id,
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      displayName: user.displayName,
+      role: user.role,
+      wpUserId: user.wpUserId,
+    },
+    ...tokens,
+  };
 }
 
 // ─── Role change (admin) ────────────────────────────────────────────────

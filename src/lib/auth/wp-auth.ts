@@ -10,8 +10,11 @@
  *   GET  /wp-json/praktiqu/v1/users/{id}             — fetch by WP user ID
  *   POST /wp-json/praktiqu/v1/users/lookup           — fetch by email
  *   POST /wp-json/praktiqu/v1/users/{id}/change-password
- *   POST /wp-json/praktiqu/v1/users                  — self-register (FR-022)
  *   GET  /wp-json/praktiqu/v1/health
+ *
+ * Self-registration is NOT here: it creates a KiviCare patient, so it goes through
+ * `POST /praktiqu/v1/patients` in `repositories/wp/patients.write.ts`. The `/users`
+ * route this module once posted to was only ever planned, never built.
  *
  * All requests carry the `X-PraktiQU-Service-Token` header.
  * Network errors map to a 503 result so callers can surface "service unavailable"
@@ -180,37 +183,6 @@ export async function wpChangePassword(
       5000,
     );
     if (res.ok) return { ok: true };
-    if (res.status >= 500) return { ok: false, error: 'service_unavailable' };
-    return { ok: false, error: 'rejected' };
-  } catch {
-    return { ok: false, error: 'network_error' };
-  }
-}
-
-/** Self-register a CLIENT in WordPress. Returns the new WP user id, or null on failure. */
-export async function wpRegisterClient(input: {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-}): Promise<{ ok: true; wpUser: WpAuthSuccess } | { ok: false; error: 'duplicate' | 'network_error' | 'service_unavailable' | 'rejected' }> {
-  if (!WP_TOKEN) return { ok: false, error: 'service_unavailable' };
-  try {
-    const res = await withTimeout(
-      fetch(normaliseUrl('/users'), {
-        method: 'POST',
-        headers: buildHeaders(),
-        body: JSON.stringify(input),
-        cache: 'no-store',
-      }),
-      5000,
-    );
-    if (res.status === 201 || res.status === 200) {
-      const json = await res.json();
-      const parsed = WpAuthSuccessSchema.safeParse(json);
-      if (parsed.success) return { ok: true, wpUser: parsed.data };
-    }
-    if (res.status === 409) return { ok: false, error: 'duplicate' };
     if (res.status >= 500) return { ok: false, error: 'service_unavailable' };
     return { ok: false, error: 'rejected' };
   } catch {

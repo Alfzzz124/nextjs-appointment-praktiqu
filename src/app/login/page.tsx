@@ -36,9 +36,9 @@ function LoginForm() {
       const data = await res.json();
       // Store token in cookie (7 days)
       const maxAge = 7 * 24 * 60 * 60;
-      document.cookie = `access_token=${data.access_token}; path=/; max-age=${maxAge}; samesite=lax`;
-      if (data.refresh_token) {
-        document.cookie = `refresh_token=${data.refresh_token}; path=/; max-age=${maxAge * 2}; samesite=lax`;
+      document.cookie = `access_token=${data.accessToken}; path=/; max-age=${maxAge}; samesite=lax`;
+      if (data.refreshToken) {
+        document.cookie = `refresh_token=${data.refreshToken}; path=/; max-age=${maxAge * 2}; samesite=lax`;
       }
       router.push(returnTo);
     } catch (err: any) {
