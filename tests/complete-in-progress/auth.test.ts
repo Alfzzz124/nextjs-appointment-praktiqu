@@ -107,7 +107,6 @@ function makeReq(url: string, jwt: string, body?: unknown, method = 'POST') {
 
 const { POST: registerPost } = await import('@/app/api/v1/auth/register/route');
 const { POST: changePasswordPost } = await import('@/app/api/v1/auth/change-password/route');
-const { POST: resetPasswordPost } = await import('@/app/api/v1/auth/reset-password/route');
 const { DELETE: deleteAccountDelete } = await import('@/app/api/v1/auth/delete-account/route');
 const { wpAuthenticate, wpChangePassword } = await import('@/lib/auth/wp-auth');
 
@@ -255,16 +254,8 @@ describe('POST /api/v1/auth/change-password', () => {
   });
 });
 
-// ── POST /auth/reset-password ─────────────────────────────────────────────
-
-describe('POST /api/v1/auth/reset-password', () => {
-  it('returns 501 Not Implemented', async () => {
-    const res = await resetPasswordPost();
-    expect(res.status).toBe(501);
-    const json = await res.json();
-    expect(json.code).toBe('NOT_IMPLEMENTED');
-  });
-});
+// `POST /auth/reset-password` used to be asserted here as a 501 stub. It is implemented
+// now — see tests/integration/auth/reset-password.test.ts.
 
 // ── DELETE /auth/delete-account ───────────────────────────────────────────
 
