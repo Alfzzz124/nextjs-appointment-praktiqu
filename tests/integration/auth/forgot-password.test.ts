@@ -14,10 +14,15 @@ import { NextRequest } from 'next/server';
 // ─── Stubs ────────────────────────────────────────────────────────────────
 
 const mockPrisma = {
-  user: { findUnique: vi.fn() },
+  user: { findUnique: vi.fn(), upsert: vi.fn() },
   passwordResetToken: { updateMany: vi.fn(), create: vi.fn() },
 };
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }));
+
+vi.mock('@/lib/auth/wp-auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/auth/wp-auth')>()),
+  wpLookupByEmail: vi.fn(),
+}));
 
 vi.mock('@/lib/email', () => ({
   sendEmail: vi.fn().mockResolvedValue({ ok: true }),
@@ -44,8 +49,22 @@ vi.mock('@/lib/rate-limit', () => ({
 const { POST } = await import('@/app/api/v1/auth/forgot-password/route');
 const { sendEmail } = await import('@/lib/email');
 const { tupleKey } = await import('@/lib/rate-limit');
+const { wpLookupByEmail } = await import('@/lib/auth/wp-auth');
 
 const USER = { id: 'user-1', email: 'budi@example.com' };
+
+/** What the plugin returns for someone who has a WordPress account but has never
+ *  logged into the app — the state 789 of 850 staging users are in. */
+const WP_ONLY = {
+  wpUserId: BigInt(310),
+  email: 'lama@example.com',
+  username: 'lama',
+  displayName: 'Pasien Lama',
+  firstName: 'Pasien',
+  lastName: 'Lama',
+  roles: ['kiviCare_patient'],
+  status: 'active' as const,
+};
 
 function makeReq(email: unknown) {
   return new NextRequest('http://localhost/api/v1/auth/forgot-password', {
@@ -61,6 +80,8 @@ beforeEach(() => {
   mockPrisma.user.findUnique.mockResolvedValue(USER);
   mockPrisma.passwordResetToken.updateMany.mockResolvedValue({ count: 0 });
   mockPrisma.passwordResetToken.create.mockResolvedValue({});
+  mockPrisma.user.upsert.mockResolvedValue({ id: 'user-lama', email: WP_ONLY.email });
+  vi.mocked(wpLookupByEmail).mockResolvedValue(null);
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -109,6 +130,44 @@ describe('POST /api/v1/auth/forgot-password', () => {
     await POST(makeReq('nobody@example.com'));
 
     expect(mockLimiter.recordFailure).toHaveBeenCalled();
+  });
+
+  // A WordPress account with no app row is the normal state for anyone who has only
+  // ever booked as a guest — 789 of 850 users on staging. Looking only at the app table
+  // means the reset silently does nothing for them.
+  it('falls back to WordPress when the app has no row for that address', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    vi.mocked(wpLookupByEmail).mockResolvedValue(WP_ONLY);
+
+    const res = await POST(makeReq(WP_ONLY.email));
+
+    expect(res.status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: WP_ONLY.email }));
+  });
+
+  it('creates the app row linked to the WordPress id before issuing a token', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    vi.mocked(wpLookupByEmail).mockResolvedValue(WP_ONLY);
+
+    await POST(makeReq(WP_ONLY.email));
+
+    expect(mockPrisma.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { wpUserId: BigInt(310) } }),
+    );
+    expect(mockPrisma.passwordResetToken.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: 'user-lama' }) }),
+    );
+  });
+
+  it('sends nothing when neither the app nor WordPress knows the address', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    vi.mocked(wpLookupByEmail).mockResolvedValue(null);
+
+    const res = await POST(makeReq('hantu@example.com'));
+
+    expect(res.status).toBe(200);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
   });
 
   it('rejects a malformed email with 400', async () => {

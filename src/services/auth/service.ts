@@ -536,6 +536,30 @@ export async function changePassword(input: ChangePasswordInput): Promise<Issued
   return issueTokensForUser(user, input.ip, input.userAgent);
 }
 
+// ─── Sync a user from WordPress on demand ───────────────────────────────
+
+/**
+ * Resolve an email to a PraktiQU user, creating the row from WordPress if it is missing.
+ *
+ * A `users` row only appears when someone logs into the app, but WordPress accounts are
+ * created by other routes entirely — every guest booking makes one. Those people have a
+ * real account and no app row, so anything that looks only at `users` decides they do not
+ * exist. On staging that was 789 of 850 users.
+ *
+ * Returns null only when WordPress does not know the address either.
+ */
+export async function ensureUserFromWordPress(email: string) {
+  const normalised = normaliseEmail(email);
+
+  const existing = await prisma.user.findUnique({ where: { email: normalised } });
+  if (existing) return existing;
+
+  const wp = await wpLookupByEmail(normalised);
+  if (!wp) return null;
+
+  return prisma.user.upsert(toUserUpsertData(wp));
+}
+
 // ─── Reset password (FR-005) ────────────────────────────────────────────
 
 export interface ResetPasswordInput {
