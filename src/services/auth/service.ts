@@ -536,6 +536,71 @@ export async function changePassword(input: ChangePasswordInput): Promise<Issued
   return issueTokensForUser(user, input.ip, input.userAgent);
 }
 
+// ─── Reset password (FR-005) ────────────────────────────────────────────
+
+export interface ResetPasswordInput {
+  /** The raw token from the emailed link. Only its hash is ever stored. */
+  token: string;
+  password: string;
+  ip: string;
+}
+
+/**
+ * Complete a forgot-password flow.
+ *
+ * The token is consumed only after WordPress has accepted the new password. Marking it
+ * used first would mean a transient WordPress outage leaves the user holding a link that
+ * no longer works, with no way back except requesting another one.
+ */
+export async function resetPassword(input: ResetPasswordInput): Promise<void> {
+  // Cheapest rejection first: the attacker here is guessing tokens, so the limiter is
+  // keyed by IP alone — they have no email to key on.
+  const key = tupleKey(input.ip, 'reset-password');
+  const pre = getRateLimiter().check(key);
+  if (pre.kind !== 'allow') throw rateLimitToError(pre);
+
+  validatePasswordStrength(input.password);
+
+  const tokenHash = createHash('sha256').update(input.token).digest('hex');
+  const row = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+  if (!row) {
+    getRateLimiter().recordFailure(key);
+    throw new AuthError('invalid_token', 400, 'Reset link is not valid');
+  }
+  if (row.usedAt) {
+    throw new AuthError('token_used', 400, 'Reset link has already been used');
+  }
+  if (row.expiresAt.getTime() <= Date.now()) {
+    throw new AuthError('token_expired', 400, 'Reset link has expired');
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: row.userId } });
+  // No WordPress account means no credential to change — same handling as changePassword.
+  if (!user?.wpUserId) throw new WpUnavailableError();
+
+  const wpChange = await wpChangePassword(user.wpUserId, input.password);
+  if (!wpChange.ok) throw new WpUnavailableError();
+
+  await prisma.passwordResetToken.update({
+    where: { id: row.id },
+    data: { usedAt: new Date() },
+  });
+
+  // A reset exists to evict whoever else is in the account.
+  await prisma.refreshToken.updateMany({
+    where: { userId: user.id, status: RefreshTokenStatus.ACTIVE },
+    data: { status: RefreshTokenStatus.REVOKED, revokedAt: new Date() },
+  });
+
+  await audit.passwordResetComplete({
+    userId: user.id,
+    timestamp: new Date().toISOString(),
+    ip: input.ip,
+  });
+
+  getRateLimiter().recordSuccess(key);
+}
+
 // ─── Register (self-service, FR-022) ────────────────────────────────────
 
 export interface RegisterInput {

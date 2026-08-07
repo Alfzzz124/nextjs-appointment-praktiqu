@@ -52,10 +52,10 @@ Bisa dipanggil langsung tanpa `Authorization`.
 
 | Method | Endpoint | Keterangan |
 |---|---|---|
-| `POST` | `/api/v1/auth/forgot-password` |  |
+| `POST` | `/api/v1/auth/forgot-password` | selalu `200`; rate-limited per (IP, email) |
 | `POST` | `/api/v1/auth/login` |  |
 | `POST` | `/api/v1/auth/refresh` | pakai `refreshToken` di body, bukan Bearer |
-| `POST` | `/api/v1/auth/reset-password` | stub (501) |
+| `POST` | `/api/v1/auth/reset-password` | butuh `token` dari link email — lihat [PASSWORD-RESET-GUIDE.md](./PASSWORD-RESET-GUIDE.md) |
 | `POST` | `/api/v1/public/appointments` |  |
 | `GET` | `/api/v1/public/appointments/{token}` |  |
 | `POST` | `/api/v1/public/auth/register` | registrasi mandiri pasien; balas `201` + token — lihat [PUBLIC-REGISTER.md](./PUBLIC-REGISTER.md) |

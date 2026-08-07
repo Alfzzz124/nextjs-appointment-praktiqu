@@ -8,7 +8,15 @@ import { z } from 'zod';
 import { createHash, randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { sendEmail, buildPasswordResetEmail } from '@/lib/email';
-import { badRequest, problemHeaders } from '@/lib/problem-details';
+import { badRequest, tooManyRequests, problemHeaders } from '@/lib/problem-details';
+import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/rate-limit';
+
+/**
+ * Without this, anyone could mail a stranger's inbox on demand — and since each request
+ * invalidates the previous token, repeated calls also keep breaking whatever link the
+ * victim is trying to use.
+ */
+const limiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT_CONFIG });
 
 const BodySchema = z.object({
   email: z.string().email(),
@@ -40,6 +48,15 @@ export async function POST(req: NextRequest) {
 
   // Look up the user by email so we can generate the reset link
   const email = parsed.data.email.trim().toLowerCase();
+
+  const key = tupleKey(ip, email);
+  const verdict = limiter.check(key);
+  if (verdict.kind === 'lockout') {
+    const retryAfter = Math.ceil(verdict.retryAfterMs / 1000);
+    const p = tooManyRequests('rate_limited', retryAfter, 'Too many reset requests', '/api/v1/auth/forgot-password');
+    return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
+  }
+
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (user) {
@@ -73,6 +90,11 @@ export async function POST(req: NextRequest) {
       text: emailContent.text,
       template: 'password-reset',
     });
+    limiter.recordSuccess(key);
+  } else {
+    // An unknown address is what probing looks like, so it counts against the limiter —
+    // which is invisible to the caller, since the response below never varies.
+    limiter.recordFailure(key);
   }
 
   // Always return 200 to prevent email enumeration.
