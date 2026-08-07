@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createHash, randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/db';
+import { ensureUserFromWordPress } from '@/services/auth/service';
 import { sendEmail, buildPasswordResetEmail } from '@/lib/email';
 import { badRequest, tooManyRequests, problemHeaders } from '@/lib/problem-details';
 import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/rate-limit';
@@ -57,7 +58,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  // Not `prisma.user.findUnique` — most people with an account have never logged into
+  // the app, so they have no `users` row yet. See ensureUserFromWordPress.
+  const user = await ensureUserFromWordPress(email);
 
   if (user) {
     // Invalidate any existing unused reset tokens for this user
