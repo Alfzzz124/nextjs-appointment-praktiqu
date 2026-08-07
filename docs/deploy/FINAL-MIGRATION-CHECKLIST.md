@@ -67,13 +67,16 @@ Ingat juga: `cloudlinux-selector set --env-vars` **mengganti seluruh set**. Baca
 
 ## C. Celah yang harus ditutup sebelum user sungguhan
 
-### C1. Lupa password tidak jalan untuk mayoritas user ⚠️ paling berdampak
+### C1. ~~Lupa password tidak jalan untuk mayoritas user~~ — SELESAI 2026-08-07
 
-[`forgot-password`](../../src/app/api/v1/auth/forgot-password/route.ts) mencari user di tabel aplikasi (`users`), bukan di WordPress. Baris `users` baru terbentuk saat seseorang **login ke aplikasi**.
+Dulu `forgot-password` mencari user hanya di tabel aplikasi (`users`), padahal baris itu baru terbentuk saat seseorang login ke aplikasi. Saat ditemukan, `wp_users` berisi 850 baris dan `users` hanya 61 — **789 orang tidak bisa memakai lupa-password sama sekali**, dan endpoint tetap membalas `200` tanpa jejak kegagalan.
 
-Dihitung di `praktiqu_wp580` pada 2026-08-07: `wp_users` berisi **850** baris, `users` hanya **61**. Artinya **789 user tidak bisa memakai lupa-password sama sekali** — endpoint tetap membalas `200`, tidak ada email terkirim, dan tidak ada jejak kegagalan. Dari sisi user: "saya sudah minta reset tapi emailnya tidak pernah datang."
+Ditutup dengan dua langkah:
 
-Perbaikan: buat `forgot-password` jatuh ke `wpLookupByEmail()` kalau tidak ada baris `users`, lalu buat barisnya (pola yang sama dipakai `login`). Verifikasi 2026-08-07.
+1. **Perbaikan kode** — `ensureUserFromWordPress()` di [`service.ts`](../../src/services/auth/service.ts) jatuh ke `wpLookupByEmail()` saat baris `users` tidak ada, lalu membuat barisnya seperti `login`. Ini yang menutup penyebabnya: setiap booking tamu membuat akun WordPress tanpa baris aplikasi, jadi lubangnya akan terus terbentuk lagi tanpa perbaikan ini.
+2. **Backfill** — [`scripts/backfill-users-from-wp.ts`](../../scripts/backfill-users-from-wp.ts) menyisipkan 785 baris (755 CLIENT, 22 CLINIC_ADMIN, 7 SUPER_ADMIN, 1 RECEPTIONIST). Empat baris dilewati karena datanya rusak: **wp#413** dan **wp#542** tidak punya email, **wp#522** dan **wp#885** emailnya kembar dengan akun lain yang lebih tua. Keempatnya masih tanpa baris aplikasi sampai hari ini; perbaiki emailnya di WordPress lalu jalankan ulang skrip kalau mau ikut terangkut.
+
+Skripnya idempoten dan dry-run secara bawaan — hanya menulis kalau diberi `--apply`.
 
 ### C2. Halaman front-end belum ada
 
@@ -125,7 +128,7 @@ Helper `audit.passwordResetRequest` ada tapi tidak pernah dipanggil `forgot-pass
 ## F. Urutan yang disarankan saat migrasi
 
 1. Siapkan domain final dan verifikasi domainnya di Resend.
-2. Tutup **C1** — tanpa ini, lupa-password gagal untuk hampir semua user lama.
+2. ~~Tutup **C1**~~ — sudah selesai 2026-08-07.
 3. Tutup **C3** — jangan biarkan password polos beredar ke user sungguhan.
 4. Pastikan halaman **C2** sudah jadi.
 5. Ganti variabel runtime di **B** lalu restart, dan **build ulang** untuk `NEXT_PUBLIC_APP_URL` — restart saja tidak mengubahnya.
