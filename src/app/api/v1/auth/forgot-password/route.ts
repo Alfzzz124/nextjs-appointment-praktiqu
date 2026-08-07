@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { createHash, randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { ensureUserFromWordPress } from '@/services/auth/service';
+import { getPublicAppUrl } from '@/lib/public-url';
 import { sendEmail, buildPasswordResetEmail } from '@/lib/email';
 import { badRequest, tooManyRequests, problemHeaders } from '@/lib/problem-details';
 import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/rate-limit';
@@ -24,7 +25,6 @@ const BodySchema = z.object({
 });
 
 const RESET_TTL = parseInt(process.env.RESET_TOKEN_TTL ?? '1800', 10);
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.AUTH_URL ?? 'http://localhost:3000';
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     });
 
     const emailContent = buildPasswordResetEmail({
-      appUrl: APP_URL,
+      appUrl: getPublicAppUrl(),
       resetToken: rawToken,
       ttlMinutes: Math.ceil(RESET_TTL / 60),
     });
