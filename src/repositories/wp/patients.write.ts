@@ -46,6 +46,8 @@ export type UpdatePatientInput = Partial<Omit<CreatePatientInput, 'password'>>;
 export type WrittenPatient = {
   id: number;
   email: string;
+  /** WordPress derives this from the email and guarantees it is unique. */
+  username: string;
   firstName: string;
   lastName: string;
   contactNumber: string;
@@ -56,6 +58,7 @@ export type WrittenPatient = {
 type PluginPatientResponse = {
   id: number;
   email: string;
+  username: string;
   first_name: string;
   last_name: string;
   contact_number: string;
@@ -102,6 +105,7 @@ function toWrittenPatient(res: PluginPatientResponse): WrittenPatient {
   return {
     id: res.id,
     email: res.email,
+    username: res.username,
     firstName: res.first_name,
     lastName: res.last_name,
     contactNumber: res.contact_number,

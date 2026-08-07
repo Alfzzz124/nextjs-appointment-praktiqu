@@ -13,7 +13,7 @@ export default function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    username: '',
+    contactNumber: '',
     firstName: '',
     lastName: '',
   });
@@ -41,45 +41,30 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/v1/auth/register', {
+      // Registration signs the patient in, so there is no second login round-trip.
+      const res = await fetch('/api/v1/public/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
-          username: formData.username || formData.email.split('@')[0],
           firstName: formData.firstName,
           lastName: formData.lastName,
+          ...(formData.contactNumber ? { contactNumber: formData.contactNumber } : {}),
         }),
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.detail || data.title || 'Registration failed');
       }
 
-      // Auto-login after registration
-      const loginRes = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
-
-      if (loginRes.ok) {
-        const data = await loginRes.json();
-        const maxAge = 7 * 24 * 60 * 60;
-        document.cookie = `access_token=${data.access_token}; path=/; max-age=${maxAge}; samesite=lax`;
-        if (data.refresh_token) {
-          document.cookie = `refresh_token=${data.refresh_token}; path=/; max-age=${maxAge * 2}; samesite=lax`;
-        }
-        router.push('/dashboard');
-      } else {
-        // Registration succeeded but auto-login failed - redirect to login
-        router.push('/login?registered=true');
+      const maxAge = 7 * 24 * 60 * 60;
+      document.cookie = `access_token=${data.accessToken}; path=/; max-age=${maxAge}; samesite=lax`;
+      if (data.refreshToken) {
+        document.cookie = `refresh_token=${data.refreshToken}; path=/; max-age=${maxAge * 2}; samesite=lax`;
       }
+      router.push('/dashboard');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -124,6 +109,7 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 className="w-full h-10 px-3 rounded-lg border border-outline-variant bg-surface text-on-surface text-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-shadow"
                 placeholder="John"
+                required
               />
             </div>
             <div>
@@ -137,21 +123,22 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 className="w-full h-10 px-3 rounded-lg border border-outline-variant bg-surface text-on-surface text-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-shadow"
                 placeholder="Doe"
+                required
               />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-on-surface mb-1">
-              Username
+              Phone Number <span className="font-normal text-on-surface-variant">(optional)</span>
             </label>
             <input
-              type="text"
-              name="username"
-              value={formData.username}
+              type="tel"
+              name="contactNumber"
+              value={formData.contactNumber}
               onChange={handleChange}
               className="w-full h-10 px-3 rounded-lg border border-outline-variant bg-surface text-on-surface text-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-shadow"
-              placeholder="johndoe"
+              placeholder="081234567890"
             />
           </div>
 

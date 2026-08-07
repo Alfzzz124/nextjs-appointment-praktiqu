@@ -10,9 +10,11 @@ Catatan praktis cara mengakses endpoint yang ada di [`openapi.yaml`](./openapi.y
 
 | | Jumlah |
 |---|---|
-| Total operasi | **260** |
-| Publik (tanpa token) | **20** |
+| Total operasi | **261** |
+| Publik (tanpa token) | **21** |
 | Butuh Bearer token | **240** |
+
+> Angka di atas: 260/20/240 saat diverifikasi 2026-07-20, ditambah `POST /api/v1/public/auth/register` yang menyusul pada 2026-08-07.
 
 **Aturan mudah:**
 - Semua yang berawalan **`/api/v1/public/*`** → **publik** (tanpa token).
@@ -56,6 +58,7 @@ Bisa dipanggil langsung tanpa `Authorization`.
 | `POST` | `/api/v1/auth/reset-password` | stub (501) |
 | `POST` | `/api/v1/public/appointments` |  |
 | `GET` | `/api/v1/public/appointments/{token}` |  |
+| `POST` | `/api/v1/public/auth/register` | registrasi mandiri pasien; balas `201` + token — lihat [PUBLIC-REGISTER.md](./PUBLIC-REGISTER.md) |
 | `POST` | `/api/v1/public/appointments/{token}/cancel` |  |
 | `POST` | `/api/v1/public/booking` |  |
 | `GET` | `/api/v1/public/booking/hold` |  |

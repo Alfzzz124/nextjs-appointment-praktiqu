@@ -122,6 +122,7 @@ function primeHappyPath() {
   vi.mocked(createPatient).mockResolvedValue({
     id: PATIENT,
     email: INPUT.clientEmail,
+    username: 'budi',
     firstName: 'Budi',
     lastName: 'Test',
     contactNumber: INPUT.clientMobile,
@@ -130,6 +131,7 @@ function primeHappyPath() {
   vi.mocked(updatePatient).mockResolvedValue({
     id: PATIENT,
     email: INPUT.clientEmail,
+    username: 'budi',
     firstName: 'Budi',
     lastName: 'Test',
     contactNumber: INPUT.clientMobile,
