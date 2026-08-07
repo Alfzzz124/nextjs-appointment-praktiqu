@@ -32,6 +32,8 @@ WHERE ID = 44;
 
 `{{appointment_page_url}}` dibiarkan apa adanya; sudah mengarah ke halaman booking WordPress dan itu memang benar.
 
+**Arah jangka panjang (keputusan 2026-08-07):** berhenti menumpang template email KiviCare. Email transaksional kita sendiri sudah punya jalurnya — `sendEmail()` lewat Resend, dengan template yang hidup di kode (`buildPasswordResetEmail` di [`src/lib/email.ts`](../../src/lib/email.ts)). Registrasi sebaiknya ikut ke sana: templatenya masuk version control, tidak perlu diedit lewat UI WordPress, tidak ada baris duplikat yang bisa menang diam-diam, dan sekalian menyelesaikan **C3** karena kita tidak akan pernah menulis password ke dalamnya.
+
 ---
 
 ## B. Variabel environment
@@ -47,7 +49,19 @@ Semua di cPanel → Setup Node.js App → aplikasi terkait → Environment varia
 
 Sekarang pengirim email (`appointment.praktiqu.com`) dan tujuan link (`staging2.praktiqu.com`) berbeda domain. Tidak merusak apa pun, tapi menurunkan kepercayaan dan bisa memicu filter spam. Samakan saat migrasi.
 
-Ingat: `cloudlinux-selector set --env-vars` **mengganti seluruh set**. Baca dulu `env_vars` yang ada lewat `cloudlinux-selector get --json`, ubah satu key, tulis balik semuanya. Lebih aman lewat UI cPanel.
+### ⚠️ `NEXT_PUBLIC_APP_URL` tidak cukup diganti di cPanel
+
+Next.js **menanam** (inline) semua variabel berawalan `NEXT_PUBLIC_` ke dalam bundle **saat build**, bukan membacanya saat runtime. Diverifikasi 2026-08-07: di `.next/server/app/api/v1/auth/forgot-password/route.js` yang sekarang jalan di server, yang ada adalah literal `https://staging2.praktiqu.com` — tidak ada lagi pembacaan `process.env`.
+
+Artinya mengubah nilainya di cPanel lalu restart **tidak berpengaruh sama sekali**. Harus **build ulang** dengan nilai baru, lalu deploy:
+
+```bash
+NEXT_PUBLIC_APP_URL=https://<DOMAIN-FINAL> npm run build
+```
+
+Variabel lain (`DATABASE_URL`, `WORDPRESS_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `AUTH_URL`) dibaca saat runtime — untuk itu cukup ganti di cPanel lalu restart.
+
+Ingat juga: `cloudlinux-selector set --env-vars` **mengganti seluruh set**. Baca dulu `env_vars` yang ada lewat `cloudlinux-selector get --json`, ubah satu key, tulis balik semuanya. Lebih aman lewat UI cPanel.
 
 ---
 
@@ -71,7 +85,16 @@ Email registrasi KiviCare memuat password pilihan pasien dalam teks polos — su
 
 Cara termurah tanpa ubah kode: nonaktifkan template `patient_register` di pengaturan KiviCare, atau hapus `{{user_password}}` dari isi template ID 44 — pasien memilih passwordnya sendiri, jadi tidak perlu dikirimi.
 
-### C4. Permintaan reset tidak tercatat di audit
+### C4. Halaman kembali dari pembayaran belum ada
+
+[`payment.service.ts`](../../src/services/payments/payment.service.ts) mengirim empat URL kembalian ke Xendit, semuanya dibangun dari `NEXT_PUBLIC_APP_URL`:
+
+- `/book/payment/success` dan `/book/payment/cancel` (booking publik)
+- `/staff/bills/{id}/payment-success` dan `/staff/bills/{id}/payment-cancel` (tagihan staf)
+
+**Keempat halaman itu tidak ada** di aplikasi. Pasien yang selesai membayar diarahkan ke 404. Ini bukan masalah baru dari pekerjaan reset password, tapi harus beres sebelum pembayaran dipakai sungguhan — dan kalau front-end dipisah, keempat path ini menjadi tanggung jawab front-end tersebut.
+
+### C5. Permintaan reset tidak tercatat di audit
 
 Helper `audit.passwordResetRequest` ada tapi tidak pernah dipanggil `forgot-password`. Penyelesaian reset tercatat, permintaannya tidak. Timpang kalau nanti perlu menelusuri insiden.
 
@@ -105,7 +128,7 @@ Helper `audit.passwordResetRequest` ada tapi tidak pernah dipanggil `forgot-pass
 2. Tutup **C1** — tanpa ini, lupa-password gagal untuk hampir semua user lama.
 3. Tutup **C3** — jangan biarkan password polos beredar ke user sungguhan.
 4. Pastikan halaman **C2** sudah jadi.
-5. Ganti variabel di **B**, restart aplikasi.
+5. Ganti variabel runtime di **B** lalu restart, dan **build ulang** untuk `NEXT_PUBLIC_APP_URL` — restart saja tidak mengubahnya.
 6. Jalankan SQL di **A**.
 7. Uji asap: daftar → cek email → login → lupa password → reset → login dengan password baru.
 8. Setelah stabil beberapa hari, kerjakan **D**.
