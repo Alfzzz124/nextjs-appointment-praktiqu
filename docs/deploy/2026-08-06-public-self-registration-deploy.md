@@ -58,14 +58,31 @@ the receptionist-lockout failure mode — and the deploy should be rolled back.
 
 Re-posting the same registration must answer `409 duplicate_email`.
 
-Clean up:
+Clean up — **two databases**, because staging's plugin writes and Prisma reads do not share
+one (see the `staging-two-databases-split` note). Prisma's `User` model maps to the table
+`users`, not `User`.
 
 ```sql
-DELETE FROM wp_usermeta WHERE user_id = (SELECT ID FROM wp_users WHERE user_email = 'smoke-reg-01@example.com');
-DELETE FROM wp_users WHERE user_email = 'smoke-reg-01@example.com';
+-- praktiqu_wp580 — the WordPress site the plugin writes to
+DELETE FROM wp_usermeta WHERE user_id = <WP_ID>;
+DELETE FROM wp_users WHERE ID = <WP_ID> AND user_email = 'smoke-reg-01@example.com';
+
+-- praktiqu_wp314 — the app's own database
+DELETE FROM refresh_tokens WHERE userId = (SELECT id FROM users WHERE email = 'smoke-reg-01@example.com');
+DELETE FROM users WHERE email = 'smoke-reg-01@example.com';
 ```
 
-The PraktiQU `User` row and its refresh tokens go too, via the app database.
+`<WP_ID>` is the `user.wpUserId` the registration response returned.
+
+## Known staging limitation
+
+`DATABASE_URL` points at `praktiqu_wp314`, whose `wp_users` is a copy frozen at 2026-07-05,
+while `WORDPRESS_URL` points at appointment.praktiqu.com backed by `praktiqu_wp580`. A patient
+who self-registers therefore exists in wp580 but not in the `wp_users` the app reads through
+Prisma. Registration and login are unaffected — both talk to the plugin over HTTP — but the new
+patient will not show up in anything that reads patients from the database, including public
+booking's `findPatientByEmail` and staff patient lists. This predates the feature and is an
+environment issue, not a code one.
 
 ## Rollback
 
