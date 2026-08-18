@@ -100,6 +100,7 @@ model User {
   consentSignatures ConsentSignature[]
   refreshTokens     RefreshToken[]
   passwordResets    PasswordResetToken[]
+  otpCodes          OtpCode[]
   googleIdentity    GoogleIdentity?
 
   // Audit (actor = person performing action; target = affected user)
@@ -185,6 +186,29 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+/// A one-time sign-in code. Mirrors PasswordResetToken, with one deliberate
+/// difference: codeHash is NOT unique. A reset token is 32 random bytes, so a unique
+/// index is safe there. Six digits collide between users sooner or later, and a unique
+/// index would turn that collision into a failed login for whoever arrived second.
+/// Lookup is therefore by userId, newest live row first.
+model OtpCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String // SHA-256 of the 6 digits — never the code itself
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+  ipAddress String?
+  userAgent String?   @db.Text
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("otp_codes")
 }
 
 // ============================================
