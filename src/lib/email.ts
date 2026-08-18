@@ -100,3 +100,19 @@ export function buildPasswordResetEmail(input: {
     text: `Reset your password: ${link} (expires in ${input.ttlMinutes} minutes)`,
   };
 }
+
+/** Build a sign-in code email. No link: a code mail that also contains a link teaches
+ *  people to click links in mail that asks for credentials. */
+export function buildOtpEmail(input: {
+  code: string;
+  ttlMinutes: number;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: `${input.code} is your PraktiQU sign-in code`,
+    html: `<p>Your PraktiQU sign-in code is:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:4px">${input.code}</p>
+<p>It expires in ${input.ttlMinutes} minutes.</p>
+<p>If you didn't try to sign in, you can ignore this email.</p>`,
+    text: `Your PraktiQU sign-in code is ${input.code}. It expires in ${input.ttlMinutes} minutes. If you didn't try to sign in, you can ignore this email.`,
+  };
+}
