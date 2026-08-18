@@ -189,11 +189,11 @@ describe('generateOtpCode', () => {
     }
   });
 
-  it('pads small numbers instead of returning a short code', () => {
-    // 500 draws from a million make a leading zero likely enough to assert on the shape
-    // rather than on a specific value.
+  it('pads a small draw rather than returning a short code', () => {
+    // One draw in ten starts with a zero, so across 500 draws seeing none would mean
+    // padding is broken — not bad luck.
     const codes = Array.from({ length: 500 }, generateOtpCode);
-    expect(codes.every((c) => c.length === 6)).toBe(true);
+    expect(codes.some((c) => c.startsWith('0'))).toBe(true);
   });
 
   it('does not return the same code every time', () => {
@@ -1080,16 +1080,20 @@ describe('verifyOtp', () => {
     );
   });
 
-  it('refuses a code that has already been guessed at five times', async () => {
+  it('reports a burned code as burned, not as a wrong guess', async () => {
     mockPrisma.otpCode.findFirst.mockResolvedValue(liveCode({ attempts: 5 }));
 
-    await expect(verifyOtp(INPUT)).rejects.toMatchObject({ code: 'too_many_attempts' });
+    // A wrong guess against a spent code must say too_many_attempts, which proves the
+    // attempt check runs before the comparison.
+    await expect(verifyOtp({ ...INPUT, code: '000000' })).rejects.toMatchObject({
+      code: 'too_many_attempts',
+    });
   });
 
   it('refuses the right code once the attempt limit is spent', async () => {
     mockPrisma.otpCode.findFirst.mockResolvedValue(liveCode({ attempts: 5 }));
 
-    // The code is correct — being correct must not rescue a burned code.
+    // Being correct must not rescue a burned code.
     await expect(verifyOtp(INPUT)).rejects.toMatchObject({ code: 'too_many_attempts' });
   });
 
