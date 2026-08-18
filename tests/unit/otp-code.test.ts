@@ -78,4 +78,10 @@ describe('codesMatch', () => {
   it('rejects an empty stored hash', () => {
     expect(codesMatch('418902', '')).toBe(false);
   });
+
+  it('returns false instead of throwing when the stored hash is missing entirely', () => {
+    // A null column value reaches here as null, not as a string — this is the case the
+    // try/catch exists for, and the only one that actually reaches it.
+    expect(codesMatch('418902', null as unknown as string)).toBe(false);
+  });
 });
