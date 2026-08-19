@@ -235,7 +235,268 @@ Server tetap memvalidasi ulang (`validation_error` kalau lolos dari klien tapi s
 
 ---
 
-## 8. Referensi
+## 8. Contoh implementasi
+
+Bagian ini kode yang bisa langsung disalin. Intinya sengaja ditulis sebagai TypeScript polos —
+front-end kalian berdiri di origin sendiri dan belum tentu Next.js, jadi hanya contoh komponen
+terakhir yang React.
+
+### 8.1 Klien API
+
+Dua fungsi, plus satu pembaca error. Semua error dari API ini berbentuk `problem+json`, dan yang
+kalian butuhkan dari situ selalu field `code` — bukan `detail`, yang teksnya bisa berubah
+sewaktu-waktu dan berbahasa Inggris.
+
+```ts
+// otpApi.ts
+const API = 'https://staging2.praktiqu.com';
+
+export type OtpErrorCode =
+  | 'invalid_body'
+  | 'validation_error'
+  | 'invalid_code'
+  | 'code_expired'
+  | 'too_many_attempts'
+  | 'account_inactive'
+  | 'rate_limited'
+  | 'internal_error';
+
+export class OtpError extends Error {
+  constructor(
+    readonly code: OtpErrorCode,
+    /** Detik sampai boleh mencoba lagi. Hanya terisi untuk `rate_limited`. */
+    readonly retryAfter?: number,
+  ) {
+    super(code);
+  }
+}
+
+async function toError(res: Response): Promise<OtpError> {
+  const body = await res.json().catch(() => ({}));
+  const retryAfter = Number(res.headers.get('Retry-After')) || undefined;
+  return new OtpError((body.code as OtpErrorCode) ?? 'internal_error', retryAfter);
+}
+
+/** Minta kode dikirim. Balasannya sama untuk email terdaftar maupun tidak. */
+export async function requestOtp(email: string): Promise<{ retryAfter: number }> {
+  const res = await fetch(`${API}/api/v1/auth/otp/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw await toError(res);
+  return res.json();
+}
+
+export interface Session {
+  user: {
+    id: string;
+    email: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+    displayName: string;
+    role: 'SUPER_ADMIN' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'RECEPTIONIST' | 'CLIENT';
+    wpUserId: number | null;
+  };
+  accessToken: string;
+  accessTokenExpiresAt: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
+}
+
+export async function verifyOtp(email: string, code: string): Promise<Session> {
+  const res = await fetch(`${API}/api/v1/auth/otp/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  });
+  if (!res.ok) throw await toError(res);
+  return res.json();
+}
+```
+
+Perhatikan `verifyOtp` tidak memakai `credentials: 'include'`. Sesi tidak dititipkan lewat cookie
+lintas-origin — token dikembalikan di body response dan front-end yang menyimpannya sendiri.
+
+### 8.2 Menyimpan sesi
+
+Response `verify` bentuknya sama persis dengan `POST /api/v1/auth/login`, jadi pakai fungsi
+penyimpan yang sama untuk kedua alur. Jangan menulis dua jalur berbeda — di aplikasi Next lama,
+menyalin pola ini dengan nama field yang salah pernah membuat cookie berisi `undefined` dan
+tidak ada yang menyadarinya sampai lama.
+
+```ts
+export function saveSession(s: Session) {
+  localStorage.setItem('accessToken', s.accessToken);
+  localStorage.setItem('refreshToken', s.refreshToken);
+  localStorage.setItem('accessTokenExpiresAt', s.accessTokenExpiresAt);
+  localStorage.setItem('user', JSON.stringify(s.user));
+}
+```
+
+Setelah tersimpan, arahkan user ke tujuan yang sama dengan login password. Kalau ada `returnTo`
+di query string, hormati itu; kalau tidak, ke halaman utama setelah login.
+
+### 8.3 Hitung mundur yang selamat dari reload
+
+Server **tidak pernah** memberi tahu sisa cooldown yang sebenarnya (§7) — dia selalu menjawab
+`retryAfter: 60`. Jadi hitungan mundurnya murni milik klien, dan kalau hanya disimpan di state
+React, me-refresh halaman akan mengaktifkan kembali tombol "kirim ulang" padahal server masih
+menolak diam-diam. Simpan waktu kedaluwarsanya, bukan sisa detiknya.
+
+```ts
+const KEY = 'otpResendAt';
+
+export function startCooldown(seconds: number) {
+  localStorage.setItem(KEY, String(Date.now() + seconds * 1000));
+}
+
+/** Sisa detik, 0 kalau sudah boleh kirim ulang. */
+export function cooldownLeft(): number {
+  const until = Number(localStorage.getItem(KEY) ?? 0);
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+```
+
+```ts
+// hook kecil untuk menampilkan angkanya
+function useCooldown() {
+  const [left, setLeft] = useState(cooldownLeft);
+  useEffect(() => {
+    const t = setInterval(() => setLeft(cooldownLeft()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return left;
+}
+```
+
+### 8.4 Mesin state kedua layar
+
+```
+LAYAR 1 — minta kode
+  idle ──(submit email)──> sending
+  sending ──(200)────────> pindah ke LAYAR 2, startCooldown(retryAfter)
+  sending ──(validation_error)──> idle + pesan "Masukkan email yang valid"
+  sending ──(rate_limited)─────> idle + form dikunci selama Retry-After detik
+
+LAYAR 2 — masukkan kode
+  idle ──(submit 6 digit)──> verifying
+  verifying ──(200)────────> saveSession(), redirect
+  verifying ──(invalid_code)──────> idle, biarkan user mengetik ulang di form yang sama
+  verifying ──(code_expired)──────> mati, tampilkan tombol "Minta kode baru"
+  verifying ──(too_many_attempts)─> mati, tampilkan tombol "Minta kode baru"
+  verifying ──(account_inactive)──> buntu, arahkan ke kontak klinik, JANGAN tawarkan resend
+  verifying ──(rate_limited)──────> kunci form selama Retry-After detik
+
+  tombol "kirim ulang" aktif hanya saat cooldownLeft() === 0
+```
+
+Yang membedakan `invalid_code` dari dua saudaranya: hanya `invalid_code` yang menyisakan
+kemungkinan kodenya masih hidup. Untuk `code_expired` dan `too_many_attempts`, tombol "coba lagi"
+yang mengirim ulang `verify` yang sama akan **selalu** gagal — satu-satunya jalan maju adalah kode
+baru. Lihat §4.
+
+### 8.5 Contoh komponen layar kode (React)
+
+```tsx
+function OtpVerifyScreen({ email }: { email: string }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<OtpErrorCode | null>(null);
+  const [busy, setBusy] = useState(false);
+  const cooldown = useCooldown();
+
+  const codeIsDead = error === 'code_expired' || error === 'too_many_attempts';
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(code)) return setError('validation_error');
+    setBusy(true);
+    setError(null);
+    try {
+      saveSession(await verifyOtp(email, code));
+      redirectAfterLogin();
+    } catch (err) {
+      setError(err instanceof OtpError ? err.code : 'internal_error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resend() {
+    const { retryAfter } = await requestOtp(email);
+    startCooldown(retryAfter);
+    setCode('');
+    setError(null);
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <p>Kami mengirim kode 6 angka ke {email}.</p>
+
+      <input
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={6}
+        value={code}
+        onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+        disabled={busy || codeIsDead}
+      />
+
+      {error && <p role="alert">{PESAN[error]}</p>}
+
+      {!codeIsDead && (
+        <button type="submit" disabled={busy || code.length !== 6}>
+          {busy ? 'Memeriksa…' : 'Masuk'}
+        </button>
+      )}
+
+      {error !== 'account_inactive' && (
+        <button type="button" onClick={resend} disabled={cooldown > 0}>
+          {cooldown > 0 ? `Kirim ulang dalam ${cooldown}s` : 'Minta kode baru'}
+        </button>
+      )}
+    </form>
+  );
+}
+```
+
+`autoComplete="one-time-code"` membuat iOS dan Android menawarkan kodenya langsung dari notifikasi
+SMS/email — dan itu sebabnya kodenya diletakkan di baris subjek email, supaya terbaca tanpa
+membuka isinya.
+
+Peta pesannya memakai teks yang sama dengan tabel di §3:
+
+```ts
+const PESAN: Record<OtpErrorCode, string> = {
+  invalid_body: 'Terjadi kesalahan. Coba lagi.',
+  validation_error: 'Masukkan email yang valid dan kode 6 angka',
+  invalid_code: 'Kode salah. Periksa lagi email kamu',
+  code_expired: 'Kode sudah kedaluwarsa. Minta kode baru',
+  too_many_attempts: 'Terlalu banyak percobaan. Minta kode baru',
+  account_inactive: 'Akun kamu tidak aktif. Hubungi klinik',
+  rate_limited: 'Terlalu sering. Coba lagi dalam beberapa menit',
+  internal_error: 'Terjadi kesalahan di server. Coba lagi sebentar lagi',
+};
+```
+
+### 8.6 Yang paling gampang keliru
+
+Empat hal ini sudah pernah menjadi bug nyata di proyek ini atau ditemukan saat review:
+
+1. **Menampilkan "email tidak terdaftar".** Endpoint `request` tidak pernah memberi tahu itu, dan
+   memang sengaja. UI yang menebak-nebak sendiri justru membocorkan hal yang susah payah ditutup
+   di server.
+2. **Mengharapkan `retryAfter` mengecil.** Nilainya selalu 60. Hitung mundur adalah tanggung jawab
+   klien.
+3. **Menyimpan sisa detik, bukan waktu kedaluwarsa.** Refresh halaman akan mengembalikan tombol
+   resend terlalu cepat.
+4. **Menawarkan "kirim ulang" pada `account_inactive`.** Yang bermasalah akunnya, bukan kodenya —
+   kode baru tidak akan menolong dan kode lamanya pun sudah terbakar.
+
+---
+
+## 9. Referensi
 
 - Endpoint: [`src/app/api/v1/auth/otp/request/route.ts`](../../src/app/api/v1/auth/otp/request/route.ts), [`src/app/api/v1/auth/otp/verify/route.ts`](../../src/app/api/v1/auth/otp/verify/route.ts)
 - Logika bisnis: [`src/services/auth/otp.service.ts`](../../src/services/auth/otp.service.ts)
