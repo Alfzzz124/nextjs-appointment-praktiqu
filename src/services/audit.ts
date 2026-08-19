@@ -46,7 +46,7 @@ export interface LoginSuccessMeta {
   timestamp: string;
   ip: string;
   userAgent: string;
-  method: 'password' | 'google';
+  method: 'password' | 'google' | 'otp';
 }
 export interface LoginFailureMeta {
   attemptedEmail: string;
