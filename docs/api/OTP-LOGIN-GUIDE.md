@@ -20,6 +20,12 @@ https://staging2.praktiqu.com/api/v1/auth/otp/verify
 
 Halaman front-end-nya sendiri **tidak** ada di `staging2.praktiqu.com` — aplikasi user sekarang tinggal di `https://terpadu.praktiqu.com`. Jadi ini dua origin yang terpisah: halaman `/login-otp` (atau apa pun namanya) di-serve dari `terpadu.praktiqu.com`, tapi `fetch`-nya menembak ke `staging2.praktiqu.com`. Jangan asumsikan endpoint ini hidup di host yang sama dengan halamannya sendiri.
 
+### Soal CORS — belum ada jawaban di repo ini
+
+Karena dua origin ini beda, `fetch` dari browser ke `staging2.praktiqu.com` butuh header `Access-Control-Allow-Origin` (dan kawan-kawannya) dari API supaya browser mengizinkan responsnya dibaca oleh halaman di `terpadu.praktiqu.com`. Sudah dicek dengan grep menyeluruh untuk `Access-Control-`, `cors`, konfigurasi `headers()` di `next.config.js`, dan isi `src/middleware.ts` serta kedua route handler OTP — **tidak ada satu pun yang mengatur header CORS** di repo ini. `src/middleware.ts` hanya mengurus verifikasi JWT dan cookie sesi, bukan CORS.
+
+Itu tidak berarti fetch-nya pasti gagal, dan juga tidak berarti pasti berhasil — kalau memang berjalan di staging, itu diatur oleh sesuatu di luar repo ini (reverse proxy atau gateway di depan `staging2.praktiqu.com`), bukan oleh kode Next.js-nya. **Konfirmasi ke tim backend dulu** sebelum membangun halaman ini di atas asumsi bahwa `fetch` lintas origin ke `staging2.praktiqu.com` akan berhasil.
+
 ---
 
 ## 1. Gambaran alur
@@ -106,7 +112,7 @@ Content-Type: application/json
 { "email": "budi@example.com", "code": "482913" }
 ```
 
-`code` harus persis **6 digit angka** (regex `^\d{6}$` di server). Validasi bentuknya di klien sebelum mengirim — kalau usernya baru mengetik 4 digit atau menyelipkan spasi, jangan kirim ke server. Setiap kirim ke server yang salah tetap memakan satu dari lima kesempatan tebak kode itu (lihat §5), jadi input mask 6 digit di klien bukan hiasan.
+`code` harus persis **6 digit angka** (regex `^\d{6}$` di server). Validasi bentuknya di klien sebelum mengirim — kalau usernya baru mengetik 4 digit atau menyelipkan spasi, jangan kirim ke server. Ini bukan soal menghemat kesempatan tebak: kode yang bentuknya salah ditolak oleh regex ini sebagai `validation_error` *sebelum* `verifyOtp` sempat dipanggil, jadi attempt counter di §5 tidak ikut tersentuh. Alasan validasi di klien murni menghindari round-trip ke server yang sudah pasti gagal — tetap berguna, hanya bukan karena "menyelamatkan" salah satu dari lima kesempatan.
 
 ### Response sukses — `200`
 
@@ -145,7 +151,7 @@ Semua error memakai format `application/problem+json`.
 |---|---|---|---|
 | `400` | `invalid_body` | Body bukan JSON valid | *(tidak seharusnya user lihat — kesalahan klien)* |
 | `400` | `validation_error` | Email tidak valid, atau `code` bukan 6 digit angka | "Masukkan email yang valid dan kode 6 angka" |
-| `400` | `invalid_code` | Kode salah, sudah kedaluwarsa dan belum diperbarui, sudah dipakai, atau emailnya tidak dikenal | "Kode salah. Periksa lagi email kamu" |
+| `400` | `invalid_code` | Kode salah, tidak ada kode aktif untuk email ini (belum pernah minta, sudah dipakai, atau sudah digantikan oleh kode yang lebih baru), atau emailnya tidak dikenal sistem | "Kode salah. Periksa lagi email kamu" |
 | `400` | `code_expired` | Kode ada tapi umurnya sudah lewat 10 menit | "Kode sudah kedaluwarsa. Minta kode baru" |
 | `400` | `too_many_attempts` | Kode itu sudah ditebak salah 5 kali | "Terlalu banyak percobaan. Minta kode baru" |
 | `403` | `account_inactive` | Kode benar, tapi akunnya dinonaktifkan | "Akun kamu tidak aktif. Hubungi klinik" |
@@ -201,7 +207,7 @@ Singkatnya: `code_expired` dan `too_many_attempts` berarti kodenya sudah tidak b
 
 ## 6. Validasi input kode di sisi klien
 
-Validasi bentuk di klien sebelum mengirim, supaya kesalahan ketik tidak memakan satu dari lima kesempatan tebak yang sungguhan:
+Validasi bentuk di klien sebelum mengirim — bukan supaya tidak memakan kesempatan tebak (kode berbentuk salah ditolak sebagai `validation_error` sebelum sempat dihitung sebagai attempt, lihat §3), tapi supaya user tidak menunggu satu round-trip ke server untuk kesalahan yang sudah jelas dari bentuknya saja:
 
 | Aturan | Pemeriksaan |
 |---|---|
@@ -216,7 +222,7 @@ Server tetap memvalidasi ulang (`validation_error` kalau lolos dari klien tapi s
 
 ## 7. Catatan penting
 
-**Email belum tentu benar-benar sampai di staging** — cek dengan tim backend apakah `RESEND_API_KEY` sudah terpasang di environment staging saat ini. Kalau belum, `sendEmail` mencetak isi kode ke log server, dan itu satu-satunya cara mengetes alurnya dari sana.
+**Pengiriman email di staging sudah terverifikasi jalan.** `RESEND_API_KEY` sudah terpasang di environment staging, dan pengiriman kode sudah dites langsung sampai ke inbox — bukan cuma tercatat di log. Tidak perlu fallback baca log server untuk mengetes alur ini di staging.
 
 **Jangan tampilkan cooldown sebagai error.** Kalau user menekan "kirim ulang" sebelum `retryAfter` habis, endpoint `request` tetap membalas `200` yang sama seperti biasa (dengan `retryAfter` baru yang sudah dikurangi waktu yang berlalu) — bukan `429`. UI-lah yang bertanggung jawab menonaktifkan tombolnya sendiri selama hitungan mundur; jangan menunggu server menolak.
 
