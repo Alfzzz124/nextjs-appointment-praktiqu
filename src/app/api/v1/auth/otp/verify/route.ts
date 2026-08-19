@@ -14,6 +14,7 @@ import {
   badRequest,
   forbidden,
   tooManyRequests,
+  problem,
   problemHeaders,
 } from '@/lib/problem-details';
 import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/rate-limit';
@@ -21,6 +22,10 @@ import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/ra
 export const dynamic = 'force-dynamic';
 
 const INSTANCE = '/api/v1/auth/otp/verify';
+
+// Mirrors the default in src/lib/problem-details.ts — that module doesn't export the base,
+// and none of its status-specific helpers answer 500, so the type URI is built the same way.
+const PROBLEM_BASE = process.env.PROBLEM_TYPE_BASE ?? 'https://praktiqu.example.com/problems';
 
 /** Guessing protection on top of the per-code attempt counter: the counter stops a single
  *  code being brute-forced, this stops an attacker cycling through fresh codes. */
@@ -55,8 +60,13 @@ export async function POST(req: NextRequest) {
 
   const key = tupleKey(ip, email);
   const verdict = limiter.check(key);
-  if (verdict.kind === 'lockout') {
-    const retryAfter = Math.ceil(verdict.retryAfterMs / 1000);
+  // Refuse anything that is not an explicit allow rather than enumerating verdict kinds:
+  // acting only on 'lockout' would leave failed attempts between progressiveAfter and
+  // lockoutAfter completely unthrottled, which is exactly the cycling this limiter exists
+  // to stop.
+  if (verdict.kind !== 'allow') {
+    const retryAfterMs = verdict.kind === 'lockout' ? verdict.retryAfterMs : verdict.delayMs;
+    const retryAfter = Math.ceil(retryAfterMs / 1000);
     const p = tooManyRequests('rate_limited', retryAfter, 'Too many attempts', INSTANCE);
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
@@ -93,10 +103,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
     }
 
+    // Logs the error object only — never the submitted code or request body — so a stack
+    // trace or driver message can reach the server log without leaking a guessable OTP.
     console.error('[auth/otp/verify] unexpected error:', err);
-    return NextResponse.json(
-      { type: 'about:blank', title: 'Internal Server Error', status: 500 },
-      { status: 500 },
-    );
+    const p = problem({
+      type: `${PROBLEM_BASE}/internal-server-error`,
+      title: 'Internal Server Error',
+      status: 500,
+      code: 'internal_error',
+      instance: INSTANCE,
+    });
+    return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
 }

@@ -134,4 +134,26 @@ describe('POST /api/v1/auth/otp/verify', () => {
     await POST(makeReq(BODY));
     expect(mockLimiter.recordSuccess).toHaveBeenCalled();
   });
+
+  it('returns 429 with Retry-After on a progressive_delay verdict, without calling verifyOtp', async () => {
+    mockLimiter.check.mockReturnValue({ kind: 'progressive_delay', delayMs: 30_000 });
+
+    const res = await POST(makeReq(BODY));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('30');
+    expect(verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('answers an unexpected non-AuthError failure with a problem+json 500 that hides the error message', async () => {
+    vi.mocked(verifyOtp).mockRejectedValue(new Error('column "foo" does not exist'));
+
+    const res = await POST(makeReq(BODY));
+    const text = await res.text();
+
+    expect(res.status).toBe(500);
+    expect(res.headers.get('content-type')).toBe('application/problem+json');
+    expect(JSON.parse(text).code).toEqual(expect.any(String));
+    expect(text).not.toContain('column "foo" does not exist');
+  });
 });
