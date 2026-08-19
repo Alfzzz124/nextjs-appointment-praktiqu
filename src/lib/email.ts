@@ -31,15 +31,22 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   if (!RESEND_API_KEY) {
     // Dev fallback — never throw; ensure no-enumeration guarantee.
+    // Redacted by default: the OTP email puts the sign-in code in `subject`
+    // (readable from a phone notification), so logging `subject`/`text` here
+    // would write the code to the log in plain text, breaking the guarantee
+    // that the code is never stored or logged — only its SHA-256 hash is.
+    // Opt into the full payload locally via EMAIL_DEV_LOG_BODY=true, read at
+    // call time (not module load) so it isn't baked in at build time.
+    const logBody = process.env.EMAIL_DEV_LOG_BODY === 'true';
     // eslint-disable-next-line no-console
     console.log(
       JSON.stringify({
         level: 'INFO',
         event: 'email.dev_fallback',
         to: input.to,
-        subject: input.subject,
         template: input.template ?? null,
         timestamp: new Date().toISOString(),
+        ...(logBody ? { subject: input.subject, text: input.text ?? null } : {}),
       }),
     );
     return { ok: true };
@@ -98,5 +105,21 @@ export function buildPasswordResetEmail(input: {
 <p><a href="${link}">Reset your password</a></p>
 <p>If you didn't request this, you can safely ignore this email.</p>`,
     text: `Reset your password: ${link} (expires in ${input.ttlMinutes} minutes)`,
+  };
+}
+
+/** Build a sign-in code email. No link: a code mail that also contains a link teaches
+ *  people to click links in mail that asks for credentials. */
+export function buildOtpEmail(input: {
+  code: string;
+  ttlMinutes: number;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: `${input.code} is your PraktiQU sign-in code`,
+    html: `<p>Your PraktiQU sign-in code is:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:4px">${input.code}</p>
+<p>It expires in ${input.ttlMinutes} minutes.</p>
+<p>If you didn't try to sign in, you can ignore this email.</p>`,
+    text: `Your PraktiQU sign-in code is ${input.code}. It expires in ${input.ttlMinutes} minutes. If you didn't try to sign in, you can ignore this email.`,
   };
 }
