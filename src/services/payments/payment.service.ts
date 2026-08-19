@@ -196,12 +196,12 @@ import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 import { cancelAppointment, setAppointmentStatus } from '@/repositories/wp/appointments.write';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
+import { getPublicAppUrl } from '@/lib/public-url';
 
 export class AppointmentNotFoundError extends Error {}
 export class AppointmentNotPendingError extends Error {}
 export class PaymentAlreadyInitiatedError extends Error {}
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 const AUTO_CANCEL_MS = 60 * 60 * 1000; // 1 hour — see Global Constraints
 const VERIFY_FALLBACK_MS = 2 * 60 * 1000; // 2 minutes — see Global Constraints
 
@@ -254,8 +254,8 @@ export async function initiatePublicPayment(appointmentId: number): Promise<{ ch
     customerEmail: appt.clientEmail,
     items,
     taxes,
-    returnUrl: `${APP_URL}/book/payment/success?appt=${token}`,
-    cancelUrl: `${APP_URL}/book/payment/cancel?appt=${token}`,
+    returnUrl: `${getPublicAppUrl()}/book/payment/success?appt=${token}`,
+    cancelUrl: `${getPublicAppUrl()}/book/payment/cancel?appt=${token}`,
   });
 
   await createPaymentOrder({
@@ -461,8 +461,8 @@ export async function ensureSessionPayment(
     customerEmail: patientUser?.userEmail ?? '',
     items,
     taxes,
-    returnUrl: `${APP_URL}/staff/bills/${billId}/payment-success`,
-    cancelUrl: `${APP_URL}/staff/bills/${billId}/payment-cancel`,
+    returnUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-success`,
+    cancelUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-cancel`,
   });
 
   await createPaymentOrder({
