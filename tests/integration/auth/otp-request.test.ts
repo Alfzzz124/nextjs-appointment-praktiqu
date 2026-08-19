@@ -108,7 +108,42 @@ describe('requestOtp', () => {
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'lama@example.com' }));
   });
 
-  it('stays silent inside the 60 second cooldown', async () => {
+  it('sends nothing when WordPress reports the account inactive, and answers exactly like the active case', async () => {
+    // A row already exists for this address (status 1, stale), but WordPress now says the
+    // account is inactive. requestOtp must refresh from WordPress and refuse to mail a code
+    // — and the caller must not be able to tell this apart from a normal, active send.
+    vi.mocked(wpLookupByEmail).mockResolvedValue({
+      wpUserId: BigInt(924),
+      email: 'budi@example.com',
+      username: 'budi',
+      displayName: 'Budi Santoso',
+      firstName: 'Budi',
+      lastName: 'Santoso',
+      roles: ['kiviCare_patient'],
+      status: 'inactive' as const,
+    });
+    mockPrisma.user.upsert.mockResolvedValue({ id: 'user-1', email: 'budi@example.com', status: 0 });
+
+    const result = await requestOtp(INPUT);
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(mockPrisma.otpCode.create).not.toHaveBeenCalled();
+    // Same shape as the registered-and-active path — no distinguishable signal.
+    expect(result.retryAfterSeconds).toBe(60);
+  });
+
+  it('still sends the code when WordPress cannot be reached, rather than locking the user out', async () => {
+    // wpLookupByEmail returns null both for "no such user" and "could not reach WordPress" —
+    // requestOtp can't tell those apart, so on null it must proceed with the existing row.
+    vi.mocked(wpLookupByEmail).mockResolvedValue(null);
+
+    await requestOtp(INPUT);
+
+    expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'budi@example.com' }));
+  });
+
+  it('stays silent inside the 60 second cooldown, and answers the same flat 60 as every other branch', async () => {
     mockPrisma.otpCode.findFirst.mockResolvedValue({
       id: 'otp-1',
       createdAt: new Date(Date.now() - 20_000),
@@ -118,8 +153,10 @@ describe('requestOtp', () => {
 
     expect(sendEmail).not.toHaveBeenCalled();
     expect(mockPrisma.otpCode.create).not.toHaveBeenCalled();
-    expect(result.retryAfterSeconds).toBeGreaterThan(0);
-    expect(result.retryAfterSeconds).toBeLessThanOrEqual(40);
+    // Not "whatever time is left" — a registered address called twice inside the cooldown
+    // must not answer with the shrinking remainder (59, 58, ...), or two calls a second
+    // apart would reveal that the address exists.
+    expect(result.retryAfterSeconds).toBe(60);
   });
 
   it('sends again once the cooldown has passed', async () => {

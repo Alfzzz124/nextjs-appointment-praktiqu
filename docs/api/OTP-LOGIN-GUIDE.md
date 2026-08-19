@@ -224,7 +224,7 @@ Server tetap memvalidasi ulang (`validation_error` kalau lolos dari klien tapi s
 
 **Pengiriman email di staging sudah terverifikasi jalan.** `RESEND_API_KEY` sudah terpasang di environment staging, dan pengiriman kode sudah dites langsung sampai ke inbox — bukan cuma tercatat di log. Tidak perlu fallback baca log server untuk mengetes alur ini di staging.
 
-**Jangan tampilkan cooldown sebagai error.** Kalau user menekan "kirim ulang" sebelum `retryAfter` habis, endpoint `request` tetap membalas `200` yang sama seperti biasa (dengan `retryAfter` baru yang sudah dikurangi waktu yang berlalu) — bukan `429`. UI-lah yang bertanggung jawab menonaktifkan tombolnya sendiri selama hitungan mundur; jangan menunggu server menolak.
+**Jangan tampilkan cooldown sebagai error.** Kalau user menekan "kirim ulang" sebelum `retryAfter` habis, endpoint `request` tetap membalas `200` yang sama seperti biasa, dengan `retryAfter: 60` yang sama seperti di luar cooldown — bukan `429`, dan bukan sisa waktu yang berkurang. Server tidak pernah mengembalikan sisa cooldown yang sebenarnya: kalau dia melakukannya, dua panggilan berjarak satu detik akan membocorkan apakah alamat itu terdaftar (terdaftar → angkanya turun 59, 58, ...; tidak terdaftar → selalu 60). UI-lah yang bertanggung jawab menonaktifkan tombolnya sendiri selama hitungan mundur lokalnya; jangan menunggu server menolak, dan jangan mengharapkan `retryAfter` mengecil pada percobaan kedua.
 
 ---
 

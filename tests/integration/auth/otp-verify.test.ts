@@ -124,20 +124,38 @@ describe('verifyOtp', () => {
     );
   });
 
-  it('reports a burned code as burned, not as a wrong guess', async () => {
+  it('reports a wrong guess against a burned code as invalid_code, not too_many_attempts', async () => {
+    // Enumeration vector: an attacker can burn a code for any address themselves (five wrong
+    // guesses), so answering too_many_attempts here — before the digits are even compared —
+    // would prove the address is registered. Only a caller holding the *right* digits may
+    // learn that the record is burned (see the next test).
     mockPrisma.otpCode.findFirst.mockResolvedValue(liveCode({ attempts: 5 }));
 
-    // A wrong guess against a spent code must say too_many_attempts, which proves the
-    // attempt check runs before the comparison.
     await expect(verifyOtp({ ...INPUT, code: '000000' })).rejects.toMatchObject({
-      code: 'too_many_attempts',
+      code: 'invalid_code',
     });
+    // And the counter on an already-burned record must not keep moving.
+    expect(mockPrisma.otpCode.update).not.toHaveBeenCalled();
+  });
+
+  it('reports a wrong guess against an expired code as invalid_code, not code_expired', async () => {
+    // Same enumeration vector as above, via the other route to a dead record: an attacker
+    // requests a code for any address, waits ten minutes, then submits a wrong guess.
+    mockPrisma.otpCode.findFirst.mockResolvedValue(
+      liveCode({ expiresAt: new Date(Date.now() - 1_000) }),
+    );
+
+    await expect(verifyOtp({ ...INPUT, code: '000000' })).rejects.toMatchObject({
+      code: 'invalid_code',
+    });
+    expect(mockPrisma.otpCode.update).not.toHaveBeenCalled();
   });
 
   it('refuses the right code once the attempt limit is spent', async () => {
     mockPrisma.otpCode.findFirst.mockResolvedValue(liveCode({ attempts: 5 }));
 
-    // Being correct must not rescue a burned code.
+    // Being correct must not rescue a burned code — and only now, having proven they hold
+    // the real digits, does the caller get to learn the record was burned.
     await expect(verifyOtp(INPUT)).rejects.toMatchObject({ code: 'too_many_attempts' });
   });
 
@@ -172,6 +190,30 @@ describe('verifyOtp', () => {
     });
     // The code is spent either way — an inactive account must not be a free retry loop.
     expect(mockPrisma.otpCode.update).toHaveBeenCalled();
+  });
+
+  it('leaves an audit trail when a login attempt is rejected', async () => {
+    // login() in service.ts records audit.loginFailure on every rejection; OTP is the one
+    // login path WordPress never validates, so it is the one that most needs the same trail.
+    await expect(verifyOtp({ ...INPUT, code: '000000' })).rejects.toMatchObject({
+      code: 'invalid_code',
+    });
+
+    expect(audit.loginFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptedEmail: 'budi@example.com', reason: 'invalid_credentials' }),
+      expect.anything(),
+    );
+  });
+
+  it('leaves an audit trail when an otherwise-correct code is rejected for account_inactive', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ ...USER, status: 0 });
+
+    await expect(verifyOtp(INPUT)).rejects.toMatchObject({ code: 'account_inactive' });
+
+    expect(audit.loginFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptedEmail: 'budi@example.com', reason: 'inactive' }),
+      expect.anything(),
+    );
   });
 
   it('marks the address verified, since receiving the code proves it', async () => {
