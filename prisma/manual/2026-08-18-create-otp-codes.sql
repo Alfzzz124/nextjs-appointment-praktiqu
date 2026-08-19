@@ -19,4 +19,7 @@ CREATE TABLE IF NOT EXISTS `otp_codes` (
   KEY `otp_codes_expiresAt_idx` (`expiresAt`),
   CONSTRAINT `otp_codes_userId_fkey` FOREIGN KEY (`userId`)
     REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- utf8mb4_unicode_ci, not general_ci: `users.id` is unicode_ci, and MySQL rejects a
+-- foreign key between columns whose collations differ (errno 150). The sibling
+-- `password_reset_tokens`, which carries the same FK, is unicode_ci too.
