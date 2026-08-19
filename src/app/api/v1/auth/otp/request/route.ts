@@ -58,8 +58,12 @@ export async function POST(req: NextRequest) {
 
   const key = tupleKey(ip, email);
   const verdict = limiter.check(key);
-  if (verdict.kind === 'lockout') {
-    const retryAfter = Math.ceil(verdict.retryAfterMs / 1000);
+  // Refuse anything that is not an explicit allow rather than enumerating verdict kinds:
+  // acting only on 'lockout' would silently stop rate-limiting the moment progressiveAfter
+  // and lockoutAfter diverge (today they're both 5, so 'progressive_delay' never surfaces).
+  if (verdict.kind !== 'allow') {
+    const retryAfterMs = verdict.kind === 'lockout' ? verdict.retryAfterMs : verdict.delayMs;
+    const retryAfter = Math.ceil(retryAfterMs / 1000);
     const p = tooManyRequests('rate_limited', retryAfter, 'Too many code requests', INSTANCE);
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }

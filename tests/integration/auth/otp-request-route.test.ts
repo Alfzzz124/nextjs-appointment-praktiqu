@@ -47,12 +47,30 @@ describe('POST /api/v1/auth/otp/request', () => {
   });
 
   it('answers an unknown address exactly like a known one', async () => {
-    vi.mocked(requestOtp).mockResolvedValue({ retryAfterSeconds: 60 });
+    // Drive the two calls through genuinely different service outcomes: the
+    // "known" address resolves as if a code was actually mailed, the
+    // "unknown" one resolves with the cooldown-style value a not-found
+    // address might get internally. The route must still produce
+    // indistinguishable responses either way.
+    vi.mocked(requestOtp).mockImplementation(async ({ email }: { email: string }) => {
+      return email === 'budi@example.com'
+        ? { retryAfterSeconds: 60 }
+        : { retryAfterSeconds: 60, cooldown: true };
+    });
 
-    const res = await POST(makeReq({ email: 'hantu@example.com' }));
+    const knownRes = await POST(makeReq({ email: 'budi@example.com' }));
+    const knownJson = await knownRes.json();
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
+    const unknownRes = await POST(makeReq({ email: 'hantu@example.com' }));
+    const unknownJson = await unknownRes.json();
+
+    expect(knownRes.status).toBe(unknownRes.status);
+    expect(knownJson).toEqual(unknownJson);
+    expect(knownRes.headers.get('content-type')).toBe(unknownRes.headers.get('content-type'));
+    expect(knownRes.headers.get('Retry-After')).toBe(unknownRes.headers.get('Retry-After'));
+
+    expect(knownRes.status).toBe(200);
+    expect(knownJson).toEqual({
       message: expect.any(String),
       retryAfter: 60,
     });
@@ -88,6 +106,17 @@ describe('POST /api/v1/auth/otp/request', () => {
     expect(res.status).toBe(429);
     expect((await res.json()).code).toBe('rate_limited');
     expect(res.headers.get('Retry-After')).toBe('900');
+    expect(requestOtp).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 with Retry-After on a progressive-delay verdict, without calling requestOtp', async () => {
+    mockLimiter.check.mockReturnValue({ kind: 'progressive_delay', delayMs: 30_000 });
+
+    const res = await POST(makeReq({ email: 'budi@example.com' }));
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).code).toBe('rate_limited');
+    expect(res.headers.get('Retry-After')).toBe('30');
     expect(requestOtp).not.toHaveBeenCalled();
   });
 
