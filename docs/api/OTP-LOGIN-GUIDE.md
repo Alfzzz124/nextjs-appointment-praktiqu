@@ -152,10 +152,17 @@ Semua error memakai format `application/problem+json`.
 | `400` | `invalid_body` | Body bukan JSON valid | *(tidak seharusnya user lihat — kesalahan klien)* |
 | `400` | `validation_error` | Email tidak valid, atau `code` bukan 6 digit angka | "Masukkan email yang valid dan kode 6 angka" |
 | `400` | `invalid_code` | Kode salah, tidak ada kode aktif untuk email ini (belum pernah minta, sudah dipakai, atau sudah digantikan oleh kode yang lebih baru), atau emailnya tidak dikenal sistem | "Kode salah. Periksa lagi email kamu" |
-| `400` | `code_expired` | Kode ada tapi umurnya sudah lewat 10 menit | "Kode sudah kedaluwarsa. Minta kode baru" |
-| `400` | `too_many_attempts` | Kode itu sudah ditebak salah 5 kali | "Terlalu banyak percobaan. Minta kode baru" |
+| `400` | `code_expired` | **Digit yang dikirim benar**, tapi umur kodenya sudah lewat 10 menit | "Kode sudah kedaluwarsa. Minta kode baru" |
+| `400` | `too_many_attempts` | **Digit yang dikirim benar**, tapi kode itu sudah ditebak salah 5 kali | "Terlalu banyak percobaan. Minta kode baru" |
 | `403` | `account_inactive` | Kode benar, tapi akunnya dinonaktifkan | "Akun kamu tidak aktif. Hubungi klinik" |
 | `429` | `rate_limited` | Terlalu banyak percobaan verify dari (IP, email) ini; ada header `Retry-After` (detik) | "Terlalu sering. Coba lagi dalam beberapa menit" |
+
+> **Kenapa `code_expired` dan `too_many_attempts` hanya muncul kalau digitnya benar.** Kalau
+> server memberitahu "kode ini sudah kedaluwarsa" kepada siapa pun yang asal menebak, itu sama
+> saja mengaku bahwa email tersebut **terdaftar** — penyerang tinggal minta kode untuk alamat
+> mana pun, menunggu 10 menit, lalu menebak asal. Karena itu tebakan yang salah selalu dijawab
+> `invalid_code`, apa pun keadaan kodenya. Bagi user yang sah tidak ada bedanya: dia mengetik
+> digit yang benar, jadi tetap mendapat pesan yang tepat.
 | `500` | `internal_error` | Error tak terduga di server | *(pesan generik, minta user coba lagi)* |
 
 Contoh bentuk error:
@@ -184,7 +191,7 @@ Ini bagian yang paling gampang salah desain, jadi dipisah sendiri.
 | `code` | Kode itu masih bisa dipakai? | Yang harus ditawarkan UI |
 |---|---|---|
 | `validation_error` | Belum sempat dicek — bentuknya saja salah | Biarkan user membetulkan input, jangan panggil server lagi |
-| `invalid_code` | Masih hidup (kalau memang ada) | Biarkan user mengetik ulang kode di form yang sama |
+| `invalid_code` | Belum tentu — bisa masih hidup, bisa juga sudah mati | Biarkan user mengetik ulang kode di form yang sama |
 | `code_expired` | **Tidak** — sudah mati | Tombol/link **"Minta kode baru"** yang memanggil `request` lagi, bukan tombol "coba lagi" biasa |
 | `too_many_attempts` | **Tidak** — sudah terbakar meski dites lagi | Sama seperti di atas: **"Minta kode baru"** |
 | `account_inactive` | Sudah terpakai (lihat §5) | **Bukan** "minta kode baru" — akunnya yang bermasalah, bukan kodenya. Arahkan ke kontak klinik, jangan tampilkan tombol resend di sini |
