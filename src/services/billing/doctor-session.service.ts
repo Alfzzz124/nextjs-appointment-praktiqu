@@ -6,15 +6,29 @@ import type { DoctorSessionScope } from '@/services/billing/staff-scope';
 
 export interface DoctorSessionListParams { page: number; perPage: number | 'all'; clinicId?: number; doctorId?: number; day?: string; }
 
-function mapRow(r: any) {
-  const t = (v: any) => (v == null ? null : String(v).slice(11, 19) || String(v)); // TIME may come back as 'HH:mm:ss' or Date
+/**
+ * Normalise a `TIME` column to 'HH:mm:ss'.
+ *
+ * Prisma hands a MySQL TIME back as a Date on 1970-01-01 whose *UTC* clock carries the
+ * stored wall-clock, so it must be read in UTC — the same way every wp repository does
+ * it (see repositories/wp/clinic-sessions.repo.ts, which reads this very table).
+ * Slicing `String(date)` instead yielded '1970 18:' (Date.toString(), not ISO) and threw
+ * the minutes away, so the UI could not render or recover the practice hours.
+ */
+function toTimeString(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(11, 19);
+  return String(v);
+}
+
+export function mapDoctorSessionRow(r: any) {
   return {
     id: Number(r.id),
     clinic_id: Number(r.clinic_id),
     doctor_id: r.doctor_id != null ? Number(r.doctor_id) : null,
     day: r.day ?? null,
-    start_time: typeof r.start_time === 'string' ? r.start_time : t(r.start_time),
-    end_time: typeof r.end_time === 'string' ? r.end_time : t(r.end_time),
+    start_time: toTimeString(r.start_time),
+    end_time: toTimeString(r.end_time),
     time_slot: r.time_slot != null ? Number(r.time_slot) : null,
     clinic_name: r.clinic_name ?? null,
     doctor_name: r.doctor_name ?? null,
@@ -46,7 +60,7 @@ export async function listDoctorSessions(p: DoctorSessionListParams, scope: Doct
     `SELECT cs.*, c.name AS clinic_name, d.display_name AS doctor_name ${BASE_JOIN} WHERE ${whereSql} ORDER BY cs.id DESC${limitSql}`,
     ...args, ...pageArgs,
   );
-  return { sessions: rows.map(mapRow), pagination: { page: p.page, perPage: p.perPage, total } };
+  return { sessions: rows.map(mapDoctorSessionRow), pagination: { page: p.page, perPage: p.perPage, total } };
 }
 
 export async function getDoctorSession(id: number, scope: DoctorSessionScope | null) {
@@ -55,7 +69,7 @@ export async function getDoctorSession(id: number, scope: DoctorSessionScope | n
     `SELECT cs.*, c.name AS clinic_name, d.display_name AS doctor_name ${BASE_JOIN} WHERE ${whereSql} AND cs.id = ?`, ...args, id,
   );
   if (!rows[0]) throw new KcError('Doctor session not found', 404);
-  return mapRow(rows[0]);
+  return mapDoctorSessionRow(rows[0]);
 }
 
 export interface DoctorSessionCreateInput { clinicId?: number; doctorId: number; day: string; startTime: string; endTime: string; timeSlot: number; }
