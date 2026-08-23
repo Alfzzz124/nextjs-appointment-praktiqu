@@ -4,6 +4,14 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: true,
+  // Arsip landing page disajikan sebagai berkas statis dari public/landing-page/.
+  // Tanpa redirect ini, /landing-page — bentuk URL yang paling wajar diketik —
+  // menjawab 404, dan /landing-page/ dinormalkan Next ke sana sehingga ikut 404.
+  async redirects() {
+    return [
+      { source: '/landing-page', destination: '/landing-page.html', permanent: false },
+    ];
+  },
   images: {
     remotePatterns: [
       {
