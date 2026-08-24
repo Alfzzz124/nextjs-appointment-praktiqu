@@ -122,7 +122,8 @@ async function drain(s: ReadableStream<Uint8Array>): Promise<string> {
 }
 
 beforeEach(() => {
-  process.env.WP_SERVICE_TOKEN = 'test-token';
+  // The helper reads WORDPRESS_SERVICE_TOKEN — the name used across this codebase.
+  process.env.WORDPRESS_SERVICE_TOKEN = 'test-token';
 });
 
 afterEach(() => {
