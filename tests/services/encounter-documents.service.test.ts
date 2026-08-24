@@ -18,12 +18,13 @@ vi.mock('@/repositories/wp/clinical-records.repo', () => ({
 }));
 vi.mock('@/services/billing/patient-medical-report.service', () => ({
   listMedReports: vi.fn(),
+  listMedReportsByIds: vi.fn(),
 }));
 
 import { listEncounterDocuments } from '@/services/encounter-documents/service';
 import { listBookingAttachments, listLinkedReportIds } from '@/repositories/wp/encounter-documents.repo';
 import { findEncounterById } from '@/repositories/wp/clinical-records.repo';
-import { listMedReports } from '@/services/billing/patient-medical-report.service';
+import { listMedReports, listMedReportsByIds } from '@/services/billing/patient-medical-report.service';
 
 const ENCOUNTER = { id: 55, clinicId: 1, doctorId: 7, patientId: 9, appointmentId: 77, description: null, status: 1, addedBy: 7, encounterDate: null, createdAt: null };
 
@@ -40,6 +41,7 @@ beforeEach(() => {
   vi.mocked(listLinkedReportIds).mockResolvedValue([]);
   vi.mocked(listBookingAttachments).mockResolvedValue([]);
   vi.mocked(listMedReports).mockResolvedValue({ reports: [], pagination: { page: 1, perPage: 20, total: 0 } } as any);
+  vi.mocked(listMedReportsByIds).mockResolvedValue([]);
 });
 
 describe('listEncounterDocuments', () => {
@@ -70,11 +72,14 @@ describe('listEncounterDocuments', () => {
     expect(out.sessionDocuments[0].canManage).toBe(false);
   });
 
-  it('puts a linked report in the session section and the rest in the archive', async () => {
+  it('puts a linked report in the session section and the rest in the archive, and total agrees with the archive page', async () => {
+    // The archive query is expected to have already excluded id 11 (via `excludeIds`),
+    // so both its rows and its COUNT(*) reflect only the un-linked remainder.
     vi.mocked(listLinkedReportIds).mockResolvedValue([11]);
+    vi.mocked(listMedReportsByIds).mockResolvedValue([report(11, 'Resume sesi')]);
     vi.mocked(listMedReports).mockResolvedValue({
-      reports: [report(11, 'Resume sesi'), report(12, 'Hasil tes lama')],
-      pagination: { page: 1, perPage: 20, total: 2 },
+      reports: [report(12, 'Hasil tes lama')],
+      pagination: { page: 1, perPage: 20, total: 1 },
     } as any);
 
     const out = await listEncounterDocuments(55, PROFESSIONAL, { page: 1, perPage: 20 });
@@ -87,14 +92,37 @@ describe('listEncounterDocuments', () => {
       canManage: true,
     });
     expect(out.patientDocuments.map((d) => d.id)).toEqual([12]);
+    // total (1) equals the length of patientDocuments (1): the section and the count agree.
+    expect(out.pagination.total).toBe(out.patientDocuments.length);
+
+    expect(listMedReportsByIds).toHaveBeenCalledWith([11], expect.anything());
+    expect(listMedReports).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeIds: [11] }),
+      expect.anything(),
+    );
+  });
+
+  it('does not call listMedReportsByIds, and requests no exclusion, when nothing is linked', async () => {
+    vi.mocked(listLinkedReportIds).mockResolvedValue([]);
+    vi.mocked(listMedReports).mockResolvedValue({
+      reports: [report(12, 'Hasil tes lama')],
+      pagination: { page: 1, perPage: 20, total: 1 },
+    } as any);
+
+    const out = await listEncounterDocuments(55, PROFESSIONAL, { page: 1, perPage: 20 });
+
+    expect(listMedReportsByIds).not.toHaveBeenCalled();
+    expect(listMedReports).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeIds: [] }),
+      expect.anything(),
+    );
+    expect(out.sessionDocuments).toEqual([]);
+    expect(out.patientDocuments.map((d) => d.id)).toEqual([12]);
   });
 
   it('denies manage to a CLIENT on every document', async () => {
     vi.mocked(listLinkedReportIds).mockResolvedValue([11]);
-    vi.mocked(listMedReports).mockResolvedValue({
-      reports: [report(11, 'Resume sesi')],
-      pagination: { page: 1, perPage: 20, total: 1 },
-    } as any);
+    vi.mocked(listMedReportsByIds).mockResolvedValue([report(11, 'Resume sesi')]);
 
     const out = await listEncounterDocuments(55, CLIENT, { page: 1, perPage: 20 });
 
@@ -102,16 +130,20 @@ describe('listEncounterDocuments', () => {
   });
 
   it('drops a link that points at a document which no longer exists', async () => {
+    // listMedReportsByIds is the source of truth for which linked ids still resolve;
+    // 999 is simply absent from what it returns (deleted, or scoped out).
     vi.mocked(listLinkedReportIds).mockResolvedValue([11, 999]);
+    vi.mocked(listMedReportsByIds).mockResolvedValue([report(11, 'Resume sesi')]);
     vi.mocked(listMedReports).mockResolvedValue({
-      reports: [report(11, 'Resume sesi')],
-      pagination: { page: 1, perPage: 20, total: 1 },
+      reports: [],
+      pagination: { page: 1, perPage: 20, total: 0 },
     } as any);
 
     const out = await listEncounterDocuments(55, PROFESSIONAL, { page: 1, perPage: 20 });
 
     expect(out.sessionDocuments.map((d) => d.id)).toEqual([11]);
     expect(out.patientDocuments).toEqual([]);
+    expect(listMedReportsByIds).toHaveBeenCalledWith([11, 999], expect.anything());
   });
 
   it('returns an empty session section when the encounter has no appointment', async () => {

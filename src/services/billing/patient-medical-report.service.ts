@@ -3,7 +3,7 @@ import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { MedReportScope } from '@/services/billing/med-report-scope';
 
-export interface MedReportListParams { page: number; perPage: number | 'all'; patientId?: number; search?: string; }
+export interface MedReportListParams { page: number; perPage: number | 'all'; patientId?: number; search?: string; excludeIds?: number[]; }
 
 function mapRow(r: any) {
   return {
@@ -29,6 +29,10 @@ function buildWhere(scope: MedReportScope | null, p: Partial<MedReportListParams
   }
   if (p.patientId !== undefined) { where.push('mr.patient_id = ?'); args.push(p.patientId); }
   if (p.search) { where.push('mr.name LIKE ?'); args.push(`%${p.search}%`); }
+  if (p.excludeIds && p.excludeIds.length > 0) {
+    where.push(`mr.id NOT IN (${p.excludeIds.map(() => '?').join(',')})`);
+    args.push(...p.excludeIds);
+  }
   return { whereSql: where.join(' AND '), args };
 }
 
@@ -43,6 +47,23 @@ export async function listMedReports(p: MedReportListParams, scope: MedReportSco
     ...args, ...pageArgs,
   );
   return { reports: rows.map(mapRow), pagination: { page: p.page, perPage: p.perPage, total } };
+}
+
+/**
+ * Fetch specific reports by id, scoped the same way `listMedReports` is — a caller
+ * cannot read another clinic's (or patient's) rows just by naming their ids. One
+ * query via `IN (...)`. An empty `ids` returns `[]` without touching the database
+ * (an empty `IN ()` is invalid SQL).
+ */
+export async function listMedReportsByIds(ids: number[], scope: MedReportScope | null) {
+  if (ids.length === 0) return [];
+  const { whereSql, args } = buildWhere(scope, {});
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT mr.*, pt.display_name AS patient_name ${BASE_JOIN} WHERE ${whereSql} AND mr.id IN (${placeholders}) ORDER BY mr.id DESC`,
+    ...args, ...ids,
+  );
+  return rows.map(mapRow);
 }
 
 export async function getMedReport(id: number, scope: MedReportScope | null) {

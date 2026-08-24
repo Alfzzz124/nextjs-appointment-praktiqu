@@ -17,7 +17,7 @@
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
 import { medReportScopeFor } from '@/services/billing/med-report-scope';
-import { listMedReports } from '@/services/billing/patient-medical-report.service';
+import { listMedReports, listMedReportsByIds } from '@/services/billing/patient-medical-report.service';
 import { findEncounterById } from '@/repositories/wp/clinical-records.repo';
 import {
   listBookingAttachments,
@@ -88,6 +88,21 @@ function toDateString(value: unknown): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+/** Map an archive row (from `listMedReports`/`listMedReportsByIds`) to the shape the front-end sees. */
+function toReportDocument(r: { id: number; name: string | null; date: unknown }, manage: boolean): EncounterDocument {
+  return {
+    id: r.id,
+    source: 'report',
+    name: r.name ?? `document-${r.id}`,
+    filename: r.name ?? `document-${r.id}`,
+    mimeType: null,
+    date: toDateString(r.date),
+    contentPath: `/api/v1/patient-medical-reports/${r.id}/content`,
+    canManage: manage,
+    missing: false,
+  };
+}
+
 export async function listEncounterDocuments(
   encounterId: number,
   kc: KcActor,
@@ -116,29 +131,26 @@ export async function listEncounterDocuments(
     missing: b.missing,
   }));
 
-  // 2. The patient's archive, split by whether each row is linked to this encounter.
-  const linkedIds = new Set(await listLinkedReportIds(encounterId));
+  // 2. Documents linked to this encounter join the session section. A link whose
+  //    target no longer exists (or fell out of scope) is simply absent from the
+  //    result — dropped, not surfaced as an error.
+  const linkedIds = await listLinkedReportIds(encounterId);
+  const scope = medReportScopeFor(kc);
+
+  if (linkedIds.length > 0) {
+    const linkedReports = await listMedReportsByIds(linkedIds, scope);
+    for (const r of linkedReports) sessionDocuments.push(toReportDocument(r, manage));
+  }
+
+  // 3. The rest of the patient's archive, paginated. `excludeIds` keeps the linked
+  //    rows out of both the page and the COUNT(*), so `pagination.total` counts the
+  //    same set `patientDocuments` is drawn from.
   const archive = await listMedReports(
-    { page: opts.page, perPage: opts.perPage, patientId: encounter.patientId },
-    medReportScopeFor(kc),
+    { page: opts.page, perPage: opts.perPage, patientId: encounter.patientId, excludeIds: linkedIds },
+    scope,
   );
 
-  const patientDocuments: EncounterDocument[] = [];
-  for (const r of archive.reports) {
-    const doc: EncounterDocument = {
-      id: r.id,
-      source: 'report',
-      name: r.name ?? `document-${r.id}`,
-      filename: r.name ?? `document-${r.id}`,
-      mimeType: null,
-      date: toDateString(r.date),
-      contentPath: `/api/v1/patient-medical-reports/${r.id}/content`,
-      canManage: manage,
-      missing: false,
-    };
-    if (linkedIds.has(r.id)) sessionDocuments.push(doc);
-    else patientDocuments.push(doc);
-  }
+  const patientDocuments: EncounterDocument[] = archive.reports.map((r) => toReportDocument(r, manage));
 
   return {
     sessionDocuments,
