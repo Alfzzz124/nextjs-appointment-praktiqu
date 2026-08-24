@@ -199,8 +199,6 @@ export async function listBookingAttachments(appointmentId: number): Promise<Boo
   if (!appointment) return [];
 
   const ids = parseReportIds(appointment.appointmentReport);
-  if (ids.length === 0) return [];
-
   const found = await loadAttachments(ids);
 
   return ids.map((mediaId) => {

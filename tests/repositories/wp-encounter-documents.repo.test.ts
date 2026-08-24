@@ -269,10 +269,33 @@ describe('booking attachments', () => {
     expect(await listBookingAttachments(BASE + 999)).toEqual([]);
   });
 
-  it('survives a column holding something that is not a JSON array', async () => {
+  it('survives a column holding malformed JSON', async () => {
     const id = BASE + 503;
     await seedAppointment(id, 'not json at all');
     expect(await listBookingAttachments(id)).toEqual([]);
+  });
+
+  it('treats well-formed JSON that is not an array as no attachments', async () => {
+    // Each of these parses cleanly — the try/catch never fires — so this is the
+    // only thing that can exercise the `!Array.isArray(parsed)` guard.
+    const NUMBER = BASE + 510;
+    const OBJECT = BASE + 511;
+    const STRING = BASE + 512;
+    await seedAppointment(NUMBER, '42');
+    await seedAppointment(OBJECT, '{}');
+    await seedAppointment(STRING, '"x"');
+
+    expect(await listBookingAttachments(NUMBER)).toEqual([]);
+    expect(await listBookingAttachments(OBJECT)).toEqual([]);
+    expect(await listBookingAttachments(STRING)).toEqual([]);
+  });
+
+  it('de-duplicates an id repeated within one appointment_report array', async () => {
+    const id = BASE + 513;
+    await seedAppointment(id, JSON.stringify([MEDIA_A, MEDIA_A, MEDIA_B]));
+
+    const rows = await listBookingAttachments(id);
+    expect(rows.map((r) => r.mediaId)).toEqual([MEDIA_A, MEDIA_B]);
   });
 
   it('confirms membership only for ids actually in that appointment', async () => {
