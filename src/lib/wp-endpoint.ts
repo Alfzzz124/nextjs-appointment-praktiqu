@@ -239,13 +239,40 @@ export async function fetchMedia(mediaId: number): Promise<FetchedMedia> {
   }
 
   const disposition = res.headers.get('content-disposition') ?? '';
-  const match = /filename="([^"]+)"/.exec(disposition);
   const lengthHeader = res.headers.get('content-length');
 
   return {
     body: res.body as ReadableStream<Uint8Array>,
     contentType: res.headers.get('content-type') ?? 'application/octet-stream',
-    filename: match ? match[1] : `document-${mediaId}`,
+    filename: parseDispositionFilename(disposition) ?? `document-${mediaId}`,
     contentLength: lengthHeader === null ? null : Number(lengthHeader),
   };
+}
+
+/**
+ * Parse a filename out of a `Content-Disposition` header per RFC 6266/5987.
+ *
+ * The plugin (see `class-praktiqu-endpoint-media.php::stream()`) emits both
+ * forms: `filename*=UTF-8''<percent-encoded>` carries the real, possibly
+ * non-ASCII name, while `filename="..."` is an ASCII-safe fallback. Prefer
+ * the starred form and decode it; only fall back to the quoted form when it's
+ * missing. The quoted-form regex must not match the `filename*=` parameter,
+ * so it requires `filename=` not preceded by a `*`.
+ */
+function parseDispositionFilename(disposition: string): string | null {
+  const starMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (starMatch) {
+    try {
+      return decodeURIComponent(starMatch[1].trim());
+    } catch {
+      // Malformed percent-encoding — fall through to the quoted form.
+    }
+  }
+
+  const quotedMatch = /(?<!\*)filename="([^"]+)"/i.exec(disposition);
+  if (quotedMatch) {
+    return quotedMatch[1];
+  }
+
+  return null;
 }

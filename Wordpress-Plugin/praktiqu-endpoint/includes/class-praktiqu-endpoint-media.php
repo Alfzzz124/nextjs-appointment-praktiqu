@@ -157,7 +157,19 @@ final class Media
         }
 
         header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . rawurlencode($filename) . '"');
+        // RFC 6266 / RFC 5987: send both forms. The quoted `filename` is a
+        // fallback for clients that don't parse `filename*`, so it must be
+        // stripped to safe, unbreakable ASCII (any byte outside printable
+        // ASCII becomes `_`, and `"`/`\` are neutralised too so the value
+        // cannot escape the quotes or split the header). The `filename*`
+        // form carries the real, possibly non-ASCII name, percent-encoded
+        // per RFC 5987 via rawurlencode().
+        $safe_filename = preg_replace('/[^\x20-\x7E]/', '_', $filename);
+        $safe_filename = str_replace(['"', '\\'], '_', $safe_filename);
+        header(
+            'Content-Disposition: inline; filename="' . $safe_filename . '"; '
+            . "filename*=UTF-8''" . rawurlencode($filename)
+        );
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: private, no-store');
         if ($size !== false) {

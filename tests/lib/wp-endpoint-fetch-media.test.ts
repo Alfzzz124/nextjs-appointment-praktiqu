@@ -103,4 +103,76 @@ describe('fetchMedia', () => {
     expect(err.message).toBe('Media fetch returned no body');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('prefers filename* over the quoted filename when the header carries both', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(streamOf('x'), {
+        status: 200,
+        headers: {
+          'content-disposition':
+            "inline; filename=\"hasil_tes.pdf\"; filename*=UTF-8''hasil%20tes.pdf",
+        },
+      })) as any;
+
+    const result = await fetchMedia(1);
+
+    expect(result.filename).toBe('hasil tes.pdf');
+  });
+
+  it('decodes a space in a filename carried only via filename*', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(streamOf('x'), {
+        status: 200,
+        headers: {
+          'content-disposition': "inline; filename*=UTF-8''hasil%20tes.pdf",
+        },
+      })) as any;
+
+    const result = await fetchMedia(1);
+
+    expect(result.filename).toBe('hasil tes.pdf');
+  });
+
+  it('decodes a non-ASCII (Indonesian) filename from filename*', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(streamOf('x'), {
+        status: 200,
+        headers: {
+          'content-disposition':
+            "inline; filename=\"sesi k__-3.pdf\"; filename*=UTF-8''sesi%20k%C3%A9-3.pdf",
+        },
+      })) as any;
+
+    const result = await fetchMedia(1);
+
+    expect(result.filename).toBe('sesi ké-3.pdf');
+  });
+
+  it('falls back to the quoted filename when only that form is present', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(streamOf('x'), {
+        status: 200,
+        headers: {
+          'content-disposition': 'inline; filename="resume.pdf"',
+        },
+      })) as any;
+
+    const result = await fetchMedia(1);
+
+    expect(result.filename).toBe('resume.pdf');
+  });
+
+  it('falls back to document-<id> when neither filename form is present', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(streamOf('x'), {
+        status: 200,
+        headers: {
+          'content-disposition': 'inline',
+        },
+      })) as any;
+
+    const result = await fetchMedia(55);
+
+    expect(result.filename).toBe('document-55');
+  });
 });
