@@ -26,7 +26,12 @@ import { prisma } from '@/lib/db';
 
 export const ENCOUNTER_DOC_MODULE_TYPE = 'praktiqu_report_encounter';
 
-/** Parse a `fields_data` value into the report id it encodes, or null if it isn't one. */
+/**
+ * Parse a `fields_data` value into the report id it encodes, or null if it isn't one.
+ *
+ * Singular — one column holding one id. Not to be confused with `parseReportIds`
+ * below, which parses the JSON *array* stored in `appointment_report`.
+ */
 function parseReportId(fieldsData: string | null): number | null {
   let parsed: unknown;
   try {
@@ -35,7 +40,7 @@ function parseReportId(fieldsData: string | null): number | null {
     return null;
   }
   const id = Number(parsed);
-  return Number.isFinite(id) ? id : null;
+  return Number.isFinite(id) && id > 0 ? id : null;
 }
 
 /**
@@ -111,4 +116,121 @@ export async function listLinkedReportIds(encounterId: number): Promise<number[]
     out.push(id);
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Booking attachments — wp_kc_appointments.appointment_report         */
+/* ------------------------------------------------------------------ */
+
+export interface BookingAttachment {
+  mediaId: number;
+  filename: string;
+  mimeType: string | null;
+  /** True when the attachment row is gone from wp_posts — listed, not hidden. */
+  missing: boolean;
+}
+
+/**
+ * Parse the JSON array KiviCare stores in `appointment_report`.
+ *
+ * The column is a longtext written by a PHP `json_encode` of whatever the booking
+ * form sent, so it may hold `null`, `''`, a non-array, or ids as strings. Anything
+ * that is not a finite number is dropped; a malformed column yields an empty list
+ * rather than an exception, because one bad row must not break a clinician's screen.
+ */
+function parseReportIds(raw: string | null): number[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const entry of parsed) {
+    const id = Number(entry);
+    if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+type AttachmentRow = { ID: bigint; post_title: string | null; post_mime_type: string | null; attached_file: string | null };
+
+/** Filename, preferring the real file on disk over the editable post title. */
+function attachmentFilename(row: AttachmentRow, mediaId: number): string {
+  const file = row.attached_file ?? '';
+  if (file !== '') {
+    const slash = file.lastIndexOf('/');
+    return slash === -1 ? file : file.slice(slash + 1);
+  }
+  const title = row.post_title ?? '';
+  return title !== '' ? title : `document-${mediaId}`;
+}
+
+async function loadAttachments(ids: number[]): Promise<Map<number, AttachmentRow>> {
+  if (ids.length === 0) return new Map();
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await prisma.$queryRawUnsafe<AttachmentRow[]>(
+    `SELECT p.ID, p.post_title, p.post_mime_type, pm.meta_value AS attached_file
+       FROM wp_posts p
+       LEFT JOIN wp_postmeta pm ON pm.post_id = p.ID AND pm.meta_key = '_wp_attached_file'
+      WHERE p.post_type = 'attachment' AND p.ID IN (${placeholders})`,
+    ...ids,
+  );
+  return new Map(rows.map((r) => [Number(r.ID), r]));
+}
+
+/**
+ * The files that arrived with a booking, in the order KiviCare stored them.
+ *
+ * An id whose attachment has since been deleted is returned with `missing: true`
+ * rather than skipped: the clinician should see that something was attached and is
+ * now gone, instead of a list that quietly disagrees with what the client sent.
+ */
+export async function listBookingAttachments(appointmentId: number): Promise<BookingAttachment[]> {
+  const appointment = await prisma.kcAppointment.findUnique({
+    where: { id: BigInt(appointmentId) },
+    select: { appointmentReport: true },
+  });
+  if (!appointment) return [];
+
+  const ids = parseReportIds(appointment.appointmentReport);
+  if (ids.length === 0) return [];
+
+  const found = await loadAttachments(ids);
+
+  return ids.map((mediaId) => {
+    const row = found.get(mediaId);
+    if (!row) {
+      return { mediaId, filename: `document-${mediaId}`, mimeType: null, missing: true };
+    }
+    return {
+      mediaId,
+      filename: attachmentFilename(row, mediaId),
+      mimeType: row.post_mime_type ?? null,
+      missing: false,
+    };
+  });
+}
+
+/**
+ * The authorisation guard for streaming a booking attachment.
+ *
+ * A media id has no owner of its own, so it is only ever safe to serve one after
+ * proving it belongs to an appointment the caller may already read.
+ */
+export async function attachmentBelongsToAppointment(
+  appointmentId: number,
+  mediaId: number,
+): Promise<boolean> {
+  const appointment = await prisma.kcAppointment.findUnique({
+    where: { id: BigInt(appointmentId) },
+    select: { appointmentReport: true },
+  });
+  if (!appointment) return false;
+  return parseReportIds(appointment.appointmentReport).includes(mediaId);
 }
