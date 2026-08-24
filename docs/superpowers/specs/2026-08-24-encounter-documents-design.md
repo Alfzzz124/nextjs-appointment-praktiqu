@@ -252,7 +252,7 @@ same tables we do.
 | Case | Behaviour |
 |---|---|
 | Attachment id points at deleted media | listed with `missing: true`; never a 500 |
-| Link row points at a deleted report | tolerated by the read, cleaned up opportunistically |
+| Link row points at a deleted report | tolerated by the read and skipped. Deleting through our API unlinks first, so an orphan can only come from KiviCare deleting a report directly. No cleanup sweep on the read path: that would be a write, and a write to a MyISAM table takes a table-level lock a listing has no business holding |
 | Upload write ordering | media → report row → link row. A failed link leaves the document in the patient archive: a coherent partial state, not an orphan file |
 | Duplicate link rows | prevented in code — `(module_type, module_id, field_id)` has no unique index (`custom-fields.repo.ts:321`) |
 | Encounter with `appointment_id = NULL` | `sessionDocuments` omits the booking section; not an error |
