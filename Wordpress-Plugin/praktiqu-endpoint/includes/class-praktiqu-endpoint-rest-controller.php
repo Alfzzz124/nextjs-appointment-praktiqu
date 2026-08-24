@@ -287,6 +287,16 @@ final class REST_Controller
             ],
         ]);
 
+        // GET /praktiqu/v1/media/{id} — stream one attachment's bytes
+        register_rest_route($ns, '/media/(?P<id>\d+)', [
+            'methods'             => \WP_REST_Server::READABLE,
+            'callback'            => [$this, 'handle_media_stream'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
         // POST /praktiqu/v1/jobs — enqueue a background job (C8 architecture)
         register_rest_route($ns, '/jobs', [
             'methods'             => \WP_REST_Server::CREATABLE,
@@ -588,6 +598,19 @@ final class REST_Controller
             return $result;
         }
         return rest_ensure_response($result);
+    }
+
+    /**
+     * GET /praktiqu/v1/media/{id} — streams bytes and exits, so this returns
+     * only when something went wrong.
+     */
+    public function handle_media_stream(\WP_REST_Request $request)
+    {
+        $result = $this->media->stream($request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return rest_ensure_response(null); // unreachable: stream() exits
     }
 
     /**
