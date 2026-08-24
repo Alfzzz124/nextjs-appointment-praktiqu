@@ -15,29 +15,53 @@
  *
  * One row per (encounter, report). Never an array in one row: `wp_kc_*` is MyISAM,
  * so a read-modify-write on a blob has no way to avoid losing a concurrent write.
+ *
+ * `fields_data` holds a JSON-encoded report id, but not always in the same shape:
+ * older writers have stored it as a JSON number (`11`) or a JSON string (`"11"`).
+ * Every read of this column — the existence check below, the delete in
+ * `unlinkReport`, and the listing in `listLinkedReportIds` — goes through
+ * `parseReportId` so all three treat both shapes as the same id.
  */
 import { prisma } from '@/lib/db';
 
 export const ENCOUNTER_DOC_MODULE_TYPE = 'praktiqu_report_encounter';
 
+/** Parse a `fields_data` value into the report id it encodes, or null if it isn't one. */
+function parseReportId(fieldsData: string | null): number | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fieldsData ?? 'null');
+  } catch {
+    return null;
+  }
+  const id = Number(parsed);
+  return Number.isFinite(id) ? id : null;
+}
+
 /**
- * Attach a document to an encounter. Idempotent: linking the same pair twice
- * leaves one row, because KiviCare puts no unique index on this table and the
- * duplicate would surface as the same document listed twice.
+ * Attach a document to an encounter.
+ *
+ * The existence check and the insert are two separate statements with no lock
+ * between them, and MyISAM gives us nothing to close that window — under
+ * concurrent calls for the same pair, two rows can land. That is harmless
+ * rather than a bug to chase: `listLinkedReportIds` de-duplicates by value on
+ * read, and `unlinkReport` deletes every row matching a report id, not just
+ * one. What this guard actually buys is narrower: a normal, sequential call
+ * for a pair that is already linked is a no-op instead of growing the table.
  */
 export async function linkReportToEncounter(
   encounterId: number,
   reportId: number,
 ): Promise<void> {
-  const existing = await prisma.kcCustomFieldData.findFirst({
+  const candidates = await prisma.kcCustomFieldData.findMany({
     where: {
       moduleType: ENCOUNTER_DOC_MODULE_TYPE,
       moduleId: BigInt(encounterId),
-      fieldsData: JSON.stringify(reportId),
     },
-    select: { id: true },
+    select: { fieldsData: true },
   });
-  if (existing) return;
+  const alreadyLinked = candidates.some((row) => parseReportId(row.fieldsData) === reportId);
+  if (alreadyLinked) return;
 
   await prisma.kcCustomFieldData.create({
     data: {
@@ -52,11 +76,17 @@ export async function linkReportToEncounter(
 
 /** Remove every link pointing at this document. Returns the number of rows removed. */
 export async function unlinkReport(reportId: number): Promise<number> {
+  const candidates = await prisma.kcCustomFieldData.findMany({
+    where: { moduleType: ENCOUNTER_DOC_MODULE_TYPE },
+    select: { id: true, fieldsData: true },
+  });
+  const matchingIds = candidates
+    .filter((row) => parseReportId(row.fieldsData) === reportId)
+    .map((row) => row.id);
+  if (matchingIds.length === 0) return 0;
+
   const result = await prisma.kcCustomFieldData.deleteMany({
-    where: {
-      moduleType: ENCOUNTER_DOC_MODULE_TYPE,
-      fieldsData: JSON.stringify(reportId),
-    },
+    where: { id: { in: matchingIds } },
   });
   return result.count;
 }
@@ -75,8 +105,8 @@ export async function listLinkedReportIds(encounterId: number): Promise<number[]
   const out: number[] = [];
   const seen = new Set<number>();
   for (const row of rows) {
-    const id = Number(JSON.parse(row.fieldsData ?? 'null'));
-    if (!Number.isFinite(id) || seen.has(id)) continue;
+    const id = parseReportId(row.fieldsData);
+    if (id === null || seen.has(id)) continue;
     seen.add(id);
     out.push(id);
   }

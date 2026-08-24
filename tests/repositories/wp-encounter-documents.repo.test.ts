@@ -24,6 +24,17 @@ const OTHER_ENCOUNTER = BASE + 2;
 const REPORT_A = BASE + 10;
 const REPORT_B = BASE + 11;
 const REPORT_C = BASE + 12;
+const REPORT_D = BASE + 13;
+
+/** Raw row count for a (module_type, module_id, fields_data) triple — bypasses listLinkedReportIds' de-dup. */
+async function rawRowCount(moduleId: number, fieldsData: string) {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT id FROM wp_kc_custom_fields_data
+       WHERE module_type = ? AND module_id = ? AND fields_data = ?`,
+    ENCOUNTER_DOC_MODULE_TYPE, moduleId, fieldsData,
+  );
+  return rows.length;
+}
 
 async function wipe() {
   await prisma.$executeRawUnsafe(
@@ -76,7 +87,38 @@ describe('encounter document links', () => {
     await linkReportToEncounter(ENCOUNTER, REPORT_A);
     await linkReportToEncounter(ENCOUNTER, REPORT_A);
 
-    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([REPORT_A]);
+    // Assert on the raw table, not on listLinkedReportIds: that read de-duplicates
+    // by value, so it would report one id even if the guard let two rows through.
+    expect(await rawRowCount(ENCOUNTER, JSON.stringify(REPORT_A))).toBe(1);
+  });
+
+  it('recognizes a report id already stored as a JSON string and does not duplicate it', async () => {
+    // Seed a row in the "other" shape: fields_data = '"8800013"' rather than '8800013'.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO wp_kc_custom_fields_data (module_type, module_id, fields_data, field_id, created_at)
+       VALUES (?, ?, ?, NULL, NOW())`,
+      ENCOUNTER_DOC_MODULE_TYPE, ENCOUNTER, JSON.stringify(String(REPORT_D)),
+    );
+
+    await linkReportToEncounter(ENCOUNTER, REPORT_D);
+
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT fields_data FROM wp_kc_custom_fields_data
+         WHERE module_type = ? AND module_id = ?`,
+      ENCOUNTER_DOC_MODULE_TYPE, ENCOUNTER,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('unlinks a report id stored as a JSON string', async () => {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO wp_kc_custom_fields_data (module_type, module_id, fields_data, field_id, created_at)
+       VALUES (?, ?, ?, NULL, NOW())`,
+      ENCOUNTER_DOC_MODULE_TYPE, ENCOUNTER, JSON.stringify(String(REPORT_D)),
+    );
+
+    expect(await unlinkReport(REPORT_D)).toBe(1);
+    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
   });
 
   it('unlinks by report id and reports how many rows went', async () => {
@@ -114,5 +156,22 @@ describe('encounter document links', () => {
     );
 
     expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
+  });
+
+  it('unlinkReport is scoped by module_type — it leaves rows from other modules alone', async () => {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO wp_kc_custom_fields_data (module_type, module_id, fields_data, field_id, created_at)
+       VALUES ('patient_encounter_module', ?, ?, NULL, NOW())`,
+      ENCOUNTER, JSON.stringify(REPORT_A),
+    );
+
+    expect(await unlinkReport(REPORT_A)).toBe(0);
+
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM wp_kc_custom_fields_data
+         WHERE module_type = 'patient_encounter_module' AND module_id = ?`,
+      ENCOUNTER,
+    );
+    expect(rows).toHaveLength(1);
   });
 });
