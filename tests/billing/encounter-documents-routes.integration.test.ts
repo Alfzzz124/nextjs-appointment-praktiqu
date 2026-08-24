@@ -47,7 +47,7 @@ vi.mock('@/lib/db', () => {
 });
 
 import { prisma } from '@/lib/db';
-import { GET as documentsGET } from '@/app/api/v1/encounters/[id]/documents/route';
+import { GET as documentsGET, POST as documentsPOST } from '@/app/api/v1/encounters/[id]/documents/route';
 import { GET as reportContentGET } from '@/app/api/v1/patient-medical-reports/[id]/content/route';
 import { GET as attachmentGET } from '@/app/api/v1/sessions/[id]/attachments/[mediaId]/content/route';
 
@@ -251,5 +251,23 @@ describe('GET /sessions/:id/attachments/:mediaId/content', () => {
 
     expect(res.status).toBe(403);
     expect(body.message).toBe('User is not linked to a WordPress account');
+  });
+});
+
+describe('POST /encounters/:id/documents', () => {
+  it('rejects a request with no token (401)', async () => {
+    const res = await documentsPOST(
+      new NextRequest('http://localhost/api/v1/encounters/1/documents', { method: 'POST' }),
+      { params: { id: '1' } } as any,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('denies a CLIENT (403) — upload is staff-only', async () => {
+    const res = await documentsPOST(
+      reqWith(await token('CLIENT'), 'http://localhost/api/v1/encounters/1/documents', { method: 'POST' }),
+      { params: { id: '1' } } as any,
+    );
+    expect(res.status).toBe(403);
   });
 });

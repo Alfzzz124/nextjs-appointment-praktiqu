@@ -19,12 +19,15 @@ vi.mock('@/repositories/wp/clinical-records.repo', () => ({
 vi.mock('@/services/billing/patient-medical-report.service', () => ({
   listMedReports: vi.fn(),
   listMedReportsByIds: vi.fn(),
+  createMedReport: vi.fn(),
 }));
+vi.mock('@/lib/wp-endpoint', () => ({ uploadMedia: vi.fn() }));
 
-import { listEncounterDocuments } from '@/services/encounter-documents/service';
-import { listBookingAttachments, listLinkedReportIds } from '@/repositories/wp/encounter-documents.repo';
+import { listEncounterDocuments, uploadEncounterDocument } from '@/services/encounter-documents/service';
+import { listBookingAttachments, listLinkedReportIds, linkReportToEncounter } from '@/repositories/wp/encounter-documents.repo';
 import { findEncounterById } from '@/repositories/wp/clinical-records.repo';
-import { listMedReports, listMedReportsByIds } from '@/services/billing/patient-medical-report.service';
+import { listMedReports, listMedReportsByIds, createMedReport } from '@/services/billing/patient-medical-report.service';
+import { uploadMedia } from '@/lib/wp-endpoint';
 
 const ENCOUNTER = { id: 55, clinicId: 1, doctorId: 7, patientId: 9, appointmentId: 77, description: null, status: 1, addedBy: 7, encounterDate: null, createdAt: null };
 
@@ -183,5 +186,72 @@ describe('listEncounterDocuments', () => {
       expect.objectContaining({ page: 3, perPage: 5, patientId: 9 }),
       expect.anything(),
     );
+  });
+});
+
+const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+
+describe('uploadEncounterDocument', () => {
+  beforeEach(() => {
+    vi.mocked(uploadMedia).mockResolvedValue({ mediaId: 4242, url: '', name: 'resume.pdf' } as any);
+    vi.mocked(createMedReport).mockResolvedValue({ id: 88 } as any);
+    vi.mocked(linkReportToEncounter).mockResolvedValue(undefined as any);
+  });
+
+  it('writes media, then the document row, then the link — in that order', async () => {
+    const order: string[] = [];
+    vi.mocked(uploadMedia).mockImplementation(async () => { order.push('media'); return { mediaId: 4242, url: '', name: 'resume.pdf' } as any; });
+    vi.mocked(createMedReport).mockImplementation(async () => { order.push('report'); return { id: 88 } as any; });
+    vi.mocked(linkReportToEncounter).mockImplementation(async () => { order.push('link'); });
+
+    const out = await uploadEncounterDocument(
+      55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'Resume sesi' }, PROFESSIONAL,
+    );
+
+    // MyISAM cannot roll back, so the order is the safety mechanism: a failure after
+    // the report row still leaves a usable document in the patient archive.
+    expect(order).toEqual(['media', 'report', 'link']);
+    expect(out).toEqual({ id: 88, mediaId: 4242, linked: true });
+  });
+
+  it('always uploads into the protected medical-report folder', async () => {
+    await uploadEncounterDocument(55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'R' }, PROFESSIONAL);
+
+    // kivicare-uploads is world-readable; clinical documents must never land there.
+    expect(uploadMedia).toHaveBeenCalledWith(expect.objectContaining({ context: 'medical-report' }));
+  });
+
+  it('refuses a file whose bytes are not an allowed type', async () => {
+    await expect(uploadEncounterDocument(
+      55, { filename: 'notes.pdf', bytes: new TextEncoder().encode('hello'), name: 'R' }, PROFESSIONAL,
+    )).rejects.toMatchObject({ httpStatus: 422 });
+
+    expect(uploadMedia).not.toHaveBeenCalled();
+  });
+
+  it('refuses a file whose extension disagrees with its bytes', async () => {
+    await expect(uploadEncounterDocument(
+      55, { filename: 'resume.png', bytes: PDF_BYTES, name: 'R' }, PROFESSIONAL,
+    )).rejects.toMatchObject({ httpStatus: 422 });
+  });
+
+  it('refuses a CLIENT (403) before touching the media library', async () => {
+    await expect(uploadEncounterDocument(
+      55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'R' }, CLIENT,
+    )).rejects.toMatchObject({ httpStatus: 403 });
+
+    expect(uploadMedia).not.toHaveBeenCalled();
+  });
+
+  it('reports linked:false rather than failing when only the link write fails', async () => {
+    vi.mocked(linkReportToEncounter).mockRejectedValue(new Error('MyISAM said no'));
+
+    const out = await uploadEncounterDocument(
+      55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'R' }, PROFESSIONAL,
+    );
+
+    // The document exists and is reachable from the patient archive. Failing the
+    // whole request would strand a file the caller cannot see or retry cleanly.
+    expect(out).toEqual({ id: 88, mediaId: 4242, linked: false });
   });
 });

@@ -17,13 +17,16 @@
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
 import { medReportScopeFor } from '@/services/billing/med-report-scope';
-import { listMedReports, listMedReportsByIds } from '@/services/billing/patient-medical-report.service';
+import { listMedReports, listMedReportsByIds, createMedReport } from '@/services/billing/patient-medical-report.service';
 import { findEncounterById } from '@/repositories/wp/clinical-records.repo';
 import {
   listBookingAttachments,
   listLinkedReportIds,
+  linkReportToEncounter,
 } from '@/repositories/wp/encounter-documents.repo';
 import { assertCan } from '@/services/billing/kc-permissions';
+import { validateUpload } from '@/services/uploads/validate-upload';
+import { uploadMedia } from '@/lib/wp-endpoint';
 
 export type DocumentSource = 'booking' | 'report';
 
@@ -161,4 +164,67 @@ export async function listEncounterDocuments(
       total: archive.pagination.total,
     },
   };
+}
+
+export interface UploadDocumentInput {
+  filename: string;
+  bytes: Uint8Array;
+  name: string;
+}
+
+/**
+ * Attach a new document to an encounter.
+ *
+ * Write order is the only safety mechanism available — `wp_kc_*` is MyISAM, so there
+ * is no transaction to roll back:
+ *
+ *   1. media   — an orphan attachment costs disk and nothing else
+ *   2. report  — from here the document is usable from the patient archive
+ *   3. link    — failing here leaves a coherent state, so it is reported, not thrown
+ */
+export async function uploadEncounterDocument(
+  encounterId: number,
+  input: UploadDocumentInput,
+  kc: KcActor,
+): Promise<{ id: number; mediaId: number; linked: boolean }> {
+  assertCan(kc.actor, 'patient_report_manage');
+
+  const encounter = await findEncounterById(encounterId);
+  if (!encounter) throw new KcError('Encounter not found', 404);
+  assertEncounterVisible(encounter, kc);
+
+  const validation = validateUpload({ name: input.filename, bytes: input.bytes });
+  // `=== false` rather than `!validation.ok`: this project runs with
+  // strictNullChecks off, where the negation does not narrow the union.
+  if (validation.ok === false) {
+    throw new KcError(validation.message, 422);
+  }
+
+  const uploaded = await uploadMedia({
+    filename: input.filename,
+    contentType: validation.mime,
+    bytes: input.bytes,
+    context: 'medical-report',
+  });
+
+  const created = await createMedReport(
+    {
+      patientId: encounter.patientId,
+      name: input.name.trim() === '' ? input.filename : input.name.trim(),
+      uploadReport: String(uploaded.mediaId),
+    },
+    kc,
+  );
+
+  try {
+    await linkReportToEncounter(encounterId, created.id);
+  } catch (err) {
+    // The document is already in the archive; only its tie to this encounter is
+    // missing. Say so instead of failing a request that mostly succeeded.
+    // eslint-disable-next-line no-console
+    console.error('[encounter-documents] link failed', { encounterId, reportId: created.id, err });
+    return { id: created.id, mediaId: uploaded.mediaId, linked: false };
+  }
+
+  return { id: created.id, mediaId: uploaded.mediaId, linked: true };
 }
