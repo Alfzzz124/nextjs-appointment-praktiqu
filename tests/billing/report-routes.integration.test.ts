@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { GET as reportsGET, POST as reportsPOST } from '@/app/api/v1/patient-medical-reports/route';
-import { GET as previewGET } from '@/app/api/v1/patient-medical-reports/[id]/preview/route';
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
@@ -14,8 +13,7 @@ function reqWith(jwt: string, url: string, init: RequestInit = {}) {
 }
 
 // These assertions are reached before any DB access: assertCan runs before resolveKcActor,
-// so 401 (no token) and 403 (CLIENT create) do not touch the database. The preview stub
-// returns 501 after assertCan and never calls resolveKcActor, so it also needs no DB.
+// so 401 (no token) and 403 (CLIENT create) do not touch the database.
 describe('patient-medical-reports routes auth matrix', () => {
   it('GET /patient-medical-reports rejected without a token (401)', async () => {
     const res = await reportsGET(
@@ -31,14 +29,5 @@ describe('patient-medical-reports routes auth matrix', () => {
     }), { params: {} } as any);
     expect(res.status).toBe(403);
     expect((await res.json()).status).toBe(false);
-  });
-
-  it('GET /patient-medical-reports/[id]/preview returns 501 for an authorized role (CLINIC_ADMIN)', async () => {
-    const res = await previewGET(
-      reqWith(await token('CLINIC_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/preview'),
-      { params: { id: '1' } } as any,
-    );
-    expect(res.status).toBe(501);
-    expect((await res.json()).code).toBe('NOT_IMPLEMENTED');
   });
 });

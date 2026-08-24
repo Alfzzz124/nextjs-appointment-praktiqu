@@ -69,10 +69,11 @@ describe('patient-medical-report.service', () => {
     await expect(assertPatientInScope(PATIENT, kcStaff)).resolves.toBeUndefined();
   });
 
-  it('resolveReportFile returns fileUrl: null (does not throw) when the attachment is absent', async () => {
+  it('resolveReportFile returns the authenticated content path, not a WordPress URL', async () => {
     const { id } = await createMedReport({ patientId: PATIENT, name: 'No media', uploadReport: '0' }, kcStaff);
     const resolved = await resolveReportFile(id, clinicScope);
     expect(resolved.reportId).toBe(id);
-    expect(resolved.fileUrl).toBeNull();
+    expect(resolved.contentPath).toBe(`/api/v1/patient-medical-reports/${id}/content`);
+    expect(resolved).not.toHaveProperty('fileUrl');
   });
 });

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
+import { unlinkReport } from '@/repositories/wp/encounter-documents.repo';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { MedReportScope } from '@/services/billing/med-report-scope';
 
@@ -128,6 +129,9 @@ export async function renameMedReport(
 
 export async function deleteMedReport(id: number, scope: MedReportScope | null): Promise<void> {
   await getMedReport(id, scope); // scope + existence (404)
+  // Link first: a link pointing at a deleted document would have to be worked
+  // around by every encounter listing from here on.
+  await unlinkReport(id);
   await prisma.kcPatientMedicalReport.delete({ where: { id: BigInt(id) } });
 }
 
@@ -140,6 +144,9 @@ export async function bulkDeleteMedReports(ids: number[], scope: MedReportScope 
   );
   const okIds = inScope.map((r) => BigInt(r.id));
   if (okIds.length === 0) return 0;
+  for (const okId of okIds) {
+    await unlinkReport(Number(okId));
+  }
   const r = await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { in: okIds } } });
   return r.count;
 }
@@ -149,19 +156,21 @@ export async function exportMedReports(p: MedReportListParams, scope: MedReportS
   return { reports: list.reports.map((x) => ({ id: x.id, name: x.name, patient_name: x.patient_name, upload_report: x.upload_report, date: x.date })) };
 }
 
-/** Best-effort WP media resolution. Returns the stored media id and a URL if the attachment exists (else null). */
+/**
+ * Where to fetch this document's bytes.
+ *
+ * This used to return the WordPress `guid`. That URL can never be opened: the
+ * `uploads/kivicare-reports` directory carries an `.htaccess` of `Deny from all`,
+ * written by KiviCare's own media migration. Handing the front-end a link that is
+ * guaranteed to 403 is worse than returning no link at all, so this now points at
+ * the authenticated streaming route.
+ */
 export async function resolveReportFile(id: number, scope: MedReportScope | null) {
   const report = await getMedReport(id, scope);
-  const mediaId = report.upload_report;
-  let fileUrl: string | null = null;
-  const asInt = Number.parseInt(String(mediaId), 10);
-  if (Number.isFinite(asInt)) {
-    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT guid FROM wp_posts WHERE ID = ? AND post_type = 'attachment' LIMIT 1`, asInt);
-    fileUrl = rows[0]?.guid ?? null;
-    if (!fileUrl) {
-      const meta = await prisma.$queryRawUnsafe<any[]>(`SELECT meta_value FROM wp_postmeta WHERE post_id = ? AND meta_key = '_wp_attached_file' LIMIT 1`, asInt);
-      fileUrl = meta[0]?.meta_value ? String(meta[0].meta_value) : null;
-    }
-  }
-  return { reportId: report.id, name: report.name, mediaId, fileUrl };
+  return {
+    reportId: report.id,
+    name: report.name,
+    mediaId: report.upload_report,
+    contentPath: `/api/v1/patient-medical-reports/${report.id}/content`,
+  };
 }
