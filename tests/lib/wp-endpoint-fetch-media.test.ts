@@ -79,16 +79,28 @@ describe('fetchMedia', () => {
   });
 
   it('throws WpEndpointError on a non-200 instead of streaming the error page', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response('not found', { status: 404 })) as any;
+    const fetchMock = vi.fn(async () =>
+      new Response('not found', { status: 404 }));
+    globalThis.fetch = fetchMock as any;
 
-    await expect(fetchMedia(9)).rejects.toBeInstanceOf(WpEndpointError);
+    const err: any = await fetchMedia(9).catch((e) => e);
+
+    expect(err).toBeInstanceOf(WpEndpointError);
+    expect(err.status).toBe(404);
+    expect(err.message).toBe('Media fetch failed 404: not found');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws WpEndpointError when the response carries no body', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(null, { status: 200 })) as any;
+    const fetchMock = vi.fn(async () =>
+      new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as any;
 
-    await expect(fetchMedia(9)).rejects.toBeInstanceOf(WpEndpointError);
+    const err: any = await fetchMedia(9).catch((e) => e);
+
+    expect(err).toBeInstanceOf(WpEndpointError);
+    expect(err.status).toBe(200);
+    expect(err.message).toBe('Media fetch returned no body');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
