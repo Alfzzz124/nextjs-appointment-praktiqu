@@ -5,14 +5,14 @@
  * `findEncounterById`. Both are backed by Prisma, so `@/lib/db` is mocked here
  * rather than seeded, keeping this suite off the shared test database. What
  * status the CLIENT case lands on beyond "not 403" is deliberately not
- * asserted: with the encounter reported absent it currently reaches a 500,
- * because `params.id` comes through `withAuth` as `undefined` here (see
- * `src/lib/auth.ts` — `ctx` already *is* `{ params }` when Next.js calls a
- * route, so wrapping it again as the `params` field double-nests it for every
- * `[id]` route in the app, not just this one). That is a pre-existing,
- * codebase-wide bug outside this task's scope; the point of this test is only
+ * asserted: with the encounter reported absent it currently reaches a 500.
+ * `params.id` itself is fine — `withAuth` was fixed (see `src/lib/auth.ts`,
+ * commit `a6a8ad6`) to hand routes the params object itself rather than the
+ * `{ params }` wrapper Next.js passes it, so `ctx.params.id` now resolves as
+ * every `[id]` route expects. The 500 here instead comes from the mocked
+ * encounter service reporting the row absent; the point of this test is only
  * that CLIENT clears the permission gate, so it does not pin down which
- * downstream status that bug happens to produce.
+ * downstream status that produces.
  *
  * `vitest.config.ts` sets neither `clearMocks` nor `restoreMocks`, so every
  * test here must reset the mocks itself — see `beforeEach`.
@@ -28,11 +28,13 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     user: { findUnique: vi.fn() },
     kcPatientEncounter: { findUnique: vi.fn() },
+    $queryRawUnsafe: vi.fn(),
   },
 }));
 
 import { prisma } from '@/lib/db';
 import { GET as documentsGET } from '@/app/api/v1/encounters/[id]/documents/route';
+import { GET as reportContentGET } from '@/app/api/v1/patient-medical-reports/[id]/content/route';
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
@@ -77,6 +79,32 @@ describe('GET /encounters/:id/documents', () => {
     // Not 403: a client may read its own documents. Whether this encounter is
     // theirs is a row-scope question for the service to answer (404 in intent;
     // see the file header for the pre-existing bug that currently makes it a 500).
+    expect(res.status).not.toBe(403);
+  });
+});
+
+describe('GET /patient-medical-reports/:id/content', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Actor resolves to a WP user; the report row itself is reported absent by
+    // $queryRawUnsafe (an empty result set), which getMedReport turns into a 404.
+    (prisma.user.findUnique as any).mockResolvedValue({ wpUserId: 9000001n });
+    (prisma.$queryRawUnsafe as any).mockResolvedValue([]);
+  });
+
+  it('rejects a request with no token (401)', async () => {
+    const res = await reportContentGET(
+      new NextRequest('http://localhost/api/v1/patient-medical-reports/1/content'),
+      { params: { id: '1' } } as any,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('lets a CLIENT through to the row-scope check', async () => {
+    const res = await reportContentGET(
+      reqWith(await token('CLIENT'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+      { params: { id: '1' } } as any,
+    );
     expect(res.status).not.toBe(403);
   });
 });

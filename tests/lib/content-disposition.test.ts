@@ -1,0 +1,29 @@
+import { describe, expect, it } from 'vitest';
+import { inlineDisposition } from '@/lib/http/content-disposition';
+
+describe('inlineDisposition', () => {
+  it('emits both the ASCII fallback and the UTF-8 form', () => {
+    expect(inlineDisposition('resume.pdf'))
+      .toBe(`inline; filename="resume.pdf"; filename*=UTF-8''resume.pdf`);
+  });
+
+  it('neutralises a quote, which would otherwise truncate the header', () => {
+    const out = inlineDisposition('he said "hi".pdf');
+    expect(out).toContain('filename="he said _hi_.pdf"');
+    expect(out.split('filename="')[1].split('"')[0]).not.toContain('"');
+  });
+
+  it('neutralises a backslash', () => {
+    expect(inlineDisposition('a\\b.pdf')).toContain('filename="a_b.pdf"');
+  });
+
+  it('keeps non-ASCII in the UTF-8 form and replaces it in the fallback', () => {
+    const out = inlineDisposition('sesi-ké-3.pdf');
+    expect(out).toContain('filename="sesi-k_-3.pdf"');
+    expect(out).toContain(`filename*=UTF-8''${encodeURIComponent('sesi-ké-3.pdf')}`);
+  });
+
+  it('replaces a newline, which would inject a second header', () => {
+    expect(inlineDisposition('a\nb.pdf')).toContain('filename="a_b.pdf"');
+  });
+});
