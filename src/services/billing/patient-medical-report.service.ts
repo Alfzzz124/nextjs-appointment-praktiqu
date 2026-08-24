@@ -104,6 +104,28 @@ export async function createMedReport(input: MedReportCreateInput, kc: KcActor):
   return { id: Number(created.id) };
 }
 
+/**
+ * Rename a document. Only `name` changes — the media id, the file and any encounter
+ * link stay exactly as they are.
+ */
+export async function renameMedReport(
+  id: number,
+  name: string,
+  scope: MedReportScope | null,
+): Promise<{ id: number; name: string }> {
+  const trimmed = name.trim();
+  if (trimmed === '') throw new KcError('Name is required', 400);
+
+  await getMedReport(id, scope); // scope + existence (404)
+
+  await prisma.kcPatientMedicalReport.update({
+    where: { id: BigInt(id) },
+    data: { name: trimmed },
+  });
+
+  return { id, name: trimmed };
+}
+
 export async function deleteMedReport(id: number, scope: MedReportScope | null): Promise<void> {
   await getMedReport(id, scope); // scope + existence (404)
   await prisma.kcPatientMedicalReport.delete({ where: { id: BigInt(id) } });
