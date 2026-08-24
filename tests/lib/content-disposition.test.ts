@@ -26,4 +26,19 @@ describe('inlineDisposition', () => {
   it('replaces a newline, which would inject a second header', () => {
     expect(inlineDisposition('a\nb.pdf')).toContain('filename="a_b.pdf"');
   });
+
+  it('replaces a lone carriage return, which would also inject a second header', () => {
+    expect(inlineDisposition('a\rb.pdf'))
+      .toBe(`inline; filename="a_b.pdf"; filename*=UTF-8''a%0Db.pdf`);
+  });
+
+  it('keeps a semicolon inside the quoted string — it is valid there', () => {
+    expect(inlineDisposition('a;b.pdf'))
+      .toBe(`inline; filename="a;b.pdf"; filename*=UTF-8''a%3Bb.pdf`);
+  });
+
+  it('handles the empty string', () => {
+    expect(inlineDisposition(''))
+      .toBe(`inline; filename=""; filename*=UTF-8''`);
+  });
 });

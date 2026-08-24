@@ -15,7 +15,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
-import { kcFail } from '@/lib/kc-response';
+import { kcFail, KcError } from '@/lib/kc-response';
 import { getSession, SessionServiceError } from '@/services/session/session.service';
 import { attachmentBelongsToAppointment, listBookingAttachments } from '@/repositories/wp/encounter-documents.repo';
 import { fetchMedia } from '@/lib/wp-endpoint';
@@ -62,6 +62,11 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
   } catch (err) {
     if (err instanceof SessionServiceError) {
       return kcFail(err.message, err.status ?? 403);
+    }
+    // getSession → resolveKcActor can throw this (e.g. "not linked to a WordPress
+    // account", 403) before SessionServiceError ever gets a chance to fire.
+    if (err instanceof KcError) {
+      return kcFail(err.message, err.httpStatus);
     }
     // eslint-disable-next-line no-console
     console.error('[attachment-content] failed', err);

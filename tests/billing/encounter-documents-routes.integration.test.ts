@@ -18,7 +18,7 @@
  * Later tasks append more `describe` blocks to this file; keep new blocks
  * self-contained (own mock return values in their own `beforeEach`/`it`).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 
@@ -98,12 +98,22 @@ describe('GET /encounters/:id/documents', () => {
 });
 
 describe('GET /patient-medical-reports/:id/content', () => {
+  const realFetch = globalThis.fetch;
+
   beforeEach(() => {
     vi.clearAllMocks();
     // Actor resolves to a WP user; the report row itself is reported absent by
     // $queryRawUnsafe (an empty result set), which getMedReport turns into a 404.
     (prisma.user.findUnique as any).mockResolvedValue({ wpUserId: 9000001n });
     (prisma.$queryRawUnsafe as any).mockResolvedValue([]);
+    // Only reached once a report row with a numeric upload_report clears the
+    // 404 guard below — needed so fetchMedia's serviceToken() call doesn't
+    // throw before the fetch stub in each test below gets a chance to run.
+    process.env.WORDPRESS_SERVICE_TOKEN = 'test-token';
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
   });
 
   it('rejects a request with no token (401)', async () => {
@@ -120,6 +130,88 @@ describe('GET /patient-medical-reports/:id/content', () => {
       { params: { id: '1' } } as any,
     );
     expect(res.status).not.toBe(403);
+  });
+
+  /**
+   * The try/catch's four documented branches, none of which any test above
+   * reaches. Each assertion below also checks the body never carries the
+   * upstream detail (message text, filesystem path) the code comment next to
+   * the catch says must not reach the client — see route.ts's `catch (err)`.
+   */
+
+  it('returns a clean 404 when the report has no numeric file id', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Report', patient_id: 9000001, upload_report: null, date: new Date('2026-01-01') },
+    ]);
+
+    const res = await reportContentGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+      { params: { id: '1' } } as any,
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(404);
+    expect(body.message).toBe('Document has no file');
+  });
+
+  it('turns an upstream 404 from the media plugin into a generic 502, not the plugin detail', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Report', patient_id: 9000001, upload_report: '42', date: new Date('2026-01-01') },
+    ]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response('/var/www/wp-content/uploads/kivicare-reports/patient-42-confidential.pdf not found', { status: 404 }),
+    ) as any;
+
+    const res = await reportContentGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+      { params: { id: '1' } } as any,
+    );
+    const bodyText = await res.text();
+
+    expect(res.status).toBe(502);
+    expect(bodyText).not.toContain('kivicare-reports');
+    expect(bodyText).not.toContain('confidential');
+    expect(JSON.parse(bodyText).message).toBe('Could not read the document');
+  });
+
+  it('turns an upstream 500 from the media plugin into a generic 502, not the plugin detail', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Report', patient_id: 9000001, upload_report: '42', date: new Date('2026-01-01') },
+    ]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response('Fatal error in /var/www/html/wp-content/plugins/kivicare/media.php on line 88', { status: 500 }),
+    ) as any;
+
+    const res = await reportContentGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+      { params: { id: '1' } } as any,
+    );
+    const bodyText = await res.text();
+
+    expect(res.status).toBe(502);
+    expect(bodyText).not.toContain('kivicare/media.php');
+    expect(bodyText).not.toContain('Fatal error');
+    expect(JSON.parse(bodyText).message).toBe('Could not read the document');
+  });
+
+  it('turns a non-WpEndpointError throw (e.g. a network failure) into a generic 502', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Report', patient_id: 9000001, upload_report: '42', date: new Date('2026-01-01') },
+    ]);
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed: getaddrinfo ENOTFOUND internal-wp-host.local');
+    }) as any;
+
+    const res = await reportContentGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+      { params: { id: '1' } } as any,
+    );
+    const bodyText = await res.text();
+
+    expect(res.status).toBe(502);
+    expect(bodyText).not.toContain('ENOTFOUND');
+    expect(bodyText).not.toContain('internal-wp-host.local');
+    expect(JSON.parse(bodyText).message).toBe('Could not read the document');
   });
 });
 
@@ -142,5 +234,22 @@ describe('GET /sessions/:id/attachments/:mediaId/content', () => {
       { params: { id: '1', mediaId: 'abc' } } as any,
     );
     expect(res.status).toBe(404);
+  });
+
+  it('surfaces a KcError raised inside getSession with its own status, not a generic 502', async () => {
+    // getSession → resolveKcActor throws this KcError(..., 403) when the actor's
+    // User row has no wpUserId — before SessionServiceError ever gets a chance
+    // to fire. The route's catch used to only match `instanceof SessionServiceError`,
+    // so this fell through to the generic branch and came back as a 502.
+    (prisma.user.findUnique as any).mockResolvedValue(null);
+
+    const res = await attachmentGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/sessions/1/attachments/2/content'),
+      { params: { id: '1', mediaId: '2' } } as any,
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.message).toBe('User is not linked to a WordPress account');
   });
 });
