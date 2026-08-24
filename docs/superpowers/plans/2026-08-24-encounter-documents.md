@@ -1026,6 +1026,10 @@ function report(id: number, name: string) {
 }
 
 beforeEach(() => {
+  // vitest.config.ts sets neither clearMocks nor restoreMocks, so call history
+  // survives between tests unless each file clears it — every other suite here
+  // does the same.
+  vi.clearAllMocks();
   vi.mocked(findEncounterById).mockResolvedValue(ENCOUNTER as any);
   vi.mocked(listLinkedReportIds).mockResolvedValue([]);
   vi.mocked(listBookingAttachments).mockResolvedValue([]);
