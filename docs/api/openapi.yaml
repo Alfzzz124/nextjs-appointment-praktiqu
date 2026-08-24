@@ -3777,6 +3777,149 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+  /api/v1/encounters/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        example: 55
+    get:
+      tags:
+        - encounters
+      summary: Documents visible from an encounter
+      operationId: get_api_v1_encounters_id_documents
+      description: >-
+        Two sections. `sessionDocuments` holds the files that arrived with the
+        booking plus documents linked to this encounter. `patientDocuments` holds
+        the rest of the patient's archive and is paginated.
+
+
+        **Capability:** `patient_report_read`
+
+
+        **Response envelope:** KC `{status,message,data}`
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Documents retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      sessionDocuments:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EncounterDocument'
+                      patientDocuments:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EncounterDocument'
+                      pagination:
+                        type: object
+                        properties:
+                          page:
+                            type: integer
+                          perPage:
+                            type: integer
+                          total:
+                            type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+    post:
+      tags:
+        - encounters
+      summary: Upload a document and attach it to this encounter
+      operationId: post_api_v1_encounters_id_documents
+      description: >-
+        Staff only. jpg, jpeg, png, webp, gif or pdf, up to 10 MB.
+
+
+        **Capability:** `patient_report_manage`
+
+
+        **Response envelope:** KC `{status,message,data}`
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+                  example: Resume sesi konseling
+      responses:
+        '200':
+          description: >-
+            Uploaded. `linked: false` means the document reached the patient
+            archive but its tie to this encounter could not be written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        description: The new patient-medical-report id.
+                      mediaId:
+                        type: integer
+                        description: The WordPress attachment id backing the file.
+                      linked:
+                        type: boolean
+                        description: >-
+                          False when the document was saved to the patient archive but
+                          the link to this encounter could not be written.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Not permitted — upload is staff only
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: File rejected by type or size validation
+      security:
+        - bearerAuth: []
   /api/v1/encounters/{id}/print:
     parameters:
       - name: id
@@ -6128,6 +6271,78 @@ paths:
           $ref: '#/components/responses/NotFound'
       security:
         - bearerAuth: []
+    patch:
+      tags:
+        - patient-medical-reports
+      summary: Rename patient medical reports by id
+      operationId: patch_api_v1_patient_medical_reports_id
+      description: |-
+        **Capability:** `patient_report_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '400':
+          description: Name is required
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+  /api/v1/patient-medical-reports/{id}/content:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        example: 12
+    get:
+      tags:
+        - patient-medical-reports
+      summary: Stream a document's bytes
+      operationId: get_api_v1_patient_medical_reports_id_content
+      description: >-
+        Requires a Bearer token, so it cannot be used directly as an `<img>` or
+        `<iframe>` src. Fetch it with the token and wrap the response in a blob URL.
+
+
+        **Capability:** `patient_report_read`
+      responses:
+        '200':
+          description: The file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Not found, out of scope, or the file is gone
+      security:
+        - bearerAuth: []
   /api/v1/patient-medical-reports/{id}/file:
     parameters:
       - name: id
@@ -6141,42 +6356,17 @@ paths:
       summary: File (GET) — patient medical reports
       operationId: get_api_v1_patient_medical_reports_id_file
       description: |-
+        Resolves where to fetch this document's bytes. Returns `contentPath`, a
+        path on this API pointing at the authenticated streaming route — never a
+        WordPress URL, since `uploads/kivicare-reports/` is `Deny from all` and
+        such a URL would always 403.
+
+        Changed: this used to return `fileUrl`, a WordPress URL. Anything reading
+        `fileUrl` was already broken.
+
         **Capability:** `patient_report_read`
 
         **Response envelope:** KC `{status,message,data}`
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/KcEnvelope'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-      security:
-        - bearerAuth: []
-  /api/v1/patient-medical-reports/{id}/preview:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      tags:
-        - patient-medical-reports
-      summary: Preview (GET) — patient medical reports
-      operationId: get_api_v1_patient_medical_reports_id_preview
-      description: |-
-        **Capability:** `patient_report_read`
-
-        **Response envelope:** KC `{status,message,data}`
-
-        _May return 501 (stub / not wired)._
       responses:
         '200':
           description: Success
@@ -9580,6 +9770,39 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+  /api/v1/sessions/{id}/attachments/{mediaId}/content:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        example: 77
+      - name: mediaId
+        in: path
+        required: true
+        schema:
+          type: integer
+        example: 301
+    get:
+      tags:
+        - sessions
+      summary: Stream a file that arrived with the booking
+      operationId: get_api_v1_sessions_id_attachments_mediaId_content
+      responses:
+        '200':
+          description: The file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Not this session's attachment, or the file is gone
+      security:
+        - bearerAuth: []
   /api/v1/sessions/{id}/cancel:
     parameters:
       - name: id
@@ -10616,6 +10839,41 @@ components:
                     type: string
                   error:
                     type: string
+    EncounterDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Report id, or the WP attachment id when source is `booking`.
+        source:
+          type: string
+          enum:
+            - booking
+            - report
+        name:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+          nullable: true
+        date:
+          type: string
+          nullable: true
+          example: '2026-08-24'
+        contentPath:
+          type: string
+          example: /api/v1/patient-medical-reports/12/content
+        canManage:
+          type: boolean
+          description: >-
+            False for every `booking` document — `appointment_report` is never
+            written by this API, so rename and delete do not apply to them.
+        missing:
+          type: boolean
+          description: >-
+            The attachment row is gone from WordPress; the entry is kept so the
+            loss is visible.
   responses:
     Unauthorized:
       description: Missing or invalid JWT
