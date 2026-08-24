@@ -205,3 +205,47 @@ export async function uploadMedia(input: UploadMediaInput): Promise<UploadMediaR
 
   return { mediaId: data.mediaId, url: String(data.url ?? ''), name: String(data.name ?? input.filename) };
 }
+
+export interface FetchedMedia {
+  body: ReadableStream<Uint8Array>;
+  contentType: string;
+  filename: string;
+  contentLength: number | null;
+}
+
+/**
+ * Stream one attachment out of the WordPress media library.
+ *
+ * The bytes are never buffered here: the upstream body is handed straight to the
+ * caller, which pipes it to the client. A 10 MB PDF must not become 10 MB of our
+ * heap per concurrent reader.
+ *
+ * Authorisation is NOT performed here and cannot be — this call carries a service
+ * token, not a user. Every caller must have already proven the requester may see
+ * the row that owns this media id.
+ */
+export async function fetchMedia(mediaId: number): Promise<FetchedMedia> {
+  const res = await fetch(`${WP_MEDIA_URL}/${mediaId}`, {
+    method: 'GET',
+    headers: { 'X-PraktiQU-Service-Token': serviceToken() },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new WpEndpointError(`Media fetch failed ${res.status}: ${text}`, res.status);
+  }
+  if (!res.body) {
+    throw new WpEndpointError('Media fetch returned no body', res.status);
+  }
+
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const lengthHeader = res.headers.get('content-length');
+
+  return {
+    body: res.body as ReadableStream<Uint8Array>,
+    contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+    filename: match ? match[1] : `document-${mediaId}`,
+    contentLength: lengthHeader === null ? null : Number(lengthHeader),
+  };
+}
