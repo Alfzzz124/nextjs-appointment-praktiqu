@@ -55,16 +55,19 @@ export async function getActor(req: NextRequest): Promise<Actor> {
 export function withAuth<T>(
   handler: (req: NextRequest, ctx: AuthContext & { params: T }) => Promise<NextResponse>,
 ) {
-  // ctx is optional: Next.js omits it for non-dynamic routes and supplies
-  // `{ params }` for dynamic ones.
-  return async (req: NextRequest, ctx?: T): Promise<NextResponse> => {
+  // Next.js invokes route handlers as `handler(req, { params })`, so the second
+  // argument here is `{ params: T }`, not `T` itself — and it is omitted entirely
+  // for non-dynamic routes. Unwrap `.params` (falling back to `{}` when ctx is
+  // absent) so handlers read `ctx.params.id` directly instead of the doubly-nested
+  // `ctx.params.params.id`. Do not assign `ctx` straight to `params` again.
+  return async (req: NextRequest, ctx?: { params: T }): Promise<NextResponse> => {
     try {
       const actor = await getActor(req);
       return await handler(req, {
         actor,
         ip: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? null,
         userAgent: req.headers.get('user-agent') ?? null,
-        params: ctx as T,
+        params: (((ctx as any)?.params) ?? {}) as T,
       });
     } catch (err) {
       if (err instanceof AuthError) {
