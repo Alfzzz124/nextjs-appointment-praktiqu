@@ -429,7 +429,10 @@ git commit -m "feat(plugin): GET /praktiqu/v1/media/{id} streams an attachment"
 - [ ] **Step 1: Confirm the test database has the tables**
 
 ```bash
-node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();(async()=>{for(const t of ['wp_kc_custom_fields_data','wp_kc_patient_medical_report','wp_kc_appointments','wp_posts','wp_postmeta']){const r=await p.\$queryRawUnsafe('SHOW TABLES LIKE ?',t);console.log(t,r.length?'OK':'MISSING')}await p.\$disconnect()})()"
+node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();(async()=>{const r=await p.\$queryRawUnsafe(\"SELECT TABLE_NAME n FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('wp_kc_custom_fields_data','wp_kc_patient_medical_report','wp_kc_appointments','wp_posts','wp_postmeta')\");console.log(r.map(x=>x.n));await p.\$disconnect()})()"
+
+`SHOW TABLES LIKE ?` does not accept a bound placeholder — it fails with MySQL 1064. Query
+`information_schema` instead.
 ```
 
 Expected: five `OK` lines. A `MISSING` means `DATABASE_URL` points at the wrong database, or the test database has drifted — stop and fix that before writing tests against it.
