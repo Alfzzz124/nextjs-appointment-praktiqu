@@ -4,7 +4,7 @@ import {
   listMedReports, getMedReport, createMedReport, deleteMedReport,
   bulkDeleteMedReports, assertPatientInScope, resolveReportFile,
 } from '@/services/billing/patient-medical-report.service';
-import { idsSchema } from '@/services/billing/validation';
+import { idsSchema, medReportCreateSchema } from '@/services/billing/validation';
 
 const CLINIC = 9_000_901, PATIENT = 9_000_903, OTHER_PATIENT = 9_000_904;
 
@@ -22,7 +22,7 @@ describe('patient-medical-report.service', () => {
 
   it('creates, reads, lists, and deletes a report within clinic scope', async () => {
     const { id } = await createMedReport(
-      { patientId: PATIENT, name: 'Blood test', uploadReport: '0' },
+      { patientId: PATIENT, name: 'Blood test', verifiedMediaId: '0' },
       kcStaff,
     );
     expect(id).toBeGreaterThan(0);
@@ -40,7 +40,7 @@ describe('patient-medical-report.service', () => {
 
   it('scopes reads: a CLIENT cannot see another patient\'s report', async () => {
     const { id } = await createMedReport(
-      { patientId: PATIENT, name: 'X-ray', uploadReport: '0' },
+      { patientId: PATIENT, name: 'X-ray', verifiedMediaId: '0' },
       kcStaff,
     );
     // Different patient's CLIENT scope -> not found
@@ -50,10 +50,10 @@ describe('patient-medical-report.service', () => {
   });
 
   it('bulk deletes only reports within scope', async () => {
-    const inScope = await createMedReport({ patientId: PATIENT, name: 'InScope', uploadReport: '0' }, kcStaff);
+    const inScope = await createMedReport({ patientId: PATIENT, name: 'InScope', verifiedMediaId: '0' }, kcStaff);
     // Out-of-scope report: patient not mapped to CLINIC (seeded directly, bypassing scope check).
     const outScope = await createMedReport(
-      { patientId: OTHER_PATIENT, name: 'OutScope', uploadReport: '0' },
+      { patientId: OTHER_PATIENT, name: 'OutScope', verifiedMediaId: '0' },
       { actor: { id: 's', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(9_000_902), clinicId: null } as any,
     );
 
@@ -80,10 +80,46 @@ describe('patient-medical-report.service', () => {
   });
 
   it('resolveReportFile returns the authenticated content path, not a WordPress URL', async () => {
-    const { id } = await createMedReport({ patientId: PATIENT, name: 'No media', uploadReport: '0' }, kcStaff);
+    const { id } = await createMedReport({ patientId: PATIENT, name: 'No media', verifiedMediaId: '0' }, kcStaff);
     const resolved = await resolveReportFile(id, clinicScope);
     expect(resolved.reportId).toBe(id);
     expect(resolved.contentPath).toBe(`/api/v1/patient-medical-reports/${id}/content`);
     expect(resolved).not.toHaveProperty('fileUrl');
+  });
+
+  // C1 (pre-merge review, 2026-08-25): a request body naming a WP media id used
+  // to be able to mint a report row over another clinic's attachment, then read
+  // its bytes via GET /{id}/content. The fix is that `medReportCreateSchema` (the
+  // public POST body) no longer has any media-id field, so there is nothing to
+  // carry an attacker's id through — `createMedReport` only accepts one via
+  // `verifiedMediaId`, supplied by a caller that uploaded the bytes itself.
+  describe('C1 — a request body cannot mint a report over media it does not own', () => {
+    it('medReportCreateSchema drops a body-supplied media id instead of passing it through', () => {
+      const parsed = medReportCreateSchema.safeParse({
+        patientId: PATIENT,
+        name: 'Attack',
+        uploadReport: 'victim-media-id', // what an attacker would send
+      });
+
+      expect(parsed.success).toBe(true);
+      // Not just "ignored for validation purposes" — genuinely absent from the
+      // parsed value a route would go on to use.
+      expect(parsed.success && parsed.data).not.toHaveProperty('uploadReport');
+    });
+
+    it('createMedReport has no parameter a parsed request body could satisfy with a media id', async () => {
+      const parsed = medReportCreateSchema.parse({
+        patientId: PATIENT,
+        name: 'Attack',
+        uploadReport: 'victim-media-id',
+      });
+
+      // The parsed body is missing `verifiedMediaId` entirely, so passing it
+      // straight through — the shape a route handler would be tempted to use —
+      // fails loudly (a required column has no value) rather than quietly
+      // filing the row under `undefined`/null and definitely not under the
+      // attacker-chosen id.
+      await expect(createMedReport(parsed as any, kcStaff)).rejects.toThrow();
+    });
   });
 });

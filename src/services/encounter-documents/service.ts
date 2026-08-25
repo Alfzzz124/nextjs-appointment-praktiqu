@@ -211,7 +211,10 @@ export async function uploadEncounterDocument(
     {
       patientId: encounter.patientId,
       name: input.name.trim() === '' ? input.filename : input.name.trim(),
-      uploadReport: String(uploaded.mediaId),
+      // Trusted: the id `uploadMedia` just returned for the bytes this same
+      // request uploaded — never a caller-supplied id. See the trust-boundary
+      // note on `MedReportCreateInput.verifiedMediaId`.
+      verifiedMediaId: String(uploaded.mediaId),
     },
     kc,
   );

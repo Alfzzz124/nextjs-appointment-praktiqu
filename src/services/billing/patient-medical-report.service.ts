@@ -90,14 +90,33 @@ export async function assertPatientInScope(patientId: number, kc: KcActor): Prom
   if (!rows[0]) throw new KcError('Patient not found', 404);
 }
 
-export interface MedReportCreateInput { patientId: number; name: string; uploadReport: string; date?: string; }
+export interface MedReportCreateInput {
+  patientId: number;
+  name: string;
+  /**
+   * A WordPress media id the *caller* has already established belongs to
+   * `patientId` — in practice, one it just created in this same request via
+   * `uploadMedia` (see `uploadEncounterDocument`). This is a trust boundary,
+   * not a formality: nothing in the WP media library ties a media id to a
+   * patient, so there is no way for this function to verify the claim itself.
+   * A media id read out of an untrusted request body carries no such
+   * relationship — a caller could name any other clinic's attachment and this
+   * would happily file it under their own patient, after which
+   * `GET /patient-medical-reports/{id}/content` hands back those bytes (the
+   * C1 finding this field name exists to prevent a repeat of). That is why
+   * the public create schema (`medReportCreateSchema`) has no media-id field
+   * at all: there is no way to reach this parameter from a request body.
+   */
+  verifiedMediaId: string;
+  date?: string;
+}
 export async function createMedReport(input: MedReportCreateInput, kc: KcActor): Promise<{ id: number }> {
   await assertPatientInScope(input.patientId, kc);
   const created = await prisma.kcPatientMedicalReport.create({
     data: {
       patientId: BigInt(input.patientId),
       name: input.name,
-      uploadReport: input.uploadReport,
+      uploadReport: input.verifiedMediaId,
       date: input.date ? new Date(input.date) : new Date(),
     },
     select: { id: true },

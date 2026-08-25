@@ -30,4 +30,18 @@ describe('patient-medical-reports routes auth matrix', () => {
     expect(res.status).toBe(403);
     expect((await res.json()).status).toBe(false);
   });
+
+  // C1: a body naming a media id (`uploadReport`) used to let a caller mint a
+  // report row over another clinic's attachment. `medReportCreateSchema` now
+  // has no media-id field at all, and this route has no upload step of its own
+  // to produce a trustworthy one, so it can no longer create a report —
+  // authorized or not. No `@/lib/db` mock is needed: this never reaches the
+  // database.
+  it('POST /patient-medical-reports never creates a report, even for an authorized actor supplying a media id (501)', async () => {
+    const res = await reportsPOST(reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports', {
+      method: 'POST', body: JSON.stringify({ patientId: 1, name: 'X', uploadReport: 'victim-media-id' }),
+    }), { params: {} } as any);
+    expect(res.status).toBe(501);
+    expect((await res.json()).status).toBe(false);
+  });
 });

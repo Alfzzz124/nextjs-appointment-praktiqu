@@ -5,7 +5,7 @@ import { assertCan } from '@/services/billing/kc-permissions';
 import { resolveKcActor } from '@/services/billing/kc-actor';
 import { medReportScopeFor } from '@/services/billing/med-report-scope';
 import { medReportListQuerySchema, medReportCreateSchema } from '@/services/billing/validation';
-import { listMedReports, createMedReport } from '@/services/billing/patient-medical-report.service';
+import { listMedReports } from '@/services/billing/patient-medical-report.service';
 
 export const GET = withAuth(async (req: NextRequest, ctx) => kcHandle(async () => {
   const { actor } = ctx as any;
@@ -19,8 +19,25 @@ export const GET = withAuth(async (req: NextRequest, ctx) => kcHandle(async () =
 export const POST = withAuth(async (req: NextRequest, ctx) => kcHandle(async () => {
   const { actor } = ctx as any;
   assertCan(actor, 'patient_report_manage');
-  const kc = await resolveKcActor(actor);
   const parsed = medReportCreateSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return kcFail('Invalid input', 400);
-  return kcOk(await createMedReport(parsed.data as any, kc), 'Medical report created successfully');
+  // `medReportCreateSchema` no longer carries a media-id field (see the C1
+  // finding in the pre-merge review of feat/encounter-documents): a media id
+  // read out of this request body has no verified relationship to
+  // `patientId`, and accepting one let a caller mint a report row over any
+  // other clinic's uploaded file, then read its bytes via
+  // `GET /patient-medical-reports/{id}/content`. `createMedReport` now
+  // requires a `verifiedMediaId` that only a caller who performed the upload
+  // itself can supply — this route does not upload anything, so it has no
+  // such id to give it. The one place that does is
+  // `POST /api/v1/encounters/{id}/documents` (multipart), which is the
+  // front-end's only document-creation path per the API guide.
+  //
+  // Left responding 501 rather than either crashing on a missing required
+  // field or quietly creating a fileless row. Whether this route should be
+  // retired outright is the API owner's call, not made here.
+  return kcFail(
+    'Creating a report requires uploading its file first. Use POST /api/v1/encounters/{id}/documents.',
+    501,
+  );
 }));

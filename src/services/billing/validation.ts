@@ -187,10 +187,21 @@ export const medReportListQuerySchema = z.object({
   patientId: z.coerce.number().int().optional(),
   search: z.string().optional(),  // matches name
 });
+// No media-id field here on purpose (see C1 in the pre-merge review of
+// feat/encounter-documents). This used to accept `uploadReport` — a WordPress
+// media id — straight from the request body. Nothing ties a WP media id to a
+// patient, so any caller could name *any* other clinic's attachment, mint a
+// report row over it via `POST /patient-medical-reports`, and then read those
+// bytes back via `GET /patient-medical-reports/{id}/content`. Media ids are
+// small sequential integers, so this reached every clinic's documents.
+// A media id may now only ever come from `createMedReport`'s
+// `verifiedMediaId` — supplied by a caller that uploaded the bytes itself in
+// the same request (see `uploadEncounterDocument`), never parsed out of a
+// request body. Do not re-add a media-id field here without re-establishing
+// that the id belongs to `patientId`.
 export const medReportCreateSchema = z.object({
   patientId: z.coerce.number().int(),
   name: z.string().min(1).max(2000),
-  uploadReport: z.string().min(1).max(20),   // existing WP media id
   date: z.string().optional(),               // ISO / YYYY-MM-DD; default now
 });
 
