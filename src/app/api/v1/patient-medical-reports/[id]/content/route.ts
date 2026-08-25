@@ -17,7 +17,7 @@ import { medReportScopeFor } from '@/services/billing/med-report-scope';
 import { getMedReport } from '@/services/billing/patient-medical-report.service';
 import { fetchMedia } from '@/lib/wp-endpoint';
 import { KcError } from '@/lib/kc-response';
-import { inlineDisposition } from '@/lib/http/content-disposition';
+import { contentDispositionFor } from '@/lib/http/content-disposition';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,7 +40,7 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
 
     const headers = new Headers({
       'Content-Type': media.contentType,
-      'Content-Disposition': inlineDisposition(report.name ?? media.filename),
+      'Content-Disposition': contentDispositionFor(media.contentType, report.name ?? media.filename),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-store',
     });

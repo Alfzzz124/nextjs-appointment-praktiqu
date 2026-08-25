@@ -25,6 +25,17 @@ export const EXTENSIONS_BY_MIME: Record<AllowedMime, readonly string[]> = {
   'application/pdf': ['pdf'],
 };
 
+/**
+ * The canonical allowlist of mime types this validator ever produces — the same
+ * five types `sniffMime` recognises. Consumers that must decide whether some
+ * *other* mime (one that never went through this validator, e.g. a row created
+ * by KiviCare's own upload panel or a booking attachment) is safe to treat the
+ * same way should check against this list rather than re-declaring it.
+ */
+export const ALLOWED_MIME_TYPES: readonly AllowedMime[] = Object.keys(
+  EXTENSIONS_BY_MIME,
+) as AllowedMime[];
+
 export type UploadValidationError =
   | 'EMPTY_FILE'
   | 'TOO_LARGE'

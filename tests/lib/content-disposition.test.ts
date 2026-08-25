@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { inlineDisposition } from '@/lib/http/content-disposition';
+import {
+  attachmentDisposition,
+  contentDispositionFor,
+  inlineDisposition,
+} from '@/lib/http/content-disposition';
 
 describe('inlineDisposition', () => {
   it('emits both the ASCII fallback and the UTF-8 form', () => {
@@ -51,5 +55,32 @@ describe('inlineDisposition', () => {
     expect(out).toBe(
       `inline; filename="a!b'c(d)e*f.pdf"; filename*=UTF-8''a%21b%27c%28d%29e%2Af.pdf`,
     );
+  });
+});
+
+describe('attachmentDisposition', () => {
+  it('uses the attachment disposition type and the same encoding rules', () => {
+    expect(attachmentDisposition('resume.pdf'))
+      .toBe(`attachment; filename="resume.pdf"; filename*=UTF-8''resume.pdf`);
+  });
+});
+
+describe('contentDispositionFor', () => {
+  it('serves an allowed type inline', () => {
+    expect(contentDispositionFor('image/png', 'scan.png')).toBe(
+      inlineDisposition('scan.png'),
+    );
+  });
+
+  it('serves a declared text/html as attachment, not inline', () => {
+    const out = contentDispositionFor('text/html', 'notes.html');
+    expect(out).toBe(attachmentDisposition('notes.html'));
+    expect(out.startsWith('attachment;')).toBe(true);
+  });
+
+  it('serves a declared image/svg+xml as attachment, not inline', () => {
+    const out = contentDispositionFor('image/svg+xml', 'logo.svg');
+    expect(out).toBe(attachmentDisposition('logo.svg'));
+    expect(out.startsWith('attachment;')).toBe(true);
   });
 });

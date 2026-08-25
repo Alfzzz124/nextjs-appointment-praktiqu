@@ -271,6 +271,56 @@ describe('GET /patient-medical-reports/:id/content', () => {
     expect(bodyText).not.toContain('internal-wp-host.local');
     expect(JSON.parse(bodyText).message).toBe('Could not read the document');
   });
+
+  /**
+   * `post_mime_type` on the underlying WP row is not something `validateUpload`
+   * ever checked — KiviCare's own "Uploaded Reports" panel and every booking
+   * attachment bypass it — so the route itself must not blindly trust it to
+   * decide `inline` vs `attachment`. See `src/lib/http/content-disposition.ts`.
+   */
+  describe('inline vs attachment, by the media\'s declared mime type', () => {
+    function mockMediaFetch(mimeType: string) {
+      globalThis.fetch = vi.fn(async () =>
+        new Response('file-bytes', { status: 200, headers: { 'content-type': mimeType } }),
+      ) as any;
+    }
+
+    beforeEach(() => {
+      (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+        { id: 1, name: 'Report', patient_id: 9000001, upload_report: '42', date: new Date('2026-01-01') },
+      ]);
+    });
+
+    it('serves an allowed type (application/pdf) inline', async () => {
+      mockMediaFetch('application/pdf');
+      const res = await reportContentGET(
+        reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+        { params: { id: '1' } } as any,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Disposition')).toMatch(/^inline;/);
+    });
+
+    it('serves a declared text/html as attachment, not inline', async () => {
+      mockMediaFetch('text/html');
+      const res = await reportContentGET(
+        reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+        { params: { id: '1' } } as any,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Disposition')).toMatch(/^attachment;/);
+    });
+
+    it('serves a declared image/svg+xml as attachment, not inline', async () => {
+      mockMediaFetch('image/svg+xml');
+      const res = await reportContentGET(
+        reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/content'),
+        { params: { id: '1' } } as any,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Disposition')).toMatch(/^attachment;/);
+    });
+  });
 });
 
 describe('GET /sessions/:id/attachments/:mediaId/content', () => {

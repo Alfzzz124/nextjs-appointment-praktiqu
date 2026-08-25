@@ -19,7 +19,7 @@ import { kcFail, KcError } from '@/lib/kc-response';
 import { getSession, SessionServiceError } from '@/services/session/session.service';
 import { attachmentBelongsToAppointment, listBookingAttachments } from '@/repositories/wp/encounter-documents.repo';
 import { fetchMedia } from '@/lib/wp-endpoint';
-import { inlineDisposition } from '@/lib/http/content-disposition';
+import { contentDispositionFor } from '@/lib/http/content-disposition';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,7 +50,7 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
 
     const headers = new Headers({
       'Content-Type': media.contentType,
-      'Content-Disposition': inlineDisposition(meta.filename),
+      'Content-Disposition': contentDispositionFor(media.contentType, meta.filename),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-store',
     });
