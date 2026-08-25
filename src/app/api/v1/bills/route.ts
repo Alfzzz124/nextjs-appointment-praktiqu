@@ -24,9 +24,10 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
     const { actor } = ctx as any;
     await assertBillingEnabled();
     assertCan(actor, 'patient_bill_add');
+    const kc = await resolveKcActor(actor);
     const parsed = billCreateSchema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) return kcFail(parsed.error.issues[0]?.message ?? 'Invalid input', 400);
-    const data = await createBill(parsed.data as any);
+    const data = await createBill(parsed.data as any, billScopeFor(kc));
     return kcOk(data, 'Bill created successfully');
   }),
 );

@@ -112,6 +112,74 @@ final class Media
         ];
     }
 
+    /**
+     * Handle GET /praktiqu/v1/media/{id}.
+     *
+     * Writes the file straight to the output buffer and exits. Returning it
+     * through the REST response would JSON-encode binary data, and buffering a
+     * 10 MB PDF in PHP memory per request is exactly what streaming avoids.
+     *
+     * `exit` skips WordPress's shutdown hooks. That is deliberate and matches
+     * KiviCare's own download path — there is nothing left to render once the
+     * body is a file.
+     *
+     * No permission check here on purpose: this route is reachable only with the
+     * service token, and the Next.js caller has already authorised the request
+     * against a row the user may see. See the design's D3.
+     *
+     * @return void|\WP_Error
+     */
+    public function stream(\WP_REST_Request $request)
+    {
+        $id = (int) $request->get_param('id');
+
+        $post = get_post($id);
+        if (!$post || $post->post_type !== 'attachment') {
+            return new \WP_Error('praktiqu_not_found', 'Attachment not found.', ['status' => 404]);
+        }
+
+        $path = get_attached_file($id);
+        if (!is_string($path) || $path === '' || !file_exists($path)) {
+            return new \WP_Error('praktiqu_file_missing', 'Attachment file is missing on disk.', ['status' => 404]);
+        }
+
+        $mime = (string) $post->post_mime_type;
+        if ($mime === '') {
+            $mime = 'application/octet-stream';
+        }
+        $filename = basename($path);
+        $size = filesize($path);
+
+        // Discard anything a plugin may have echoed before us; a single stray
+        // newline corrupts a PDF.
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        header('Content-Type: ' . $mime);
+        // RFC 6266 / RFC 5987: send both forms. The quoted `filename` is a
+        // fallback for clients that don't parse `filename*`, so it must be
+        // stripped to safe, unbreakable ASCII (any byte outside printable
+        // ASCII becomes `_`, and `"`/`\` are neutralised too so the value
+        // cannot escape the quotes or split the header). The `filename*`
+        // form carries the real, possibly non-ASCII name, percent-encoded
+        // per RFC 5987 via rawurlencode().
+        $safe_filename = preg_replace('/[^\x20-\x7E]/', '_', $filename);
+        $safe_filename = str_replace(['"', '\\'], '_', $safe_filename);
+        header(
+            'Content-Disposition: inline; filename="' . $safe_filename . '"; '
+            . "filename*=UTF-8''" . rawurlencode($filename)
+        );
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store');
+        if ($size !== false) {
+            header('Content-Length: ' . $size);
+        }
+
+        readfile($path);
+        exit;
+    }
+
     private function upload_error_message(int $code): string
     {
         switch ($code) {

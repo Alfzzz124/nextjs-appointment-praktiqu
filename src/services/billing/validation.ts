@@ -40,7 +40,11 @@ export const taxUpdateSchema = taxCreateSchema.partial().extend({
 });
 
 export const statusSchema = z.object({ status: z.coerce.number().int().min(0).max(1) });
-export const idsSchema = z.object({ ids: z.array(z.coerce.number().int()).min(1) });
+// Cap matches the perPage ceiling used for every list endpoint in this file
+// (z.coerce.number().int().min(1).max(100)) — same order of magnitude as one
+// page of results, and small enough that an O(N) per-id cost in a bulk
+// handler (e.g. encounter-document unlinking) stays bounded.
+export const idsSchema = z.object({ ids: z.array(z.coerce.number().int()).min(1).max(100) });
 export const idsStatusSchema = idsSchema.merge(statusSchema);
 
 export const billListQuerySchema = z.object({
@@ -80,6 +84,16 @@ const taxItemSchema = z.object({
 
 const refObj = z.object({ id: z.coerce.number().int(), appointmentId: z.coerce.number().int().optional() });
 
+// `clinic` / `doctor` / `patient` are required here only so a KiviCare-shaped
+// request body validates — `bill.service.ts#createBill` never reads them for
+// persistence or authorization. Which encounter a caller may bill, and which
+// clinic the resulting row belongs to, are both derived from the
+// `patientEncounter` row itself (see the comment above `assertBillScope` in
+// createBill). Keeping these fields required is a deliberate backward-compat
+// choice for existing callers that still send the full KiviCare shape; if you
+// ever consider dropping them, first confirm no client relies on the 400 a
+// missing field currently produces — do not repurpose them as a source of
+// truth for clinic/doctor/patient without re-reading that comment.
 export const billCreateSchema = z.object({
   serviceItems: z.array(serviceItemSchema).min(1),
   taxItems: z.array(taxItemSchema).optional().default([]),
@@ -183,10 +197,21 @@ export const medReportListQuerySchema = z.object({
   patientId: z.coerce.number().int().optional(),
   search: z.string().optional(),  // matches name
 });
+// No media-id field here on purpose (see C1 in the pre-merge review of
+// feat/encounter-documents). This used to accept `uploadReport` — a WordPress
+// media id — straight from the request body. Nothing ties a WP media id to a
+// patient, so any caller could name *any* other clinic's attachment, mint a
+// report row over it via `POST /patient-medical-reports`, and then read those
+// bytes back via `GET /patient-medical-reports/{id}/content`. Media ids are
+// small sequential integers, so this reached every clinic's documents.
+// A media id may now only ever come from `createMedReport`'s
+// `verifiedMediaId` — supplied by a caller that uploaded the bytes itself in
+// the same request (see `uploadEncounterDocument`), never parsed out of a
+// request body. Do not re-add a media-id field here without re-establishing
+// that the id belongs to `patientId`.
 export const medReportCreateSchema = z.object({
   patientId: z.coerce.number().int(),
   name: z.string().min(1).max(2000),
-  uploadReport: z.string().min(1).max(20),   // existing WP media id
   date: z.string().optional(),               // ISO / YYYY-MM-DD; default now
 });
 

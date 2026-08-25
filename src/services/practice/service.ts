@@ -12,7 +12,9 @@
  * Ids are `number` (`wp_kc_clinics.id`).
  */
 
+import type { Actor } from '@/lib/auth';
 import { logging } from '@/lib/logging';
+import { resolveKcActor } from '@/services/billing/kc-actor';
 import {
   findClinicById,
   listClinicMembers,
@@ -60,6 +62,32 @@ export class PracticeValidationError extends Error {
   ) {
     super(message);
     this.name = 'PracticeValidationError';
+  }
+}
+
+/**
+ * A CLINIC_ADMIN may only touch their own practice — SUPER_ADMIN is unrestricted.
+ * Every `/practices/:id` route (and its `/settings`, `/holidays`, `/users` siblings)
+ * was gated on role alone, so any CLINIC_ADMIN could read or write ANY clinic by id.
+ *
+ * Throws `PracticeNotFoundError` (→ 404) rather than a 403 on mismatch: a 403 would
+ * confirm the practice exists, which is exactly the row-scope leak this closes.
+ *
+ * The JWT's own `actor.practiceId` is a cuid left over from the retired shadow
+ * schema (see `professionals/route.ts`) — the real clinic id has to come from
+ * `resolveKcActor`, the same lookup bills and taxes use.
+ *
+ * This runs first, for every role, in every route that calls it — so it also guards
+ * `Number(params.id)` being NaN (a non-numeric `:id` segment, e.g. `/practices/abc`).
+ * Left unchecked, `BigInt(practiceId)` below throws an uncaught `RangeError`, which
+ * surfaces as a 500 where the rest of the family (unknown-but-numeric id) answers 404.
+ */
+export async function assertPracticeInScope(actor: Actor, practiceId: number): Promise<void> {
+  if (!Number.isInteger(practiceId)) throw new PracticeNotFoundError(practiceId);
+  if (actor.role === 'SUPER_ADMIN') return;
+  const kc = await resolveKcActor(actor);
+  if (kc.clinicId === null || kc.clinicId !== BigInt(practiceId)) {
+    throw new PracticeNotFoundError(practiceId);
   }
 }
 

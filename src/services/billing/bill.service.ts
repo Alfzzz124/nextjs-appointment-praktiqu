@@ -79,7 +79,29 @@ export interface BillCreateInput {
   patientEncounter: BillRef; service_total: number; total_amount: number; checkout?: boolean;
 }
 
-export async function createBill(input: BillCreateInput): Promise<{ id: number }> {
+export interface BillScope { clinicId?: bigint; doctorId?: bigint; patientId?: bigint }
+
+/**
+ * Role-based row scope check, shared by every single-row bill read/write.
+ *
+ * `scope: null` means unrestricted (SUPER_ADMIN). Any defined field on `scope` that
+ * does not match the row's corresponding field is a 404 — never a 403, since a 403
+ * would confirm the row exists. `row` fields are `null | undefined` when the caller
+ * could not resolve them (e.g. the bill's encounter is missing); a defined scope
+ * constraint never matches an absent row value, so that fails closed too.
+ */
+function assertBillScope(
+  row: { clinicId?: bigint | null; doctorId?: bigint | null; patientId?: bigint | null },
+  scope: BillScope | null,
+  notFoundMessage = 'Bill not found',
+): void {
+  if (!scope) return;
+  if (scope.clinicId !== undefined && row.clinicId !== scope.clinicId) throw new KcError(notFoundMessage, 404);
+  if (scope.doctorId !== undefined && row.doctorId !== scope.doctorId) throw new KcError(notFoundMessage, 404);
+  if (scope.patientId !== undefined && row.patientId !== scope.patientId) throw new KcError(notFoundMessage, 404);
+}
+
+export async function createBill(input: BillCreateInput, scope: BillScope | null = null): Promise<{ id: number }> {
   const encounterId = BigInt(input.patientEncounter.id);
 
   const existing = await prisma.kcBill.findFirst({ where: { encounterId }, select: { id: true } });
@@ -87,6 +109,19 @@ export async function createBill(input: BillCreateInput): Promise<{ id: number }
 
   const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: encounterId } });
   if (!encounter) throw new KcError('Encounter not found', 404);
+  // Which ENCOUNTER a caller may attach a bill to at all is governed by the
+  // encounter's own row, not by whatever ids they typed in.
+  assertBillScope({ clinicId: encounter.clinicId, doctorId: encounter.doctorId, patientId: encounter.patientId }, scope, 'Encounter not found');
+
+  // `input.clinic` / `input.doctor` / `input.patient` are accepted (and required by
+  // `billCreateSchema`) only so a KiviCare-shaped request body validates — they are
+  // never read past this point. The bill has no doctorId/patientId column of its own
+  // (getBill/listBills always join through the encounter for those), and clinicId is
+  // the field `assertBillScope` authorises bills by, so it must come from the
+  // encounter row above, never from the body: a caller who legitimately owns
+  // `encounter` could otherwise label the bill `clinic: { id: <someone else's> }` and
+  // move the row into another clinic's listBills/exportBills/revenue figures while it
+  // vanishes from their own.
 
   const items = normalizeItems(input.serviceItems);
 
@@ -100,7 +135,7 @@ export async function createBill(input: BillCreateInput): Promise<{ id: number }
         actualAmount: String(input.total_amount),
         status: 0n,
         paymentStatus: input.status,
-        clinicId: BigInt(input.clinic.id),
+        clinicId: encounter.clinicId,
         createdAt: new Date(),
       },
       select: { id: true },
@@ -146,11 +181,12 @@ export interface BillDetail {
   totalTax: number; taxItems: BillTaxItem[]; total_amount: number; actual_amount: number;
 }
 
-export async function getBill(id: number): Promise<BillDetail> {
+export async function getBill(id: number, scope: BillScope | null = null): Promise<BillDetail> {
   const bill = await prisma.kcBill.findUnique({ where: { id: BigInt(id) } });
   if (!bill) throw new KcError('Bill not found', 404);
 
   const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: bill.encounterId }, select: { doctorId: true, patientId: true } });
+  assertBillScope({ clinicId: bill.clinicId, doctorId: encounter?.doctorId, patientId: encounter?.patientId }, scope);
 
   const items = await prisma.kcBillItem.findMany({ where: { billId: bill.id } });
   const serviceIds = items.map((i) => i.itemId);
@@ -186,11 +222,14 @@ interface BillSkeleton {
   serviceItems: BillServiceItem[];
 }
 
-export async function getBillByEncounter(encounterId: number): Promise<{ status: string } | BillDetail | BillSkeleton> {
+export async function getBillByEncounter(encounterId: number, scope: BillScope | null = null): Promise<{ status: string } | BillDetail | BillSkeleton> {
   const bill = await prisma.kcBill.findFirst({ where: { encounterId: BigInt(encounterId) }, select: { id: true } });
-  if (bill) return getBill(Number(bill.id));
+  if (bill) return getBill(Number(bill.id), scope);
   const enc = await prisma.kcPatientEncounter.findUnique({ where: { id: BigInt(encounterId) } });
   if (!enc) return { status: 'unpaid' };
+  // No bill yet, but the encounter itself is still someone's row — a skeleton built
+  // from an out-of-scope encounter would leak its clinic/doctor/patient ids.
+  assertBillScope({ clinicId: enc.clinicId, doctorId: enc.doctorId, patientId: enc.patientId }, scope, 'Bill not found');
   return {
     // skeleton mirrors KiviCare's "Bill not found for this encounter" payload
     status: 'unpaid',
@@ -199,9 +238,11 @@ export async function getBillByEncounter(encounterId: number): Promise<{ status:
   };
 }
 
-export async function updateBill(id: number, input: BillCreateInput): Promise<{ id: number }> {
+export async function updateBill(id: number, input: BillCreateInput, scope: BillScope | null = null): Promise<{ id: number }> {
   const bill = await prisma.kcBill.findUnique({ where: { id: BigInt(id) } });
   if (!bill) throw new KcError('Bill not found', 404);
+  const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: bill.encounterId }, select: { doctorId: true, patientId: true } });
+  assertBillScope({ clinicId: bill.clinicId, doctorId: encounter?.doctorId, patientId: encounter?.patientId }, scope);
   const items = normalizeItems(input.serviceItems);
   await prisma.$transaction(async (tx) => {
     await tx.kcBill.update({
@@ -223,21 +264,31 @@ export async function updateBill(id: number, input: BillCreateInput): Promise<{ 
   return { id };
 }
 
-export async function updateBillItem(itemId: number, input: { serviceId: number; quantity: number; price: number }): Promise<{ id: number }> {
+/** Resolve the bill (+ its encounter) that owns a bill item, for scope checks. */
+async function billItemOwner(itemId: bigint): Promise<{ clinicId: bigint | null; doctorId: bigint | null; patientId: bigint | null } | null> {
+  const item = await prisma.kcBillItem.findUnique({ where: { id: itemId }, select: { billId: true } });
+  if (!item) return null;
+  const bill = await prisma.kcBill.findUnique({ where: { id: item.billId }, select: { clinicId: true, encounterId: true } });
+  if (!bill) return null;
+  const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: bill.encounterId }, select: { doctorId: true, patientId: true } });
+  return { clinicId: bill.clinicId, doctorId: encounter?.doctorId ?? null, patientId: encounter?.patientId ?? null };
+}
+
+export async function updateBillItem(itemId: number, input: { serviceId: number; quantity: number; price: number }, scope: BillScope | null = null): Promise<{ id: number }> {
   const item = await prisma.kcBillItem.findUnique({ where: { id: BigInt(itemId) } });
   if (!item) throw new KcError('Bill item not found', 404);
+  assertBillScope(await billItemOwner(item.id) ?? {}, scope, 'Bill item not found');
   await prisma.kcBillItem.update({ where: { id: BigInt(itemId) }, data: { itemId: BigInt(input.serviceId), qty: input.quantity, price: String(input.price) } });
   return { id: itemId };
 }
 
-export async function deleteBillItem(itemId: number): Promise<{ id: number }> {
+export async function deleteBillItem(itemId: number, scope: BillScope | null = null): Promise<{ id: number }> {
   const item = await prisma.kcBillItem.findUnique({ where: { id: BigInt(itemId) } });
   if (!item) throw new KcError('Bill item not found', 404);
+  assertBillScope(await billItemOwner(item.id) ?? {}, scope, 'Bill item not found');
   await prisma.kcBillItem.delete({ where: { id: BigInt(itemId) } });
   return { id: itemId };
 }
-
-export interface BillScope { clinicId?: bigint; doctorId?: bigint; patientId?: bigint }
 
 export interface BillListParams {
   search?: string; status?: string; date_from?: string; date_to?: string;
@@ -317,6 +368,9 @@ export async function encountersWithoutBill(scope: BillScope | null) {
   const args: any[] = [];
   if (scope?.clinicId !== undefined) { where.push('pe.clinic_id = ?'); args.push(Number(scope.clinicId)); }
   if (scope?.doctorId !== undefined) { where.push('pe.doctor_id = ?'); args.push(Number(scope.doctorId)); }
+  // A CLIENT reaches this endpoint too (patient_bill_list includes CLIENT); without
+  // this it returned every unbilled encounter in the install, not just their own.
+  if (scope?.patientId !== undefined) { where.push('pe.patient_id = ?'); args.push(Number(scope.patientId)); }
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT pe.*, c.name AS clinic_name, d.display_name AS doctor_name, pt.display_name AS patient_name
      FROM wp_kc_patient_encounters pe

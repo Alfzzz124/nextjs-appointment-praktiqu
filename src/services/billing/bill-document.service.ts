@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { getBill, type BillDetail } from './bill.service';
+import { getBill, type BillDetail, type BillScope } from './bill.service';
 import { sendEmail } from '@/lib/email';
 import { KcError } from '@/lib/kc-response';
 
@@ -60,8 +60,8 @@ export async function resolveCurrency(): Promise<CurrencyFmt> {
 }
 
 /** Generate a PDF buffer for a bill. Uses Puppeteer (nodejs runtime). */
-export async function generateBillPdf(billId: number): Promise<Buffer> {
-  const bill = await getBill(billId);
+export async function generateBillPdf(billId: number, scope: BillScope | null = null): Promise<Buffer> {
+  const bill = await getBill(billId, scope);
   const currency = await resolveCurrency();
   const html = renderInvoiceHtml(bill, currency);
 
@@ -78,10 +78,10 @@ export async function generateBillPdf(billId: number): Promise<Buffer> {
 }
 
 /** Email a bill PDF to the given recipient. `to` defaults to the bill's patient email when omitted. */
-export async function emailBill(billId: number, to: string): Promise<boolean> {
+export async function emailBill(billId: number, to: string, scope: BillScope | null = null): Promise<boolean> {
   if (!to) throw new KcError('Recipient email is required', 400);
-  const bill = await getBill(billId);
-  const pdf = await generateBillPdf(billId);
+  const bill = await getBill(billId, scope);
+  const pdf = await generateBillPdf(billId, scope);
 
   const result = await sendEmail({
     to,

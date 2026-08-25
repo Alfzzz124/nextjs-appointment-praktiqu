@@ -112,3 +112,14 @@ export function billScopeFor(kc: KcActor): BillScope | null {
     default: return { clinicId: -1n };
   }
 }
+
+/**
+ * Translate a KcActor into a tax query scope (null = unrestricted, SUPER_ADMIN only).
+ * Taxes have no doctor/patient row scope — every other role is clinic-scoped, mirroring
+ * `listTaxes`'s existing `(clinic_id = ? OR clinic_id = -1 OR clinic_id IS NULL)` filter,
+ * which treats global taxes as visible everywhere. A null `clinicId` (no clinic mapping)
+ * becomes -1n so the scope fails closed rather than matching every clinic-specific row.
+ */
+export function taxScopeFor(kc: KcActor): { clinicId: bigint } | null {
+  return kc.actor.role === 'SUPER_ADMIN' ? null : { clinicId: kc.clinicId ?? -1n };
+}

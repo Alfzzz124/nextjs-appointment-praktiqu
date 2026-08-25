@@ -1,9 +1,10 @@
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
+import { prepareUnlinkBatch, unlinkReport } from '@/repositories/wp/encounter-documents.repo';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { MedReportScope } from '@/services/billing/med-report-scope';
 
-export interface MedReportListParams { page: number; perPage: number | 'all'; patientId?: number; search?: string; }
+export interface MedReportListParams { page: number; perPage: number | 'all'; patientId?: number; search?: string; excludeIds?: number[]; }
 
 function mapRow(r: any) {
   return {
@@ -29,6 +30,10 @@ function buildWhere(scope: MedReportScope | null, p: Partial<MedReportListParams
   }
   if (p.patientId !== undefined) { where.push('mr.patient_id = ?'); args.push(p.patientId); }
   if (p.search) { where.push('mr.name LIKE ?'); args.push(`%${p.search}%`); }
+  if (p.excludeIds && p.excludeIds.length > 0) {
+    where.push(`mr.id NOT IN (${p.excludeIds.map(() => '?').join(',')})`);
+    args.push(...p.excludeIds);
+  }
   return { whereSql: where.join(' AND '), args };
 }
 
@@ -43,6 +48,23 @@ export async function listMedReports(p: MedReportListParams, scope: MedReportSco
     ...args, ...pageArgs,
   );
   return { reports: rows.map(mapRow), pagination: { page: p.page, perPage: p.perPage, total } };
+}
+
+/**
+ * Fetch specific reports by id, scoped the same way `listMedReports` is — a caller
+ * cannot read another clinic's (or patient's) rows just by naming their ids. One
+ * query via `IN (...)`. An empty `ids` returns `[]` without touching the database
+ * (an empty `IN ()` is invalid SQL).
+ */
+export async function listMedReportsByIds(ids: number[], scope: MedReportScope | null) {
+  if (ids.length === 0) return [];
+  const { whereSql, args } = buildWhere(scope, {});
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT mr.*, pt.display_name AS patient_name ${BASE_JOIN} WHERE ${whereSql} AND mr.id IN (${placeholders}) ORDER BY mr.id DESC`,
+    ...args, ...ids,
+  );
+  return rows.map(mapRow);
 }
 
 export async function getMedReport(id: number, scope: MedReportScope | null) {
@@ -68,14 +90,33 @@ export async function assertPatientInScope(patientId: number, kc: KcActor): Prom
   if (!rows[0]) throw new KcError('Patient not found', 404);
 }
 
-export interface MedReportCreateInput { patientId: number; name: string; uploadReport: string; date?: string; }
+export interface MedReportCreateInput {
+  patientId: number;
+  name: string;
+  /**
+   * A WordPress media id the *caller* has already established belongs to
+   * `patientId` — in practice, one it just created in this same request via
+   * `uploadMedia` (see `uploadEncounterDocument`). This is a trust boundary,
+   * not a formality: nothing in the WP media library ties a media id to a
+   * patient, so there is no way for this function to verify the claim itself.
+   * A media id read out of an untrusted request body carries no such
+   * relationship — a caller could name any other clinic's attachment and this
+   * would happily file it under their own patient, after which
+   * `GET /patient-medical-reports/{id}/content` hands back those bytes (the
+   * C1 finding this field name exists to prevent a repeat of). That is why
+   * the public create schema (`medReportCreateSchema`) has no media-id field
+   * at all: there is no way to reach this parameter from a request body.
+   */
+  verifiedMediaId: string;
+  date?: string;
+}
 export async function createMedReport(input: MedReportCreateInput, kc: KcActor): Promise<{ id: number }> {
   await assertPatientInScope(input.patientId, kc);
   const created = await prisma.kcPatientMedicalReport.create({
     data: {
       patientId: BigInt(input.patientId),
       name: input.name,
-      uploadReport: input.uploadReport,
+      uploadReport: input.verifiedMediaId,
       date: input.date ? new Date(input.date) : new Date(),
     },
     select: { id: true },
@@ -83,11 +124,55 @@ export async function createMedReport(input: MedReportCreateInput, kc: KcActor):
   return { id: Number(created.id) };
 }
 
+/**
+ * Rename a document. Only `name` changes — the media id, the file and any encounter
+ * link stay exactly as they are.
+ */
+export async function renameMedReport(
+  id: number,
+  name: string,
+  scope: MedReportScope | null,
+): Promise<{ id: number; name: string }> {
+  const trimmed = name.trim();
+  if (trimmed === '') throw new KcError('Name is required', 400);
+
+  await getMedReport(id, scope); // scope + existence (404)
+
+  await prisma.kcPatientMedicalReport.update({
+    where: { id: BigInt(id) },
+    data: { name: trimmed },
+  });
+
+  return { id, name: trimmed };
+}
+
 export async function deleteMedReport(id: number, scope: MedReportScope | null): Promise<void> {
   await getMedReport(id, scope); // scope + existence (404)
+  // Link first: a link pointing at a deleted document would have to be worked
+  // around by every encounter listing from here on.
+  await unlinkReport(id);
   await prisma.kcPatientMedicalReport.delete({ where: { id: BigInt(id) } });
 }
 
+/**
+ * Delete several documents, each as its own unlink-then-delete unit.
+ *
+ * Processing stops at the first failure rather than best-effort-continuing
+ * through the rest: a document is only ever deleted once its own link is
+ * gone, so whatever has completed so far is fully coherent — earlier ids are
+ * unlinked and deleted, the one that failed and everything after it are
+ * completely untouched. That is a state the caller can reason about (and
+ * simply retry the same ids again, since unlinking and deleting are both
+ * idempotent) instead of a 500 that leaves them guessing which of the batch
+ * actually went through. The count returned is exactly how many were
+ * removed, whether or not that matches how many were requested.
+ *
+ * The per-document loop still calls the unlink step once per id — that is
+ * what makes a mid-batch failure attributable to one specific document
+ * instead of the whole batch. What is no longer paid once per id is the
+ * expensive part: `prepareUnlinkBatch` reads the link table exactly once for
+ * the whole batch up front, so this costs one table scan, not N.
+ */
 export async function bulkDeleteMedReports(ids: number[], scope: MedReportScope | null): Promise<number> {
   if (ids.length === 0) return 0;
   const { whereSql, args } = buildWhere(scope, {});
@@ -97,8 +182,23 @@ export async function bulkDeleteMedReports(ids: number[], scope: MedReportScope 
   );
   const okIds = inScope.map((r) => BigInt(r.id));
   if (okIds.length === 0) return 0;
-  const r = await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { in: okIds } } });
-  return r.count;
+
+  const unlinkOne = await prepareUnlinkBatch(okIds.map(Number));
+  let deleted = 0;
+  try {
+    for (const okId of okIds) {
+      // Link first: see deleteMedReport — a link pointing at a deleted
+      // document would have to be worked around by every encounter listing.
+      await unlinkOne(Number(okId));
+      await prisma.kcPatientMedicalReport.delete({ where: { id: okId } });
+      deleted++;
+    }
+  } catch (err) {
+    console.error(
+      `[bulkDeleteMedReports] stopped after ${deleted}/${okIds.length}:`, err,
+    );
+  }
+  return deleted;
 }
 
 export async function exportMedReports(p: MedReportListParams, scope: MedReportScope | null) {
@@ -106,19 +206,21 @@ export async function exportMedReports(p: MedReportListParams, scope: MedReportS
   return { reports: list.reports.map((x) => ({ id: x.id, name: x.name, patient_name: x.patient_name, upload_report: x.upload_report, date: x.date })) };
 }
 
-/** Best-effort WP media resolution. Returns the stored media id and a URL if the attachment exists (else null). */
+/**
+ * Where to fetch this document's bytes.
+ *
+ * This used to return the WordPress `guid`. That URL can never be opened: the
+ * `uploads/kivicare-reports` directory carries an `.htaccess` of `Deny from all`,
+ * written by KiviCare's own media migration. Handing the front-end a link that is
+ * guaranteed to 403 is worse than returning no link at all, so this now points at
+ * the authenticated streaming route.
+ */
 export async function resolveReportFile(id: number, scope: MedReportScope | null) {
   const report = await getMedReport(id, scope);
-  const mediaId = report.upload_report;
-  let fileUrl: string | null = null;
-  const asInt = Number.parseInt(String(mediaId), 10);
-  if (Number.isFinite(asInt)) {
-    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT guid FROM wp_posts WHERE ID = ? AND post_type = 'attachment' LIMIT 1`, asInt);
-    fileUrl = rows[0]?.guid ?? null;
-    if (!fileUrl) {
-      const meta = await prisma.$queryRawUnsafe<any[]>(`SELECT meta_value FROM wp_postmeta WHERE post_id = ? AND meta_key = '_wp_attached_file' LIMIT 1`, asInt);
-      fileUrl = meta[0]?.meta_value ? String(meta[0].meta_value) : null;
-    }
-  }
-  return { reportId: report.id, name: report.name, mediaId, fileUrl };
+  return {
+    reportId: report.id,
+    name: report.name,
+    mediaId: report.upload_report,
+    contentPath: `/api/v1/patient-medical-reports/${report.id}/content`,
+  };
 }
