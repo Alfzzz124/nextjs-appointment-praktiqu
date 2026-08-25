@@ -244,6 +244,63 @@ describe('createPublicAppointment', () => {
     expect(vi.mocked(createAppointment).mock.calls[0][0].patientId).toBe(PATIENT);
   });
 
+  /**
+   * A returning guest this install cannot map to the clinic must still be able to book.
+   *
+   * Production hit exactly this: a `wp_users` row whose `kiviCare_patient` capability is
+   * stored as `b:0`. `findPatientByEmail` matches it — `roleLikePattern` checks the role
+   * NAME only, never its value — while the plugin's `in_array()` against `$user->roles`
+   * does not, because WordPress drops `b:0` roles from that array. So `PUT /patients/{id}`
+   * answers 404 `praktiqu_not_a_patient`. Only 409 was mapped, so that 404 rose unwrapped
+   * into the route's final handler and every booking from that one address died as a bare
+   * 500: any professional, any service, any slot.
+   *
+   * The mapping is bookkeeping; the appointment is the booking. Losing the first costs the
+   * clinic a row in its patient list, losing the second costs the patient their session.
+   */
+  it('books anyway when the clinic mapping write fails for a returning guest', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(findPatientByEmail).mockResolvedValue({
+      id: BigInt(PATIENT),
+      email: INPUT.clientEmail,
+    } as never);
+    vi.mocked(updatePatient).mockRejectedValue(
+      new WpEndpointError('/patients/461 failed 404: praktiqu_not_a_patient', 404),
+    );
+
+    const holdKey = makeHold();
+    const created = await createPublicAppointment({ ...INPUT, holdKey });
+
+    expect(created.id).toBe(APPOINTMENT);
+    expect(vi.mocked(createAppointment).mock.calls[0][0].patientId).toBe(PATIENT);
+    // Not a fallback to minting a second account for an address we already matched.
+    expect(createPatient).not.toHaveBeenCalled();
+    // Consumed, like any completed booking — the guest must not be told to try again.
+    expect(slotHoldService.get(holdKey)).toBeNull();
+    // Swallowed, not silent: the clinic just lost a row from its patient list.
+    expect(logged).toHaveBeenCalled();
+
+    logged.mockRestore();
+  });
+
+  /**
+   * The swallow above is scoped to the clinic mapping and must stay that way. Creating
+   * the patient is not bookkeeping — without an id there is nobody to book the slot for,
+   * so a failure there has to surface rather than reach `createAppointment` with garbage.
+   * Pinned separately so widening that `catch` breaks a test instead of production.
+   */
+  it('still fails the booking when the patient itself cannot be created', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue(null);
+    vi.mocked(createPatient).mockRejectedValue(
+      new WpEndpointError('/patients failed 500: kc_patient_save listener died', 500),
+    );
+
+    await expect(
+      createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
+    ).rejects.toBeInstanceOf(WpEndpointError);
+    expect(createAppointment).not.toHaveBeenCalled();
+  });
+
   it('reports a conflict when the email belongs to a non-patient account', async () => {
     // findPatientByEmail is role-filtered, so it misses a doctor's address and the
     // plugin answers 409. Booking against that account would be wrong.
