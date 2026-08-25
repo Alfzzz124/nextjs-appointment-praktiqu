@@ -25,19 +25,28 @@ import { logging } from '@/lib/logging';
 type RouteParams = { params: { id: string } };
 type HolidayParams = { params: { id: string; holidayId: string } };
 
+/**
+ * Distinguishes "the promise rejected" from "the promise resolved with a value that
+ * happens not to be an `Error`" — something `.catch((e) => e)` cannot do, since a
+ * thrown string and a returned string are indistinguishable once collapsed into one
+ * variable. `handleError` below is only ever invoked on the `ok: false` branch, so it
+ * can treat every argument it receives as a genuine failure, fail-closed, with no
+ * "is this actually an error?" guard of its own.
+ */
+async function settle<T>(p: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  try {
+    return { ok: true, value: await p };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
 function handleError(
   err: unknown,
   path: string,
   method: string,
   detail?: string,
-): NextResponse | null {
-  // GET/DELETE pass `null` on success (e.g. `holidays instanceof Error ? holidays :
-  // null`); POST passes the raw success DTO itself, unconverted. Neither is an `Error`,
-  // so without this guard every 200/201/204 response fell through to the generic
-  // branch below and came back as a 500. Pre-existing bug, unrelated to row-scoping —
-  // found while adding the practice ownership check below, which needed a working
-  // success path to verify against.
-  if (!(err instanceof Error)) return null;
+): NextResponse {
   if (err instanceof PracticeNotFoundError) {
     return NextResponse.json(
       {
@@ -93,14 +102,12 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
   const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
 
-  const scopeErr = await assertPracticeInScope(gate.actor, Number(params.id)).catch((e) => e);
-  const scopeHandled = handleError(scopeErr, `/api/v1/practices/${params.id}/holidays`, 'GET');
-  if (scopeHandled) return scopeHandled;
+  const scope = await settle(assertPracticeInScope(gate.actor, Number(params.id)));
+  if (scope.ok === false) return handleError(scope.error, `/api/v1/practices/${params.id}/holidays`, 'GET');
 
-  const holidays = await listHolidays(Number(params.id)).catch((e) => e);
-  const handled = handleError(holidays instanceof Error ? holidays : null, `/api/v1/practices/${params.id}/holidays`, 'GET');
-  if (handled) return handled;
-  return NextResponse.json({ data: holidays }, { status: 200 });
+  const holidays = await settle(listHolidays(Number(params.id)));
+  if (holidays.ok === false) return handleError(holidays.error, `/api/v1/practices/${params.id}/holidays`, 'GET');
+  return NextResponse.json({ data: holidays.value }, { status: 200 });
 }
 
 // ============================================================
@@ -121,14 +128,12 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     );
   }
 
-  const scopeErr = await assertPracticeInScope(gate.actor, Number(params.id)).catch((e) => e);
-  const scopeHandled = handleError(scopeErr, `/api/v1/practices/${params.id}/holidays`, 'POST');
-  if (scopeHandled) return scopeHandled;
+  const scope = await settle(assertPracticeInScope(gate.actor, Number(params.id)));
+  if (scope.ok === false) return handleError(scope.error, `/api/v1/practices/${params.id}/holidays`, 'POST');
 
-  const dto = await addHoliday(Number(params.id), body, { actorId: null }).catch((e) => e);
-  const handled = handleError(dto, `/api/v1/practices/${params.id}/holidays`, 'POST');
-  if (handled) return handled;
-  return NextResponse.json({ data: dto }, { status: 201 });
+  const dto = await settle(addHoliday(Number(params.id), body, { actorId: null }));
+  if (dto.ok === false) return handleError(dto.error, `/api/v1/practices/${params.id}/holidays`, 'POST');
+  return NextResponse.json({ data: dto.value }, { status: 201 });
 }
 
 // ============================================================
@@ -139,16 +144,12 @@ export async function DELETE(_req: NextRequest, { params }: HolidayParams): Prom
   const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
 
-  const scopeErr = await assertPracticeInScope(gate.actor, Number(params.id)).catch((e) => e);
-  const scopeHandled = handleError(scopeErr, `/api/v1/practices/${params.id}/holidays/${params.holidayId}`, 'DELETE');
-  if (scopeHandled) return scopeHandled;
+  const scope = await settle(assertPracticeInScope(gate.actor, Number(params.id)));
+  if (scope.ok === false) return handleError(scope.error, `/api/v1/practices/${params.id}/holidays/${params.holidayId}`, 'DELETE');
 
-  const ok = await removeHoliday(Number(params.id), Number(params.holidayId), { actorId: null }).catch((e) => e);
-  const handled = handleError(
-    ok instanceof Error ? ok : null,
-    `/api/v1/practices/${params.id}/holidays/${params.holidayId}`,
-    'DELETE',
-  );
-  if (handled) return handled;
+  const removed = await settle(removeHoliday(Number(params.id), Number(params.holidayId), { actorId: null }));
+  if (removed.ok === false) {
+    return handleError(removed.error, `/api/v1/practices/${params.id}/holidays/${params.holidayId}`, 'DELETE');
+  }
   return new NextResponse(null, { status: 204 });
 }

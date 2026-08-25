@@ -100,6 +100,49 @@ describe('GET/POST/DELETE /practices/:id/holidays', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ data: [] });
   });
+
+  // The success paths `handleError`'s fail-open guard silently corrupted: POST passes
+  // its raw success DTO (never an `Error`) through `handleError` unconverted, and
+  // DELETE's 204 has no body at all — both are exactly what the guard's original bug
+  // turned into a false 500.
+  it('clinic A can add a holiday to its own practice', async () => {
+    const res = await holidaysPost(reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays`, {
+      method: 'POST', body: JSON.stringify({ title: 'Founders day', startDate: '2026-11-01', endDate: '2026-11-01', isAllDay: true }),
+    }), { params: { id: String(CLINIC_A) } });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.data).toMatchObject({ practiceId: CLINIC_A, title: 'Founders day' });
+  });
+
+  it('clinic A can delete its own holiday', async () => {
+    const created = await holidaysPost(reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays`, {
+      method: 'POST', body: JSON.stringify({ title: 'To be removed', startDate: '2026-11-02', endDate: '2026-11-02', isAllDay: true }),
+    }), { params: { id: String(CLINIC_A) } });
+    const { data } = await created.json();
+
+    const res = await holidayDelete(
+      reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays/${data.id}`),
+      { params: { id: String(CLINIC_A), holidayId: String(data.id) } },
+    );
+    expect(res.status).toBe(204);
+  });
+});
+
+describe('non-numeric :id answers 404, not 500', () => {
+  it('GET /practices/:id', async () => {
+    const res = await practiceGet(reqWith(jwtA, `http://localhost/api/v1/practices/abc`), { params: { id: 'abc' } });
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /practices/:id/settings', async () => {
+    const res = await settingsGet(reqWith(jwtA, `http://localhost/api/v1/practices/abc/settings`), { params: { id: 'abc' } });
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /practices/:id/holidays', async () => {
+    const res = await holidaysGet(reqWith(jwtA, `http://localhost/api/v1/practices/abc/holidays`), { params: { id: 'abc' } });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('GET /practices/:id/users', () => {

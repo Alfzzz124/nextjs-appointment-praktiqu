@@ -536,6 +536,9 @@ export async function cleanup() {
     ['wp_kc_followup_chains', 'patient_id'],
     ['wp_kc_patient_review', 'patient_id'],
     ['wp_kc_clinic_sessions', 'clinic_id'],
+    // Holidays created through addHoliday() get AUTO_INCREMENT ids (below TEST_MARKER)
+    // but their module_id is the practice's TEST_MARKER-range clinic id.
+    ['wp_kc_clinic_schedule', 'module_id'],
     ['wp_kc_doctor_clinic_mappings', 'clinic_id'],
     ['wp_kc_receptionist_clinic_mappings', 'clinic_id'],
     ['wp_kc_patient_clinic_mappings', 'clinic_id'],

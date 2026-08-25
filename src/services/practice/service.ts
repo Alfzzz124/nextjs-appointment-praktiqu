@@ -76,8 +76,14 @@ export class PracticeValidationError extends Error {
  * The JWT's own `actor.practiceId` is a cuid left over from the retired shadow
  * schema (see `professionals/route.ts`) — the real clinic id has to come from
  * `resolveKcActor`, the same lookup bills and taxes use.
+ *
+ * This runs first, for every role, in every route that calls it — so it also guards
+ * `Number(params.id)` being NaN (a non-numeric `:id` segment, e.g. `/practices/abc`).
+ * Left unchecked, `BigInt(practiceId)` below throws an uncaught `RangeError`, which
+ * surfaces as a 500 where the rest of the family (unknown-but-numeric id) answers 404.
  */
 export async function assertPracticeInScope(actor: Actor, practiceId: number): Promise<void> {
+  if (!Number.isInteger(practiceId)) throw new PracticeNotFoundError(practiceId);
   if (actor.role === 'SUPER_ADMIN') return;
   const kc = await resolveKcActor(actor);
   if (kc.clinicId === null || kc.clinicId !== BigInt(practiceId)) {
