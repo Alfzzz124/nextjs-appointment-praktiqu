@@ -472,7 +472,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 
 | Method | Endpoint | Capability (KC) |
 |---|---|---|
-| `GET` | `/api/v1/practices` | — · _stub 501_ |
+| `GET` | `/api/v1/practices` | — |
 | `POST` | `/api/v1/practices` | — · _stub 501_ |
 | `POST` | `/api/v1/practices/bulk/delete` | — |
 | `POST` | `/api/v1/practices/bulk/resend-credentials` | — · _stub 501_ |

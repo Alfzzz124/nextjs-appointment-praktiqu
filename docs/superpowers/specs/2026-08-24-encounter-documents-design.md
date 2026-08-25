@@ -297,3 +297,39 @@ Left for the API owner to decide, not resolved here:
   encounter — `createMedReport` only accepts a `verifiedMediaId` produced by
   `POST /api/v1/encounters/{id}/documents`'s own upload step, not one obtained
   separately. Whether that context should be removed, repointed, or left as-is is open.
+
+The `withAuth` fix on this branch (see the deploy runbook) activated row-scope checks on
+39 previously-broken `[id]` routes; bills, taxes, and practices were then given scope.
+A pre-merge re-review found three further tenancy gaps in that same family which were
+deliberately left unfixed rather than folded into this branch. Recorded here for the
+API owner to decide, not resolved:
+
+- **`GET /api/v1/practices` (the list route) has no clinic filter for CLINIC_ADMIN.**
+  `listPractices({ page, limit, includeInactive })` takes no actor, so a clinic admin's
+  call to the list endpoint returns every clinic in the install, not just their own.
+  Mitigating context: this is clinic directory metadata — name, email, address — not
+  patient data; it was equally reachable before this branch; and fixing a list route
+  means changing the repository signature and its pagination contract, a different size
+  of job than the row-scope fixes already done on `/practices/{id}` and its siblings.
+  Whether it is worth that change, and when, is open.
+- **`POST /api/v1/taxes` is entirely unscoped, and defaults to a global tax.** The route
+  calls `createTax(...)` with no scope argument. `taxCreateSchema`'s `clinic` field
+  defaults to `-1`, and `createTax` writes that value verbatim. A CLINIC_ADMIN can
+  create a tax row naming another clinic's id, or — by simply omitting `clinic` —
+  create a `clinic_id = -1` **global** tax that `listTaxes` and `calculateTax` then
+  apply to every clinic in the install. This is a cross-tenant write into another
+  tenant's billing configuration, and it predates this branch — as a collection route,
+  it was never touched by the `withAuth` bug this branch fixed.
+- **Global tax rows are writable and deletable by any clinic admin.** `assertTaxInScope`
+  returns early when `clinicId` is `null` or `-1`, and the bulk helpers
+  (`bulkSetTaxStatus`, `bulkDeleteTaxes`) include those values in their `OR`. That is
+  correct for *reads* — a global tax should be visible everywhere, matching `listTaxes`'
+  own semantics — but it means clinic A's admin can `PUT`, `DELETE`, or flip the status
+  of a global tax that every other clinic bills against, individually or in bulk. Read
+  semantics were reused for writes without the distinction being made.
+
+The second and third items are one coherent question, not two independent bugs: who may
+create and mutate a global tax at all. Answering it is a product decision about tax
+tenancy — should a global tax exist as a mutable row any CLINIC_ADMIN can reach, or
+should creating/editing one require SUPER_ADMIN, or something else — not merely a scope
+fix to slot into the existing `assertTaxInScope`/`taxScopeFor` pattern.

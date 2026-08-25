@@ -230,3 +230,10 @@ additive and does not depend on the app being current.
   `docs/superpowers/specs/2026-08-24-encounter-documents-design.md` — deliberately
   inherited from existing behaviour, not introduced by this feature, and its own
   change when someone decides to tighten it.
+- Three further tenancy gaps found in pre-merge re-review of this branch's `withAuth`
+  fix were deliberately left unfixed: `GET /api/v1/practices` (list) has no clinic
+  filter, so a CLINIC_ADMIN can enumerate every clinic; `POST /api/v1/taxes` is
+  entirely unscoped and can create a cross-tenant or global tax; and global tax rows
+  (`clinic_id` `-1`/`null`) are writable and deletable by any clinic admin, not just
+  readable. Detail and mitigating context are in the "Open questions" section of
+  `docs/superpowers/specs/2026-08-24-encounter-documents-design.md`.
