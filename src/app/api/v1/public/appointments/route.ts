@@ -8,9 +8,17 @@ import {
   ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
+  UpstreamWriteError,
 } from '@/services/public/public-booking.service';
 import { createRateLimiter, tupleKey } from '@/lib/rate-limit';
-import { validationError, tooManyRequests, conflict, notFound, serviceUnavailable } from '@/lib/problem-details';
+import { WpConfigError } from '@/lib/wp-endpoint';
+import {
+  validationError,
+  tooManyRequests,
+  conflict,
+  notFound,
+  serviceUnavailable,
+} from '@/lib/problem-details';
 import { isTransientBackendFailure, TRANSIENT_RETRY_AFTER_SECONDS } from '@/lib/transient-failure';
 import { withRetry } from '@/lib/retry';
 
@@ -50,10 +58,48 @@ export async function POST(req: NextRequest) {
     limiter.recordSuccess(key);
     return NextResponse.json({ data: appointment }, { status: 201 });
   } catch (err) {
-    // Ahead of everything else, including recordFailure: an outage is not the guest's
-    // fault, and spending their attempt budget on it would lock them out of the very
-    // retry this response asks for. The hold is deliberately left unconsumed too, so
-    // the retry can have the same slot back.
+    /* ------------------------------------------------------------------------- *
+     * Not the guest's fault. Answered ahead of `recordFailure`, because advising
+     * a retry while charging it against a 30-attempt lockout contradicts the
+     * advice. The hold stays unconsumed throughout, so a retry keeps the slot.
+     * ------------------------------------------------------------------------- */
+
+    // A deploy that cannot reach its records system at all is not a bad minute, so
+    // this one gets no Retry-After: promising that waiting helps would be a lie.
+    if (err instanceof WpConfigError) {
+      console.error('[public/appointments] upstream misconfigured:', err.message);
+      const p = serviceUnavailable(
+        'upstream_misconfigured',
+        'The booking service is not configured to reach its records system.',
+      );
+      return NextResponse.json(p, { status: p.status });
+    }
+
+    // A refusal from the WordPress plugin is not this service crashing, and saying
+    // so is the difference between advice that works and advice that wastes the
+    // guest's afternoon. A bare 500 leaves the front end one honest sentence —
+    // "something went wrong" — so it guesses, and it guessed corrupt patient data
+    // during a connection-pool outage that hit every professional at once.
+    //
+    // Checked before the generic transient test below so this specific code
+    // survives rather than being flattened into `service_unavailable`. Status 0 is
+    // "never reached WordPress". The plugin's own message names internal routes,
+    // so it is logged and never sent.
+    if (err instanceof UpstreamWriteError && (err.upstreamStatus >= 500 || err.upstreamStatus === 0)) {
+      console.error('[public/appointments] upstream write failed:', {
+        operation: err.operation,
+        upstreamStatus: err.upstreamStatus,
+        message: err.message,
+      });
+      const p = serviceUnavailable(
+        'upstream_write_failed',
+        'The records system refused the booking. Nothing was saved and the slot is still free.',
+      );
+      return NextResponse.json(p, { status: p.status, headers: { 'Retry-After': '30' } });
+    }
+
+    // Our own database rather than WordPress's — a saturated connection pool. Same
+    // shape of answer, a shorter wait, because a pool drains in seconds.
     if (isTransientBackendFailure(err)) {
       console.error('[public/appointments] transient backend failure — retryable:', err);
       const p = serviceUnavailable(
@@ -66,7 +112,26 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    /* ------------------------------------------------------------------------- *
+     * Below: the request's own fault, or a genuine defect. These are charged.
+     * ------------------------------------------------------------------------- */
     limiter.recordFailure(key);
+
+    // 4xx upstream: a refusal that will still be a refusal in ten minutes, so it is
+    // answered plainly and without a Retry-After.
+    if (err instanceof UpstreamWriteError) {
+      console.error('[public/appointments] upstream write rejected:', {
+        operation: err.operation,
+        upstreamStatus: err.upstreamStatus,
+        message: err.message,
+      });
+      const p = conflict(
+        'upstream_write_rejected',
+        'The records system rejected the booking. Nothing was saved.',
+      );
+      return NextResponse.json(p, { status: p.status });
+    }
+
     if (err instanceof HoldExpiredError) {
       const p = conflict('hold_expired', 'Slot no longer available — please select another time');
       return NextResponse.json(p, { status: 410 });
