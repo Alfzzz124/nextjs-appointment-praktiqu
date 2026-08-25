@@ -15,7 +15,7 @@ import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
  * real one, and nothing in these tests should depend on the broken behaviour.
  */
 vi.mock('@/repositories/wp/receptionists.write', () => ({
-  createReceptionistViaPlugin: vi.fn(async (input: { name: string; email: string; clinicId: number }) => {
+  createReceptionistViaPlugin: vi.fn(async (input: { name: string; email: string; clinicId: number; password?: string }) => {
     const { prisma: db } = await import('@/lib/db');
     const username = input.email.split('@')[0].slice(0, 60);
     const first = input.name.split(' ')[0];
@@ -50,6 +50,7 @@ vi.mock('@/repositories/wp/receptionists.write', () => ({
     });
   }),
 }));
+import { createReceptionistViaPlugin } from '@/repositories/wp/receptionists.write';
 import {
   createReceptionist, getReceptionist, listReceptionists,
   bulkSetReceptionistStatus, deleteReceptionist,
@@ -130,5 +131,45 @@ describe('receptionist.service', () => {
     );
     await deleteReceptionist(id, scopeClinic);
     expect((await getReceptionist(id, scopeClinic)).status).toBe(1);
+  });
+
+  /**
+   * Without a password the plugin calls wp_generate_password and the welcome email is
+   * the only copy anyone gets — and it cannot be resent, because
+   * POST /receptionists/:id/resend-credentials still answers 501. An admin who supplies
+   * one keeps a credential they can hand over by hand, so it has to survive the trip.
+   */
+  it('forwards an admin-chosen password to the plugin', async () => {
+    vi.mocked(createReceptionistViaPlugin).mockClear();
+    await createReceptionist(
+      { name: 'Reception Five', email: 'reception.five@test.local', password: 'sandi-kuat-2026' },
+      kcAdmin,
+    );
+    expect(vi.mocked(createReceptionistViaPlugin)).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'reception.five@test.local', password: 'sandi-kuat-2026' }),
+    );
+  });
+
+  /**
+   * And when it is absent the key must be absent too, not present-and-undefined:
+   * the plugin branches on `$params['password'] ?? wp_generate_password(...)`, so a
+   * JSON `null` would become the literal password.
+   */
+  it('omits the password key entirely when none was given', async () => {
+    vi.mocked(createReceptionistViaPlugin).mockClear();
+    await createReceptionist(
+      { name: 'Reception Six', email: 'reception.six@test.local' },
+      kcAdmin,
+    );
+    const [arg] = vi.mocked(createReceptionistViaPlugin).mock.calls[0];
+    expect('password' in arg).toBe(false);
+  });
+
+  it('never echoes the password back to the caller', async () => {
+    const created = await createReceptionist(
+      { name: 'Reception Seven', email: 'reception.seven@test.local', password: 'sandi-kuat-2026' },
+      kcAdmin,
+    );
+    expect(Object.keys(created)).toEqual(['id']);
   });
 });

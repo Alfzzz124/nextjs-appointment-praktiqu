@@ -200,6 +200,15 @@ export const receptionistCreateSchema = z.object({
   name: z.string().min(1).max(250),
   email: z.string().email().max(100),
   clinicId: z.coerce.number().int().optional(),  // SUPER_ADMIN sets; else derived from actor
+  /**
+   * Optional. Omitted, WordPress generates one and the welcome email is its only
+   * delivery route — and there is no second chance, because
+   * POST /receptionists/:id/resend-credentials is still a 501 stub. A bounced or
+   * spam-filtered email therefore leaves nobody holding the password, not even the
+   * admin who created the account. Supplying one gives the admin a credential they
+   * can hand over directly; the welcome email still goes out with the same value.
+   */
+  password: z.string().min(8).max(64).optional(),
 });
 export const receptionistUpdateSchema = z.object({
   name: z.string().min(1).max(250).optional(),
