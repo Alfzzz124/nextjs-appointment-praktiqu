@@ -109,10 +109,19 @@ export async function createBill(input: BillCreateInput, scope: BillScope | null
 
   const encounter = await prisma.kcPatientEncounter.findUnique({ where: { id: encounterId } });
   if (!encounter) throw new KcError('Encounter not found', 404);
-  // The bill's clinic/doctor/patient come from the request body below (for
-  // KiviCare-compatibility), but which ENCOUNTER a caller may attach a bill to at
-  // all is governed by the encounter's own row, not by whatever ids they typed in.
+  // Which ENCOUNTER a caller may attach a bill to at all is governed by the
+  // encounter's own row, not by whatever ids they typed in.
   assertBillScope({ clinicId: encounter.clinicId, doctorId: encounter.doctorId, patientId: encounter.patientId }, scope, 'Encounter not found');
+
+  // `input.clinic` / `input.doctor` / `input.patient` are accepted (and required by
+  // `billCreateSchema`) only so a KiviCare-shaped request body validates — they are
+  // never read past this point. The bill has no doctorId/patientId column of its own
+  // (getBill/listBills always join through the encounter for those), and clinicId is
+  // the field `assertBillScope` authorises bills by, so it must come from the
+  // encounter row above, never from the body: a caller who legitimately owns
+  // `encounter` could otherwise label the bill `clinic: { id: <someone else's> }` and
+  // move the row into another clinic's listBills/exportBills/revenue figures while it
+  // vanishes from their own.
 
   const items = normalizeItems(input.serviceItems);
 
@@ -126,7 +135,7 @@ export async function createBill(input: BillCreateInput, scope: BillScope | null
         actualAmount: String(input.total_amount),
         status: 0n,
         paymentStatus: input.status,
-        clinicId: BigInt(input.clinic.id),
+        clinicId: encounter.clinicId,
         createdAt: new Date(),
       },
       select: { id: true },

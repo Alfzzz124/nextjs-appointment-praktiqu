@@ -84,6 +84,16 @@ const taxItemSchema = z.object({
 
 const refObj = z.object({ id: z.coerce.number().int(), appointmentId: z.coerce.number().int().optional() });
 
+// `clinic` / `doctor` / `patient` are required here only so a KiviCare-shaped
+// request body validates — `bill.service.ts#createBill` never reads them for
+// persistence or authorization. Which encounter a caller may bill, and which
+// clinic the resulting row belongs to, are both derived from the
+// `patientEncounter` row itself (see the comment above `assertBillScope` in
+// createBill). Keeping these fields required is a deliberate backward-compat
+// choice for existing callers that still send the full KiviCare shape; if you
+// ever consider dropping them, first confirm no client relies on the 400 a
+// missing field currently produces — do not repurpose them as a source of
+// truth for clinic/doctor/patient without re-reading that comment.
 export const billCreateSchema = z.object({
   serviceItems: z.array(serviceItemSchema).min(1),
   taxItems: z.array(taxItemSchema).optional().default([]),

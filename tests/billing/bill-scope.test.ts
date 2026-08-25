@@ -3,7 +3,7 @@ import { assertTestDb, seedEncounter } from './fixtures';
 import { prisma } from '@/lib/db';
 import {
   createBill, getBill, getBillByEncounter, updateBill, updateBillItem, deleteBillItem,
-  encountersWithoutBill,
+  encountersWithoutBill, listBills,
   type BillScope,
 } from '@/services/billing/bill.service';
 
@@ -157,6 +157,38 @@ describe('createBill scope', () => {
         patientEncounter: { id: encId }, service_total: 10, total_amount: 10,
       } as any, scopeA)).rejects.toMatchObject({ httpStatus: 404 });
       expect(await prisma.kcBill.findFirst({ where: { encounterId: BigInt(encId) } })).toBeNull();
+    } finally {
+      const leftover = await prisma.kcBill.findMany({ where: { encounterId: BigInt(encId) }, select: { id: true } });
+      for (const b of leftover) await prisma.kcBillItem.deleteMany({ where: { billId: b.id } });
+      await prisma.kcBill.deleteMany({ where: { encounterId: BigInt(encId) } });
+      await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(encId) } });
+    }
+  });
+
+  it('persists the encounter\'s own clinic, never a body-supplied one', async () => {
+    // Clinic A staff creating a bill on their own (clinic A) encounter, but the
+    // body labels it as clinic B's — `assertBillScope` now authorises bills by
+    // `clinicId`, so a caller-controlled value here would move the row into
+    // clinic B's listBills/exportBills/revenue and out of clinic A's.
+    const encId = 9_020_107;
+    await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(encId) } });
+    await seedEncounter({ id: encId, clinicId: CLINIC_A, doctorId: DOCTOR_A, patientId: PATIENT_A });
+    try {
+      const created = await createBill({
+        serviceItems: [{ serviceId: 1, quantity: 1, price: 10, name: 'x' }],
+        taxItems: [], discount: 0, status: 'unpaid',
+        clinic: { id: CLINIC_B }, doctor: { id: DOCTOR_B }, patient: { id: PATIENT_B },
+        patientEncounter: { id: encId }, service_total: 10, total_amount: 10,
+      } as any, scopeA);
+
+      const row = await prisma.kcBill.findUnique({ where: { id: BigInt(created.id) }, select: { clinicId: true } });
+      expect(row?.clinicId).toBe(BigInt(CLINIC_A));
+
+      const inA = await listBills({ page: 1, perPage: 'all' } as any, scopeA);
+      expect(inA.billings.map((b: any) => b.id)).toContain(created.id);
+
+      const inB = await listBills({ page: 1, perPage: 'all' } as any, { clinicId: BigInt(CLINIC_B) });
+      expect(inB.billings.map((b: any) => b.id)).not.toContain(created.id);
     } finally {
       const leftover = await prisma.kcBill.findMany({ where: { encounterId: BigInt(encId) }, select: { id: true } });
       for (const b of leftover) await prisma.kcBillItem.deleteMany({ where: { billId: b.id } });
