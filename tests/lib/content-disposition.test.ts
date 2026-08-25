@@ -83,4 +83,20 @@ describe('contentDispositionFor', () => {
     expect(out).toBe(attachmentDisposition('logo.svg'));
     expect(out.startsWith('attachment;')).toBe(true);
   });
+
+  // `mimeType` here is frequently an upstream `Content-Type` header taken verbatim
+  // (see `fetchMedia`), which can carry a `; charset=...` parameter and mixed case.
+  // A bare string-equality match against `ALLOWED_MIME_TYPES` would miss both and
+  // wrongly downgrade a legitimate allowed type to `attachment`.
+  it('serves an allowed type with a charset parameter inline', () => {
+    const out = contentDispositionFor('application/pdf; charset=binary', 'invoice.pdf');
+    expect(out).toBe(inlineDisposition('invoice.pdf'));
+    expect(out.startsWith('inline;')).toBe(true);
+  });
+
+  it('matches an allowed type case-insensitively', () => {
+    const out = contentDispositionFor('Application/PDF', 'invoice.pdf');
+    expect(out).toBe(inlineDisposition('invoice.pdf'));
+    expect(out.startsWith('inline;')).toBe(true);
+  });
 });

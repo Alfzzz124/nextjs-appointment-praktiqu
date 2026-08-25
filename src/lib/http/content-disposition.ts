@@ -53,7 +53,14 @@ export function attachmentDisposition(filename: string): string {
  * clinician can still download a legitimate `.docx` from the archive.
  */
 export function contentDispositionFor(mimeType: string, filename: string): string {
-  return ALLOWED_MIME_TYPES.includes(mimeType as (typeof ALLOWED_MIME_TYPES)[number])
+  // `mimeType` here is often a raw upstream `Content-Type` header value verbatim
+  // (see `fetchMedia` in `@/lib/wp-endpoint`), which can carry a `; charset=...` /
+  // `; boundary=...` parameter and mixed case (`Application/PDF`). `ALLOWED_MIME_TYPES`
+  // is the bare, lowercase type only, so an unparsed header missed the allowlist and
+  // downgraded a legitimate PDF to `attachment` — safe, but wrong: WordPress hosts are
+  // free to emit `application/pdf; charset=binary` and this treated that as unknown.
+  const bareType = mimeType.split(';')[0].trim().toLowerCase();
+  return ALLOWED_MIME_TYPES.includes(bareType as (typeof ALLOWED_MIME_TYPES)[number])
     ? inlineDisposition(filename)
     : attachmentDisposition(filename);
 }
