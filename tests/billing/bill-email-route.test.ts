@@ -119,4 +119,36 @@ describe('POST /bills/:id/email', () => {
     expect(res.status).toBe(404);
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  /**
+   * The three tests above all happen to use a CLIENT whose `wpUserId` equals the
+   * bill's `patient.id`, so they cannot tell `findPatientById(bill.patient.id)` apart
+   * from `findPatientById(kc.wpUserId)` — a reviewer proved this by making that exact
+   * substitution and watching the whole suite stay green. This test forces the two
+   * apart: a CLINIC_ADMIN (wpUserId = CLINIC, a different wp_users row with a
+   * different registered address) calls with no `to`, so the recipient can only come
+   * from resolving the bill's patient — never from the caller's own identity.
+   */
+  it('a staff caller with no "to" gets the recipient from the bill\'s patient, not from the caller', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC}`);
+    const res = await emailPost(
+      reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, {}),
+      { params: { id: String(billId) } } as any,
+    );
+    expect(res.status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: PATIENT_EMAIL }));
+    // The admin's own registered address (a different wp_users row) must never appear —
+    // that would be the wrong-id-source bug mailing the caller instead of the patient.
+    expect(sendEmail).not.toHaveBeenCalledWith(expect.objectContaining({ to: `admin${CLINIC}@test.local` }));
+  });
+
+  it('rejects a non-string "to" with 400 instead of passing it through to the mail provider', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC}`);
+    const res = await emailPost(
+      reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, { to: ['a@x.test', 'b@y.test'] }),
+      { params: { id: String(billId) } } as any,
+    );
+    expect(res.status).toBe(400);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
 });

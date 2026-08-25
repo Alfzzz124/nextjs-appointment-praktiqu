@@ -22,7 +22,12 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
     // an open mail-relay primitive, not a feature, once every bill in scope was
     // reachable by id. Staff roles (who already see the recipient's real address in
     // the UI) keep the override for legitimate resends (e.g. to an accountant).
-    let to: string = actor.role === 'CLIENT' ? '' : (body?.to ?? '');
+    const rawTo: unknown = actor.role === 'CLIENT' ? '' : (body?.to ?? '');
+    // The mail provider accepts an array of recipients, so an unvalidated `to` widens
+    // "resend to one address of the staff caller's choosing" into "fan this invoice
+    // out to an arbitrary list" — not what this override is meant to allow.
+    if (rawTo !== '' && typeof rawTo !== 'string') return kcFail('to must be a string', 400);
+    let to: string = rawTo as string;
     if (!to) {
       // `BillDetail.patient` carries only the wp_users id (getBill never joins the
       // profile) — resolve the real address the same way every other patient read in
