@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import { kcFail } from '@/lib/kc-response';
-import { assertCan, assertBillingEnabled } from '@/services/billing/kc-permissions';
+import { assertCan, assertBillingEnabled, billScopeFor } from '@/services/billing/kc-permissions';
+import { resolveKcActor } from '@/services/billing/kc-actor';
 import { generateBillPdf } from '@/services/billing/bill-document.service';
 import { KcError } from '@/lib/kc-response';
 
@@ -12,7 +13,8 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
   try {
     await assertBillingEnabled();
     assertCan(actor, 'patient_bill_view');
-    const pdf = await generateBillPdf(Number(params.id));
+    const kc = await resolveKcActor(actor);
+    const pdf = await generateBillPdf(Number(params.id), billScopeFor(kc));
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: {
