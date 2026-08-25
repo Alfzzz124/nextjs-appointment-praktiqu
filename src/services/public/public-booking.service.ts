@@ -141,8 +141,33 @@ async function resolvePatient(
   const existing = await findPatientByEmail(input.clientEmail);
 
   if (existing) {
-    // Idempotent on the plugin side: it inserts the clinic mapping only when absent.
-    await updatePatient(Number(existing.id), { clinicId });
+    try {
+      // Idempotent on the plugin side: it inserts the clinic mapping only when absent.
+      await updatePatient(Number(existing.id), { clinicId });
+    } catch (err) {
+      // Bookkeeping, not the booking. The patient id is already in hand by the time
+      // this runs, and a returning guest whose row this install cannot update must
+      // still be able to book — being able to re-use them is the whole point of
+      // matching by email.
+      //
+      // Seen in production: a wp_users row whose kiviCare_patient capability is
+      // stored as b:0. findPatientByEmail matches it — roleLikePattern only checks
+      // the role NAME, not its value — while the plugin's in_array() against
+      // $user->roles does not, so PUT /patients/{id} answers 404
+      // praktiqu_not_a_patient. Only 409 was mapped below, so that 404 rose
+      // unwrapped into the route's final handler and every booking from that one
+      // address died as a bare 500: any professional, any service, any slot,
+      // reproducibly, while the same address plus-tagged booked fine.
+      //
+      // Losing the mapping costs that clinic a row in its patient list. Losing the
+      // booking costs the patient the appointment. Those are not comparable.
+      console.error(
+        '[public/appointments] clinic mapping failed for patient %s — booking continues',
+        existing.id,
+        err,
+      );
+    }
+
     return Number(existing.id);
   }
 
