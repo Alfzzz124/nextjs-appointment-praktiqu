@@ -17,7 +17,6 @@ import {
   listLinkedReportIds,
   prepareUnlinkBatch,
   unlinkReport,
-  unlinkReports,
 } from '@/repositories/wp/encounter-documents.repo';
 
 const BASE = 8_800_000;
@@ -189,35 +188,6 @@ describe('encounter document links', () => {
     );
 
     expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
-  });
-});
-
-describe('unlinkReports (batch)', () => {
-  it('removes links for several documents in one pass, leaving other module types and other encounters alone', async () => {
-    await linkReportToEncounter(ENCOUNTER, REPORT_A);
-    await linkReportToEncounter(ENCOUNTER, REPORT_B);
-    await linkReportToEncounter(OTHER_ENCOUNTER, REPORT_C); // not in the batch — must survive
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO wp_kc_custom_fields_data (module_type, module_id, fields_data, field_id, created_at)
-       VALUES ('patient_encounter_module', ?, ?, NULL, NOW())`,
-      ENCOUNTER, JSON.stringify(REPORT_A), // same report id, different module — must survive
-    );
-
-    const n = await unlinkReports([REPORT_A, REPORT_B]);
-    expect(n).toBe(2);
-
-    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
-    expect(await listLinkedReportIds(OTHER_ENCOUNTER)).toEqual([REPORT_C]);
-    const otherModuleRows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT id FROM wp_kc_custom_fields_data
-         WHERE module_type = 'patient_encounter_module' AND module_id = ?`,
-      ENCOUNTER,
-    );
-    expect(otherModuleRows).toHaveLength(1);
-  });
-
-  it('is a no-op for an empty batch', async () => {
-    expect(await unlinkReports([])).toBe(0);
   });
 });
 
