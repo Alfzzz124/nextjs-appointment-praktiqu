@@ -53,9 +53,28 @@ export class WpEndpointError extends Error {
   }
 }
 
+/**
+ * Raised when the request could not be *made* — a missing service token, not a refusal
+ * the plugin sent back. It extends `WpEndpointError` so every existing `instanceof`
+ * catch keeps behaving exactly as before; what it adds is the ability to tell the two
+ * apart where that matters.
+ *
+ * It matters wherever a caller swallows a plugin failure on purpose. Refusing one row
+ * is per-row and safe to skip; not holding a token is global and permanent, and
+ * swallowing it turns a misconfigured deploy into silent, accumulating data loss
+ * instead of a loud failure on the first request. See `resolvePatient` in
+ * `services/public/public-booking.service.ts`.
+ */
+export class WpConfigError extends WpEndpointError {
+  constructor(message: string) {
+    super(message, 500);
+    this.name = 'WpConfigError';
+  }
+}
+
 function serviceToken(): string {
   const token = process.env.WORDPRESS_SERVICE_TOKEN ?? '';
-  if (!token) throw new WpEndpointError('WORDPRESS_SERVICE_TOKEN not set', 500);
+  if (!token) throw new WpConfigError('WORDPRESS_SERVICE_TOKEN not set');
   return token;
 }
 

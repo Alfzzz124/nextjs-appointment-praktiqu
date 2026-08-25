@@ -39,7 +39,7 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
 
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
-import { WpEndpointError } from '@/lib/wp-endpoint';
+import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
 import { findDoctorById } from '@/repositories/wp/doctors.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { findPatientByEmail } from '@/repositories/wp/patients.repo';
@@ -281,6 +281,29 @@ describe('createPublicAppointment', () => {
     expect(logged).toHaveBeenCalled();
 
     logged.mockRestore();
+  });
+
+  /**
+   * ...but only for failures the plugin answered with. A missing service token is
+   * thrown before the request leaves this process, and it is global and permanent
+   * rather than one awkward row — swallowed, it would let a misconfigured deploy book
+   * every returning guest with no mapping at all, in silence, while new guests still
+   * 500 through the unwrapped `createPatient`. Half the traffic quietly wrong is worse
+   * than all of it loudly broken.
+   */
+  it('does not swallow a missing service token — that is our config, not their row', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue({
+      id: BigInt(PATIENT),
+      email: INPUT.clientEmail,
+    } as never);
+    vi.mocked(updatePatient).mockRejectedValue(
+      new WpConfigError('WORDPRESS_SERVICE_TOKEN not set'),
+    );
+
+    await expect(
+      createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
+    ).rejects.toBeInstanceOf(WpConfigError);
+    expect(createAppointment).not.toHaveBeenCalled();
   });
 
   /**

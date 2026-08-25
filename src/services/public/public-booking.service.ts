@@ -17,7 +17,7 @@
  * everyone but us. See docs/architecture/shadow-tables-audit.md §6 D1.
  */
 import { z } from 'zod';
-import { WpEndpointError } from '@/lib/wp-endpoint';
+import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { signAppointmentToken } from '@/lib/public/appointment-token';
 import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
@@ -161,11 +161,21 @@ async function resolvePatient(
       //
       // Losing the mapping costs that clinic a row in its patient list. Losing the
       // booking costs the patient the appointment. Those are not comparable.
-      console.error(
-        '[public/appointments] clinic mapping failed for patient %s — booking continues',
-        existing.id,
+      //
+      // Scoped to failures the plugin actually answered with, though. A missing
+      // service token is thrown before the request leaves this process, and it is
+      // global and permanent rather than one awkward row: swallowing it would let a
+      // misconfigured deploy book every returning guest with no mapping at all, in
+      // silence, while new guests still 500 through the unwrapped createPatient below.
+      // Half the traffic quietly wrong is worse than all of it loudly broken — and an
+      // env key with a stray space has already cost this project a live secret once.
+      if (err instanceof WpConfigError) throw err;
+
+      console.error('[public/appointments] clinic mapping failed — booking continues', {
+        patientId: String(existing.id),
+        clinicId,
         err,
-      );
+      });
     }
 
     return Number(existing.id);
