@@ -2747,10 +2747,12 @@ walk the media library.
 ```bash
 npm run test
 npm run type-check
-npm run lint
 ```
 
 Expected: all green. Fix anything that is not before committing.
+
+Do **not** add `npm run lint`. This repo has no ESLint configuration, so `next lint`
+opens an interactive setup wizard and hangs rather than linting.
 
 - [ ] **Step 3: Commit**
 
