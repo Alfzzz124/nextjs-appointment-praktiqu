@@ -64,7 +64,21 @@ export async function listTaxes(p: TaxListParams, scope: { clinicId: bigint } | 
   return { taxes, page, per_page: perPage as number, total, total_pages: perPage ? Math.ceil(total / (perPage as number)) : 1 };
 }
 
-export async function getTax(id: number): Promise<TaxApi> {
+export interface TaxScope { clinicId: bigint }
+
+/**
+ * A tax row is out of scope only if it names a SPECIFIC clinic that is not the
+ * caller's. `null`/`-1` clinicId means "global" (KiviCare's convention, mirrored by
+ * `listTaxes`'s `OR clinic_id = -1 OR clinic_id IS NULL`), and stays visible to every
+ * clinic-scoped role. 404, never 403 — a 403 would confirm the row exists.
+ */
+function assertTaxInScope(clinicId: number | null, scope: TaxScope | null): void {
+  if (!scope) return;
+  if (clinicId === null || clinicId === -1) return;
+  if (BigInt(clinicId) !== scope.clinicId) throw new KcError('Tax not found', 404);
+}
+
+export async function getTax(id: number, scope: TaxScope | null = null): Promise<TaxApi> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT t.*, s.name AS service_name, sdm.service_id AS actual_service_id
      FROM wp_kc_taxes t
@@ -74,11 +88,13 @@ export async function getTax(id: number): Promise<TaxApi> {
   );
   if (rows.length === 0) throw new KcError('Tax not found', 404);
   const r = rows[0];
-  return taxRowToApi(
+  const tax = taxRowToApi(
     { id: r.id, name: r.name, taxType: r.tax_type, taxValue: r.tax_value, clinicId: r.clinic_id,
       doctorId: r.doctor_id, serviceId: r.service_id, addedBy: r.added_by, status: r.status, createdAt: r.created_at } as any,
     { actual_service_id: r.actual_service_id ? Number(r.actual_service_id) : null, serviceName: r.service_name ?? null },
   );
+  assertTaxInScope(tax.clinicId, scope);
+  return tax;
 }
 
 export interface TaxCreateInput {
@@ -135,10 +151,11 @@ export async function createTax(input: TaxCreateInput, currentUserId: number): P
   return { ids, created_count: ids.length, skipped_count: skipped };
 }
 
-export async function updateTax(id: number, input: Partial<TaxCreateInput>): Promise<void> {
+export async function updateTax(id: number, input: Partial<TaxCreateInput>, scope: TaxScope | null = null): Promise<void> {
   if (input.rateValue !== undefined && !(input.rateValue > 0)) throw new KcError('Tax rate must be greater than 0', 400);
   const existing = await prisma.kcTax.findUnique({ where: { id: BigInt(id) } });
   if (!existing) throw new KcError('Tax not found', 404);
+  assertTaxInScope(existing.clinicId === null ? null : Number(existing.clinicId), scope);
   await prisma.kcTax.update({
     where: { id: BigInt(id) },
     data: {
@@ -151,27 +168,39 @@ export async function updateTax(id: number, input: Partial<TaxCreateInput>): Pro
   });
 }
 
-export async function deleteTax(id: number): Promise<void> {
+export async function deleteTax(id: number, scope: TaxScope | null = null): Promise<void> {
   const existing = await prisma.kcTax.findUnique({ where: { id: BigInt(id) } });
   if (!existing) throw new KcError('Tax not found', 404);
+  assertTaxInScope(existing.clinicId === null ? null : Number(existing.clinicId), scope);
   await prisma.kcTax.delete({ where: { id: BigInt(id) } });
 }
 
-export async function setTaxStatus(id: number, status: number): Promise<void> {
+export async function setTaxStatus(id: number, status: number, scope: TaxScope | null = null): Promise<void> {
   if (status !== 0 && status !== 1) throw new KcError('Invalid status', 400);
   const existing = await prisma.kcTax.findUnique({ where: { id: BigInt(id) } });
   if (!existing) throw new KcError('Tax not found', 404);
+  assertTaxInScope(existing.clinicId === null ? null : Number(existing.clinicId), scope);
   await prisma.kcTax.update({ where: { id: BigInt(id) }, data: { status } });
 }
 
-export async function bulkSetTaxStatus(ids: number[], status: number): Promise<number> {
+/**
+ * Bulk mutations were unscoped even though `tax_manage` includes CLINIC_ADMIN: any
+ * clinic admin who could guess or enumerate ids could bulk-delete or bulk-disable
+ * another clinic's taxes. `scope` restricts the WHERE clause the same way
+ * `bulkDeleteEncounters` does — out-of-scope ids are silently skipped, not errored.
+ */
+export async function bulkSetTaxStatus(ids: number[], status: number, scope: TaxScope | null = null): Promise<number> {
   if (status !== 0 && status !== 1) throw new KcError('Invalid status', 400);
-  const r = await prisma.kcTax.updateMany({ where: { id: { in: ids.map(BigInt) } }, data: { status } });
+  const where: any = { id: { in: ids.map(BigInt) } };
+  if (scope) where.OR = [{ clinicId: scope.clinicId }, { clinicId: -1n }, { clinicId: null }];
+  const r = await prisma.kcTax.updateMany({ where, data: { status } });
   return r.count;
 }
 
-export async function bulkDeleteTaxes(ids: number[]): Promise<number> {
-  const r = await prisma.kcTax.deleteMany({ where: { id: { in: ids.map(BigInt) } } });
+export async function bulkDeleteTaxes(ids: number[], scope: TaxScope | null = null): Promise<number> {
+  const where: any = { id: { in: ids.map(BigInt) } };
+  if (scope) where.OR = [{ clinicId: scope.clinicId }, { clinicId: -1n }, { clinicId: null }];
+  const r = await prisma.kcTax.deleteMany({ where });
   return r.count;
 }
 
