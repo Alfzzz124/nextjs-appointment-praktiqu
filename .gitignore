@@ -67,3 +67,12 @@ logs/
 
 # Generated from docs/api/openapi.yaml by `npm run postman` — derived, not source.
 docs/api/postman-collection.json
+
+# Landing page demos — 347 MB of HTML with base64-embedded assets, plus two archives
+# of the same content. The .zip (166 MB) and .rar (128 MB) are both over GitHub's
+# 100 MB hard limit and would be rejected on push; the directory would bloat every
+# clone permanently. Anchored to the repo root so the already-tracked archives
+# elsewhere in the tree are unaffected. Kept on disk, out of git.
+/landing-page/
+/landing-page.zip
+/landing-page.rar
