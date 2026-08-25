@@ -59,7 +59,7 @@ export async function getReceptionist(id: number, scope: ReceptionistScope | nul
   return mapRow(rows[0]);
 }
 
-export interface ReceptionistCreateInput { name: string; email: string; clinicId?: number; }
+export interface ReceptionistCreateInput { name: string; email: string; clinicId?: number; password?: string; }
 
 /**
  * Provision a receptionist through the WordPress plugin.
@@ -74,6 +74,9 @@ export interface ReceptionistCreateInput { name: string; email: string; clinicId
  *
  * `POST /praktiqu/v1/receptionists` hashes a real password via `wp_insert_user` and
  * fires the hook. See docs/architecture/shadow-tables-audit.md §6 Q1.
+ *
+ * `input.password` is optional and forwarded as-is; the plugin falls back to
+ * `wp_generate_password` when it is absent. It is never echoed back in the response.
  */
 export async function createReceptionist(input: ReceptionistCreateInput, kc: KcActor): Promise<{ id: number }> {
   const clinicId = kc.actor.role === 'SUPER_ADMIN' ? BigInt(input.clinicId ?? 0) : (kc.clinicId ?? BigInt(input.clinicId ?? 0));
@@ -89,6 +92,7 @@ export async function createReceptionist(input: ReceptionistCreateInput, kc: KcA
       name: input.name,
       email: input.email,
       clinicId: Number(clinicId),
+      ...(input.password !== undefined ? { password: input.password } : {}),
     });
     return { id: created.id };
   } catch (err) {

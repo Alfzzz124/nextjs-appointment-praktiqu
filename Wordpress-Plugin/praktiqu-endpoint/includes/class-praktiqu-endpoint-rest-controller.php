@@ -235,6 +235,10 @@ final class REST_Controller
                 'email'     => ['required' => true, 'type' => 'string', 'format' => 'email'],
                 'name'      => ['required' => true, 'type' => 'string'],
                 'clinic_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                // Optional; falls back to wp_generate_password. Length is enforced by
+                // receptionistCreateSchema upstream — declared here without its own
+                // bounds so the two cannot drift apart.
+                'password'  => ['required' => false, 'type' => 'string'],
             ],
         ]);
 
