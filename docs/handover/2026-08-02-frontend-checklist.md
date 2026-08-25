@@ -149,13 +149,34 @@ recorded it at upload); it is always `null` for `report` items. `date` is
 date.
 
 **Opening a document needs a fetch, not an `<img src>`.** `contentPath` requires
-the Bearer header, which a browser will not attach to a plain `src`:
+the Bearer header, which a browser will not attach to a plain `src`. Check
+`res.ok` before touching the body — a 401/403/404 still comes back with a body,
+just not a file — and revoke the object URL once the viewer is done with it: an
+object URL pins its blob in memory until you call `revokeObjectURL`, so a viewer
+that opens many documents in a session will leak one blob per open if you skip it.
 
 ```js
-const res  = await fetch(doc.contentPath, { headers: { Authorization: `Bearer ${token}` } });
-const blob = await res.blob();
-const url  = URL.createObjectURL(blob);   // use as <iframe src> or <img src>
-// URL.revokeObjectURL(url) when the popup closes.
+async function openDocument(doc, token) {
+  const res = await fetch(doc.contentPath, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    // e.g. 404 — missing/deleted file, or a scope check that isn't yours to read.
+    throw new Error(`Could not open document (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  return url; // use as <iframe src> or <img src>
+}
+
+// Caller — REQUIRED: revoke when the *viewer* closes, or this blob leaks for
+// the rest of the page's life. Wire it to whatever "closed" means for your
+// viewer (a modal's onClose, an iframe unmounting) — not a try/finally around
+// the call below, since the viewer is usually still displaying the URL after
+// this line returns.
+const url = await openDocument(doc, token);
+showInViewer(url, {
+  onClose: () => URL.revokeObjectURL(url),
+});
 ```
 
 **Do not offer rename or delete unless `canManage` is true.** It is always `false`
@@ -175,7 +196,8 @@ open it.
 Accepted types: jpg, jpeg, png, webp, gif, pdf, up to 10 MB, checked by content
 (magic bytes), not by extension — a mismatched extension is rejected even if the
 bytes are a supported type. Staff only (`patient_report_manage`); a client
-calling this gets `403`. Response:
+calling this gets `403`. `400` for a malformed request — either the body isn't
+`multipart/form-data`, or the form has no `file` field. Response:
 
 ```json
 { "status": true, "message": "Document uploaded successfully",

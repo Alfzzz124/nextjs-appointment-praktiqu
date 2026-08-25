@@ -97,6 +97,64 @@ describe('GET /encounters/:id/documents', () => {
   });
 });
 
+describe('GET /encounters/:id/documents — perPage/page parsing', () => {
+  /**
+   * These assert the value the route actually hands to `listEncounterDocuments`,
+   * not just the HTTP status — that's the only way to catch `perPage=0` silently
+   * turning into the default (`Number(0) || DEFAULT` is falsy) rather than
+   * clamping to the floor of 1. The service itself is mocked via `vi.doMock` +
+   * a fresh dynamic `import()` per test (undone by `vi.resetModules` in
+   * `beforeEach`), so this block doesn't disturb the static, `@/lib/db`-backed
+   * mocking the rest of this file relies on.
+   */
+  beforeEach(() => {
+    vi.resetModules();
+    (prisma.user.findUnique as any).mockResolvedValue({ wpUserId: 9000001n });
+  });
+
+  async function callWithPerPage(query: string) {
+    const listEncounterDocuments = vi.fn().mockResolvedValue({
+      sessionDocuments: [],
+      patientDocuments: [],
+      pagination: { page: 1, perPage: 1, total: 0 },
+    });
+    vi.doMock('@/services/encounter-documents/service', () => ({
+      listEncounterDocuments,
+      uploadEncounterDocument: vi.fn(),
+    }));
+
+    const { GET } = await import('@/app/api/v1/encounters/[id]/documents/route');
+    const res = await GET(
+      reqWith(await token('SUPER_ADMIN'), `http://localhost/api/v1/encounters/1/documents${query}`),
+      { params: { id: '1' } } as any,
+    );
+    expect(res.status).toBe(200);
+
+    const [, , opts] = listEncounterDocuments.mock.calls[0];
+    return opts.perPage;
+  }
+
+  it('perPage=0 clamps to the floor (1), not the default', async () => {
+    expect(await callWithPerPage('?perPage=0')).toBe(1);
+  });
+
+  it('perPage=-5 clamps to the floor (1)', async () => {
+    expect(await callWithPerPage('?perPage=-5')).toBe(1);
+  });
+
+  it('perPage=abc (unparseable) falls back to the default (20)', async () => {
+    expect(await callWithPerPage('?perPage=abc')).toBe(20);
+  });
+
+  it('perPage=99999 clamps to the ceiling (100)', async () => {
+    expect(await callWithPerPage('?perPage=99999')).toBe(100);
+  });
+
+  it('a missing perPage falls back to the default (20)', async () => {
+    expect(await callWithPerPage('')).toBe(20);
+  });
+});
+
 describe('GET /patient-medical-reports/:id/content', () => {
   const realFetch = globalThis.fetch;
 

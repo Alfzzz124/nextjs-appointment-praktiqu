@@ -461,7 +461,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `DELETE` | `/api/v1/patient-medical-reports/{id}` | `patient_report_manage` |
 | `GET` | `/api/v1/patient-medical-reports/{id}` | `patient_report_read` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/file` | `patient_report_read` |
-| `GET` | `/api/v1/patient-medical-reports/{id}/preview` | `patient_report_read` · _stub 501_ |
+| `GET` | `/api/v1/patient-medical-reports/{id}/content` | `patient_report_read` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/print` | `patient_report_read` · _stub 501_ |
 | `POST` | `/api/v1/patient-medical-reports/{id}/send-email` | `patient_report_manage` · _stub 501_ |
 

@@ -3910,6 +3910,11 @@ paths:
                         description: >-
                           False when the document was saved to the patient archive but
                           the link to this encounter could not be written.
+        '400':
+          description: >-
+            Malformed request, for one of two reasons: the body was not
+            `multipart/form-data` ("Expected multipart/form-data"), or no `file`
+            field was present in the form ("No file provided").
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -9789,6 +9794,16 @@ paths:
         - sessions
       summary: Stream a file that arrived with the booking
       operationId: get_api_v1_sessions_id_attachments_mediaId_content
+      description: >-
+        Two independent checks gate this route, and they answer differently on
+        purpose. Loading the session itself is scoped by `getSession`: if the
+        session is not the caller's, that's a `403` — the caller already knows
+        the session id is real, so confirming it exists costs nothing. Whether
+        `mediaId` actually belongs to that session's booking is checked
+        separately and deliberately answers `404`, not `403`, when it doesn't —
+        a `403` there would confirm to the caller that the media id exists
+        (just not for them), which a stray or guessed id should not be able to
+        learn.
       responses:
         '200':
           description: The file
@@ -9799,8 +9814,12 @@ paths:
                 format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The session itself is not the caller's
         '404':
-          description: Not this session's attachment, or the file is gone
+          description: >-
+            Either the session has no attachment with this media id, or the
+            underlying file is gone
       security:
         - bearerAuth: []
   /api/v1/sessions/{id}/cancel:
