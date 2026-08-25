@@ -6,10 +6,12 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRoles } from '@/lib/auth/route-guards';
+import { KcError } from '@/lib/kc-response';
 import {
   HolidayNotFoundError,
   PracticeNotFoundError,
   PracticeValidationError,
+  assertPracticeInScope,
   addHoliday,
   listHolidays,
   removeHoliday,
@@ -29,6 +31,13 @@ function handleError(
   method: string,
   detail?: string,
 ): NextResponse | null {
+  // GET/DELETE pass `null` on success (e.g. `holidays instanceof Error ? holidays :
+  // null`); POST passes the raw success DTO itself, unconverted. Neither is an `Error`,
+  // so without this guard every 200/201/204 response fell through to the generic
+  // branch below and came back as a 500. Pre-existing bug, unrelated to row-scoping —
+  // found while adding the practice ownership check below, which needed a working
+  // success path to verify against.
+  if (!(err instanceof Error)) return null;
   if (err instanceof PracticeNotFoundError) {
     return NextResponse.json(
       {
@@ -63,6 +72,12 @@ function handleError(
       { status: 422 },
     );
   }
+  if (err instanceof KcError) {
+    return NextResponse.json(
+      { type: '/errors/forbidden', title: 'Forbidden', status: err.httpStatus, detail: err.message },
+      { status: err.httpStatus },
+    );
+  }
   logging.error(`${method} ${path} failed`, err, { path, method }).catch(() => {});
   return NextResponse.json(
     { type: '/errors/internal', title: 'Internal Server Error', status: 500 },
@@ -77,6 +92,10 @@ function handleError(
 export async function GET(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
+
+  const scopeErr = await assertPracticeInScope(gate.actor, Number(params.id)).catch((e) => e);
+  const scopeHandled = handleError(scopeErr, `/api/v1/practices/${params.id}/holidays`, 'GET');
+  if (scopeHandled) return scopeHandled;
 
   const holidays = await listHolidays(Number(params.id)).catch((e) => e);
   const handled = handleError(holidays instanceof Error ? holidays : null, `/api/v1/practices/${params.id}/holidays`, 'GET');
@@ -102,6 +121,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     );
   }
 
+  const scopeErr = await assertPracticeInScope(gate.actor, Number(params.id)).catch((e) => e);
+  const scopeHandled = handleError(scopeErr, `/api/v1/practices/${params.id}/holidays`, 'POST');
+  if (scopeHandled) return scopeHandled;
+
   const dto = await addHoliday(Number(params.id), body, { actorId: null }).catch((e) => e);
   const handled = handleError(dto, `/api/v1/practices/${params.id}/holidays`, 'POST');
   if (handled) return handled;
@@ -115,6 +138,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
 export async function DELETE(_req: NextRequest, { params }: HolidayParams): Promise<NextResponse> {
   const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
+
+  const scopeErr = await assertPracticeInScope(gate.actor, Number(params.id)).catch((e) => e);
+  const scopeHandled = handleError(scopeErr, `/api/v1/practices/${params.id}/holidays/${params.holidayId}`, 'DELETE');
+  if (scopeHandled) return scopeHandled;
 
   const ok = await removeHoliday(Number(params.id), Number(params.holidayId), { actorId: null }).catch((e) => e);
   const handled = handleError(

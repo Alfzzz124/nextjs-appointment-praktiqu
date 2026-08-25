@@ -7,9 +7,11 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRoles } from '@/lib/auth/route-guards';
+import { KcError } from '@/lib/kc-response';
 import {
   PracticeNotFoundError,
   PracticeValidationError,
+  assertPracticeInScope,
   getPractice,
   updatePractice,
 } from '@/services/practice/service';
@@ -23,6 +25,7 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
   if ('response' in gate) return gate.response;
 
   try {
+    await assertPracticeInScope(gate.actor, Number(params.id));
     const dto = await getPractice(Number(params.id));
     return NextResponse.json({ data: dto }, { status: 200 });
   } catch (err) {
@@ -31,6 +34,9 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
         { type: '/errors/resource-not-found', title: 'Practice not found', status: 404 },
         { status: 404 },
       );
+    }
+    if (err instanceof KcError) {
+      return NextResponse.json({ type: '/errors/forbidden', title: 'Forbidden', status: err.httpStatus, detail: err.message }, { status: err.httpStatus });
     }
     await logging.error('getPractice failed', err, { path: `/api/v1/practices/${params.id}/settings` });
     return NextResponse.json(
@@ -56,6 +62,7 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
   }
 
   try {
+    await assertPracticeInScope(gate.actor, Number(params.id));
     const dto = await updatePractice(Number(params.id), body, { actorId: null });
     return NextResponse.json({ data: dto }, { status: 200 });
   } catch (err) {
@@ -70,6 +77,9 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
         { type: '/errors/validation-error', title: 'Validation Error', status: 422, detail: err.message, issues: err.issues },
         { status: 422 },
       );
+    }
+    if (err instanceof KcError) {
+      return NextResponse.json({ type: '/errors/forbidden', title: 'Forbidden', status: err.httpStatus, detail: err.message }, { status: err.httpStatus });
     }
     await logging.error('updatePractice failed', err, { path: `/api/v1/practices/${params.id}/settings`, method: 'PATCH' });
     return NextResponse.json(
