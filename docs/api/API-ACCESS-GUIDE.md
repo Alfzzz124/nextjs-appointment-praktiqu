@@ -482,7 +482,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `GET` | `/api/v1/practices/{id}` | — |
 | `PATCH` | `/api/v1/practices/{id}` | — |
 | `POST` | `/api/v1/practices/{id}/change-admin` | — |
-| `DELETE` | `/api/v1/practices/{id}/holidays` | — |
+| `DELETE` | `/api/v1/practices/{id}/holidays` | — · _broken: always 500, see docs/deploy/encounter-documents-staging-deploy.md_ |
 | `GET` | `/api/v1/practices/{id}/holidays` | — |
 | `POST` | `/api/v1/practices/{id}/holidays` | — |
 | `POST` | `/api/v1/practices/{id}/resend-credentials` | — · _stub 501_ |

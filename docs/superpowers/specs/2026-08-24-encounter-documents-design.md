@@ -312,14 +312,25 @@ API owner to decide, not resolved:
   means changing the repository signature and its pagination contract, a different size
   of job than the row-scope fixes already done on `/practices/{id}` and its siblings.
   Whether it is worth that change, and when, is open.
-- **`POST /api/v1/taxes` is entirely unscoped, and defaults to a global tax.** The route
-  calls `createTax(...)` with no scope argument. `taxCreateSchema`'s `clinic` field
-  defaults to `-1`, and `createTax` writes that value verbatim. A CLINIC_ADMIN can
-  create a tax row naming another clinic's id, or — by simply omitting `clinic` —
-  create a `clinic_id = -1` **global** tax that `listTaxes` and `calculateTax` then
-  apply to every clinic in the install. This is a cross-tenant write into another
-  tenant's billing configuration, and it predates this branch — as a collection route,
-  it was never touched by the `withAuth` bug this branch fixed.
+- **`POST /api/v1/taxes` is entirely unscoped, and defaults to a global tax — and `PUT
+  /api/v1/taxes/{id}` reaches the same outcome without ever calling `POST`.** The
+  `POST` route calls `createTax(...)` with no scope argument. `taxCreateSchema`'s
+  `clinic` field defaults to `-1`, and `createTax` writes that value verbatim. A
+  CLINIC_ADMIN can create a tax row naming another clinic's id, or — by simply
+  omitting `clinic` — create a `clinic_id = -1` **global** tax that `listTaxes` and
+  `calculateTax` then apply to every clinic in the install. This is a cross-tenant
+  write into another tenant's billing configuration, and it predates this branch — as
+  a collection route, it was never touched by the `withAuth` bug this branch fixed.
+  `PUT /api/v1/taxes/{id}` (`updateTax`) has the identical write surface on an
+  *existing* row: `taxUpdateSchema` is `taxCreateSchema.partial()`, so `clinic` is
+  accepted on update, and `updateTax` only scope-checks the row it is about to
+  overwrite (`assertTaxInScope(existing.clinicId, scope)`) before writing
+  `clinicId: BigInt(input.clinic)` from the body with no re-check that the *target*
+  clinic is in scope. A CLINIC_ADMIN who owns an in-scope tax can therefore
+  `PUT { clinic: <other clinic id> }` to move it into another clinic's billing
+  configuration, or `PUT { clinic: -1 }` to promote their own tax to a **global** one
+  every clinic bills against — the same cross-tenant/global-write outcome as the
+  unscoped `POST` above, reachable even if `POST` were fixed in isolation.
 - **Global tax rows are writable and deletable by any clinic admin.** `assertTaxInScope`
   returns early when `clinicId` is `null` or `-1`, and the bulk helpers
   (`bulkSetTaxStatus`, `bulkDeleteTaxes`) include those values in their `OR`. That is

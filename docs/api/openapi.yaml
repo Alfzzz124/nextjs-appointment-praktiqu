@@ -6747,7 +6747,15 @@ paths:
         - practices
       summary: Delete holidays
       operationId: delete_api_v1_practices_id_holidays
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: |-
+        **Response envelope:** standard / RFC-7807 problem+json
+
+        _Broken: 500 for every real caller._ The handler expects a `holidayId` (see
+        `HolidayParams` in the route source), but no `[holidayId]` route segment exists
+        under `practices/` — this file is the only one. `params.holidayId` is always
+        `undefined` in production, so `Number(params.holidayId)` is `NaN`, `BigInt(NaN)`
+        throws, and the request 500s. Pre-existing; not fixed by this deploy. See
+        `docs/deploy/encounter-documents-staging-deploy.md`.
       responses:
         '200':
           description: Success

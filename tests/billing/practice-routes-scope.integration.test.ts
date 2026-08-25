@@ -90,8 +90,19 @@ describe('GET/POST/DELETE /practices/:id/holidays', () => {
     expect(res.status).toBe(404);
   });
 
-  it('clinic A cannot delete a holiday from clinic B', async () => {
-    const res = await holidayDelete(reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_B}/holidays/1`), { params: { id: String(CLINIC_B), holidayId: '1' } });
+  // There is no `[holidayId]` route segment anywhere under `practices/` —
+  // `practices/[id]/holidays/route.ts` is the only file, so Next.js only ever
+  // supplies `{ id }` to this handler. The two DELETE tests below used to pass
+  // `{ params: { id, holidayId } }`, a shape production never produces; that made
+  // them green on a route that cannot exist while the reachable one (`{ id }` only)
+  // is permanently broken (see the next test). Fixed here to call with the real
+  // params shape, cast `as any` since `HolidayParams`'s own type still (wrongly)
+  // requires `holidayId`.
+  it('clinic A cannot delete a holiday from clinic B (scope is still checked before the broken holidayId read)', async () => {
+    const res = await holidayDelete(
+      reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_B}/holidays`),
+      { params: { id: String(CLINIC_B) } } as any,
+    );
     expect(res.status).toBe(404);
   });
 
@@ -102,9 +113,8 @@ describe('GET/POST/DELETE /practices/:id/holidays', () => {
   });
 
   // The success paths `handleError`'s fail-open guard silently corrupted: POST passes
-  // its raw success DTO (never an `Error`) through `handleError` unconverted, and
-  // DELETE's 204 has no body at all — both are exactly what the guard's original bug
-  // turned into a false 500.
+  // its raw success DTO (never an `Error`) through `handleError` unconverted — that is
+  // what the guard's original bug turned into a false 500.
   it('clinic A can add a holiday to its own practice', async () => {
     const res = await holidaysPost(reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays`, {
       method: 'POST', body: JSON.stringify({ title: 'Founders day', startDate: '2026-11-01', endDate: '2026-11-01', isAllDay: true }),
@@ -114,17 +124,27 @@ describe('GET/POST/DELETE /practices/:id/holidays', () => {
     expect(json.data).toMatchObject({ practiceId: CLINIC_A, title: 'Founders day' });
   });
 
-  it('clinic A can delete its own holiday', async () => {
+  /**
+   * DELETE is pre-existing and broken for every real caller, not just an edge case:
+   * production never supplies `holidayId` (no route segment carries it), so
+   * `Number(params.holidayId)` is `NaN`, `BigInt(NaN)` throws `RangeError`, and
+   * `handleError` falls through to a generic 500. This is deliberately NOT fixed here
+   * — building the missing `[holidayId]` route is out of scope for this branch — but
+   * the test must say what actually happens instead of asserting a params shape
+   * Next.js cannot produce. Recorded in
+   * docs/deploy/encounter-documents-staging-deploy.md alongside the other known gaps.
+   */
+  it('clinic A deleting its own holiday 500s — no [holidayId] segment exists to carry the id', async () => {
     const created = await holidaysPost(reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays`, {
       method: 'POST', body: JSON.stringify({ title: 'To be removed', startDate: '2026-11-02', endDate: '2026-11-02', isAllDay: true }),
     }), { params: { id: String(CLINIC_A) } });
-    const { data } = await created.json();
+    expect(created.status).toBe(201);
 
     const res = await holidayDelete(
-      reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays/${data.id}`),
-      { params: { id: String(CLINIC_A), holidayId: String(data.id) } },
+      reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_A}/holidays`),
+      { params: { id: String(CLINIC_A) } } as any,
     );
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(500);
   });
 });
 

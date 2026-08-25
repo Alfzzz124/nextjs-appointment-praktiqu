@@ -233,7 +233,22 @@ additive and does not depend on the app being current.
 - Three further tenancy gaps found in pre-merge re-review of this branch's `withAuth`
   fix were deliberately left unfixed: `GET /api/v1/practices` (list) has no clinic
   filter, so a CLINIC_ADMIN can enumerate every clinic; `POST /api/v1/taxes` is
-  entirely unscoped and can create a cross-tenant or global tax; and global tax rows
-  (`clinic_id` `-1`/`null`) are writable and deletable by any clinic admin, not just
-  readable. Detail and mitigating context are in the "Open questions" section of
+  entirely unscoped and can create a cross-tenant or global tax (and `PUT
+  /api/v1/taxes/{id}` can retarget or globalize an existing in-scope tax the same way,
+  without ever calling `POST`); and global tax rows (`clinic_id` `-1`/`null`) are
+  writable and deletable by any clinic admin, not just readable. Detail and mitigating
+  context are in the "Open questions" section of
   `docs/superpowers/specs/2026-08-24-encounter-documents-design.md`.
+- `DELETE /api/v1/practices/{id}/holidays` is pre-existing and broken for every real
+  caller, not an edge case. The handler's type (`HolidayParams`) expects `{ id,
+  holidayId }`, but no `[holidayId]` route segment exists anywhere under
+  `practices/` — `practices/[id]/holidays/route.ts` is the only file, so Next.js only
+  ever supplies `{ id }`. `Number(params.holidayId)` is therefore always `NaN`,
+  `BigInt(NaN)` throws `RangeError`, and `handleError`'s catch-all turns that into a
+  bare 500. Confirmed by a reviewer's probe. Two tests in
+  `tests/billing/practice-routes-scope.integration.test.ts` used to pass
+  `{ params: { id, holidayId } }` — a shape production never produces — and reported
+  green on that unreachable path while the reachable one was permanently broken; they
+  now call with the real `{ id }`-only shape and assert the actual 404 (scope-gated)
+  and 500 (broken read) outcomes. Not fixed here: building the missing `[holidayId]`
+  route is out of scope for this branch.
