@@ -282,3 +282,18 @@ same tables we do.
 - Protecting `uploads/kivicare-uploads/`, used by the unrelated `custom-field` context
 - Writing to `appointment_report`; we only ever read it
 - Thumbnails, OCR, virus scanning, versioning
+
+## Open questions
+
+Left for the API owner to decide, not resolved here:
+
+- **Should `POST /api/v1/patient-medical-reports` be retired outright, rather than left
+  answering `501`?** It still occupies the path and the `patient_report_manage`
+  capability check; whether that is worth keeping as a permanent tombstone versus
+  removing the route entirely is a call this change does not make.
+- **The `medical-report` context of `POST /api/v1/custom-fields/file-upload` now has no
+  consumer.** Staff can still upload a file into the protected `medical-report` folder
+  through it, but nothing in this API can attach the result to a patient or an
+  encounter — `createMedReport` only accepts a `verifiedMediaId` produced by
+  `POST /api/v1/encounters/{id}/documents`'s own upload step, not one obtained
+  separately. Whether that context should be removed, repointed, or left as-is is open.

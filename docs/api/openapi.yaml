@@ -3433,6 +3433,15 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
       responses:
         '201':
           description: Success
@@ -3972,6 +3981,15 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
       responses:
         '201':
           description: Success
@@ -4003,6 +4021,20 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+                - status
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
+                status:
+                  type: integer
+                  minimum: 0
+                  maximum: 1
       responses:
         '201':
           description: Success
@@ -6194,9 +6226,20 @@ paths:
     post:
       tags:
         - patient-medical-reports
-      summary: Create patient medical reports
+      summary: 'Create patient medical reports — REMOVED, now always 501'
       operationId: post_api_v1_patient_medical_reports
       description: |-
+        **Breaking change:** this route unconditionally returns `501` and creates
+        nothing. It used to accept a WordPress media id directly in the body, but
+        nothing tied that id to `patientId`, so any caller could mint a report row
+        over another clinic's uploaded file and then read its bytes back via
+        `GET /api/v1/patient-medical-reports/{id}/content`. The media-id field was
+        removed; there is no replacement field to send here.
+
+        **Use instead:** `POST /api/v1/encounters/{id}/documents` (multipart),
+        which uploads the file's bytes itself and links the resulting document to
+        the encounter in the same request.
+
         **Capability:** `patient_report_manage`
 
         **Response envelope:** KC `{status,message,data}`
@@ -6207,18 +6250,14 @@ paths:
             schema:
               type: object
       responses:
-        '201':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/KcEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+        '501':
+          description: >-
+            Always returned. "Creating a report requires uploading its file
+            first. Use POST /api/v1/encounters/{id}/documents."
       security:
         - bearerAuth: []
   /api/v1/patient-medical-reports/{id}:
@@ -6477,6 +6516,15 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
       responses:
         '201':
           description: Success
@@ -7121,6 +7169,15 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
       responses:
         '201':
           description: Success
@@ -8672,6 +8729,15 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
       responses:
         '201':
           description: Success
@@ -8736,6 +8802,20 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+                - status
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
+                status:
+                  type: integer
+                  minimum: 0
+                  maximum: 1
       responses:
         '201':
           description: Success
@@ -10634,6 +10714,15 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
       responses:
         '201':
           description: Success
@@ -10665,6 +10754,20 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - ids
+                - status
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
+                status:
+                  type: integer
+                  minimum: 0
+                  maximum: 1
       responses:
         '200':
           description: Success

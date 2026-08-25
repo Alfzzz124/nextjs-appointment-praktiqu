@@ -248,8 +248,58 @@ instead of 403, so a stray attachment id doesn't confirm anything either.
 
 ---
 
+## Step 7 — `POST /api/v1/patient-medical-reports` no longer creates anything (added 2026-08-25)
+
+The path still exists and still requires `patient_report_manage`, but the handler now
+unconditionally returns `501`:
+
+```json
+{ "type": "...", "title": "...", "status": 501,
+  "detail": "Creating a report requires uploading its file first. Use POST /api/v1/encounters/{id}/documents." }
+```
+
+It used to accept a WordPress media id straight in the request body. Nothing tied that
+id to `patientId`, so any caller could name another clinic's attachment, mint a report
+row over it, and read the bytes back via `GET /api/v1/patient-medical-reports/{id}/content`
+— that hole is why the field is gone rather than just re-validated.
+
+**If any screen still POSTs here to create a report, switch it to
+`POST /api/v1/encounters/{id}/documents`** (multipart — it uploads the bytes itself and
+links the result to the encounter in one request; see Step 6). There is no other
+replacement: this route will not start working again with a different body shape.
+
+---
+
+## Step 8 — Bulk `ids` arrays are now capped at 100 (added 2026-08-25)
+
+Every "bulk" endpoint that takes a JSON `{ "ids": [...] }` (or `{ "ids": [...], "status": ... }`)
+body now rejects more than 100 ids with a `400`. This is shared validation, not specific
+to one screen — it applies to:
+
+- `POST /api/v1/doctor-sessions/bulk/delete`
+- `POST /api/v1/encounters/bulk/delete`
+- `POST /api/v1/encounters/bulk/status`
+- `POST /api/v1/patient-medical-reports/bulk/delete`
+- `POST /api/v1/prescriptions/bulk/delete`
+- `POST /api/v1/receptionists/bulk/delete`
+- `POST /api/v1/receptionists/bulk/status`
+- `POST /api/v1/taxes/bulk/delete`
+- `PUT /api/v1/taxes/bulk/status`
+
+If a "select all" action can gather more than 100 rows, chunk the request into batches
+of 100 ids rather than sending it all in one call — a batch over the cap gets a bare
+`400 "Invalid input"`, with nothing in the response naming the limit.
+
+---
+
 ## What did NOT change
 
-Auth flow and token lifetimes. Every endpoint path — nothing was renamed, added or
-removed. Response envelopes (`{data, pagination}` for lists, RFC-7807 `problem+json` for
-errors). Pagination parameter names, apart from plans moving off `cursor`.
+Auth flow and token lifetimes. Response envelopes (`{data, pagination}` for lists,
+RFC-7807 `problem+json` for errors). Pagination parameter names, apart from plans moving
+off `cursor`.
+
+Endpoint paths are **not** all unchanged any more — see Step 6 above for what
+`encounter-documents` added (`/encounters/{id}/documents`, the two new `/content`
+streaming routes) and removed (`/patient-medical-reports/{id}/preview`), and Step 7
+below for `POST /api/v1/patient-medical-reports`, which is still there but no longer
+does anything.

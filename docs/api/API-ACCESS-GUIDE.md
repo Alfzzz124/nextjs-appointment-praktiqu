@@ -10,11 +10,11 @@ Catatan praktis cara mengakses endpoint yang ada di [`openapi.yaml`](./openapi.y
 
 | | Jumlah |
 |---|---|
-| Total operasi | **261** |
+| Total operasi | **265** |
 | Publik (tanpa token) | **21** |
-| Butuh Bearer token | **240** |
+| Butuh Bearer token | **244** |
 
-> Angka di atas: 260/20/240 saat diverifikasi 2026-07-20, ditambah `POST /api/v1/public/auth/register` yang menyusul pada 2026-08-07.
+> Angka di atas: 260/20/240 saat diverifikasi 2026-07-20, ditambah `POST /api/v1/public/auth/register` yang menyusul pada 2026-08-07, ditambah 4 operasi `encounter-documents` (`GET`/`POST /api/v1/encounters/{id}/documents`, `PATCH /api/v1/patient-medical-reports/{id}`, `GET /api/v1/sessions/{id}/attachments/{mediaId}/content`) yang menyusul pada 2026-08-25 — semuanya butuh Bearer token.
 
 **Aturan mudah:**
 - Semua yang berawalan **`/api/v1/public/*`** → **publik** (tanpa token).
@@ -348,7 +348,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `PATCH` | `/api/v1/email-templates/{id}` | — |
 | `POST` | `/api/v1/email-templates/{id}/preview` | — |
 
-### `encounters` (9)
+### `encounters` (11)
 
 | Method | Endpoint | Capability (KC) |
 |---|---|---|
@@ -360,6 +360,8 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `DELETE` | `/api/v1/encounters/{id}` | `encounter_manage` |
 | `GET` | `/api/v1/encounters/{id}` | `encounter_read` |
 | `PUT` | `/api/v1/encounters/{id}` | `encounter_manage` |
+| `GET` | `/api/v1/encounters/{id}/documents` | `patient_report_read` |
+| `POST` | `/api/v1/encounters/{id}/documents` | `patient_report_manage` |
 | `GET` | `/api/v1/encounters/{id}/print` | `encounter_read` |
 
 ### `followup-chains` (4)
@@ -450,16 +452,17 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `GET` | `/api/v1/notes-templates/{id}` | — |
 | `PATCH` | `/api/v1/notes-templates/{id}` | — |
 
-### `patient-medical-reports` (10)
+### `patient-medical-reports` (11)
 
 | Method | Endpoint | Capability (KC) |
 |---|---|---|
 | `GET` | `/api/v1/patient-medical-reports` | `patient_report_read` |
-| `POST` | `/api/v1/patient-medical-reports` | `patient_report_manage` |
+| `POST` | `/api/v1/patient-medical-reports` | `patient_report_manage` · _removed, always `501`_ — use `POST /api/v1/encounters/{id}/documents` instead |
 | `POST` | `/api/v1/patient-medical-reports/bulk/delete` | `patient_report_manage` |
 | `GET` | `/api/v1/patient-medical-reports/export` | `patient_report_read` |
 | `DELETE` | `/api/v1/patient-medical-reports/{id}` | `patient_report_manage` |
 | `GET` | `/api/v1/patient-medical-reports/{id}` | `patient_report_read` |
+| `PATCH` | `/api/v1/patient-medical-reports/{id}` | `patient_report_manage` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/file` | `patient_report_read` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/content` | `patient_report_read` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/print` | `patient_report_read` · _stub 501_ |
@@ -562,7 +565,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `PATCH` | `/api/v1/session-notes/{id}` | — |
 | `POST` | `/api/v1/session-notes/{id}/close` | — |
 
-### `sessions` (22)
+### `sessions` (23)
 
 | Method | Endpoint | Capability (KC) |
 |---|---|---|
@@ -578,6 +581,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `GET` | `/api/v1/sessions/pending` | — |
 | `GET` | `/api/v1/sessions/{id}` | — |
 | `POST` | `/api/v1/sessions/{id}/approve` | — |
+| `GET` | `/api/v1/sessions/{id}/attachments/{mediaId}/content` | — |
 | `POST` | `/api/v1/sessions/{id}/cancel` | — |
 | `POST` | `/api/v1/sessions/{id}/check-in` | — |
 | `POST` | `/api/v1/sessions/{id}/check-out` | — |
