@@ -8,9 +8,17 @@ import {
   ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
+  UpstreamWriteError,
 } from '@/services/public/public-booking.service';
 import { createRateLimiter, tupleKey } from '@/lib/rate-limit';
-import { validationError, tooManyRequests, conflict, notFound } from '@/lib/problem-details';
+import { WpConfigError } from '@/lib/wp-endpoint';
+import {
+  validationError,
+  tooManyRequests,
+  conflict,
+  notFound,
+  serviceUnavailable,
+} from '@/lib/problem-details';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,6 +75,44 @@ export async function POST(req: NextRequest) {
     if (err instanceof ProfessionalNotFoundError) {
       const p = notFound('professional_not_found', 'Professional not found');
       return NextResponse.json(p, { status: p.status });
+    }
+    // A refusal from the WordPress plugin is not this service crashing, and saying so
+    // is the difference between advice that works and advice that wastes the guest's
+    // afternoon. A bare 500 leaves the front end only one honest sentence — "something
+    // went wrong" — so it guesses, and it has been guessing wrong: telling people to
+    // pick another psychologist during an outage that hits every psychologist.
+    //
+    // 5xx upstream is transient by nature and gets a Retry-After the caller can obey.
+    // 4xx is a refusal that will not change on a retry, so it is answered plainly and
+    // without one. Either way the plugin's own message stays in the log, not the body.
+    if (err instanceof WpConfigError) {
+      console.error('[public/appointments] upstream misconfigured:', err.message);
+      const p = serviceUnavailable(
+        'upstream_misconfigured',
+        'The booking service is not configured to reach its records system.',
+      );
+      return NextResponse.json(p, { status: p.status });
+    }
+    if (err instanceof UpstreamWriteError) {
+      console.error('[public/appointments] upstream write failed:', {
+        operation: err.operation,
+        upstreamStatus: err.upstreamStatus,
+        message: err.message,
+      });
+      const transient = err.upstreamStatus >= 500 || err.upstreamStatus === 0;
+      const p = transient
+        ? serviceUnavailable(
+            'upstream_write_failed',
+            'The records system refused the booking. Nothing was saved and the slot is still free.',
+          )
+        : conflict(
+            'upstream_write_rejected',
+            'The records system rejected the booking. Nothing was saved.',
+          );
+      return NextResponse.json(p, {
+        status: p.status,
+        headers: transient ? { 'Retry-After': '30' } : {},
+      });
     }
     if (err instanceof AppointmentInsertError) {
       console.error('[public/appointments] insert failed:', err.message);

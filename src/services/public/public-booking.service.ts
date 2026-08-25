@@ -85,6 +85,46 @@ export class AppointmentInsertError extends Error {
   readonly code = 'APPOINTMENT_INSERT_FAILED';
 }
 
+/**
+ * Raised when a write to the WordPress plugin fails for a reason we did not map.
+ *
+ * It exists to stop those failures arriving at the client as a bare 500. A guest
+ * booking crosses two systems, and when the far one refuses the write there is
+ * nothing in `{"type":"about:blank","title":"Internal Server Error","status":500}`
+ * that tells anybody — the patient, the clinic, or us — whether the booking is
+ * hopeless or worth retrying in a minute. Both look identical, so both get the same
+ * useless advice.
+ *
+ * `upstreamStatus` is what the plugin answered, and it is the whole point: 5xx is
+ * WordPress having a bad moment and a retry is reasonable, 4xx is a refusal that
+ * will still be a refusal in ten minutes. The plugin's own message is deliberately
+ * NOT carried to the client — it names internal routes — but it is logged.
+ */
+export class UpstreamWriteError extends Error {
+  readonly code = 'UPSTREAM_WRITE_FAILED';
+
+  constructor(
+    message: string,
+    readonly upstreamStatus: number,
+    readonly operation: 'create_patient' | 'update_patient' | 'create_appointment',
+  ) {
+    super(message);
+    this.name = 'UpstreamWriteError';
+  }
+}
+
+/** Wrap a plugin failure so the route can tell it apart from a genuine crash. */
+function asUpstreamWriteError(
+  err: unknown,
+  operation: 'create_patient' | 'update_patient' | 'create_appointment',
+): unknown {
+  if (err instanceof WpConfigError) return err;
+  if (err instanceof WpEndpointError) {
+    return new UpstreamWriteError(err.message, err.status, operation);
+  }
+  return err;
+}
+
 export interface CreatedAppointment {
   id: number;
   status: SessionStatus;
@@ -174,6 +214,8 @@ async function resolvePatient(
       console.error('[public/appointments] clinic mapping failed — booking continues', {
         patientId: String(existing.id),
         clinicId,
+        operation: 'update_patient',
+        upstreamStatus: err instanceof WpEndpointError ? err.status : null,
         err,
       });
     }
@@ -199,7 +241,7 @@ async function resolvePatient(
     if (err instanceof WpEndpointError && err.status === 409) {
       throw new EmailConflictError('That email is already registered to another account');
     }
-    throw err;
+    throw asUpstreamWriteError(err, 'create_patient');
   }
 }
 
@@ -252,17 +294,24 @@ export async function createPublicAppointment(
 
   // PENDING, deliberately: KiviCare withholds the "booked" email until an appointment
   // is confirmed, and a guest booking is exactly what a practice wants to review first.
-  const created = await createAppointment({
-    clinicId,
-    doctorId: input.professionalId,
-    patientId,
-    startDate: input.date,
-    startTime,
-    endDate: input.date,
-    endTime,
-    description: input.notes,
-    serviceIds: [input.serviceId],
-  });
+  let created;
+  try {
+    created = await createAppointment({
+      clinicId,
+      doctorId: input.professionalId,
+      patientId,
+      startDate: input.date,
+      startTime,
+      endDate: input.date,
+      endTime,
+      description: input.notes,
+      serviceIds: [input.serviceId],
+    });
+  } catch (err) {
+    // The hold is deliberately NOT consumed: nothing was written, so the slot is
+    // still the guest's to take on the retry the route is about to invite.
+    throw asUpstreamWriteError(err, 'create_appointment');
+  }
 
   slotHoldService.consume(input.holdKey);
 

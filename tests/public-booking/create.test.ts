@@ -55,6 +55,7 @@ import {
   ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
+  UpstreamWriteError,
 } from '@/services/public/public-booking.service';
 
 const DOCTOR = 29;
@@ -320,8 +321,50 @@ describe('createPublicAppointment', () => {
 
     await expect(
       createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
-    ).rejects.toBeInstanceOf(WpEndpointError);
+    ).rejects.toBeInstanceOf(UpstreamWriteError);
     expect(createAppointment).not.toHaveBeenCalled();
+  });
+
+  /**
+   * What the plugin answered has to survive the trip, because it is the only thing
+   * that separates "try again in a minute" from "this will never work". Losing it is
+   * how a refusal becomes a bare 500 and the guest gets told to pick another
+   * psychologist during an outage that hits every psychologist.
+   */
+  it('carries the upstream status and the operation that failed', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue(null);
+    vi.mocked(createPatient).mockRejectedValue(
+      new WpEndpointError('/patients failed 503: upstream busy', 503),
+    );
+
+    await expect(
+      createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
+    ).rejects.toMatchObject({ upstreamStatus: 503, operation: 'create_patient' });
+  });
+
+  it('does the same when the appointment write itself is refused', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue({ id: 77n } as never);
+    vi.mocked(updatePatient).mockResolvedValue(undefined as never);
+    vi.mocked(createAppointment).mockRejectedValue(
+      new WpEndpointError('/appointments failed 500: save returned no id', 500),
+    );
+
+    await expect(
+      createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
+    ).rejects.toMatchObject({ upstreamStatus: 500, operation: 'create_appointment' });
+  });
+
+  // A missing service token is a deploy that cannot work at all, not a bad minute.
+  // Blurring the two would put a Retry-After on a permanent misconfiguration.
+  it('keeps a missing service token distinct from an upstream refusal', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue(null);
+    vi.mocked(createPatient).mockRejectedValue(
+      new WpConfigError('WORDPRESS_SERVICE_TOKEN not set'),
+    );
+
+    await expect(
+      createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
+    ).rejects.toBeInstanceOf(WpConfigError);
   });
 
   it('reports a conflict when the email belongs to a non-patient account', async () => {
