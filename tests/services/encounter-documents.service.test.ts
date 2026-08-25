@@ -236,11 +236,34 @@ describe('uploadEncounterDocument', () => {
   });
 
   it('refuses a CLIENT (403) before touching the media library', async () => {
+    // Deliberately a *different* id than the encounter's patientId (9): `assertCan`
+    // denies CLIENT for `patient_report_manage` regardless of whose encounter this
+    // is, so giving this client the patient's own id would only prove assertCan
+    // fires first, not that the role gate itself is what stops it. See I1.
+    const unrelatedClient: any = { actor: { role: 'CLIENT' }, wpUserId: 999n, clinicId: 1n };
+
     await expect(uploadEncounterDocument(
-      55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'R' }, CLIENT,
+      55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'R' }, unrelatedClient,
     )).rejects.toMatchObject({ httpStatus: 403 });
 
     expect(uploadMedia).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when a professional other than the encounter\'s doctor attempts to upload', async () => {
+    // I1: a reviewer deleted `assertEncounterVisible(encounter, kc)` from
+    // `uploadEncounterDocument` and every existing upload test still passed,
+    // because every one of them used a professional whose wpUserId equals the
+    // encounter's doctorId (7). This professional's id (8) does not, so this
+    // only passes when that ownership check actually runs.
+    const otherDoctor: any = { actor: { role: 'PROFESSIONAL' }, wpUserId: 8n, clinicId: 1n };
+
+    await expect(uploadEncounterDocument(
+      55, { filename: 'resume.pdf', bytes: PDF_BYTES, name: 'R' }, otherDoctor,
+    )).rejects.toMatchObject({ httpStatus: 404 });
+
+    // The ownership check must fail before any bytes are touched.
+    expect(uploadMedia).not.toHaveBeenCalled();
+    expect(createMedReport).not.toHaveBeenCalled();
   });
 
   it('reports linked:false rather than failing when only the link write fails', async () => {
