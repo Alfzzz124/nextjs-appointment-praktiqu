@@ -41,4 +41,15 @@ describe('inlineDisposition', () => {
     expect(inlineDisposition(''))
       .toBe(`inline; filename=""; filename*=UTF-8''`);
   });
+
+  it("encodes ! ' ( ) * in filename* like PHP's rawurlencode, not bare encodeURIComponent", () => {
+    // encodeURIComponent treats these five as safe "sub-delims" and leaves them
+    // unescaped; rawurlencode (and the PHP side of this API) escapes them. Assert
+    // the exact percent-encoding, not just that it "looks encoded", so a
+    // regression back to bare encodeURIComponent is caught.
+    const out = inlineDisposition("a!b'c(d)e*f.pdf");
+    expect(out).toBe(
+      `inline; filename="a!b'c(d)e*f.pdf"; filename*=UTF-8''a%21b%27c%28d%29e%2Af.pdf`,
+    );
+  });
 });
