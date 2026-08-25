@@ -4,6 +4,7 @@ import {
   listMedReports, getMedReport, createMedReport, deleteMedReport,
   bulkDeleteMedReports, assertPatientInScope, resolveReportFile,
 } from '@/services/billing/patient-medical-report.service';
+import { idsSchema } from '@/services/billing/validation';
 
 const CLINIC = 9_000_901, PATIENT = 9_000_903, OTHER_PATIENT = 9_000_904;
 
@@ -67,6 +68,15 @@ describe('patient-medical-report.service', () => {
     await expect(assertPatientInScope(OTHER_PATIENT, kcStaff)).rejects.toThrow();
     // patient mapped to the clinic passes
     await expect(assertPatientInScope(PATIENT, kcStaff)).resolves.toBeUndefined();
+  });
+
+  it('idsSchema (shared by every bulk/delete endpoint, including this one) refuses an over-sized batch', () => {
+    const tooMany = Array.from({ length: 101 }, (_, i) => i + 1);
+    const refused = idsSchema.safeParse({ ids: tooMany });
+    expect(refused.success).toBe(false);
+
+    const atLimit = idsSchema.safeParse({ ids: tooMany.slice(0, 100) });
+    expect(atLimit.success).toBe(true);
   });
 
   it('resolveReportFile returns the authenticated content path, not a WordPress URL', async () => {

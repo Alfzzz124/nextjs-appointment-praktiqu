@@ -96,6 +96,84 @@ export async function unlinkReport(reportId: number): Promise<number> {
   return result.count;
 }
 
+/**
+ * Read every module-type row once and group the matching link-row ids by the
+ * report id they encode. The one expensive part of unlinking (the full scan of
+ * `module_type = praktiqu_report_encounter`, forced by the mixed-shape values
+ * described at the top of this file) done a single time, shared by every
+ * caller below instead of once per document.
+ */
+async function groupLinkRowIdsByReportId(): Promise<Map<number, bigint[]>> {
+  const candidates = await prisma.kcCustomFieldData.findMany({
+    where: { moduleType: ENCOUNTER_DOC_MODULE_TYPE },
+    select: { id: true, fieldsData: true },
+  });
+  const byReportId = new Map<number, bigint[]>();
+  for (const row of candidates) {
+    const reportId = parseReportId(row.fieldsData);
+    if (reportId === null) continue;
+    const rowIds = byReportId.get(reportId);
+    if (rowIds) rowIds.push(row.id);
+    else byReportId.set(reportId, [row.id]);
+  }
+  return byReportId;
+}
+
+/**
+ * Remove every link pointing at any of these documents, in one read and one
+ * delete no matter how many ids are given.
+ *
+ * All-or-nothing across the whole set: the delete is a single statement, so a
+ * caller cannot tell from this function alone which specific document's link
+ * failed to go if something throws. Fine for a caller that is unlinking a
+ * batch it does not need document-by-document failure isolation for; a caller
+ * that does (see `prepareUnlinkBatch`) needs a different shape.
+ */
+export async function unlinkReports(reportIds: number[]): Promise<number> {
+  if (reportIds.length === 0) return 0;
+  const wanted = new Set(reportIds);
+  const byReportId = await groupLinkRowIdsByReportId();
+  const rowIds = [...byReportId.entries()]
+    .filter(([reportId]) => wanted.has(reportId))
+    .flatMap(([, ids]) => ids);
+  if (rowIds.length === 0) return 0;
+
+  const result = await prisma.kcCustomFieldData.deleteMany({
+    where: { id: { in: rowIds } },
+  });
+  return result.count;
+}
+
+/**
+ * Prepare a per-document unlink step for a batch, backed by a single table read.
+ *
+ * `unlinkReport` rescans the whole module-type table on every call, so calling
+ * it once per document in a batch multiplies that scan by the batch size.
+ * `unlinkReports` above fixes that but loses the ability to fail one document
+ * at a time — its single `deleteMany` either takes the whole batch or none of
+ * it.
+ *
+ * This is for callers (bulk delete) that need both: cheap like `unlinkReports`,
+ * but still able to unlink — and fail — one document at a time, so a document
+ * that never got its turn is left with its link untouched rather than silently
+ * detached ahead of the document itself being removed.
+ */
+export async function prepareUnlinkBatch(
+  reportIds: number[],
+): Promise<(reportId: number) => Promise<number>> {
+  const wanted = new Set(reportIds);
+  const all = await groupLinkRowIdsByReportId();
+  const byReportId = new Map([...all].filter(([reportId]) => wanted.has(reportId)));
+  return async (reportId: number) => {
+    const rowIds = byReportId.get(reportId);
+    if (!rowIds || rowIds.length === 0) return 0;
+    const result = await prisma.kcCustomFieldData.deleteMany({
+      where: { id: { in: rowIds } },
+    });
+    return result.count;
+  };
+}
+
 /** Document ids attached to one encounter, in the order they were attached. */
 export async function listLinkedReportIds(encounterId: number): Promise<number[]> {
   const rows = await prisma.kcCustomFieldData.findMany({

@@ -40,7 +40,11 @@ export const taxUpdateSchema = taxCreateSchema.partial().extend({
 });
 
 export const statusSchema = z.object({ status: z.coerce.number().int().min(0).max(1) });
-export const idsSchema = z.object({ ids: z.array(z.coerce.number().int()).min(1) });
+// Cap matches the perPage ceiling used for every list endpoint in this file
+// (z.coerce.number().int().min(1).max(100)) — same order of magnitude as one
+// page of results, and small enough that an O(N) per-id cost in a bulk
+// handler (e.g. encounter-document unlinking) stays bounded.
+export const idsSchema = z.object({ ids: z.array(z.coerce.number().int()).min(1).max(100) });
 export const idsStatusSchema = idsSchema.merge(statusSchema);
 
 export const billListQuerySchema = z.object({

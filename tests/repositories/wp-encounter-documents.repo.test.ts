@@ -15,7 +15,9 @@ import {
   linkReportToEncounter,
   listBookingAttachments,
   listLinkedReportIds,
+  prepareUnlinkBatch,
   unlinkReport,
+  unlinkReports,
 } from '@/repositories/wp/encounter-documents.repo';
 
 const BASE = 8_800_000;
@@ -187,6 +189,67 @@ describe('encounter document links', () => {
     );
 
     expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
+  });
+});
+
+describe('unlinkReports (batch)', () => {
+  it('removes links for several documents in one pass, leaving other module types and other encounters alone', async () => {
+    await linkReportToEncounter(ENCOUNTER, REPORT_A);
+    await linkReportToEncounter(ENCOUNTER, REPORT_B);
+    await linkReportToEncounter(OTHER_ENCOUNTER, REPORT_C); // not in the batch — must survive
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO wp_kc_custom_fields_data (module_type, module_id, fields_data, field_id, created_at)
+       VALUES ('patient_encounter_module', ?, ?, NULL, NOW())`,
+      ENCOUNTER, JSON.stringify(REPORT_A), // same report id, different module — must survive
+    );
+
+    const n = await unlinkReports([REPORT_A, REPORT_B]);
+    expect(n).toBe(2);
+
+    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
+    expect(await listLinkedReportIds(OTHER_ENCOUNTER)).toEqual([REPORT_C]);
+    const otherModuleRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM wp_kc_custom_fields_data
+         WHERE module_type = 'patient_encounter_module' AND module_id = ?`,
+      ENCOUNTER,
+    );
+    expect(otherModuleRows).toHaveLength(1);
+  });
+
+  it('is a no-op for an empty batch', async () => {
+    expect(await unlinkReports([])).toBe(0);
+  });
+});
+
+describe('prepareUnlinkBatch', () => {
+  it('unlinks each document in the prepared batch independently, on demand', async () => {
+    await linkReportToEncounter(ENCOUNTER, REPORT_A);
+    await linkReportToEncounter(ENCOUNTER, REPORT_B);
+
+    const unlinkOne = await prepareUnlinkBatch([REPORT_A, REPORT_B]);
+    expect(await unlinkOne(REPORT_A)).toBe(1);
+    expect(await unlinkOne(REPORT_B)).toBe(1);
+
+    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([]);
+  });
+
+  it('leaves a document not yet asked for completely linked', async () => {
+    await linkReportToEncounter(ENCOUNTER, REPORT_A);
+    await linkReportToEncounter(ENCOUNTER, REPORT_B);
+
+    const unlinkOne = await prepareUnlinkBatch([REPORT_A, REPORT_B]);
+    await unlinkOne(REPORT_A);
+
+    // REPORT_B was part of the batch but never asked for — still linked.
+    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([REPORT_B]);
+  });
+
+  it('a document outside the prepared batch is a no-op, not an error', async () => {
+    await linkReportToEncounter(ENCOUNTER, REPORT_A);
+
+    const unlinkOne = await prepareUnlinkBatch([REPORT_A]);
+    expect(await unlinkOne(REPORT_B)).toBe(0);
+    expect(await listLinkedReportIds(ENCOUNTER)).toEqual([REPORT_A]);
   });
 });
 

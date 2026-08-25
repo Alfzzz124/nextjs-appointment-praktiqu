@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { KcError } from '@/lib/kc-response';
-import { unlinkReport } from '@/repositories/wp/encounter-documents.repo';
+import { prepareUnlinkBatch, unlinkReport } from '@/repositories/wp/encounter-documents.repo';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { MedReportScope } from '@/services/billing/med-report-scope';
 
@@ -135,6 +135,25 @@ export async function deleteMedReport(id: number, scope: MedReportScope | null):
   await prisma.kcPatientMedicalReport.delete({ where: { id: BigInt(id) } });
 }
 
+/**
+ * Delete several documents, each as its own unlink-then-delete unit.
+ *
+ * Processing stops at the first failure rather than best-effort-continuing
+ * through the rest: a document is only ever deleted once its own link is
+ * gone, so whatever has completed so far is fully coherent — earlier ids are
+ * unlinked and deleted, the one that failed and everything after it are
+ * completely untouched. That is a state the caller can reason about (and
+ * simply retry the same ids again, since unlinking and deleting are both
+ * idempotent) instead of a 500 that leaves them guessing which of the batch
+ * actually went through. The count returned is exactly how many were
+ * removed, whether or not that matches how many were requested.
+ *
+ * The per-document loop still calls the unlink step once per id — that is
+ * what makes a mid-batch failure attributable to one specific document
+ * instead of the whole batch. What is no longer paid once per id is the
+ * expensive part: `prepareUnlinkBatch` reads the link table exactly once for
+ * the whole batch up front, so this costs one table scan, not N.
+ */
 export async function bulkDeleteMedReports(ids: number[], scope: MedReportScope | null): Promise<number> {
   if (ids.length === 0) return 0;
   const { whereSql, args } = buildWhere(scope, {});
@@ -144,11 +163,23 @@ export async function bulkDeleteMedReports(ids: number[], scope: MedReportScope 
   );
   const okIds = inScope.map((r) => BigInt(r.id));
   if (okIds.length === 0) return 0;
-  for (const okId of okIds) {
-    await unlinkReport(Number(okId));
+
+  const unlinkOne = await prepareUnlinkBatch(okIds.map(Number));
+  let deleted = 0;
+  try {
+    for (const okId of okIds) {
+      // Link first: see deleteMedReport — a link pointing at a deleted
+      // document would have to be worked around by every encounter listing.
+      await unlinkOne(Number(okId));
+      await prisma.kcPatientMedicalReport.delete({ where: { id: okId } });
+      deleted++;
+    }
+  } catch (err) {
+    console.error(
+      `[bulkDeleteMedReports] stopped after ${deleted}/${okIds.length}:`, err,
+    );
   }
-  const r = await prisma.kcPatientMedicalReport.deleteMany({ where: { id: { in: okIds } } });
-  return r.count;
+  return deleted;
 }
 
 export async function exportMedReports(p: MedReportListParams, scope: MedReportScope | null) {
