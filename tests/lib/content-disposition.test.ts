@@ -99,4 +99,20 @@ describe('contentDispositionFor', () => {
     expect(out).toBe(inlineDisposition('invoice.pdf'));
     expect(out.startsWith('inline;')).toBe(true);
   });
+
+  it('serves an empty Content-Type as attachment', () => {
+    const out = contentDispositionFor('', 'unknown.bin');
+    expect(out).toBe(attachmentDisposition('unknown.bin'));
+    expect(out.startsWith('attachment;')).toBe(true);
+  });
+
+  // `fetchMedia` (see `@/lib/wp-endpoint`) substitutes `application/octet-stream` when
+  // the upstream response carries no `Content-Type` header at all, so that's the exact
+  // string this function sees for "missing header" — pin it rather than only the
+  // empty-string case above.
+  it('serves the missing-header default (application/octet-stream) as attachment', () => {
+    const out = contentDispositionFor('application/octet-stream', 'unknown.bin');
+    expect(out).toBe(attachmentDisposition('unknown.bin'));
+    expect(out.startsWith('attachment;')).toBe(true);
+  });
 });
