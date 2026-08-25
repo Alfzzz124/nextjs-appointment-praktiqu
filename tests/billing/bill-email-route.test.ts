@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vites
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { assertTestDb, seedClinicAdmin, seedEncounter, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedEncounter, seedPatient, cleanup } from './fixtures';
 import { createBill } from '@/services/billing/bill.service';
 
 vi.mock('@/lib/email', () => ({ sendEmail: vi.fn().mockResolvedValue({ ok: true, messageId: 'm1' }) }));
@@ -22,6 +22,12 @@ import { sendEmail } from '@/lib/email';
  * bill-scope.test.ts) closes "any bill"; this suite closes "an address of their
  * choosing" by proving a CLIENT's `to` override is ignored, while staff — who could
  * already see the real recipient in the UI — keep it for legitimate resends.
+ *
+ * The override being ignored used to leave CLIENT with no fallback at all — `getBill`
+ * never returns a patient email, so every CLIENT send 400'd, dead rather than
+ * restricted. The route now resolves the address itself via `findPatientById` (the
+ * same `wp_users` read every other patient lookup in this codebase uses), so this
+ * suite also proves the CLIENT case actually sends, to their own registered address.
  */
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
@@ -38,12 +44,14 @@ function reqWith(jwt: string, url: string, body?: unknown) {
 
 const CLINIC = 9_021_001, DOCTOR = 9_021_002, PATIENT = 9_021_003, OTHER_PATIENT = 9_021_004;
 const ENC = 9_021_101;
+const PATIENT_EMAIL = `patient${PATIENT}@test.local`;
 let billId: number;
 
 beforeAll(async () => {
   assertTestDb();
   await cleanup();
   await seedClinicAdmin({ userId: CLINIC, clinicId: CLINIC }); // gives a CLINIC_ADMIN test-admin-<CLINIC>
+  await seedPatient({ id: PATIENT, email: PATIENT_EMAIL }); // wp_users row the route resolves "to" from
   await seedEncounter({ id: ENC, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
 
   const bill = await createBill({
@@ -79,17 +87,17 @@ afterAll(async () => {
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe('POST /bills/:id/email', () => {
-  it('ignores a CLIENT-supplied "to" — the recipient falls back to the bill\'s own patient email, not the attacker\'s address', async () => {
+  it('sends a CLIENT their own bill at their registered address, ignoring an attacker-supplied "to"', async () => {
     const jwt = await token('CLIENT', `test-client-${PATIENT}`);
     const res = await emailPost(
       reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, { to: 'attacker@evil.test' }),
       { params: { id: String(billId) } } as any,
     );
-    // BillDetail.patient has no email field to fall back to (pre-existing, unrelated
-    // gap noted in the report) — so the ignored override surfaces as "no recipient",
-    // never as a send to the attacker's address.
-    expect(res.status).toBe(400);
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    // Proves both halves at once: the send actually happens (endpoint isn't dead for
+    // CLIENT any more) AND it goes to the patient's real address, never the supplied one.
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: PATIENT_EMAIL }));
+    expect(sendEmail).not.toHaveBeenCalledWith(expect.objectContaining({ to: 'attacker@evil.test' }));
   });
 
   it('honors a staff-supplied "to" for a bill within their clinic', async () => {

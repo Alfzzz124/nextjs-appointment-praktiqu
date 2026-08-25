@@ -44,6 +44,30 @@ export async function seedClinicAdmin(opts: { userId: number; clinicId: number }
   });
 }
 
+/**
+ * Provision a patient directly: a `wp_users` row + the `kiviCare_patient` capability
+ * meta. Needed wherever a test exercises a real address lookup (e.g. the bill-email
+ * fallback in `findPatientById`) rather than just a bare `patient_id` foreign key.
+ */
+export async function seedPatient(data: Partial<{ id: number; email: string; name: string }>) {
+  assertTestDb();
+  const id = data.id ?? TEST_MARKER + 3;
+  const name = data.name ?? 'Test Patient';
+  const email = data.email ?? `patient${id}@test.local`;
+  const role = 'kiviCare_patient';
+  await prisma.kcUser.create({
+    data: { id: BigInt(id), userLogin: `patient${id}`, userEmail: email, displayName: name, userRegistered: new Date() },
+  });
+  await prisma.kcUserMeta.createMany({
+    data: [
+      { userId: BigInt(id), metaKey: 'wp_capabilities', metaValue: `a:1:{s:${role.length}:"${role}";b:1;}` },
+      { userId: BigInt(id), metaKey: 'first_name', metaValue: name.split(' ')[0] },
+      { userId: BigInt(id), metaKey: 'last_name', metaValue: name.split(' ').slice(1).join(' ') || '-' },
+    ],
+  });
+  return { id, email };
+}
+
 export async function seedTax(data: Partial<{ id: number; name: string; taxType: string; taxValue: string; clinicId: number; status: number }>) {
   assertTestDb();
   return prisma.kcTax.create({

@@ -5,6 +5,7 @@ import { assertCan, assertBillingEnabled, billScopeFor } from '@/services/billin
 import { resolveKcActor } from '@/services/billing/kc-actor';
 import { emailBill } from '@/services/billing/bill-document.service';
 import { getBill } from '@/services/billing/bill.service';
+import { findPatientById } from '@/repositories/wp/patients.repo';
 
 export const runtime = 'nodejs';
 
@@ -22,7 +23,15 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
     // reachable by id. Staff roles (who already see the recipient's real address in
     // the UI) keep the override for legitimate resends (e.g. to an accountant).
     let to: string = actor.role === 'CLIENT' ? '' : (body?.to ?? '');
-    if (!to) to = (bill as any).patient?.email ?? '';
+    if (!to) {
+      // `BillDetail.patient` carries only the wp_users id (getBill never joins the
+      // profile) — resolve the real address the same way every other patient read in
+      // this codebase does, straight from wp_users. This is also the CLIENT's own
+      // fallback path: assertBillScope already forced bill.patient.id === the CLIENT's
+      // own wpUserId, so a patient looked up here is always the requester themself.
+      const patient = await findPatientById(BigInt(bill.patient.id));
+      to = patient?.email ?? '';
+    }
     if (!to) return kcFail('No recipient email available for this bill', 400);
     await emailBill(Number(params.id), to, scope);
     return kcOk(true, 'Bill sent successfully');
