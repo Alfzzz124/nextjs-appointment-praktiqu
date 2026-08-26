@@ -1,0 +1,24 @@
+:root {
+  --amber: #F2CD72;
+  --amber-pale: #FDF3DC;
+  --orange: #F0904A;      /* decorative only — 2.3:1 on white */
+  --orange-ink: #B45A12;  /* text — 4.8:1 on white */
+  --ink: #17181A;
+  --ink-soft: #4A4E56;
+  --line: #E6E3DC;
+  --surface: #FAF8F4;
+  --hero: radial-gradient(at center right, #F2CD72 0%, #FFFFFF 100%);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #fff;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+img { max-width: 100%; height: auto; display: block; }
