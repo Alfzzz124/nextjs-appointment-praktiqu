@@ -208,8 +208,8 @@ JS-nya tidak jalan. Kesalahan itu tidak diulang.
 
 Satu file HTML mandiri, sekitar 450 KB, bisa dibuka langsung tanpa server.
 
-- Gambar tertanam sebagai `data:` URI **WebP**. 15 aset yang dipakai turun dari 5,4 MB
-  (PNG) jadi 306 KB (WebP) — hero 900 px lebar/77 KB, ikon 220 px, logo 400 px.
+- Gambar tertanam sebagai `data:` URI **WebP**. 13 aset yang dipakai turun dari 4,2 MB
+  (PNG) jadi sekitar 225 KB (WebP) — hero 900 px lebar/77 KB, ikon 220 px, logo 400 px.
 - Tanpa Elementor, tanpa jQuery, tanpa font CDN. CSS ditulis tangan, satu blok `<style>`.
 - JavaScript hanya untuk accordion FAQ, sekitar 30 baris, tanpa dependensi. Accordion
   dibangun dengan `<details>`/`<summary>` agar tetap berfungsi tanpa JS.
