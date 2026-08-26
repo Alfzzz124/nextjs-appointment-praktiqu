@@ -170,3 +170,193 @@ section { padding-block: clamp(56px, 8vw, 96px); }
   max-width: 64ch;
   color: var(--ink-soft);
 }
+
+/* ---------- stats ---------- */
+
+.stats { background: var(--amber); }
+
+.stats dl {
+  margin: 0;
+  display: grid;
+  gap: clamp(24px, 4vw, 40px);
+  text-align: center;
+}
+.stats dt {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.stats dd {
+  margin-inline-start: 0;   /* browsers indent dd by 40px by default */
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+@media (min-width: 700px) {
+  .stats dl { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---------- about ---------- */
+
+.about { background: var(--surface); }
+
+.about__body { max-width: 76ch; }
+.about h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; }
+.about p { margin-top: 20px; color: var(--ink-soft); }
+
+/* ---------- services ---------- */
+
+.services { text-align: center; }
+.services h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; }
+
+.services__list {
+  list-style: none;
+  margin: 36px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.services__list li {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--orange);
+  border-radius: 12px;
+  background: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-wrap: balance;
+}
+
+/* ---------- areas of practice ---------- */
+
+.areas { background: var(--surface); }
+.areas h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; text-align: center; }
+
+/* Flex, not grid: five cards over three columns leave an empty cell, and grid
+   pins that gap to the right. Flex centres the last row instead. Items on the
+   same line still stretch to equal height. */
+.areas__grid {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+}
+.areas__grid li {
+  flex: 1 1 300px;
+  max-width: 366px;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 26px 30px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.areas__grid img { width: 56px; height: auto; }
+.areas__grid h3 { margin: 16px 0 10px; font-size: 1.2rem; font-weight: 800; }
+.areas__grid p { color: var(--ink-soft); font-size: 0.95rem; }
+
+/* ---------- motto ---------- */
+
+.motto { background: var(--amber); text-align: center; }
+.motto .eyebrow { color: #7A4A18; }
+
+.motto blockquote { margin: 0; }
+.motto blockquote p {
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  max-width: 22ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+.motto cite {
+  display: block;
+  margin-top: 20px;
+  font-style: normal;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* ---------- faq ---------- */
+
+.faq__body { max-width: 820px; }
+.faq h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; text-align: center; }
+
+.faq details {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.faq details:first-of-type { margin-top: 36px; }
+.faq details[open] { border-color: var(--amber-line); background: #FFFDF8; }
+
+.faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 14px 22px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+";
+  flex: none;
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--orange-ink);
+}
+.faq details[open] summary::after { content: "−"; }
+
+.faq details > p {
+  padding: 0 22px 20px;
+  color: var(--ink-soft);
+}
+
+/* ---------- member of ---------- */
+
+.members { text-align: center; }
+.members h2 { font-size: clamp(1.4rem, 2.6vw, 1.8rem); font-weight: 800; margin-bottom: 32px; }
+
+/* These three carry a lot of internal whitespace, so the same box that suits the
+   modality wordmarks renders them noticeably smaller. */
+.members .logo-rail li { height: 58px; }
+.members .logo-rail img { max-width: 220px; }
+
+/* ---------- closing ---------- */
+
+.closing { background: var(--surface); text-align: center; }
+.closing h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; }
+
+.closing__lead {
+  margin: 16px auto 0;
+  max-width: 52ch;
+  color: var(--ink-soft);
+}
+.closing__actions {
+  margin-top: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+}
+@media (max-width: 699px) {
+  .closing__actions .btn { flex: 1 1 100%; }
+}
+.closing__wa { margin-top: 22px; font-weight: 600; }
+.closing__wa a { color: var(--orange-ink); }
