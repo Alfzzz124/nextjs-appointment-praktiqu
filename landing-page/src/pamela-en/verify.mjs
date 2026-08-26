@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FILE = path.resolve(HERE, '../../pamela-anggia-dewi-en.html');
 const BOOK = 'https://appointment.praktiqu.com/appointment-pamela-anggia-dewi-m-psi-psikolog/';
-const WA = 'https://wa.me/628115424069';
+const WA = 'https://wa.me/6285163652908';
 const ASSET_COUNT = 13;
 
 const results = [];

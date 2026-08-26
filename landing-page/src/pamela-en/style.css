@@ -169,6 +169,7 @@ section { padding-block: clamp(56px, 8vw, 96px); }
   margin-inline: auto;
   max-width: 64ch;
   color: var(--ink-soft);
+  text-wrap: pretty;   /* the added "/neuroexperiential" pushed a two-word orphan */
 }
 
 /* ---------- stats ---------- */

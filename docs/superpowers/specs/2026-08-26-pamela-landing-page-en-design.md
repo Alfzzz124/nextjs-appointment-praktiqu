@@ -61,22 +61,27 @@ Nama: **Pamela Anggia Dewi, M.Psi., Psikolog**
 Badge: **Certified International Brainspotting Consultant & Therapist**
 
 > I am a clinical psychologist and an internationally certified psychotherapist. I work
-> across self-healing, self-regulation, performance enhancement, and personal growth —
-> through an integrative approach drawing on the psychotherapies I have trained in deeply:
-> Brainspotting, ReAttach, and a range of Capacitar techniques (Tai Chi dance, EFT,
-> fingerholds, and more).
+> across self-healing, self-regulation, performance enhancement & personal
+> growth-manifesting — through an integrative approach drawing on the psychotherapies I
+> have trained in deeply: Brainspotting, ReAttach, and a range of Capacitar techniques
+> (Tai Chi dance, EFT, fingerholds, and more).
+
+"performance enhancement & personal growth-manifesting" adalah kata-kata Pamela sendiri,
+diberikan 2026-08-26. Menggantikan "performance enhancement, and personal growth" di
+revisi pertama.
 
 ### Credential strip
 
 Eyebrow: **Trained & Certified In**
 
-> Brainspotting is a brain–body psychotherapy that works with a fixed point of gaze to
-> reach experiences held deeper than words. I use it alongside ReAttach and Capacitar,
-> combining the three to suit each person I work with.
+> Brainspotting is a brain–body/neuroexperiential psychotherapy that works with a fixed
+> point of gaze to reach experiences held deeper than words. I use it alongside ReAttach
+> and Capacitar, combining the three to suit each person I work with.
 
-Kalimat ini **tidak ada di sumber mana pun** — dikarang untuk spec ini. Ia klaim klinis
-tentang metode, jadi harus diaminkan Pamela sebelum halaman dipublikasikan. Sudah
-disampaikan ke pemilik pekerjaan dan diterima dengan catatan itu.
+Kalimat ini tidak ada di sumber mana pun — dikarang untuk revisi pertama, dan ditandai
+sebagai klaim klinis yang harus diaminkan Pamela. **Pamela sudah mengoreksinya sendiri**
+2026-08-26: "brain–body" jadi "brain–body/neuroexperiential". Sisa kalimatnya ia biarkan,
+jadi bagian itu sekarang berdiri atas persetujuannya, bukan karanganku semata.
 
 ### Stats
 
@@ -175,11 +180,12 @@ memakai paragraf pembuka hero, dipotong ~155 karakter. `lang="en"`.
 | Tombol | Target |
 |---|---|
 | Book Appointment | `https://appointment.praktiqu.com/appointment-pamela-anggia-dewi-m-psi-psikolog/` |
-| Contact Me | `https://wa.me/628115424069` |
+| Contact Me | `https://wa.me/6285163652908` |
 
-Nomor WhatsApp `+62 811-5424-069` diberikan pemilik pekerjaan; berbeda dari nomor
-`+62 878 7051 9230` di footer halaman lama, yang merupakan nomor PraktiQu, bukan nomor
-Pamela.
+Nomor WhatsApp `+62 851-6365-2908` adalah nomor resmi Pamela untuk klien, dikonfirmasi
+olehnya 2026-08-26. Ia menggantikan `+62 811-5424-069` yang dipakai di revisi pertama —
+nomor itu ternyata bukan jalur kliennya. Keduanya berbeda dari `+62 878 7051 9230` di
+footer halaman lama, yang merupakan nomor PraktiQu.
 
 ## Sistem visual
 
@@ -291,7 +297,13 @@ di-gitignore itu tidak dibutuhkan untuk membangun ulang.
 
 ## Yang masih perlu Pamela
 
-1. **Kalimat penjelas Brainspotting** di credential strip dikarang untuk spec ini. Ia klaim
-   klinis tentang metode dan harus disetujui Pamela sebelum halaman terbit.
-2. **Nomor WhatsApp `+62 811-5424-069`** — pastikan ini nomor yang memang ingin dia
-   publikasikan.
+Kosong. Kedua hal yang menggantung sudah dijawabnya sendiri pada 2026-08-26:
+
+1. ~~Kalimat penjelas Brainspotting~~ — ia mengoreksinya jadi
+   "brain–body/neuroexperiential" dan membiarkan sisanya.
+2. ~~Nomor WhatsApp~~ — `+62 851-6365-2908`, nomor resminya untuk klien.
+
+Satu hal yang bukan pertanyaan untuknya, tapi perlu dicatat: bio aslinya menyebut
+"peningkatan performa" dan "pengembangan diri" sebagai dua hal terpisah. Frasa
+"personal growth-manifesting" yang ia pilih tidak lazim dalam bahasa Inggris, tapi itu
+kata-katanya sendiri dan dipakai apa adanya.
