@@ -72,6 +72,36 @@ export class WpConfigError extends WpEndpointError {
   }
 }
 
+/**
+ * `fetch`, with "WordPress never answered" turned into a `WpEndpointError` of status 0.
+ *
+ * Undici throws a plain `TypeError` when the request never reaches WordPress at all —
+ * connection refused, reset mid-flight, DNS failure, connect timeout. That is not an
+ * HTTP status, so it slipped past every `instanceof WpEndpointError` check in this
+ * codebase and arrived at the client as a bare 500 with no code and no Retry-After.
+ *
+ * Which is backwards: no answer at all is the *most* transient failure there is, and
+ * the one most worth retrying. Status 0 says exactly that — distinct from every status
+ * WordPress could actually send, so a caller can tell "the far side refused" from "the
+ * far side was not there".
+ *
+ * The label is a path, never the full URL: these messages reach clients through
+ * `client.service.ts` and friends, and the WordPress host is not a caller's business.
+ */
+async function wpFetch(url: string, init: RequestInit, label: string): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    // undici hangs the real reason (ECONNREFUSED, ECONNRESET, ...) off `cause`. Read
+    // through a cast rather than the typed property: this project's `lib` predates
+    // ES2022, where `Error.cause` was standardised, and one log line is not worth
+    // moving the whole compilation target.
+    const cause = (err as { cause?: unknown })?.cause;
+    const detail = cause instanceof Error ? `: ${cause.message}` : '';
+    throw new WpEndpointError(`${label} unreachable${detail}`, 0);
+  }
+}
+
 function serviceToken(): string {
   const token = process.env.WORDPRESS_SERVICE_TOKEN ?? '';
   if (!token) throw new WpConfigError('WORDPRESS_SERVICE_TOKEN not set');
@@ -93,14 +123,14 @@ export async function wpRequestJson<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(`${WP_API_BASE}${path}`, {
+  const res = await wpFetch(`${WP_API_BASE}${path}`, {
     method: init.method ?? 'GET',
     headers: {
       'X-PraktiQU-Service-Token': serviceToken(),
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-  });
+  }, path);
 
   const raw = await res.text();
 
@@ -123,11 +153,11 @@ export async function wpRequestJson<T>(
 }
 
 export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWcOrderResult> {
-  const res = await fetch(`${WP_PAYMENTS_BASE}/order`, {
+  const res = await wpFetch(`${WP_PAYMENTS_BASE}/order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-PraktiQU-Service-Token': serviceToken() },
     body: JSON.stringify(input),
-  });
+  }, '/payments/order');
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new WpEndpointError(`WC order create failed ${res.status}: ${text}`, res.status);
@@ -142,9 +172,9 @@ export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWc
 }
 
 export async function getWcOrderStatus(orderId: number): Promise<WcOrderStatus> {
-  const res = await fetch(`${WP_PAYMENTS_BASE}/order/${orderId}`, {
+  const res = await wpFetch(`${WP_PAYMENTS_BASE}/order/${orderId}`, {
     headers: { 'X-PraktiQU-Service-Token': serviceToken() },
-  });
+  }, `/payments/order/${orderId}`);
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new WpEndpointError(`WC order status fetch failed ${res.status}: ${text}`, res.status);
@@ -200,11 +230,11 @@ export async function uploadMedia(input: UploadMediaInput): Promise<UploadMediaR
     input.filename,
   );
 
-  const res = await fetch(WP_MEDIA_URL, {
+  const res = await wpFetch(WP_MEDIA_URL, {
     method: 'POST',
     headers: { 'X-PraktiQU-Service-Token': serviceToken() },
     body: form,
-  });
+  }, '/media');
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -244,10 +274,10 @@ export interface FetchedMedia {
  * the row that owns this media id.
  */
 export async function fetchMedia(mediaId: number): Promise<FetchedMedia> {
-  const res = await fetch(`${WP_MEDIA_URL}/${mediaId}`, {
+  const res = await wpFetch(`${WP_MEDIA_URL}/${mediaId}`, {
     method: 'GET',
     headers: { 'X-PraktiQU-Service-Token': serviceToken() },
-  });
+  }, `/media/${mediaId}`);
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
