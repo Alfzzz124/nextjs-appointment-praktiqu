@@ -257,13 +257,41 @@ sebelahnya memang sengaja tidak dilacak.
 
 ## Verifikasi
 
-1. Halaman dibuka langsung dari `file://` tanpa server, tanpa error konsol.
-2. Semua gambar tampil — termasuk logo Brainspotting Indonesia yang di halaman lama tak
-   terlihat.
-3. Ukuran file di bawah 600 KB.
-4. Angka statistik terbaca 16+, 1,500+, 8,000+.
-5. Badge kredensial terbaca di layar pertama, tanpa perlu scroll, di 1440 px dan 390 px.
-6. Kedua tautan menunjuk target yang benar.
-7. Accordion FAQ terbuka-tutup; dan tetap bisa dibaca saat JavaScript dimatikan.
-8. Layout benar pada lebar 390, 768, dan 1440 px — diperiksa lewat screenshot headless
-   Chrome.
+Otomatis, lewat `landing-page/src/pamela-en/verify.mjs` — **24/24 lewat**.
+
+| Kriteria | Hasil terukur |
+|---|---|
+| Ukuran file di bawah 600 KB | **325 KB** (dari 17,0 MB — turun 98%) |
+| Tanpa rujukan eksternal | Satu-satunya URL absolut adalah dua target CTA |
+| Tanpa error konsol dari `file://` | Bersih |
+| 13 gambar termuat dan terlihat | 13/13, termasuk logo Brainspotting Indonesia yang di halaman lama tak terlihat |
+| Angka statistik | 16+ · 1,500+ · 8,000+ |
+| Badge kredensial di layar pertama | Selesai di 386 px dari 900 (desktop), 242 px dari 844 (ponsel) |
+| Kedua tautan | Semua tombol Book menunjuk halaman booking; semua tombol Contact menunjuk WhatsApp |
+| Accordion FAQ | 5 item, terbuka-tutup |
+| Tanpa scroll horizontal | 0 px di 390, 768, dan 1440 |
+| Tanpa JavaScript | 5 jawaban FAQ tetap di DOM, 3.371 karakter terbaca, 13/13 gambar tetap terlihat |
+
+Baris terakhir itu bukan basa-basi. Halaman lama memasang `opacity: 0` pada tiap foto
+besar dan mengembalikannya lewat JavaScript; ketika JS-nya tidak jalan, foto Pamela dan
+ketujuh logo hilang semua. Itu regresi yang sekarang dijaga.
+
+Manual, lewat screenshot headless Chrome di 390/768/1440 px. Tiga hal yang lolos dari
+pemeriksaan otomatis dan hanya ketahuan dari melihat:
+
+- Kredensialnya makan dua baris di hampir semua lebar kolom, dan radius pil pada blok dua
+  baris terbaca seperti kesalahan. Jadi pelat bergaris oranye di kiri, bukan pil.
+- Foto yang dipusatkan di grid hero menyisakan pita amber mati di bawah kakinya. Sekarang
+  rata bawah, berdiri di batas section.
+- Membatasi tinggi logo saja membuat logo Capacitar yang lebar dan tipis tampak mungil di
+  sebelah wordmark Brainspotting yang tinggi. Kedua dimensi dibatasi dalam kotak tetap.
+
+Rebuild dari nol berhasil dengan hanya berkas yang di-commit — arsip 17 MB yang
+di-gitignore itu tidak dibutuhkan untuk membangun ulang.
+
+## Yang masih perlu Pamela
+
+1. **Kalimat penjelas Brainspotting** di credential strip dikarang untuk spec ini. Ia klaim
+   klinis tentang metode dan harus disetujui Pamela sebelum halaman terbit.
+2. **Nomor WhatsApp `+62 811-5424-069`** — pastikan ini nomor yang memang ingin dia
+   publikasikan.
