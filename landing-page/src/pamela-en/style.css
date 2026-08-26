@@ -13,10 +13,13 @@
 
 * { box-sizing: border-box; }
 
-body {
-  margin: 0;
+body { margin: 0; background: #fff; }
+
+/* Typography sits on main, not body. Pasted into an Elementor HTML widget the
+   <body> tag is stripped, so a `body` rule would land on the theme's own body
+   and leak this font into the header and footer. `main` is inside the widget. */
+.lp {
   color: var(--ink);
-  background: #fff;
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -361,3 +364,64 @@ section { padding-block: clamp(56px, 8vw, 96px); }
 }
 .closing__wa { margin-top: 22px; font-weight: 600; }
 .closing__wa a { color: var(--orange-ink); }
+
+/* ---------- surviving a theme ----------
+   Everything above renders correctly on its own. These rules exist only for the
+   case where this page is pasted into an Elementor HTML widget, where two of my
+   declarations lose the cascade:
+
+   - Headings. Elementor's kit stylesheet emits `.elementor-kit-NNNN h1` at
+     (0,1,1), which beats a bare `h1` at (0,0,1).
+   - Button text. A theme rule on `.elementor-widget-container a` at (0,2,0)
+     beats `.btn--primary` at (0,1,0), so white button text turns dark on the
+     dark fill and stops being readable.
+
+   Repeating .lp is deliberate: `.lp.lp h1` counts the class twice for (0,2,1),
+   which takes the cascade back without a single !important. Standalone these are
+   simply redundant, so the file stays correct in both places. */
+
+/* font-family matters as much as colour here. I never set a font on headings —
+   they inherit — but the kit sets one explicitly on h1..h6, and an explicit
+   declaration beats inheritance outright, no specificity contest involved. That
+   is why the headings come out in the theme's serif. `inherit` sends them back
+   to the stack on .lp. */
+.lp.lp h1,
+.lp.lp h2,
+.lp.lp h3 {
+  font-family: inherit;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.lp.lp h1,
+.lp.lp h2,
+.lp.lp h3,
+.lp.lp .motto blockquote p,
+.lp.lp .stats dt,
+.lp.lp .stats dd,
+.lp.lp .motto cite { color: var(--ink); }
+
+.lp.lp .stats dt,
+.lp.lp .motto blockquote p { font-family: inherit; }
+
+.lp.lp .eyebrow,
+.lp.lp .badge,
+.lp.lp .closing__wa a { color: var(--orange-ink); }
+
+.lp.lp .motto .eyebrow { color: #7A4A18; }
+
+/* The only two !important in this file, and they are earned. Themes commonly
+   set link colour with !important on widget links, and !important cannot be
+   beaten by specificity — only by another !important. Without these the white
+   label on the dark primary button turns theme-grey and stops being readable,
+   which is a contrast failure, not a preference. */
+.lp.lp a.btn--primary { color: #fff !important; }
+.lp.lp a.btn--ghost { color: var(--ink) !important; }
+
+.lp.lp .hero__lead,
+.lp.lp .about p,
+.lp.lp .credentials__note,
+.lp.lp .areas__grid p,
+.lp.lp .closing__lead { color: var(--ink-soft); }
+
+.lp.lp .services__list li { color: var(--ink); }
