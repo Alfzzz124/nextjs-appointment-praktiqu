@@ -8,9 +8,14 @@ Desain: `docs/superpowers/specs/2026-08-26-pamela-landing-page-en-design.md`
 
 ---
 
-## Caranya: tempel apa adanya
+## Caranya
 
-Widget **HTML** Elementor, tempel seluruh isi file. Selesai.
+Widget **HTML** Elementor, tempel seluruh isi **`pamela-anggia-dewi-en.widget.html`**.
+
+Itu berkas kedua yang dihasilkan `build.mjs` — isinya sama, tapi tanpa `<html>`, `<head>`,
+`<body>`, `<title>`, dan `<meta>`. Yang berekstensi `.html` biasa tetap dipakai untuk dibuka
+langsung di browser; yang `.widget.html` untuk ditempel. **Jangan tempel yang standalone** —
+alasannya di bagian "Kenapa link preview berantakan" di bawah.
 
 Ini sudah dicoba di live dan berhasil. Revisi pertama dokumen ini menyarankan
 Elementor Canvas plus scoping seluruh CSS — itu berlebihan, dan salah membaca masalahnya.
@@ -121,23 +126,104 @@ warisan seperti nomor 1 di atas, bukan kasus spesifisitas.
 
 ---
 
-## Dua hal yang tidak ikut terbawa
+## Kenapa link preview berantakan
 
-**`<title>` dan `<meta name="description">` mati.** Keduanya ada di dalam file, tapi di posisi
-body browser mengabaikannya. Judul dan deskripsi halaman datang dari post WordPress dan
-plugin SEO-mu, bukan dari file ini.
+Gejalanya: judul preview terbaca
+`Pamela Anggia Dewi, M.Psi., Psikolog – Praktiqu</title><meta name='robots' …`
 
-Ini penting: kata kunci **Brainspotting** sengaja kutaruh di `<title>` karena itu yang dicari
-orang — kata klien Pamela sendiri. Kalau tidak disetel ulang lewat plugin SEO, manfaatnya
-hilang. Nilai yang perlu dipasang:
+Aku sempat menyalahkan `<head>` yang rusak. Salah. Diagnosis dari sumber halaman live:
+
+- `<title>` di `<head>` **sempurna**, offset 66–126.
+- Tapi ada **`<title>` kedua** di dalam body, offset 84783 — dari file yang ditempel.
+- Ada **nol** tag `og:` dan `twitter:` di seluruh halaman.
+
+Scraper yang memungut judul dengan regex greedy `<title>(.*)</title>` akan menyapu dari tag
+buka **pertama** sampai tag tutup **terakhir**. Dengan dua `</title>` di dokumen, itu berarti
+84 KB markup jadi "judul", lalu dipotong untuk ditampilkan. Persis yang terlihat.
+
+Aku sebelumnya menulis bahwa `<title>` di posisi body itu inert. Inert untuk **render** — itu
+sebabnya halamannya tetap tampak benar. Sama sekali tidak inert untuk crawler.
+
+**Perbaikannya:** tempel `pamela-anggia-dewi-en.widget.html`. `build.mjs` sekarang
+menghasilkannya tanpa tag head, dan punya guard yang gagal kalau ada yang lolos.
+
+---
+
+## Yang masih perlu dibereskan di WordPress
+
+Tiga hal, dan semuanya di luar file ini karena memang harus ada di `<head>`.
+
+### 1. Tidak ada plugin SEO sama sekali
+
+Nol tag `og:`/`twitter:`. `<meta name='robots' content='max-image-preview:large' />` itu
+output WordPress core, bukan Yoast. Karena itu scraper menebak, dan menebaknya jelek.
+
+**Untuk 21 halaman, pasang plugin SEO** (Rank Math atau Yoast). Ia menghasilkan `og:title`,
+`og:description`, dan `og:image` otomatis dari tiap post plus featured image-nya — sekali
+setel, berlaku untuk semua halaman `profesional` sekarang dan nanti. Menambal tag per halaman
+dengan tangan tidak akan terkejar di halaman ke-21.
+
+**Untuk halaman ini saja, sekarang:** Elementor Pro aktif (`pro-elements` ada di markup), jadi
+ada **Elementor → Custom Code**, bisa menyuntik ke `<head>` dengan kondisi dibatasi ke satu
+halaman:
+
+```html
+<meta property="og:type"        content="profile">
+<meta property="og:site_name"   content="Praktiqu">
+<meta property="og:locale"      content="en_US">
+<meta property="og:url"         content="https://praktiqu.com/profesional/pamela-anggia-dewi-m-psi-psikolog/">
+<meta property="og:title"       content="Pamela Anggia Dewi, M.Psi., Psikolog — Certified International Brainspotting Consultant &amp; Therapist">
+<meta property="og:description" content="Clinical psychologist and internationally certified psychotherapist. 16+ years, 1,500+ clients. Brainspotting, ReAttach and Capacitar.">
+<meta property="og:image"       content="https://praktiqu.com/wp-content/uploads/…/og-card.jpg">
+<meta property="og:image:width"  content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card"       content="summary_large_image">
+```
+
+Unggah `landing-page/src/pamela-en/og-card.jpg` (1200×630, 79 KB) ke Media Library dan
+tempelkan URL-nya ke `og:image`. Kartu itu dihasilkan `og-card.mjs` dari aset halaman ini.
+Foto cut-out-nya tidak bisa dipakai langsung sebagai `og:image` — latarnya transparan, dan
+transparansi tampil **hitam** di beberapa aplikasi chat. Kartunya sudah dikomposit di atas
+gradasi amber. Formatnya JPEG, bukan WebP, karena dukungan WebP di scraper preview masih
+timpang.
+
+### 2. `<meta name="description">` masih bio Indonesia yang lama
+
+Isinya sekarang seluruh bio Indonesia versi lama — **1.050 karakter**, lengkap dengan frasa
+"alatNya" yang justru kamu minta dinetralkan. Dua masalah: bahasanya salah untuk halaman yang
+sekarang berbahasa Inggris, dan panjangnya sekitar tujuh kali batas wajar (~155 karakter).
+
+Tidak ada plugin SEO, jadi itu datang dari tempat lain — cek **excerpt** post-nya dulu, lalu
+custom field. Yang perlu dipasang:
 
 ```
-Title:       Pamela Anggia Dewi, M.Psi., Psikolog — Certified International
-             Brainspotting Consultant & Therapist
-Description: Clinical psychologist and internationally certified psychotherapist.
-             Certified International Brainspotting Consultant & Therapist, working
-             with Brainspotting, ReAttach and Capacitar.
+Clinical psychologist and internationally certified psychotherapist. Certified
+International Brainspotting Consultant & Therapist — Brainspotting, ReAttach and
+Capacitar. 16+ years, 1,500+ clients.
 ```
+
+### 3. `<html lang="id">` padahal isinya Inggris
+
+Halaman mendeklarasikan dirinya berbahasa Indonesia. Mesin pencari memakai itu untuk
+menentukan audiens, dan pembaca layar memakainya untuk memilih pelafalan. Kalau plugin SEO
+atau pengaturan bahasa per-post tidak bisa mengubahnya, ini prioritas rendah — tapi catat.
+
+### Judulnya sendiri
+
+Kata kunci **Brainspotting** sengaja masuk `<title>` karena itu yang dicari orang — kata
+klien Pamela sendiri. Karena `<title>` dari file tidak terpakai, judul post WordPress-nya
+harus disetel:
+
+```
+Pamela Anggia Dewi, M.Psi., Psikolog — Certified International Brainspotting
+Consultant & Therapist
+```
+
+Sekarang judulnya `Pamela Anggia Dewi, M.Psi., Psikolog – Praktiqu`. Kata kuncinya hilang.
+
+---
+
+## Satu hal lagi
 
 **Base64 di `_elementor_data`.** Gambarnya memang terbawa, tapi Elementor menyimpan halaman
 sebagai JSON di postmeta dan editornya memutar-balik JSON itu lewat browser tiap kali
