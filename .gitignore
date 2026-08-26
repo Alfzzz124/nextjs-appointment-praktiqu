@@ -73,6 +73,10 @@ docs/api/postman-collection.json
 # 100 MB hard limit and would be rejected on push; the directory would bloat every
 # clone permanently. Anchored to the repo root so the already-tracked archives
 # elsewhere in the tree are unaffected. Kept on disk, out of git.
-/landing-page/
+/landing-page/*
+!/landing-page/README.md
+!/landing-page/MANIFEST.md
+!/landing-page/tools/
+!/landing-page/src/
 /landing-page.zip
 /landing-page.rar
