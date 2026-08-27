@@ -220,7 +220,10 @@ section { padding-block: clamp(56px, 8vw, 96px); }
   padding: 0;
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  /* 230px, not 260: at 1140px four cards plus gaps need 980px and fit on one
+     row, where 260px forced a 3+1 wrap that stranded the fourth on its own.
+     Falls to 2x2 at tablet and one column on phones. */
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
 }
 .services__list li {
   display: flex;

@@ -38,7 +38,7 @@ File lama tidak disentuh; ia arsip.
 | 2 | Credential strip | Logo Brainspotting, Brainspotting Indonesia, ReAttach Academy, Capacitar + satu kalimat penjelas |
 | 3 | Stats | 16+ Years of Experience · 1,500+ Clients · 8,000+ Hours with Clients |
 | 4 | About Me | Sisa bio: keyakinan, sukacita mendampingi, rentang usia klien |
-| 5 | What I Offer | 3 layanan |
+| 5 | What I Offer | 4 layanan |
 | 6 | Areas of Practice | 5 kartu ikon |
 | 7 | My Motto | Pull-quote di band amber |
 | 8 | FAQs | 5 accordion |
@@ -109,9 +109,14 @@ Of — afiliasi lembaga adalah fakta, beda hal dengan pernyataan iman orang pert
 - Individual Counselling & Psychotherapy
 - Couples & Family Counselling & Psychotherapy
 - Group Psychotherapy
+- Workshops Based on Psychotherapy
 
-Tanpa deskripsi tambahan. Sumbernya memang cuma tiga judul; mengarang deskripsi berarti
+Tanpa deskripsi tambahan. Sumbernya memang cuma judul; mengarang deskripsi berarti
 mengarang isi.
+
+Item keempat ditambahkan Pamela 2026-08-26 — tidak ada di halaman lama. Ia menulisnya
+"workshop based on psychotherapy"; dijamakkan jadi "Workshops" agar sejajar dengan tiga
+item lain yang semuanya nama layanan, bukan satuan.
 
 ### Areas of Practice
 
