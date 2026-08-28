@@ -15,8 +15,13 @@ import { SLOT_HOLD_TTL_MS } from '@/services/booking/slot-hold.service';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { getPublicAppointmentById } from '@/services/public/public-booking.service';
 import { findClinicById, listClinics, type WpClinic } from '@/repositories/wp/clinics.repo';
-import { listServicesForDoctor } from '@/repositories/wp/services.repo';
-import { PROFESSIONAL_STATUS, findDoctorById, listDoctors } from '@/repositories/wp/doctors.repo';
+import { listServicesForDoctor, type WpDoctorService } from '@/repositories/wp/services.repo';
+import {
+  PROFESSIONAL_STATUS,
+  findDoctorById,
+  listDoctors,
+  type WpDoctor,
+} from '@/repositories/wp/doctors.repo';
 import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
 import { isOffOn, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
@@ -210,6 +215,32 @@ export interface PublicSlot {
 }
 
 /**
+ * The "is this professional publicly bookable for this service" check shared by both
+ * slot readers below. `null` collapses three distinct failures — no such professional,
+ * not ACTIVE, service not offered publicly and actively — into the one answer both
+ * callers need: 404. Returning the full mapping (not just its id) means the caller
+ * never has to re-query for the clinic or duration it already has in hand.
+ */
+async function resolvePublicServiceMapping(
+  professionalId: number,
+  serviceId: number,
+  clinicId?: number,
+): Promise<{ doctor: WpDoctor; mapping: WpDoctorService } | null> {
+  const doctor = await findDoctorById(BigInt(professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
+
+  const offered = await listServicesForDoctor({
+    doctorId: BigInt(professionalId),
+    clinicId: clinicId !== undefined ? BigInt(clinicId) : undefined,
+    publicOnly: true,
+  });
+  const mapping = offered.find((s) => Number(s.serviceId) === serviceId && s.isActive);
+  if (!mapping) return null;
+
+  return { doctor, mapping };
+}
+
+/**
  * Bookable slots for one professional, service and date.
  *
  * `null` means there is no such active professional, or the service is not one they
@@ -225,16 +256,13 @@ export async function getPublicSlots(opts: {
   serviceId: number;
   clinicId?: number;
 }): Promise<PublicSlot[] | null> {
-  const doctor = await findDoctorById(BigInt(opts.professionalId));
-  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
-
-  const offered = await listServicesForDoctor({
-    doctorId: BigInt(opts.professionalId),
-    clinicId: opts.clinicId !== undefined ? BigInt(opts.clinicId) : undefined,
-    publicOnly: true,
-  });
-  const mapping = offered.find((s) => Number(s.serviceId) === opts.serviceId && s.isActive);
-  if (!mapping) return null;
+  const resolved = await resolvePublicServiceMapping(
+    opts.professionalId,
+    opts.serviceId,
+    opts.clinicId,
+  );
+  if (!resolved) return null;
+  const { mapping } = resolved;
 
   // Which clinic the slots belong to comes from the mapping: a doctor may work at
   // several, and the service they were asked about says which one this is.
@@ -270,16 +298,13 @@ export async function getPublicSlotsForRange(opts: {
   to: string;
   clinicId?: number;
 }): Promise<PublicDaySlots[] | null> {
-  const doctor = await findDoctorById(BigInt(opts.professionalId));
-  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
-
-  const offered = await listServicesForDoctor({
-    doctorId: BigInt(opts.professionalId),
-    clinicId: opts.clinicId !== undefined ? BigInt(opts.clinicId) : undefined,
-    publicOnly: true,
-  });
-  const mapping = offered.find((s) => Number(s.serviceId) === opts.serviceId && s.isActive);
-  if (!mapping) return null;
+  const resolved = await resolvePublicServiceMapping(
+    opts.professionalId,
+    opts.serviceId,
+    opts.clinicId,
+  );
+  if (!resolved) return null;
+  const { mapping } = resolved;
 
   const doctorId = BigInt(opts.professionalId);
   const clinicId = BigInt(mapping.clinicId);
