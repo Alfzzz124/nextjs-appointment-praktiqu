@@ -32,6 +32,7 @@ import {
 import { ACTIVE_STATUSES, listAppointments } from '@/repositories/wp/appointments.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
+import { blockedRangesFor, buildDaySlots, toMinutes, toTime } from '@/services/booking/slot-math';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -85,18 +86,6 @@ export function isAvailabilityError(err: unknown): err is AvailabilityError {
 /* ------------------------------------------------------------------ */
 
 const TIME_RE = /^\d{2}:\d{2}:\d{2}$/;
-
-/** `HH:MM:SS` → minutes past midnight, for overlap arithmetic only. */
-function toMinutes(time: string): number {
-  const [h, m] = time.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function toTime(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
-}
 
 /** `YYYY-MM-DD` → KiviCare's day slug, computed in UTC so no local-tz shift applies. */
 export function dayOfWeekFor(date: string): DayOfWeek {
@@ -299,13 +288,6 @@ export async function generateSlots(
     await listDoctorOffDays(BigInt(doctorId), { from: date, to: date })
   ).filter((o) => isOffOn(o, date));
 
-  // A full-day closure ends it here; time-specific ones become blocked ranges below.
-  if (offDays.some((o) => !o.timeSpecific)) return [];
-
-  const blocked: Array<{ start: number; end: number }> = offDays
-    .filter((o) => o.timeSpecific && o.startTime && o.endTime)
-    .map((o) => ({ start: toMinutes(o.startTime!), end: toMinutes(o.endTime!) }));
-
   // Appointments occupying the slot. ACTIVE_STATUSES rather than "not cancelled":
   // CHECK_OUT is a completed visit and does not block.
   const { items: appointments } = await listAppointments({
@@ -316,36 +298,28 @@ export async function generateSlots(
     statuses: ACTIVE_STATUSES,
   });
 
-  for (const a of appointments) {
-    if (a.startTime && a.endTime) {
-      blocked.push({ start: toMinutes(a.startTime), end: toMinutes(a.endTime) });
-    }
-  }
+  // null means a full-day closure, which ends it here. An empty array means the
+  // day is open with nothing blocked — the two must not be conflated.
+  const blocked = blockedRangesFor({ offDays, appointments });
+  if (blocked === null) return [];
 
-  const slots: BookableSlot[] = [];
-  for (const w of windows) {
-    if (!w.startTime || !w.endTime) continue;
-    // The doctor's own duration for this service, else the window's slot size.
-    const duration = service.durationMinutes ?? w.slotDurationMinutes;
-    if (duration <= 0) continue;
+  const daySlots = buildDaySlots({
+    windows: windows
+      .filter((w) => w.startTime !== null && w.endTime !== null)
+      .map((w) => ({
+        startTime: w.startTime as string,
+        endTime: w.endTime as string,
+        slotDurationMinutes: w.slotDurationMinutes,
+      })),
+    blocked,
+    durationMinutes: service.durationMinutes ?? undefined,
+  });
 
-    const windowStart = toMinutes(w.startTime);
-    const windowEnd = toMinutes(w.endTime);
-
-    for (let start = windowStart; start + duration <= windowEnd; start += duration) {
-      const end = start + duration;
-      // Half-open overlap: a slot ending exactly when a block starts is still bookable.
-      if (blocked.some((b) => b.start < end && b.end > start)) continue;
-
-      slots.push({
-        date,
-        startTime: toTime(start),
-        endTime: toTime(end),
-        serviceId,
-        doctorId,
-      });
-    }
-  }
-
-  return slots;
+  return daySlots.map((s) => ({
+    date,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    serviceId,
+    doctorId,
+  }));
 }
