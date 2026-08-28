@@ -14,6 +14,9 @@ offer those hours to a patient.
 We want the slots we show to reflect the professional's actual availability, so a patient
 never books an hour the professional has already given away.
 
+KiviCare Pro appears to offer this already — there is a toggle for it in settings. It does not
+work; see "Prior art: KiviCare Pro" below. Nothing is being replaced here, only built.
+
 ## Decisions
 
 | Decision | Choice |
@@ -94,6 +97,53 @@ allowlist before it can work at all.
 single request, so a 14-day view costs one call, not fourteen. With a 60-second cache the
 worst case is roughly 720 calls per professional per day; 50 professionals is ~3.6% of the
 daily quota.
+
+## Prior art: KiviCare Pro
+
+KiviCare Pro ships a Google Calendar integration at
+`Wordpress-Plugin/kivicare-pro/app/controllers/api/GoogleCalendarIntegration.php` (1577 lines).
+Because decoupling from KiviCare is the wider goal, what it does — and does not — do matters.
+
+| Capability | State |
+|---|---|
+| OAuth connect / disconnect | Works |
+| Appointment -> Google event (create/update/delete) | Works |
+| Google busy -> blocked slots | **Dead code**, see below |
+| Push channels, webhook, daily renewal cron | Present |
+| Google event moved -> appointment auto-rescheduled | Present |
+
+### The read direction never runs
+
+`GoogleCalendarIntegration.php:68` reads the per-doctor toggle with
+`get_user_meta($doctorId, 'kc_google_calendar_sync_events', false)`. The third argument is
+`$single`; passing `false` returns an **array**, so the `=== 'yes'` and `=== ''` comparisons
+that follow can never be true and the fetch is never reached. The filter stays registered,
+runs on every slot generation, and returns `$busySlots` untouched.
+
+The writer at `ProSettings.php:1170` stores a correct `'yes'`/`'no'` scalar, so the defect is
+only the missing `true`. The same pattern repeats at `ProSettings.php:1146`, which makes the
+settings API report the toggle as off no matter what is stored.
+
+Two consequences:
+
+1. **Nothing is lost by rebuilding the read direction from scratch.** It has never worked.
+2. **There is a live risk today, independent of this feature.** A professional who switched
+   the toggle on believes their personal commitments block bookings. They do not. Worth
+   communicating separately from this work.
+
+Had the bug been fixed, three further problems would surface, all of which this design avoids:
+it uses `events.list` rather than `freebusy` (deliberately, to read event titles, which it
+stores as the busy slot's `name`); `maxResults: 250` with no pagination silently truncates a
+busy calendar; and all-day events map to `00:00:00Z`-`23:59:59Z`, blocking the whole day.
+
+It requests `https://www.googleapis.com/auth/calendar` — the broadest Calendar scope there is,
+including permanent deletion of any calendar the user can access.
+
+### Tokens cannot be migrated
+
+Refresh tokens are bound to the OAuth client that issued them; KiviCare's came from KiviCare's
+client. Every professional must re-consent through ours. This is how OAuth works rather than a
+choice we are making, and it should be planned for as a communication task.
 
 ## Architecture
 
@@ -269,11 +319,20 @@ blocking everything at the end.
 
 ## Out of scope
 
-- Writing PraktiQU appointments into the professional's Google Calendar (two-way sync)
+- **Writing PraktiQU appointments into the professional's Google Calendar.** Deferred, not
+  rejected — this is the one KiviCare capability that genuinely works and would be lost on
+  decoupling. When it is picked up, prefer the `calendar.app.created` scope: create a separate
+  "PraktiQU" calendar in the professional's account and write only there. Paired with
+  `calendar.freebusy`, neither scope grants read access to their personal event content —
+  unlike KiviCare's `auth/calendar`. Sequenced after the read direction is proven in production.
 - Calendar providers other than Google (Outlook, Apple)
 - Patient-side calendar sync — the existing "Add to Google Calendar" button in
   `src/components/booking/confirmation.tsx` is unrelated and unchanged
-- Automatic cancellation or rescheduling on conflict
+- Automatic cancellation or rescheduling on conflict. Note that KiviCare *does* do this
+  (`GoogleCalendarIntegration.php:1374`): moving a Google event reschedules the patient's
+  appointment, and reverts the Google event if the new slot is taken. It contradicts the
+  approved "warn, never auto-cancel" decision and is not ported unless that decision is
+  revisited deliberately.
 
 ## Open questions
 
@@ -282,6 +341,10 @@ None blocking. Two to revisit with real usage:
 1. Whether the 60-second cache TTL is the right trade between freshness and latency.
 2. Whether the all-day exclusion rule holds up, or whether professionals genuinely want
    all-day events to block their day.
+3. How many professionals are connected to KiviCare's integration today
+   (`kc_google_calendar_token` in `wp_usermeta`). This sizes the re-consent communication.
+   Unanswered so far: Docker is unreachable from this WSL distro, so the local database could
+   not be queried. Needs Docker Desktop WSL integration, or a read-only query on staging.
 
 ## References
 
