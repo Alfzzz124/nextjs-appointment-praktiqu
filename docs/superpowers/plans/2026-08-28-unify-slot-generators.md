@@ -58,6 +58,9 @@ That last point is a live double-booking risk, but it is an inference from readi
   - `buildDaySlots(input: { windows: TimeWindow[]; blocked: BlockedRange[]; durationMinutes?: number }): DaySlot[]`
   - `eachDate(from: string, to: string): string[]` (inclusive, `YYYY-MM-DD`)
   - `toMinutes(time: string): number`, `toTime(minutes: number): string`
+  - `OffDayLike = { timeSpecific: boolean; startTime: string | null; endTime: string | null }`
+  - `AppointmentLike = { startTime: string | null; endTime: string | null }`
+  - `blockedRangesFor(input: { offDays: OffDayLike[]; appointments: AppointmentLike[] }): BlockedRange[] | null` — `null` means the day is closed outright, which is different from open-with-nothing-blocked (`[]`)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -66,7 +69,13 @@ Create `tests/unit/booking/slot-math.test.ts`:
 ```ts
 // tests/unit/booking/slot-math.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildDaySlots, eachDate, toMinutes, toTime } from '@/services/booking/slot-math';
+import {
+  blockedRangesFor,
+  buildDaySlots,
+  eachDate,
+  toMinutes,
+  toTime,
+} from '@/services/booking/slot-math';
 
 const nineToTwelve = { startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 60 };
 
@@ -129,6 +138,60 @@ describe('buildDaySlots', () => {
     expect(slots.map((s) => s.startTime)).toEqual([
       '09:00:00', '10:00:00', '11:00:00', '14:00:00',
     ]);
+  });
+});
+
+describe('blockedRangesFor', () => {
+  it('returns null when a full-day off day covers the date', () => {
+    const blocked = blockedRangesFor({
+      offDays: [{ timeSpecific: false, startTime: null, endTime: null }],
+      appointments: [],
+    });
+    expect(blocked).toBeNull();
+  });
+
+  it('returns an empty list when nothing blocks', () => {
+    expect(blockedRangesFor({ offDays: [], appointments: [] })).toEqual([]);
+  });
+
+  it('converts a time-specific off day', () => {
+    const blocked = blockedRangesFor({
+      offDays: [{ timeSpecific: true, startTime: '10:00:00', endTime: '11:00:00' }],
+      appointments: [],
+    });
+    expect(blocked).toEqual([{ start: 600, end: 660 }]);
+  });
+
+  it('converts an appointment', () => {
+    const blocked = blockedRangesFor({
+      offDays: [],
+      appointments: [{ startTime: '14:00:00', endTime: '15:00:00' }],
+    });
+    expect(blocked).toEqual([{ start: 840, end: 900 }]);
+  });
+
+  it('combines off days and appointments', () => {
+    const blocked = blockedRangesFor({
+      offDays: [{ timeSpecific: true, startTime: '10:00:00', endTime: '11:00:00' }],
+      appointments: [{ startTime: '14:00:00', endTime: '15:00:00' }],
+    });
+    expect(blocked).toEqual([{ start: 600, end: 660 }, { start: 840, end: 900 }]);
+  });
+
+  it('skips a time-specific off day with no times recorded', () => {
+    const blocked = blockedRangesFor({
+      offDays: [{ timeSpecific: true, startTime: null, endTime: null }],
+      appointments: [],
+    });
+    expect(blocked).toEqual([]);
+  });
+
+  it('skips an appointment with no times recorded', () => {
+    const blocked = blockedRangesFor({
+      offDays: [],
+      appointments: [{ startTime: '14:00:00', endTime: null }],
+    });
+    expect(blocked).toEqual([]);
   });
 });
 
@@ -255,6 +318,52 @@ export function buildDaySlots(input: {
   return slots;
 }
 
+/** The minimum an off day has to look like for slot arithmetic. */
+export interface OffDayLike {
+  timeSpecific: boolean;
+  startTime: string | null;
+  endTime: string | null;
+}
+
+/** The minimum an appointment has to look like for slot arithmetic. */
+export interface AppointmentLike {
+  startTime: string | null;
+  endTime: string | null;
+}
+
+/**
+ * Everything blocking one day, as ranges.
+ *
+ * `null` means the day is closed outright — a full-day off day — which is a
+ * different answer from "open, nothing blocked" (`[]`). Callers must branch on
+ * it rather than treating a nullish result as empty.
+ *
+ * Callers pass only the off days and appointments that already fall on the date
+ * in question. Deciding which those are needs repository knowledge (`isOffOn`,
+ * and the appointment's own start date) that has no place in pure arithmetic.
+ */
+export function blockedRangesFor(input: {
+  offDays: OffDayLike[];
+  appointments: AppointmentLike[];
+}): BlockedRange[] | null {
+  if (input.offDays.some((o) => !o.timeSpecific)) return null;
+
+  const blocked: BlockedRange[] = [];
+
+  for (const o of input.offDays) {
+    if (o.timeSpecific && o.startTime && o.endTime) {
+      blocked.push({ start: toMinutes(o.startTime), end: toMinutes(o.endTime) });
+    }
+  }
+  for (const a of input.appointments) {
+    if (a.startTime && a.endTime) {
+      blocked.push({ start: toMinutes(a.startTime), end: toMinutes(a.endTime) });
+    }
+  }
+
+  return blocked;
+}
+
 /**
  * Inclusive `YYYY-MM-DD` dates from `from` to `to`.
  *
@@ -275,7 +384,7 @@ export function eachDate(from: string, to: string): string[] {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run tests/unit/booking/slot-math.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 20 tests.
 
 - [ ] **Step 5: Commit the new module**
 
@@ -289,10 +398,21 @@ git commit -m "feat(booking): extract pure slot arithmetic into slot-math"
 In `src/services/professional/availability.service.ts`, add to the import block near the top:
 
 ```ts
-import { buildDaySlots, toMinutes, toTime } from '@/services/booking/slot-math';
+import { blockedRangesFor, buildDaySlots, toMinutes, toTime } from '@/services/booking/slot-math';
 ```
 
 Delete the local `toMinutes` and `toTime` definitions (the two functions directly under the `const TIME_RE` line) — the imported ones are identical, and `TIME_RE` stays where it is.
+
+Inside `generateSlots`, replace the block that starts at the `if (offDays.some((o) => !o.timeSpecific)) return [];` line and runs through the `for (const a of appointments) { … }` loop with:
+
+```ts
+  // null means a full-day closure, which ends it here. An empty array means the
+  // day is open with nothing blocked — the two must not be conflated.
+  const blocked = blockedRangesFor({ offDays, appointments });
+  if (blocked === null) return [];
+```
+
+The `listAppointments` call has to move above that, since `blockedRangesFor` needs both lists at once. Keep its existing comment about `ACTIVE_STATUSES` and `CHECK_OUT`.
 
 Then replace the slot-building loop at the end of `generateSlots` — everything from `const slots: BookableSlot[] = [];` through `return slots;` — with:
 
@@ -344,7 +464,7 @@ git commit -m "refactor(availability): generateSlots delegates to slot-math"
 - Create: `tests/unit/public/public-slots-range.test.ts`
 
 **Interfaces:**
-- Consumes: `buildDaySlots`, `eachDate`, `toMinutes` from Task 1.
+- Consumes: `buildDaySlots`, `blockedRangesFor`, `eachDate` from Task 1. `blockedRangesFor` is the same helper `generateSlots` uses, so there is exactly one place that decides what blocks a day — which is what Phase 3 will extend with Google busy blocks.
 - Produces:
   - `PublicDaySlots = { date: string; slots: PublicSlot[] }`
   - `getPublicSlotsForRange(opts: { professionalId: number; serviceId: number; from: string; to: string; clinicId?: number }): Promise<PublicDaySlots[] | null>`
@@ -575,7 +695,7 @@ In `src/services/public/public-catalog.service.ts`, extend the existing imports 
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
 import { isOffOn, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { ACTIVE_STATUSES, listAppointments } from '@/repositories/wp/appointments.repo';
-import { buildDaySlots, eachDate, toMinutes } from '@/services/booking/slot-math';
+import { blockedRangesFor, buildDaySlots, eachDate } from '@/services/booking/slot-math';
 ```
 
 Then add, directly after `getPublicSlots`:
@@ -631,20 +751,13 @@ export async function getPublicSlotsForRange(opts: {
   ]);
 
   return eachDate(opts.from, opts.to).map((date) => {
-    const onThisDay = offDays.filter((o) => isOffOn(o, date));
-
-    // A full-day closure ends it here; time-specific ones become blocked ranges.
-    if (onThisDay.some((o) => !o.timeSpecific)) return { date, slots: [] };
-
-    const blocked = onThisDay
-      .filter((o) => o.timeSpecific && o.startTime && o.endTime)
-      .map((o) => ({ start: toMinutes(o.startTime as string), end: toMinutes(o.endTime as string) }));
-
-    for (const a of appointments) {
-      if (a.startDate === date && a.startTime && a.endTime) {
-        blocked.push({ start: toMinutes(a.startTime), end: toMinutes(a.endTime) });
-      }
-    }
+    // Narrowing to this date needs repository knowledge, so it happens here;
+    // turning what is left into ranges is shared with `generateSlots`.
+    const blocked = blockedRangesFor({
+      offDays: offDays.filter((o) => isOffOn(o, date)),
+      appointments: appointments.filter((a) => a.startDate === date),
+    });
+    if (blocked === null) return { date, slots: [] };
 
     const day = dayOfWeekFor(date);
     const windows = sessions
@@ -726,9 +839,13 @@ This is the task that changes behaviour. Two changes are intended and one is a r
 - **Intended:** existing appointments are subtracted — see the pre-flight check below for what to expect.
 - **Risk:** `getPublicSlotsForRange` passes `publicOnly: true`, which the page never did. If `wp_kc_service_doctor_mapping.is_public` is not set for the services in use, the page will render nothing at all. **Step 1 checks this before any code changes.**
 
-- [ ] **Step 1: Pre-flight — confirm the services are flagged public**
+- [ ] **Step 1: Note the two deferred verifications — do not attempt them**
 
-This needs a database. Docker is unreachable from this WSL distro, so either enable Docker Desktop's WSL integration or run the query read-only on staging.
+There is no MySQL in this environment at all: no `mysqld` or `mariadbd` binary, no Docker, nothing listening on 3306. Both checks below are therefore **deferred, not skipped**, and both are **merge blockers** — this code must not be merged or deployed until someone has run them.
+
+Do not try to run these. Do not substitute a guess. Just carry them forward.
+
+**Blocker A — are the services flagged public?** `getPublicSlotsForRange` passes `publicOnly: true`, which this page never did. If `is_public` is unset on the mappings in use, the page renders nothing at all.
 
 ```sql
 SELECT is_public, COUNT(*) AS mappings
@@ -737,17 +854,15 @@ WHERE status = 1
 GROUP BY is_public;
 ```
 
-Expected: a healthy count with `is_public = 1`. **If every row is `0`, stop and report it** — the page would go blank on deploy, and the right fix (backfill the flag, or drop `publicOnly` from this call) is a decision for the user, not for this task.
+A healthy count against `is_public = 1` clears it. All-zero means the flag needs backfilling, or `publicOnly` needs dropping from this call — a decision for the user, not for this task.
 
-- [ ] **Step 2: Characterize the current appointment-filtering behaviour**
+**Blocker B — were booked slots really being offered?** Pick a professional with an appointment in the next fortnight, open `/book/<professionalId>/<serviceId>` on the pre-change code, and see whether the booked time is still selectable.
 
-Still against a database, before changing anything. Pick a professional with an appointment in the next fortnight, open `/book/<professionalId>/<serviceId>`, and check whether the booked time still appears as a selectable slot.
+This plan predicts it **is** still offered, because of the `Date`-interpolated string comparison at the old `page.tsx:179-189`. That is an inference from reading the code, not an observation. Whoever runs it should report what they actually saw — including "the prediction was wrong, booked slots were correctly hidden", if that is the answer.
 
-Record the answer in the commit message in Step 7. The plan predicts the booked slot **is** still offered, because of the `Date`-interpolated string comparison at the old `page.tsx:179-189`. If it is correctly hidden, the prediction was wrong — say so plainly rather than repeating the claim.
+State both blockers in the Step 6 commit message so they travel with the change rather than living only in a ledger.
 
-If no database is reachable at all, note that both checks are outstanding and hand back rather than guessing.
-
-- [ ] **Step 3: Rewrite the page**
+- [ ] **Step 2: Rewrite the page**
 
 Replace everything from line 1 through the `daySlots` assignment (the old line 237) with the following. The `return (` JSX block below it is unchanged except for the `days` prop, given in Step 4.
 
@@ -822,7 +937,7 @@ export default async function BookStep3Page({
 `durationMinutes: number | null`, and both it and `getPublicProfessionalSummary` apply the
 ACTIVE check themselves — so the page does not repeat it.
 
-- [ ] **Step 4: Feed the picker**
+- [ ] **Step 3: Feed the picker**
 
 Replace the `<SlotPicker … />` element's props with:
 
@@ -852,12 +967,12 @@ it replaces used `COALESCE(sdm.duration, 60)`, so keep that fallback:
         </p>
 ```
 
-- [ ] **Step 5: Confirm the dead code is gone**
+- [ ] **Step 4: Confirm the dead code is gone**
 
 Run: `grep -nE "queryRawUnsafe|DAY_MAP|function generateSlots|timeToMinutes|parseTime|formatTime|toISOString" 'src/app/(public)/book/[professionalId]/[serviceId]/page.tsx'`
 Expected: no output. Every one of those belonged to the local generator or the UTC-shifting date derivation.
 
-- [ ] **Step 6: Typecheck and test**
+- [ ] **Step 5: Typecheck and test**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
@@ -865,7 +980,7 @@ Expected: no errors.
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add 'src/app/(public)/book/[professionalId]/[serviceId]/page.tsx'
@@ -881,7 +996,7 @@ Date strings are derived locally rather than via toISOString, which named
 the previous day wherever the server runs ahead of UTC."
 ```
 
-Add a line to that message recording what Step 2 actually observed.
+The two deferred blockers from Step 1 belong in this message, verbatim, so they travel with the commit.
 
 ---
 
@@ -934,6 +1049,6 @@ arithmetic that now lives in slot-math."
 - One module — `slot-math.ts` — decides whether a slot exists, and three callers share it.
 - The public booking page subtracts off-days and existing appointments, and honours the ACTIVE and public-service checks.
 - `npm test` and `npx tsc --noEmit` both pass.
-- The pre-flight findings from Task 3 Steps 1 and 2 are recorded, including the case where the appointment-filtering prediction turned out wrong.
+- The two deferred verifications from Task 3 Step 1 are recorded in the commit message and the progress ledger as merge blockers: the `is_public` count, and whether booked slots were really being offered. Neither can be run in this environment, and neither may be quietly dropped.
 
 Phase 2 of the spec (Google connection, OAuth, token encryption) is the next plan, and depends on this one only for `buildDaySlots` being the single merge point.
