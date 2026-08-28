@@ -19,7 +19,10 @@ import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { PROFESSIONAL_STATUS, findDoctorById, listDoctors } from '@/repositories/wp/doctors.repo';
 import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
+import { isOffOn, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
+import { ACTIVE_STATUSES, listAppointments } from '@/repositories/wp/appointments.repo';
 import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
+import { blockedRangesFor, buildDaySlots, eachDate } from '@/services/booking/slot-math';
 
 export interface PublicClinic {
   id: number;
@@ -243,6 +246,106 @@ export async function getPublicSlots(opts: {
   );
 
   return slots.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime }));
+}
+
+export interface PublicDaySlots {
+  date: string;
+  slots: PublicSlot[];
+}
+
+/**
+ * Bookable slots for one professional and service across a date range.
+ *
+ * Same rules as `getPublicSlots`, in one pass: five queries for a fortnight
+ * rather than five per day. The booking page renders two weeks at once, so the
+ * per-date version would have issued seventy.
+ *
+ * `null` means no such active professional, or the service is not one they
+ * offer publicly — a 404 either way, distinct from "nothing free" (`slots: []`).
+ */
+export async function getPublicSlotsForRange(opts: {
+  professionalId: number;
+  serviceId: number;
+  from: string;
+  to: string;
+  clinicId?: number;
+}): Promise<PublicDaySlots[] | null> {
+  const doctor = await findDoctorById(BigInt(opts.professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
+
+  const offered = await listServicesForDoctor({
+    doctorId: BigInt(opts.professionalId),
+    clinicId: opts.clinicId !== undefined ? BigInt(opts.clinicId) : undefined,
+    publicOnly: true,
+  });
+  const mapping = offered.find((s) => Number(s.serviceId) === opts.serviceId && s.isActive);
+  if (!mapping) return null;
+
+  const doctorId = BigInt(opts.professionalId);
+  const clinicId = BigInt(mapping.clinicId);
+
+  const [sessions, offDays, appointments] = await Promise.all([
+    listClinicSessions({ clinicId, doctorId }),
+    listDoctorOffDays(doctorId, { from: opts.from, to: opts.to }),
+    listAppointments({
+      page: 1,
+      perPage: 1000,
+      doctorId,
+      dateFrom: opts.from,
+      dateTo: opts.to,
+      statuses: ACTIVE_STATUSES,
+    }).then((r) => r.items),
+  ]);
+
+  return eachDate(opts.from, opts.to).map((date) => {
+    // Narrowing to this date needs repository knowledge, so it happens here;
+    // turning what is left into ranges is shared with `generateSlots`.
+    const blocked = blockedRangesFor({
+      offDays: offDays.filter((o) => isOffOn(o, date)),
+      appointments: appointments.filter((a) => a.startDate === date),
+    });
+    if (blocked === null) return { date, slots: [] };
+
+    const day = dayOfWeekFor(date);
+    const windows = sessions
+      .filter((s) => s.day === day && s.startTime !== null && s.endTime !== null)
+      .map((s) => ({
+        startTime: s.startTime as string,
+        endTime: s.endTime as string,
+        slotDurationMinutes: s.slotDurationMinutes,
+      }));
+
+    const slots = buildDaySlots({
+      windows,
+      blocked,
+      durationMinutes: mapping.durationMinutes ?? undefined,
+    });
+
+    return {
+      date,
+      slots: slots.map((s) => ({ date, startTime: s.startTime, endTime: s.endTime })),
+    };
+  });
+}
+
+export interface PublicProfessionalSummary {
+  id: number;
+  fullName: string;
+}
+
+/**
+ * Just enough about one professional to head a public page.
+ *
+ * `listPublicProfessionals` is a directory listing and does far more work than a
+ * detail page needs; this is the single-row counterpart. `null` for an unknown or
+ * non-ACTIVE professional, so the caller can 404.
+ */
+export async function getPublicProfessionalSummary(
+  professionalId: number,
+): Promise<PublicProfessionalSummary | null> {
+  const doctor = await findDoctorById(BigInt(professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
+  return { id: Number(doctor.id), fullName: doctor.displayName };
 }
 
 /**
