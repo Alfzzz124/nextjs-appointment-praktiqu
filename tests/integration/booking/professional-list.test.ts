@@ -5,7 +5,7 @@
  * shadow tables. A professional is a `wp_users` row with the `kiviCare_doctor`
  * capability; their hours are `wp_kc_clinic_sessions`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@/repositories/wp/doctors.repo', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/repositories/wp/doctors.repo')>()),
@@ -107,5 +107,38 @@ describe('GET /api/v1/public/professionals', () => {
     const res = await GET(makeReq('http://localhost/api/v1/public/professionals?clinicId=abc'));
     expect(res.status).toBe(400);
     expect(listDoctors).not.toHaveBeenCalled();
+  });
+
+  describe('nextAvailable date across the local/UTC day boundary', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('names the correct local day, not the UTC-shifted one', async () => {
+      // This machine runs Asia/Jakarta (UTC+7). 2026-08-31T19:00:00.000Z is
+      // 2026-09-01T02:00:00 local — a Tuesday, 02:00 in the morning. A date derived via
+      // `toISOString()` here reads the instant back as "2026-08-31" (Monday): one
+      // calendar day behind, and exactly the 00:00-07:00 local window this bug lived in.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-31T19:00:00.000Z'));
+
+      // Only a Monday session, so the two computations name different final answers
+      // rather than merely disagreeing about which loop iteration finds it: the
+      // UTC-shifted "today" (Monday) matches immediately and returns a date that has
+      // already passed, while the correct local "today" (Tuesday) has to walk to next
+      // Monday.
+      vi.mocked(listClinicSessions).mockResolvedValue([
+        { doctorId: BigInt(DOCTOR), day: 'mon', startTime: '09:00:00' },
+      ] as never);
+
+      const body = await (
+        await GET(makeReq('http://localhost/api/v1/public/professionals'))
+      ).json();
+
+      expect(body.items[0].nextAvailable).toEqual({
+        date: '2026-09-07',
+        startTime: '09:00:00',
+      });
+    });
   });
 });

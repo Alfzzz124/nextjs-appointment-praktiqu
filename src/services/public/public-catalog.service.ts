@@ -90,10 +90,6 @@ export interface PublicProfessional {
 /** How far ahead `nextAvailable` looks before giving up. */
 const NEXT_AVAILABLE_HORIZON_DAYS = 14;
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 /**
  * Active professionals for the public directory.
  *
@@ -153,7 +149,10 @@ function nextAvailableFor(
   for (let i = 0; i < NEXT_AVAILABLE_HORIZON_DAYS; i += 1) {
     const d = new Date(from);
     d.setDate(d.getDate() + i);
-    const date = isoDate(d);
+    // Local calendar date, not `toISOString()`: `d` was advanced with local getters/
+    // setters, and naming it via UTC would report the previous day for any local time
+    // before the UTC offset (e.g. every night before 07:00 on this Asia/Jakarta box).
+    const date = localDate(d);
     const day = dayOfWeekFor(date);
 
     const earliest = sessions
