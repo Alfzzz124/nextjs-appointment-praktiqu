@@ -41,7 +41,14 @@ async function getData(professionalId: string) {
       fullName: userResult[0].display_name || 'Professional',
     };
 
-    // Get services from WordPress
+    // Get services from WordPress.
+    //
+    // `is_public` matters as much as `status`: step 3 refuses anything the doctor has
+    // not published (getPublicSlotsForRange requires it), so without this condition an
+    // un-published service is still listed here and the patient dead-ends on "Layanan
+    // tidak ditemukan" with no explanation. This query still has its own admission
+    // rules — no professional-status check, no clinic scoping — which is a wider
+    // consolidation than this change.
     const servicesRaw = await prisma.$queryRawUnsafe<any[]>(`
       SELECT
         s.id,
@@ -57,6 +64,7 @@ async function getData(professionalId: string) {
       JOIN wp_kc_services s ON sdm.service_id = s.id
       WHERE sdm.doctor_id = ${parseInt(professionalId)}
         AND sdm.status = 1
+        AND sdm.is_public = 1
         AND s.status = 1
       ORDER BY s.name
     `);
