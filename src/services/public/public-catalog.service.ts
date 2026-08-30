@@ -24,10 +24,9 @@ import {
 } from '@/repositories/wp/doctors.repo';
 import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
-import { isOffOn, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
-import { ACTIVE_STATUSES, listAppointments } from '@/repositories/wp/appointments.repo';
 import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
-import { blockedRangesFor, buildDaySlots, eachDate } from '@/services/booking/slot-math';
+import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service';
+import { buildDaySlots, eachDate } from '@/services/booking/slot-math';
 
 export interface PublicClinic {
   id: number;
@@ -309,26 +308,17 @@ export async function getPublicSlotsForRange(opts: {
   const doctorId = BigInt(opts.professionalId);
   const clinicId = BigInt(mapping.clinicId);
 
-  const [sessions, offDays, appointments] = await Promise.all([
+  const [sessions, blockedByDate] = await Promise.all([
     listClinicSessions({ clinicId, doctorId }),
-    listDoctorOffDays(doctorId, { from: opts.from, to: opts.to }),
-    listAppointments({
-      page: 1,
-      perPage: 1000,
-      doctorId,
-      dateFrom: opts.from,
-      dateTo: opts.to,
-      statuses: ACTIVE_STATUSES,
-    }).then((r) => r.items),
+    // One collector owns off days, bookings and — from Phase 2 — Google Calendar
+    // busy blocks, so this page and the staff calendar cannot disagree.
+    collectBlockedRanges({ doctorId: opts.professionalId, from: opts.from, to: opts.to }),
   ]);
 
   return eachDate(opts.from, opts.to).map((date) => {
-    // Narrowing to this date needs repository knowledge, so it happens here;
-    // turning what is left into ranges is shared with `generateSlots`.
-    const blocked = blockedRangesFor({
-      offDays: offDays.filter((o) => isOffOn(o, date)),
-      appointments: appointments.filter((a) => a.startDate === date),
-    });
+    // null is a full-day closure and is not the same answer as `[]`, which is an
+    // open day with nothing blocked.
+    const blocked = blockedByDate[date];
     if (blocked === null) return { date, slots: [] };
 
     const day = dayOfWeekFor(date);

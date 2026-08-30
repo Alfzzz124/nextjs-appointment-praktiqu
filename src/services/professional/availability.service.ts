@@ -25,14 +25,13 @@ import {
   OFF_DAY_MODULE,
   createOffDay,
   deleteOffDay,
-  isOffOn,
   listDoctorOffDays,
   type WpOffDay,
 } from '@/repositories/wp/off-days.repo';
-import { ACTIVE_STATUSES, listAppointments } from '@/repositories/wp/appointments.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
-import { blockedRangesFor, buildDaySlots, toMinutes, toTime } from '@/services/booking/slot-math';
+import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service';
+import { buildDaySlots, toMinutes, toTime } from '@/services/booking/slot-math';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -284,23 +283,14 @@ export async function generateSlots(
   });
   if (windows.length === 0) return [];
 
-  const offDays = (
-    await listDoctorOffDays(BigInt(doctorId), { from: date, to: date })
-  ).filter((o) => isOffOn(o, date));
-
-  // Appointments occupying the slot. ACTIVE_STATUSES rather than "not cancelled":
-  // CHECK_OUT is a completed visit and does not block.
-  const { items: appointments } = await listAppointments({
-    page: 1,
-    perPage: 100,
-    doctorId: BigInt(doctorId),
-    date,
-    statuses: ACTIVE_STATUSES,
-  });
+  // Off days and bookings both come from the shared collector, so this path and the
+  // public one cannot disagree about what blocks a day — and Phase 2's Google
+  // Calendar busy blocks arrive here without touching this function.
+  const blockedByDate = await collectBlockedRanges({ doctorId, from: date, to: date });
 
   // null means a full-day closure, which ends it here. An empty array means the
   // day is open with nothing blocked — the two must not be conflated.
-  const blocked = blockedRangesFor({ offDays, appointments });
+  const blocked = blockedByDate[date];
   if (blocked === null) return [];
 
   const daySlots = buildDaySlots({
