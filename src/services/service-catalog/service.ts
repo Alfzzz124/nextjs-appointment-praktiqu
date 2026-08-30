@@ -58,6 +58,24 @@ function parseCategory(raw: string | null): ServiceCategory | null {
   }
 }
 
+/**
+ * `charges` is a bare nullable varchar that KiviCare's own PHP UI writes with no format
+ * constraint, so a legacy row can hold `"Rp 250.000"` or `"-"`. `Number()` turns those
+ * into `NaN`, which is not representable in JSON — `JSON.stringify` emits `null` — so the
+ * declared `number | null` contract would be violated at runtime by a value that still
+ * passes a `typeof === 'number'` check. Return `null` deliberately instead of stumbling
+ * into it.
+ */
+function parsePrice(raw: string | null): number | null {
+  if (raw === null) return null;
+  // `Number('')` is 0, not NaN — a JS quirk, not the data's intent. An empty `charges`
+  // means nobody set a price; a genuinely free service is stored as the string '0'.
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
 function toSummary(row: ClinicServiceRow): ServiceSummary {
   return {
     id: Number(row.id),
@@ -67,7 +85,7 @@ function toSummary(row: ClinicServiceRow): ServiceSummary {
     // A doctor-specific alias wins over the catalogue name, matching what KiviCare shows.
     name: row.nameAlias ?? row.name,
     category: parseCategory(row.category),
-    price: row.charges === null ? null : Number(row.charges),
+    price: parsePrice(row.charges),
     durationMinutes: row.durationMinutes,
     telemedService: row.telemedService === 'yes' ? 'yes' : 'no',
     isPublic: row.isPublic,

@@ -1814,6 +1814,35 @@ describe('listServices', () => {
     });
   });
 
+  it('returns null rather than NaN for a charges string KiviCare never constrained', async () => {
+    // `charges` is a free-form varchar; legacy rows hold things like "Rp 250.000" or "-".
+    // NaN is not representable in JSON, so it would reach the client as null anyway --
+    // but typed as a number, silently conflated with "no price set".
+    for (const charges of ['Rp 250.000', '-', '', '250.000,00']) {
+      repo.listClinicServices.mockResolvedValue({
+        items: [{ ...row, charges }],
+        total: 1,
+        page: 1,
+        perPage: 20,
+      });
+
+      const res = await listServices({ page: 1, perPage: 20 } as any, superAdmin);
+      expect(res.services[0].price, `charges=${JSON.stringify(charges)}`).toBeNull();
+    }
+  });
+
+  it("still reads '0' as a free service, not as an unset price", async () => {
+    repo.listClinicServices.mockResolvedValue({
+      items: [{ ...row, charges: '0' }],
+      total: 1,
+      page: 1,
+      perPage: 20,
+    });
+
+    const res = await listServices({ page: 1, perPage: 20 } as any, superAdmin);
+    expect(res.services[0].price).toBe(0);
+  });
+
   it('survives a category snapshot that is not valid JSON', async () => {
     repo.listClinicServices.mockResolvedValue({
       items: [{ ...row, category: 'not json' }],
@@ -1960,6 +1989,24 @@ function parseCategory(raw: string | null): ServiceCategory | null {
   }
 }
 
+/**
+ * `charges` is a bare nullable varchar that KiviCare's own PHP UI writes with no format
+ * constraint, so a legacy row can hold `"Rp 250.000"` or `"-"`. `Number()` turns those
+ * into `NaN`, which is not representable in JSON — `JSON.stringify` emits `null` — so the
+ * declared `number | null` contract would be violated at runtime by a value that still
+ * passes a `typeof === 'number'` check. Return `null` deliberately instead of stumbling
+ * into it.
+ */
+function parsePrice(raw: string | null): number | null {
+  if (raw === null) return null;
+  // `Number('')` is 0, not NaN — a JS quirk, not the data's intent. An empty `charges`
+  // means nobody set a price; a genuinely free service is stored as the string '0'.
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
 function toSummary(row: ClinicServiceRow): ServiceSummary {
   return {
     id: Number(row.id),
@@ -1969,7 +2016,7 @@ function toSummary(row: ClinicServiceRow): ServiceSummary {
     // A doctor-specific alias wins over the catalogue name, matching what KiviCare shows.
     name: row.nameAlias ?? row.name,
     category: parseCategory(row.category),
-    price: row.charges === null ? null : Number(row.charges),
+    price: parsePrice(row.charges),
     durationMinutes: row.durationMinutes,
     telemedService: row.telemedService === 'yes' ? 'yes' : 'no',
     isPublic: row.isPublic,
@@ -2038,7 +2085,7 @@ export async function getService(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/services/service-catalog.read.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2339,7 +2386,7 @@ Expected: PASS, 8 tests.
 - [ ] **Step 5: Re-run the read tests, which share the module**
 
 Run: `npx vitest run tests/services/service-catalog.read.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -2649,7 +2696,7 @@ export async function updateService(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/services/service-catalog.update.test.ts`
-Expected: PASS, 12 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 

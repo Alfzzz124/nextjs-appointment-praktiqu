@@ -75,6 +75,35 @@ describe('listServices', () => {
     });
   });
 
+  it('returns null rather than NaN for a charges string KiviCare never constrained', async () => {
+    // `charges` is a free-form varchar; legacy rows hold things like "Rp 250.000" or "-".
+    // NaN is not representable in JSON, so it would reach the client as null anyway --
+    // but typed as a number, silently conflated with "no price set".
+    for (const charges of ['Rp 250.000', '-', '', '250.000,00']) {
+      repo.listClinicServices.mockResolvedValue({
+        items: [{ ...row, charges }],
+        total: 1,
+        page: 1,
+        perPage: 20,
+      });
+
+      const res = await listServices({ page: 1, perPage: 20 } as any, superAdmin);
+      expect(res.services[0].price, `charges=${JSON.stringify(charges)}`).toBeNull();
+    }
+  });
+
+  it("still reads '0' as a free service, not as an unset price", async () => {
+    repo.listClinicServices.mockResolvedValue({
+      items: [{ ...row, charges: '0' }],
+      total: 1,
+      page: 1,
+      perPage: 20,
+    });
+
+    const res = await listServices({ page: 1, perPage: 20 } as any, superAdmin);
+    expect(res.services[0].price).toBe(0);
+  });
+
   it('survives a category snapshot that is not valid JSON', async () => {
     repo.listClinicServices.mockResolvedValue({
       items: [{ ...row, category: 'not json' }],
