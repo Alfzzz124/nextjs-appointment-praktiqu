@@ -48,6 +48,16 @@ import {
   updateSessionNoteSchema,
 } from '../src/services/session-notes/validation';
 import { AddItemInput, ListPlansQuery } from '../src/types/intervention-plan';
+import {
+  createServiceSchema,
+  updateServiceSchema,
+  listServicesQuerySchema,
+  serviceListResponseSchema,
+  serviceSummarySchema,
+  createdServiceSchema,
+  serviceCategoryListSchema,
+  deleteServiceResponseSchema,
+} from '../src/services/service-catalog/validation';
 
 const SPEC_PATH = resolve(process.cwd(), 'docs/api/openapi.yaml');
 const CHECK_ONLY = process.argv.includes('--check');
@@ -59,6 +69,10 @@ const OWNED_PREFIXES = [
   // were describing an API that no longer exists.
   '/api/v1/session-notes',
   '/api/v1/intervention-plans',
+  // Added with the service CRUD — these paths were never hand-written, so the generator
+  // owns them from birth.
+  '/api/v1/services',
+  '/api/v1/service-categories',
 ];
 
 const registry = new OpenAPIRegistry();
@@ -726,6 +740,158 @@ registry.registerPath({
   },
 });
 
+/* ==================================================================== */
+/* Services — a service is a wp_kc_service_doctor_mapping row (Tasks 4-11) */
+/* ==================================================================== */
+
+/**
+ * A service id is a `wp_kc_service_doctor_mapping.id`. Following the same shape as
+ * `clientIdParam`/`noteIdParam`/`planIdParam` above: without the `.openapi({ param })`
+ * annotation, zod-to-openapi v7 does not reliably recognise a bare
+ * `z.object({ id: z.coerce.number()... })` as a named path parameter.
+ */
+const serviceIdParam = z
+  .coerce.number()
+  .int()
+  .positive()
+  .openapi({ param: { name: 'id', in: 'path' }, example: 42 });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/service-categories',
+  tags: ['services'],
+  summary: 'List service categories',
+  description:
+    'The `service_type` rows of `wp_kc_static_data`. `categoryId` on POST /api/v1/services ' +
+    'points at one of these, and its `value` becomes `wp_kc_services.type`.',
+  security: auth,
+  responses: {
+    200: {
+      description: 'Service categories',
+      content: { 'application/json': { schema: serviceCategoryListSchema } },
+    },
+    401: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/services',
+  tags: ['services'],
+  summary: 'List clinic services',
+  description:
+    'One entry per `wp_kc_service_doctor_mapping` row — a service as offered by one ' +
+    "professional at one clinic. Scoped to the actor's clinic for CLINIC_ADMIN and " +
+    'RECEPTIONIST, and to their own rows for PROFESSIONAL; `clinicId` and ' +
+    '`professionalId` are ignored where the scope already pins them.',
+  security: auth,
+  request: { query: listServicesQuerySchema },
+  responses: {
+    200: {
+      description: 'Paginated services',
+      content: { 'application/json': { schema: serviceListResponseSchema } },
+    },
+    401: problem,
+    422: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/services',
+  tags: ['services'],
+  summary: 'Create a service',
+  description:
+    'Creates one `wp_kc_services` row — reused when an identical name and type already ' +
+    'exist, because the catalogue is global — plus one mapping per professional. ' +
+    'SUPER_ADMIN and CLINIC_ADMIN only.',
+  security: auth,
+  request: {
+    body: { content: { 'application/json': { schema: createServiceSchema } }, required: true },
+  },
+  responses: {
+    201: {
+      description: 'Created',
+      content: { 'application/json': { schema: createdServiceSchema } },
+    },
+    400: problem,
+    401: problem,
+    403: problem,
+    409: problem,
+    422: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/services/{id}',
+  tags: ['services'],
+  summary: 'Get one service',
+  description: 'A row outside the actor\'s scope answers 404, not 403.',
+  security: auth,
+  request: { params: z.object({ id: serviceIdParam }) },
+  responses: {
+    200: {
+      description: 'The service',
+      content: { 'application/json': { schema: serviceSummarySchema } },
+    },
+    400: problem,
+    401: problem,
+    404: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/services/{id}',
+  tags: ['services'],
+  summary: 'Update a service',
+  description:
+    'Price, duration, telemed flag, status and visibility touch only this mapping row. ' +
+    'A rename repoints the mapping at a catalogue row carrying the new name and type — ' +
+    'creating one if needed — rather than renaming a row other clinics may share. ' +
+    '`doctorIds` and `clinicId` cannot be changed here.',
+  security: auth,
+  request: {
+    params: z.object({ id: serviceIdParam }),
+    body: { content: { 'application/json': { schema: updateServiceSchema } }, required: true },
+  },
+  responses: {
+    200: {
+      description: 'The updated service',
+      content: { 'application/json': { schema: serviceSummarySchema } },
+    },
+    400: problem,
+    401: problem,
+    403: problem,
+    404: problem,
+    409: problem,
+    422: problem,
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/services/{id}',
+  tags: ['services'],
+  summary: 'Retire a service',
+  description:
+    'Sets `status = 0` rather than deleting the row. Answers 409 with a `count` when ' +
+    'upcoming, non-cancelled appointments still reference this service and professional.',
+  security: auth,
+  request: { params: z.object({ id: serviceIdParam }) },
+  responses: {
+    200: {
+      description: 'Retired',
+      content: { 'application/json': { schema: deleteServiceResponseSchema } },
+    },
+    400: problem,
+    401: problem,
+    403: problem,
+    404: problem,
+    409: problem,
+  },
+});
 
 type Spec = {
   paths?: Record<string, unknown>;

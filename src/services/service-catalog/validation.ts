@@ -81,3 +81,48 @@ export function toFieldErrors(err: z.ZodError): Record<string, string[]> {
   }
   return out;
 }
+
+/* ------------------------------------------------------------------ */
+/* Response shapes — consumed by scripts/generate-openapi.ts           */
+/* ------------------------------------------------------------------ */
+
+export const serviceCategorySchema = z.object({
+  id: z.number().int(),
+  label: z.string().nullable(),
+  value: z.string().nullable(),
+});
+
+export const serviceSummarySchema = z.object({
+  id: z.number().int().describe('The doctor-service mapping id'),
+  serviceId: z.number().int().describe('The catalogue row id'),
+  doctorId: z.number().int(),
+  clinicId: z.number().int(),
+  name: z.string(),
+  category: serviceCategorySchema.nullable(),
+  price: z.number().nullable().describe('The charge that applies, from the mapping'),
+  durationMinutes: z.number().int().nullable(),
+  telemedService: z.enum(['yes', 'no']),
+  isPublic: z.boolean(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+});
+
+export const serviceListResponseSchema = z.object({
+  services: z.array(serviceSummarySchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  perPage: z.number().int(),
+});
+
+export const createdServiceSchema = z.object({
+  serviceId: z.number().int(),
+  name: z.string(),
+  category: serviceCategorySchema,
+  mappings: z.array(z.object({ id: z.number().int(), doctorId: z.number().int() })),
+});
+
+export const serviceCategoryListSchema = z.object({
+  categories: z.array(serviceCategorySchema),
+});
+
+export const deleteServiceResponseSchema = z.object({ ok: z.literal(true) });
