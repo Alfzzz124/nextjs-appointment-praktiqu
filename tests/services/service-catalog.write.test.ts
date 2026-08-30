@@ -19,16 +19,17 @@ const db = vi.hoisted(() => {
 });
 vi.mock('@/lib/db', () => ({ prisma: db }));
 
-// APPOINTMENT_STATUS.CANCELLED really is 0, but the test must not pass just because the
-// source and the test happen to agree on that literal. Mocking it to a sentinel that is
-// NOT 0 means the assertion below only passes if the code actually imports and forwards
-// this constant, rather than inlining a literal that happens to match.
+// ACTIVE_STATUSES really is [BOOKED, PENDING, CHECK_IN] = [1, 2, 4], but the test must
+// not pass just because the source and the test happen to agree on those literals.
+// Mocking it to sentinels that are NOT the real values means the assertion below only
+// passes if the code actually imports and forwards this constant — element by element,
+// in order — rather than inlining literals that happen to match.
 //
-// `vi.mock` factories are hoisted above all top-level `const`s, so the sentinel must be
+// `vi.mock` factories are hoisted above all top-level `const`s, so the sentinels must be
 // created inside `vi.hoisted` to be visible from the factory.
-const CANCELLED_SENTINEL = vi.hoisted(() => 99);
+const ACTIVE_STATUSES_SENTINEL = vi.hoisted(() => [91, 92, 93]);
 vi.mock('@/repositories/wp/appointments.repo', () => ({
-  APPOINTMENT_STATUS: { CANCELLED: CANCELLED_SENTINEL },
+  ACTIVE_STATUSES: ACTIVE_STATUSES_SENTINEL,
 }));
 
 import {
@@ -322,7 +323,7 @@ describe('softDeleteMapping', () => {
 });
 
 describe('countBlockingAppointments', () => {
-  it('counts future, non-cancelled appointments for the service and doctor', async () => {
+  it('counts appointments in an active (slot-occupying) status for the service and doctor', async () => {
     db.$queryRawUnsafe.mockResolvedValue([{ c: 2n }]);
 
     const count = await countBlockingAppointments({ serviceId: 101n, doctorId: 8100001n });
@@ -331,10 +332,14 @@ describe('countBlockingAppointments', () => {
     const [sql, ...args] = db.$queryRawUnsafe.mock.calls[0];
     expect(sql).toContain('wp_kc_appointment_service_mapping');
     expect(sql).toContain('a.appointment_start_date >= CURDATE()');
-    // The mocked APPOINTMENT_STATUS.CANCELLED sentinel (99, not the real 0) must reach
-    // the query args unchanged — this only passes if the code imports the constant
-    // rather than inlining the literal `0`.
-    expect(args).toEqual([101n, 8100001n, CANCELLED_SENTINEL]);
+    expect(sql).toContain('a.status IN (?,?,?)');
+    // No status literal may be inlined — a "not cancelled" filter would also count a
+    // finished (CHECK_OUT) visit and block the delete all day after it wrapped up.
+    expect(sql).not.toContain('<>');
+    // The mocked ACTIVE_STATUSES sentinels must reach the query args unchanged, in
+    // order — this only passes if the code imports and spreads the constant rather than
+    // inlining literals.
+    expect(args).toEqual([101n, 8100001n, ...ACTIVE_STATUSES_SENTINEL]);
     expectPlaceholdersMatchArgs(sql, args);
   });
 

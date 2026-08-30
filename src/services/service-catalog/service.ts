@@ -389,6 +389,14 @@ export async function deleteService(
     throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
   }
 
+  // `findMappingById` deliberately ignores `status`, so a mapping already retired is
+  // still found here. Deleting it again would be a no-op UPDATE that nonetheless issues
+  // a second `service.deleted` audit event for the same resource — stop before any of
+  // that, and keep the response idempotent.
+  if (!existing.isActive) {
+    return { ok: true };
+  }
+
   const blocking = await countBlockingAppointments({
     serviceId: existing.serviceId,
     doctorId: existing.doctorId,

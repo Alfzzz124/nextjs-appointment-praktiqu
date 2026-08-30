@@ -16,7 +16,7 @@
  */
 import { prisma } from '@/lib/db';
 import type { Prisma } from '@prisma/client';
-import { APPOINTMENT_STATUS } from './appointments.repo';
+import { ACTIVE_STATUSES } from './appointments.repo';
 
 /**
  * Fetch the id of the last row inserted on this same connection.
@@ -261,22 +261,28 @@ export async function softDeleteMapping(id: bigint): Promise<number> {
  * appointments keep their service name whatever happens to this mapping. What breaks is
  * a booking that has not happened yet: the service is still on it, but the psychologist
  * no longer offers it.
+ *
+ * Counts only `ACTIVE_STATUSES` — the states that still occupy a slot — rather than
+ * "not cancelled". `CHECK_OUT` is a finished visit: it still satisfies
+ * `appointment_start_date >= CURDATE()` on the day it happened, but the service is not
+ * actually in use by it any more, so it must not block the delete.
  */
 export async function countBlockingAppointments(opts: {
   serviceId: bigint;
   doctorId: bigint;
 }): Promise<number> {
+  const statusPlaceholders = ACTIVE_STATUSES.map(() => '?').join(',');
   const rows = await prisma.$queryRawUnsafe<Array<{ c: bigint | number }>>(
     `SELECT COUNT(*) AS c
        FROM wp_kc_appointment_service_mapping asm
        JOIN wp_kc_appointments a ON a.id = asm.appointment_id
       WHERE asm.service_id = ?
         AND a.doctor_id = ?
-        AND a.status <> ?
+        AND a.status IN (${statusPlaceholders})
         AND a.appointment_start_date >= CURDATE()`,
     opts.serviceId,
     opts.doctorId,
-    APPOINTMENT_STATUS.CANCELLED,
+    ...ACTIVE_STATUSES,
   );
   return rows.length === 0 ? 0 : Number(rows[0].c);
 }

@@ -102,4 +102,13 @@ describe('deleteService', () => {
       expect.objectContaining({ userId: 'actor-1', resource: 'service', resourceId: '501' }),
     );
   });
+
+  it('is idempotent for a mapping already retired: no re-check, no re-write, no second audit', async () => {
+    repo.findMappingById.mockResolvedValue({ ...row, isActive: false });
+
+    expect(await deleteService(501, clinicAdmin, 'actor-1')).toEqual({ ok: true });
+    expect(write.countBlockingAppointments).not.toHaveBeenCalled();
+    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(logging.audit).not.toHaveBeenCalled();
+  });
 });

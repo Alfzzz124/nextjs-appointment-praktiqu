@@ -73,6 +73,17 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   const scoped = await scopeForRequest(actor);
   if ('response' in scoped) return scoped.response;
 
+  // An empty scope (e.g. a CLINIC_ADMIN with no clinic mapping) cannot write anywhere.
+  // Left unchecked, `scope.clinicId` is `null` here too, and the `??` below would fall
+  // through to whatever `clinicId` the request body names — letting the actor create a
+  // service in a clinic they have no relationship with at all.
+  if (scoped.scope.empty) {
+    return NextResponse.json(
+      forbidden('Actor is not assigned to a clinic'),
+      { status: 403 },
+    );
+  }
+
   const clinicId = scoped.scope.clinicId ?? (parsed.data.clinicId ?? null);
   if (clinicId === null) {
     return NextResponse.json(

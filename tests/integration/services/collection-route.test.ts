@@ -120,6 +120,17 @@ describe('POST /api/v1/services', () => {
     expect(svc.createService).toHaveBeenCalledWith(expect.any(Object), 3, 'actor-1');
   });
 
+  it('refuses with 403 when the actor has an empty scope, rather than writing into a body-supplied clinic', async () => {
+    scope.scopeForRequest.mockResolvedValue({
+      scope: { clinicId: null, doctorId: null, empty: true },
+    });
+
+    const res = await POST(post({ ...validBody, clinicId: 99 }));
+
+    expect(res.status).toBe(403);
+    expect(svc.createService).not.toHaveBeenCalled();
+  });
+
   it('lets a SUPER_ADMIN choose the clinic', async () => {
     auth.actor = { id: 'root', role: 'SUPER_ADMIN', practiceId: null };
     scope.scopeForRequest.mockResolvedValue({
