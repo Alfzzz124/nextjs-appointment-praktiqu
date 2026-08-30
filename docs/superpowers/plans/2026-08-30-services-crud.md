@@ -689,7 +689,13 @@ import {
 
 const actorOf = (role: string) => ({ id: 'u1', role, practiceId: null }) as any;
 
-beforeEach(() => kcActor.resolveKcActor.mockReset());
+// Block body, not `beforeEach(() => mock.mockReset())`. A concise arrow returns the mock,
+// and Vitest registers a function returned from `beforeEach` as a per-test teardown — so it
+// would CALL the mock after each test. After a test that set `mockRejectedValue`, that call
+// produces an unawaited rejected promise and the test fails as an unhandled rejection.
+beforeEach(() => {
+  kcActor.resolveKcActor.mockReset();
+});
 
 describe('readScopeFor', () => {
   it('leaves SUPER_ADMIN unrestricted', async () => {

@@ -2,7 +2,7 @@
  * Scope matrix for /api/v1/services, mirroring KiviCare's own getServices
  * (DoctorServiceController.php:623-652).
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const kcActor = vi.hoisted(() => ({ resolveKcActor: vi.fn() }));
 vi.mock('@/services/billing/kc-actor', () => kcActor);
@@ -17,15 +17,13 @@ import {
 
 const actorOf = (role: string) => ({ id: 'u1', role, practiceId: null }) as any;
 
-// NOTE: reset runs in afterEach rather than beforeEach (as in the brief). With this
-// project's installed vitest/tinyspy versions, resetting a `vi.mock`-backed spy in
-// beforeEach — immediately before a same-test `mockRejectedValue` — causes the mock's
-// internal settle-tracking to misfire and the test is reported as failing with the
-// rejection surfacing raw, even though `scopeForRequest` demonstrably catches it (verified
-// by manual instrumentation). Resetting in afterEach avoids that timing interaction and is
-// behaviorally equivalent here: every test sets its own mock value up front, so nothing
-// depends on the mock being pre-reset before the first test runs.
-afterEach(() => kcActor.resolveKcActor.mockReset());
+// Block body, not `beforeEach(() => mock.mockReset())`. A concise arrow returns the mock,
+// and Vitest registers a function returned from `beforeEach` as a per-test teardown — so it
+// would CALL the mock after each test. After a test that set `mockRejectedValue`, that call
+// produces an unawaited rejected promise and the test fails as an unhandled rejection.
+beforeEach(() => {
+  kcActor.resolveKcActor.mockReset();
+});
 
 describe('readScopeFor', () => {
   it('leaves SUPER_ADMIN unrestricted', async () => {
