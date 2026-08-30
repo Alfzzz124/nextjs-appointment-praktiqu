@@ -17,6 +17,8 @@ import {
   doctorsMappedToClinic,
   findConflictingMapping,
   updateMapping,
+  softDeleteMapping,
+  countBlockingAppointments,
   type MappingPatch,
 } from '@/repositories/wp/services.write';
 import { findServiceTypeById } from '@/repositories/wp/static-data.repo';
@@ -363,4 +365,51 @@ export async function updateService(
     throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
   }
   return toSummary(refreshed);
+}
+
+/* ------------------------------------------------------------------ */
+/* Delete                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Retire an offering.
+ *
+ * Soft, and refused while a future booking still points at it. Past appointments are
+ * safe either way — `wp_kc_appointment_service_mapping` references the catalogue, which
+ * we never delete — but an upcoming one would be left naming a service its psychologist
+ * no longer offers.
+ */
+export async function deleteService(
+  mappingId: number,
+  scope: ServiceScope,
+  actorId: string,
+): Promise<{ ok: true }> {
+  const existing = scope.empty ? null : await findMappingById(BigInt(mappingId));
+  if (!existing || !inScope(existing, scope)) {
+    throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
+  }
+
+  const blocking = await countBlockingAppointments({
+    serviceId: existing.serviceId,
+    doctorId: existing.doctorId,
+  });
+  if (blocking > 0) {
+    throw {
+      _tag: 'conflict',
+      code: 'service_has_upcoming_appointments',
+      message: `${blocking} upcoming appointment(s) still use this service. Cancel or reschedule them first.`,
+      count: blocking,
+    } satisfies ServiceCatalogError;
+  }
+
+  await softDeleteMapping(existing.id);
+
+  await audit('service.deleted', {
+    userId: actorId,
+    resource: 'service',
+    resourceId: String(existing.id),
+    metadata: { serviceId: Number(existing.serviceId), clinicId: Number(existing.clinicId) },
+  });
+
+  return { ok: true };
 }
