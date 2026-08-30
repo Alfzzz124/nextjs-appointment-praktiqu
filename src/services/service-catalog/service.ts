@@ -12,15 +12,17 @@ import {
 } from '@/repositories/wp/services.repo';
 import {
   findCatalogueByNameAndType,
+  createCatalogue,
   createServiceWithMappings,
   doctorsMappedToClinic,
   findConflictingMapping,
+  updateMapping,
   type MappingPatch,
 } from '@/repositories/wp/services.write';
 import { findServiceTypeById } from '@/repositories/wp/static-data.repo';
 import { audit } from '@/lib/logging';
 import type { ServiceScope } from './scope';
-import type { ListServicesQuery, CreateServiceInput } from './validation';
+import type { ListServicesQuery, CreateServiceInput, UpdateServiceInput } from './validation';
 
 export type ServiceCategory = { id: number; label: string | null; value: string | null };
 
@@ -259,4 +261,89 @@ export async function createService(
   });
 
   return { serviceId: Number(serviceId), name: input.name, category, mappings };
+}
+
+/* ------------------------------------------------------------------ */
+/* Update                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Update one offering.
+ *
+ * A rename never renames the catalogue row: it is global, and another clinic may be
+ * offering the same service from it. Instead the mapping is repointed at a row carrying
+ * the new name and type, created if none exists — KiviCare's own approach (:1455-1499).
+ *
+ * `price` updates only `charges`. KiviCare also rewrites `wp_kc_services.price` here,
+ * which silently changes the list price other clinics see; the effective price is
+ * `charges` either way, so the cross-clinic write buys nothing.
+ */
+export async function updateService(
+  mappingId: number,
+  input: UpdateServiceInput,
+  scope: ServiceScope,
+  actorId: string,
+): Promise<ServiceSummary> {
+  const existing = scope.empty ? null : await findMappingById(BigInt(mappingId));
+  if (!existing || !inScope(existing, scope)) {
+    throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
+  }
+
+  const patch: MappingPatch = {};
+  if (input.price !== undefined) patch.charges = String(input.price);
+  if (input.duration !== undefined) patch.duration = input.duration;
+  if (input.telemedService !== undefined) patch.telemedService = input.telemedService;
+  if (input.status !== undefined) patch.status = input.status;
+  if (input.isPublic !== undefined) patch.isPublic = input.isPublic;
+
+  const renaming = input.name !== undefined && input.name !== existing.name;
+  const recategorising = input.categoryId !== undefined;
+
+  if (renaming || recategorising) {
+    // The catalogue row's identity is name *and* type, so changing either means finding
+    // or creating a different row.
+    const resolved = recategorising ? await resolveCategory(input.categoryId!) : null;
+    const type = resolved?.type ?? existing.type ?? '';
+    const name = input.name ?? existing.name;
+
+    const conflict = await findConflictingMapping({
+      doctorIds: [existing.doctorId],
+      clinicId: existing.clinicId,
+      name,
+      excludeMappingId: existing.id,
+    });
+    if (conflict) {
+      throw {
+        _tag: 'conflict',
+        code: 'service_name_taken',
+        message: `This professional already offers a service named "${name}" at this clinic`,
+      } satisfies ServiceCatalogError;
+    }
+
+    const reuse = await findCatalogueByNameAndType(name, type);
+    patch.serviceId =
+      reuse?.id ??
+      (await createCatalogue({
+        name,
+        type,
+        category: resolved?.json ?? existing.category,
+        price: patch.charges ?? existing.charges ?? '0',
+        status: 1,
+      }));
+  }
+
+  await updateMapping(existing.id, patch);
+
+  await audit('service.updated', {
+    userId: actorId,
+    resource: 'service',
+    resourceId: String(existing.id),
+    metadata: { patch: { ...patch, serviceId: patch.serviceId?.toString() } },
+  });
+
+  const refreshed = await findMappingById(existing.id);
+  if (!refreshed) {
+    throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
+  }
+  return toSummary(refreshed);
 }
