@@ -16,6 +16,8 @@ export const STATIC_DATA_TYPE = {
   BLOOD_GROUP: 'blood_group',
   QUALIFICATION: 'qualification',
   SERVICE_LIST: 'service_list',
+  /** Service categories. `value` is what lands in `wp_kc_services.type`. */
+  SERVICE_TYPE: 'service_type',
 } as const;
 
 export type StaticDataType = (typeof STATIC_DATA_TYPE)[keyof typeof STATIC_DATA_TYPE];
@@ -96,4 +98,23 @@ export function listBloodGroups(opts: { includeInactive?: boolean } = {}) {
 
 export function listQualifications(opts: { includeInactive?: boolean } = {}) {
   return listStaticData({ type: STATIC_DATA_TYPE.QUALIFICATION, ...opts });
+}
+
+export function listServiceTypes(opts: { includeInactive?: boolean } = {}) {
+  return listStaticData({ type: STATIC_DATA_TYPE.SERVICE_TYPE, ...opts });
+}
+
+/**
+ * One active `service_type` row by id.
+ *
+ * The `type` guard is not decoration: `category` arrives from a client as a bare
+ * integer, and every other enumeration KiviCare owns lives in this same table. Without
+ * it, a blood-group id would happily become a service category.
+ */
+export async function findServiceTypeById(id: bigint): Promise<WpStaticData | null> {
+  const row = await prisma.kcStaticData.findFirst({
+    where: { id, type: STATIC_DATA_TYPE.SERVICE_TYPE, status: STATUS_ACTIVE },
+    select: SELECT,
+  });
+  return row ? toStaticData(row as StaticDataRow) : null;
 }
