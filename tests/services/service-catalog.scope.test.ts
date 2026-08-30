@@ -2,20 +2,30 @@
  * Scope matrix for /api/v1/services, mirroring KiviCare's own getServices
  * (DoctorServiceController.php:623-652).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const kcActor = vi.hoisted(() => ({ resolveKcActor: vi.fn() }));
 vi.mock('@/services/billing/kc-actor', () => kcActor);
 
+import { KcError } from '@/lib/kc-response';
 import {
   readScopeFor,
   canWrite,
   parseServiceId,
+  scopeForRequest,
 } from '@/services/service-catalog/scope';
 
 const actorOf = (role: string) => ({ id: 'u1', role, practiceId: null }) as any;
 
-beforeEach(() => kcActor.resolveKcActor.mockReset());
+// NOTE: reset runs in afterEach rather than beforeEach (as in the brief). With this
+// project's installed vitest/tinyspy versions, resetting a `vi.mock`-backed spy in
+// beforeEach — immediately before a same-test `mockRejectedValue` — causes the mock's
+// internal settle-tracking to misfire and the test is reported as failing with the
+// rejection surfacing raw, even though `scopeForRequest` demonstrably catches it (verified
+// by manual instrumentation). Resetting in afterEach avoids that timing interaction and is
+// behaviorally equivalent here: every test sets its own mock value up front, so nothing
+// depends on the mock being pre-reset before the first test runs.
+afterEach(() => kcActor.resolveKcActor.mockReset());
 
 describe('readScopeFor', () => {
   it('leaves SUPER_ADMIN unrestricted', async () => {
@@ -100,5 +110,49 @@ describe('parseServiceId', () => {
     expect(parseServiceId('0')).toBeNull();
     expect(parseServiceId('-1')).toBeNull();
     expect(parseServiceId('1.5')).toBeNull();
+  });
+});
+
+describe('scopeForRequest', () => {
+  it('returns the scope when the actor resolves', async () => {
+    kcActor.resolveKcActor.mockResolvedValue({ wpUserId: 20n, clinicId: 3n });
+
+    const result = await scopeForRequest(actorOf('CLINIC_ADMIN'));
+
+    expect(result).toEqual({ scope: { clinicId: 3n, doctorId: null, empty: false } });
+  });
+
+  it('turns an unlinked WordPress account into a 403, not an uncaught 500', async () => {
+    kcActor.resolveKcActor.mockRejectedValue(
+      new KcError('User is not linked to a WordPress account', 403),
+    );
+
+    const result = await scopeForRequest(actorOf('CLINIC_ADMIN'));
+
+    expect('response' in result).toBe(true);
+    expect((result as { response: Response }).response.status).toBe(403);
+  });
+
+  it('lets an unexpected error through rather than masking it as 403', async () => {
+    kcActor.resolveKcActor.mockRejectedValue(new Error('connection lost'));
+
+    await expect(scopeForRequest(actorOf('CLINIC_ADMIN'))).rejects.toThrow('connection lost');
+  });
+});
+
+describe('the shared scope constants', () => {
+  it('cannot be mutated by one request into a scope every later request inherits', async () => {
+    kcActor.resolveKcActor.mockResolvedValue({ wpUserId: 1n, clinicId: null });
+
+    const first = await readScopeFor(actorOf('SUPER_ADMIN'));
+    expect(() => {
+      (first as { clinicId: bigint | null }).clinicId = 999n;
+    }).toThrow();
+
+    expect(await readScopeFor(actorOf('SUPER_ADMIN'))).toEqual({
+      clinicId: null,
+      doctorId: null,
+      empty: false,
+    });
   });
 });

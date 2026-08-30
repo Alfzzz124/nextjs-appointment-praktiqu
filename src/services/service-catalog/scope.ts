@@ -13,6 +13,8 @@
  */
 import { NextResponse } from 'next/server';
 import type { Actor } from '@/lib/auth';
+import { KcError } from '@/lib/kc-response';
+import { forbidden } from '@/lib/problem-details';
 import { resolveKcActor } from '@/services/billing/kc-actor';
 
 export type ServiceScope = {
@@ -27,8 +29,10 @@ export type ServiceScope = {
   empty: boolean;
 };
 
-const UNRESTRICTED: ServiceScope = { clinicId: null, doctorId: null, empty: false };
-const NOTHING: ServiceScope = { clinicId: null, doctorId: null, empty: true };
+// Frozen because both are handed out by reference to every matching request. A consumer
+// assigning to `scope.clinicId` would otherwise corrupt every later request in the process.
+const UNRESTRICTED: ServiceScope = Object.freeze({ clinicId: null, doctorId: null, empty: false });
+const NOTHING: ServiceScope = Object.freeze({ clinicId: null, doctorId: null, empty: true });
 
 export async function readScopeFor(actor: Actor): Promise<ServiceScope> {
   if (actor.role === 'SUPER_ADMIN') return UNRESTRICTED;
@@ -65,4 +69,27 @@ export function invalidIdResponse(): NextResponse {
     { type: '/errors/validation-error', title: 'Invalid service id', status: 400 },
     { status: 400 },
   );
+}
+
+/** Mirrors `RoleGuardResult` in `src/lib/auth/route-guards.ts` — scope, or the response to send. */
+export type ScopeResult = { scope: ServiceScope } | { response: NextResponse };
+
+/**
+ * `readScopeFor` for route handlers.
+ *
+ * `resolveKcActor` throws `KcError(..., 403)` when the JWT subject has no `wp_users` link,
+ * and that is a live condition here — a WordPress account does not imply a `users` row.
+ * `withAuth` only catches `AuthError`, so an uncaught `KcError` would surface as a 500 and
+ * tell the caller nothing. It is the only thrower reachable from this call, and it always
+ * uses 403.
+ */
+export async function scopeForRequest(actor: Actor): Promise<ScopeResult> {
+  try {
+    return { scope: await readScopeFor(actor) };
+  } catch (err) {
+    if (err instanceof KcError) {
+      return { response: NextResponse.json(forbidden(err.message), { status: 403 }) };
+    }
+    throw err;
+  }
 }
