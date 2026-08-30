@@ -297,7 +297,17 @@ export async function updateService(
   if (input.isPublic !== undefined) patch.isPublic = input.isPublic;
 
   const renaming = input.name !== undefined && input.name !== existing.name;
-  const recategorising = input.categoryId !== undefined;
+  // A `categoryId` equal to the row's current category is a no-op, not a recategorise —
+  // otherwise a request that merely echoes the existing category would still take the
+  // repoint branch below, and because `wp_kc_services` has no unique constraint on
+  // `(name, type)`, `findCatalogueByNameAndType` could hand back a *different* row than
+  // `existing.serviceId` and silently repoint the mapping away from it. When the current
+  // category can't be determined (missing or unparseable snapshot), any supplied
+  // `categoryId` counts as a change, since we cannot prove otherwise.
+  const currentCategory = parseCategory(existing.category);
+  const recategorising =
+    input.categoryId !== undefined &&
+    (currentCategory === null || input.categoryId !== currentCategory.id);
 
   if (renaming || recategorising) {
     // The catalogue row's identity is name *and* type, so changing either means finding
@@ -332,14 +342,21 @@ export async function updateService(
       }));
   }
 
+  // `patch` is empty exactly when the caller sent nothing that changes anything —
+  // `updateMapping` itself short-circuits on that, and the audit trail should too, or a
+  // no-op request leaves behind a change record for a change that never happened.
+  const wroteSomething = Object.keys(patch).length > 0;
+
   await updateMapping(existing.id, patch);
 
-  await audit('service.updated', {
-    userId: actorId,
-    resource: 'service',
-    resourceId: String(existing.id),
-    metadata: { patch: { ...patch, serviceId: patch.serviceId?.toString() } },
-  });
+  if (wroteSomething) {
+    await audit('service.updated', {
+      userId: actorId,
+      resource: 'service',
+      resourceId: String(existing.id),
+      metadata: { patch: { ...patch, serviceId: patch.serviceId?.toString() } },
+    });
+  }
 
   const refreshed = await findMappingById(existing.id);
   if (!refreshed) {

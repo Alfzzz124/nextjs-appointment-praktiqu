@@ -94,10 +94,28 @@ describe('updateService', () => {
 
     await updateService(501, { name: 'Terapi Keluarga' }, clinicAdmin, 'actor-1');
 
+    // A rename with no price change must seed the new row with the existing charges,
+    // not fall back to some other default — `objectContaining` on `name`/`type` alone
+    // would let a wrong `price` fallback pass silently.
     expect(write.createCatalogue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Terapi Keluarga', type: 'psychology_services' }),
+      expect.objectContaining({ name: 'Terapi Keluarga', type: 'psychology_services', price: row.charges }),
     );
     expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 202n });
+  });
+
+  it('seeds a new catalogue row with the new price when renaming and changing price together', async () => {
+    staticData.findServiceTypeById.mockResolvedValue({
+      id: 7n, label: 'Psychology Services', value: 'psychology_services',
+    });
+    write.findCatalogueByNameAndType.mockResolvedValue(null);
+    write.createCatalogue.mockResolvedValue(202n);
+
+    await updateService(501, { name: 'Terapi Keluarga', price: 400000 }, clinicAdmin, 'actor-1');
+
+    expect(write.createCatalogue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Terapi Keluarga', type: 'psychology_services', price: '400000' }),
+    );
+    expect(write.updateMapping).toHaveBeenCalledWith(501n, { charges: '400000', serviceId: 202n });
   });
 
   it('repoints on a category change even when the name is unchanged', async () => {
@@ -111,6 +129,47 @@ describe('updateService', () => {
 
     expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu', 'assessment');
     expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 303n });
+  });
+
+  it('does not repoint when the given categoryId matches the row\'s current category', async () => {
+    await updateService(501, { categoryId: 7 }, clinicAdmin, 'actor-1');
+
+    // `row.category` parses to id 7 — the same id the request supplies. Treating this
+    // as a no-op change (not a recategorise) means no catalogue lookup at all, since a
+    // duplicate (name, type) row could otherwise get picked and the mapping silently
+    // repointed away from the row it is already on.
+    expect(staticData.findServiceTypeById).not.toHaveBeenCalled();
+    expect(write.findCatalogueByNameAndType).not.toHaveBeenCalled();
+    expect(write.createCatalogue).not.toHaveBeenCalled();
+    expect(write.updateMapping).toHaveBeenCalledWith(501n, {});
+  });
+
+  it('still repoints when the given categoryId differs from the current category', async () => {
+    staticData.findServiceTypeById.mockResolvedValue({
+      id: 9n, label: 'Assessment', value: 'assessment',
+    });
+    write.findCatalogueByNameAndType.mockResolvedValue({ id: 303n });
+
+    await updateService(501, { categoryId: 9 }, clinicAdmin, 'actor-1');
+
+    expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu', 'assessment');
+    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 303n });
+  });
+
+  it('repoints when categoryId is supplied and the existing category cannot be parsed', async () => {
+    repo.findMappingById.mockResolvedValue({ ...row, category: null });
+    staticData.findServiceTypeById.mockResolvedValue({
+      id: 7n, label: 'Psychology Services', value: 'psychology_services',
+    });
+    write.findCatalogueByNameAndType.mockResolvedValue({ id: 909n });
+
+    await updateService(501, { categoryId: 7 }, clinicAdmin, 'actor-1');
+
+    // The current category id is unknowable from a null snapshot, so the supplied
+    // categoryId must count as a change even though it happens to equal what the row
+    // would have had if it parsed.
+    expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu', 'psychology_services');
+    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 909n });
   });
 
   it('rejects a rename that collides with another service of the same professional', async () => {
@@ -162,5 +221,14 @@ describe('updateService', () => {
       'service.updated',
       expect.objectContaining({ userId: 'actor-1', resource: 'service', resourceId: '501' }),
     );
+  });
+
+  it('does not audit a no-op update that changes nothing', async () => {
+    await updateService(501, { name: row.name }, clinicAdmin, 'actor-1');
+
+    // `patch` ends up empty and `updateMapping` correctly issues no SQL for it, but the
+    // audit trail must follow suit rather than recording a change that never happened.
+    expect(write.updateMapping).toHaveBeenCalledWith(501n, {});
+    expect(logging.audit).not.toHaveBeenCalled();
   });
 });
