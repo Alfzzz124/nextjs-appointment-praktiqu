@@ -42,7 +42,6 @@ export type ServiceSummary = {
   telemedService: 'yes' | 'no';
   isPublic: boolean;
   isActive: boolean;
-  createdAt: string;
 };
 
 export type ServiceCatalogError =
@@ -103,7 +102,6 @@ function toSummary(row: ClinicServiceRow): ServiceSummary {
     telemedService: row.telemedService === 'yes' ? 'yes' : 'no',
     isPublic: row.isPublic,
     isActive: row.isActive,
-    createdAt: row.createdAt.toISOString(),
   };
 }
 

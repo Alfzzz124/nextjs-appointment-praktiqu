@@ -9023,8 +9023,6 @@ paths:
                           type: boolean
                         isActive:
                           type: boolean
-                        createdAt:
-                          type: string
                       required:
                         - id
                         - serviceId
@@ -9037,7 +9035,6 @@ paths:
                         - telemedService
                         - isPublic
                         - isActive
-                        - createdAt
                   total:
                     type: integer
                   page:
@@ -9367,8 +9364,6 @@ paths:
                     type: boolean
                   isActive:
                     type: boolean
-                  createdAt:
-                    type: string
                 required:
                   - id
                   - serviceId
@@ -9381,7 +9376,6 @@ paths:
                   - telemedService
                   - isPublic
                   - isActive
-                  - createdAt
         '400':
           description: RFC-7807 problem detail
           content:
@@ -9553,8 +9547,6 @@ paths:
                     type: boolean
                   isActive:
                     type: boolean
-                  createdAt:
-                    type: string
                 required:
                   - id
                   - serviceId
@@ -9567,7 +9559,6 @@ paths:
                   - telemedService
                   - isPublic
                   - isActive
-                  - createdAt
         '400':
           description: RFC-7807 problem detail
           content:

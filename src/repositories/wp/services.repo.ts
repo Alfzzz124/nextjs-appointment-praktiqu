@@ -211,7 +211,6 @@ export type ClinicServiceRow = {
   isPublic: boolean;
   isActive: boolean;
   nameAlias: string | null;
-  createdAt: Date;
 };
 
 export type ListClinicServicesQuery = {
@@ -241,7 +240,12 @@ const MAPPING_SELECT = {
   status: true,
   telemedService: true,
   serviceNameAlias: true,
-  createdAt: true,
+  // `created_at` is deliberately NOT selected. It is `datetime NOT NULL`, but KiviCare has
+  // filled it with MySQL zero-dates: 273 of 277 rows on staging read `0000-00-00 00:00:00`.
+  // Prisma refuses to decode those ("Value out of range for the type"), so selecting the
+  // column throws for essentially every row. The field was never part of this feature, so
+  // it is dropped rather than bought back with a third query. Do not add it back without
+  // checking the data first.
 } as const;
 
 type MappingRow = {
@@ -255,7 +259,6 @@ type MappingRow = {
   status: number;
   telemedService: string | null;
   serviceNameAlias: string | null;
-  createdAt: Date;
 };
 
 type CatalogueRow = { id: bigint; name: string; type: string | null; category: string | null };
@@ -285,7 +288,6 @@ function toClinicService(m: MappingRow, s: CatalogueRow): ClinicServiceRow {
     isPublic: m.isPublic === 1,
     isActive: m.status === STATUS_ACTIVE,
     nameAlias: m.serviceNameAlias,
-    createdAt: m.createdAt,
   };
 }
 

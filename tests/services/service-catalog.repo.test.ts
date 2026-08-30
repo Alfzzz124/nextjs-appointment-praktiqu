@@ -125,6 +125,27 @@ describe('listClinicServices', () => {
   });
 });
 
+describe('the mapping select', () => {
+  it('never asks MySQL for created_at', async () => {
+    // `wp_kc_service_doctor_mapping.created_at` is `datetime NOT NULL`, but KiviCare filled
+    // it with zero-dates -- 273 of 277 rows on staging read `0000-00-00 00:00:00`. Prisma
+    // refuses to decode those, so selecting the column throws for essentially every row and
+    // takes the whole endpoint down with it. This pins the omission so a later "it would be
+    // nice to return createdAt" does not quietly reintroduce a production outage.
+    db.kcServiceDoctorMapping.findMany.mockResolvedValue([]);
+    db.kcServiceDoctorMapping.count.mockResolvedValue(0);
+
+    await listClinicServices({ page: 1, perPage: 20 });
+
+    const select = db.kcServiceDoctorMapping.findMany.mock.calls[0][0].select;
+    expect(select).not.toHaveProperty('createdAt');
+
+    db.kcServiceDoctorMapping.findUnique.mockResolvedValue(null);
+    await findMappingById(501n);
+    expect(db.kcServiceDoctorMapping.findUnique.mock.calls[0][0].select).not.toHaveProperty('createdAt');
+  });
+});
+
 describe('findMappingById', () => {
   it('returns the joined row', async () => {
     db.kcServiceDoctorMapping.findUnique.mockResolvedValue(mapping);

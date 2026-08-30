@@ -104,7 +104,6 @@ export const serviceSummarySchema = z.object({
   telemedService: z.enum(['yes', 'no']),
   isPublic: z.boolean(),
   isActive: z.boolean(),
-  createdAt: z.string(),
 });
 
 export const serviceListResponseSchema = z.object({
