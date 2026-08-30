@@ -10,8 +10,18 @@ import {
   findMappingById,
   type ClinicServiceRow,
 } from '@/repositories/wp/services.repo';
+import {
+  findCatalogueByNameAndType,
+  createCatalogue,
+  doctorsMappedToClinic,
+  findConflictingMapping,
+  insertMapping,
+  type MappingPatch,
+} from '@/repositories/wp/services.write';
+import { findServiceTypeById } from '@/repositories/wp/static-data.repo';
+import { audit } from '@/lib/logging';
 import type { ServiceScope } from './scope';
-import type { ListServicesQuery } from './validation';
+import type { ListServicesQuery, CreateServiceInput } from './validation';
 
 export type ServiceCategory = { id: number; label: string | null; value: string | null };
 
@@ -148,4 +158,97 @@ export async function getService(
   const row = await findMappingById(BigInt(mappingId));
   if (!row || !inScope(row, scope)) return null;
   return toSummary(row);
+}
+
+/* ------------------------------------------------------------------ */
+/* Create                                                              */
+/* ------------------------------------------------------------------ */
+
+export type CreatedService = {
+  serviceId: number;
+  name: string;
+  category: ServiceCategory;
+  mappings: Array<{ id: number; doctorId: number }>;
+};
+
+/**
+ * Resolve `categoryId` into the two things the catalogue row needs: the `type` string
+ * and the JSON snapshot KiviCare keeps beside it.
+ */
+async function resolveCategory(categoryId: number): Promise<{ type: string; json: string; category: ServiceCategory }> {
+  const row = await findServiceTypeById(BigInt(categoryId));
+  if (!row) {
+    throw {
+      _tag: 'validation',
+      errors: { categoryId: ['Unknown service category'] },
+    } satisfies ServiceCatalogError;
+  }
+  const category: ServiceCategory = { id: Number(row.id), label: row.label, value: row.value };
+  return { type: row.value ?? '', json: JSON.stringify(category), category };
+}
+
+export async function createService(
+  input: CreateServiceInput,
+  clinicId: number,
+  actorId: string,
+): Promise<CreatedService> {
+  const { type, json, category } = await resolveCategory(input.categoryId);
+
+  const doctorIds = input.doctorIds.map((d) => BigInt(d));
+  const clinic = BigInt(clinicId);
+
+  // KiviCare refuses the whole request when any doctor is not at the clinic rather than
+  // silently creating the subset, and that is the right call: a partially applied create
+  // is harder to notice than a rejection.
+  const mapped = await doctorsMappedToClinic(doctorIds, clinic);
+  const unmapped = doctorIds.filter((d) => !mapped.includes(d));
+  if (unmapped.length > 0) {
+    throw {
+      _tag: 'bad_request',
+      code: 'doctors_not_in_clinic',
+      message: `Professionals not assigned to this clinic: ${unmapped.join(', ')}`,
+    } satisfies ServiceCatalogError;
+  }
+
+  const conflict = await findConflictingMapping({ doctorIds, clinicId: clinic, name: input.name });
+  if (conflict) {
+    throw {
+      _tag: 'conflict',
+      code: 'service_already_offered',
+      message: `Professional ${conflict.doctorId} already offers a service named "${input.name}" at this clinic`,
+    } satisfies ServiceCatalogError;
+  }
+
+  const price = String(input.price);
+
+  // The catalogue is global, so an identical name+type from another clinic is reused
+  // rather than duplicated — this is KiviCare's own behaviour.
+  const existing = await findCatalogueByNameAndType(input.name, type);
+  const serviceId =
+    existing?.id ??
+    (await createCatalogue({ name: input.name, type, category: json, price, status: 1 }));
+
+  const mappings: Array<{ id: number; doctorId: number }> = [];
+  for (const doctorId of doctorIds) {
+    const id = await insertMapping({
+      serviceId,
+      doctorId,
+      clinicId: clinic,
+      charges: price,
+      duration: input.duration,
+      telemedService: input.telemedService,
+      status: input.status,
+      isPublic: input.isPublic,
+    });
+    mappings.push({ id: Number(id), doctorId: Number(doctorId) });
+  }
+
+  await audit('service.created', {
+    userId: actorId,
+    resource: 'service',
+    resourceId: String(serviceId),
+    metadata: { name: input.name, clinicId, mappingIds: mappings.map((m) => m.id) },
+  });
+
+  return { serviceId: Number(serviceId), name: input.name, category, mappings };
 }
