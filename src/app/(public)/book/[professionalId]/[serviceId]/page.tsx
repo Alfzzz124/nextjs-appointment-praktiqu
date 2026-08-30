@@ -24,6 +24,20 @@ function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** A usable row id. `Number('abc')` is NaN, and `BigInt(NaN)` throws. */
+function isValidId(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+/** The card this page shows whenever there is nothing to book. */
+function notFoundCard() {
+  return (
+    <WizardLayout currentStep={3}>
+      <div className="card text-center text-sm text-[#777587]">Layanan tidak ditemukan.</div>
+    </WizardLayout>
+  );
+}
+
 export default async function BookStep3Page({
   params,
 }: {
@@ -31,6 +45,13 @@ export default async function BookStep3Page({
 }) {
   const professionalId = Number(params.professionalId);
   const serviceId = Number(params.serviceId);
+
+  // Before any service call: every one of them reaches BigInt(), which throws a
+  // RangeError on NaN. /book/abc/3 is a stale or mistyped link — a 404 — and letting
+  // it reach the error boundary showed the patient a 500 instead. Only the ids are
+  // guarded; a genuine failure below must still surface as an error rather than be
+  // reported as a missing service, which is what the old try/catch here did.
+  if (!isValidId(professionalId) || !isValidId(serviceId)) return notFoundCard();
 
   const today = new Date();
   const from = localDate(today);
@@ -49,13 +70,7 @@ export default async function BookStep3Page({
   // One guard for all three cases. An unknown professional, an inactive one, and a
   // service they do not offer publicly all render the same card the page showed
   // before.
-  if (!professional || !service || !days) {
-    return (
-      <WizardLayout currentStep={3}>
-        <div className="card text-center text-sm text-[#777587]">Layanan tidak ditemukan.</div>
-      </WizardLayout>
-    );
-  }
+  if (!professional || !service || !days) return notFoundCard();
 
   return (
     <WizardLayout currentStep={3}>
