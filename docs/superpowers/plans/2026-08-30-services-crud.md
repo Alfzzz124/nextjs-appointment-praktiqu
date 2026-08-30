@@ -659,6 +659,10 @@ export function readScopeFor(actor: Actor): Promise<ServiceScope>;
 export function canWrite(role: Actor['role']): boolean;
 export function parseServiceId(raw: string): number | null;
 export function invalidIdResponse(): NextResponse;
+
+/** Mirrors `RoleGuardResult` in src/lib/auth/route-guards.ts:22. */
+export type ScopeResult = { scope: ServiceScope } | { response: NextResponse };
+export function scopeForRequest(actor: Actor): Promise<ScopeResult>;
 ```
 
 - [ ] **Step 1: Write the failing test**
@@ -675,10 +679,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const kcActor = vi.hoisted(() => ({ resolveKcActor: vi.fn() }));
 vi.mock('@/services/billing/kc-actor', () => kcActor);
 
+import { KcError } from '@/lib/kc-response';
 import {
   readScopeFor,
   canWrite,
   parseServiceId,
+  scopeForRequest,
 } from '@/services/service-catalog/scope';
 
 const actorOf = (role: string) => ({ id: 'u1', role, practiceId: null }) as any;
@@ -770,6 +776,50 @@ describe('parseServiceId', () => {
     expect(parseServiceId('1.5')).toBeNull();
   });
 });
+
+describe('scopeForRequest', () => {
+  it('returns the scope when the actor resolves', async () => {
+    kcActor.resolveKcActor.mockResolvedValue({ wpUserId: 20n, clinicId: 3n });
+
+    const result = await scopeForRequest(actorOf('CLINIC_ADMIN'));
+
+    expect(result).toEqual({ scope: { clinicId: 3n, doctorId: null, empty: false } });
+  });
+
+  it('turns an unlinked WordPress account into a 403, not an uncaught 500', async () => {
+    kcActor.resolveKcActor.mockRejectedValue(
+      new KcError('User is not linked to a WordPress account', 403),
+    );
+
+    const result = await scopeForRequest(actorOf('CLINIC_ADMIN'));
+
+    expect('response' in result).toBe(true);
+    expect((result as { response: Response }).response.status).toBe(403);
+  });
+
+  it('lets an unexpected error through rather than masking it as 403', async () => {
+    kcActor.resolveKcActor.mockRejectedValue(new Error('connection lost'));
+
+    await expect(scopeForRequest(actorOf('CLINIC_ADMIN'))).rejects.toThrow('connection lost');
+  });
+});
+
+describe('the shared scope constants', () => {
+  it('cannot be mutated by one request into a scope every later request inherits', async () => {
+    kcActor.resolveKcActor.mockResolvedValue({ wpUserId: 1n, clinicId: null });
+
+    const first = await readScopeFor(actorOf('SUPER_ADMIN'));
+    expect(() => {
+      (first as { clinicId: bigint | null }).clinicId = 999n;
+    }).toThrow();
+
+    expect(await readScopeFor(actorOf('SUPER_ADMIN'))).toEqual({
+      clinicId: null,
+      doctorId: null,
+      empty: false,
+    });
+  });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -797,6 +847,8 @@ Create `src/services/service-catalog/scope.ts`:
  */
 import { NextResponse } from 'next/server';
 import type { Actor } from '@/lib/auth';
+import { KcError } from '@/lib/kc-response';
+import { forbidden } from '@/lib/problem-details';
 import { resolveKcActor } from '@/services/billing/kc-actor';
 
 export type ServiceScope = {
@@ -811,8 +863,10 @@ export type ServiceScope = {
   empty: boolean;
 };
 
-const UNRESTRICTED: ServiceScope = { clinicId: null, doctorId: null, empty: false };
-const NOTHING: ServiceScope = { clinicId: null, doctorId: null, empty: true };
+// Frozen because both are handed out by reference to every matching request. A consumer
+// assigning to `scope.clinicId` would otherwise corrupt every later request in the process.
+const UNRESTRICTED: ServiceScope = Object.freeze({ clinicId: null, doctorId: null, empty: false });
+const NOTHING: ServiceScope = Object.freeze({ clinicId: null, doctorId: null, empty: true });
 
 export async function readScopeFor(actor: Actor): Promise<ServiceScope> {
   if (actor.role === 'SUPER_ADMIN') return UNRESTRICTED;
@@ -850,12 +904,35 @@ export function invalidIdResponse(): NextResponse {
     { status: 400 },
   );
 }
+
+/** Mirrors `RoleGuardResult` in `src/lib/auth/route-guards.ts` — scope, or the response to send. */
+export type ScopeResult = { scope: ServiceScope } | { response: NextResponse };
+
+/**
+ * `readScopeFor` for route handlers.
+ *
+ * `resolveKcActor` throws `KcError(..., 403)` when the JWT subject has no `wp_users` link,
+ * and that is a live condition here — a WordPress account does not imply a `users` row.
+ * `withAuth` only catches `AuthError`, so an uncaught `KcError` would surface as a 500 and
+ * tell the caller nothing. It is the only thrower reachable from this call, and it always
+ * uses 403.
+ */
+export async function scopeForRequest(actor: Actor): Promise<ScopeResult> {
+  try {
+    return { scope: await readScopeFor(actor) };
+  } catch (err) {
+    if (err instanceof KcError) {
+      return { response: NextResponse.json(forbidden(err.message), { status: 403 }) };
+    }
+    throw err;
+  }
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/services/service-catalog.scope.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2800,7 +2877,7 @@ vi.mock('@/lib/auth', () => ({
     handler(req, { actor: auth.actor, params: ctx?.params ?? {} }),
 }));
 
-const scope = vi.hoisted(() => ({ readScopeFor: vi.fn(), canWrite: vi.fn() }));
+const scope = vi.hoisted(() => ({ scopeForRequest: vi.fn(), canWrite: vi.fn() }));
 vi.mock('@/services/service-catalog/scope', async (orig) => ({
   ...(await orig<any>()),
   ...scope,
@@ -2812,6 +2889,7 @@ vi.mock('@/services/service-catalog/service', async (orig) => ({
   ...svc,
 }));
 
+import { NextResponse } from 'next/server';
 import { GET, POST } from '@/app/api/v1/services/route';
 
 const get = (qs = '') => new NextRequest(`http://localhost/api/v1/services${qs}`);
@@ -2832,12 +2910,14 @@ const validBody = {
 
 beforeEach(() => {
   auth.actor = { id: 'actor-1', role: 'CLINIC_ADMIN', practiceId: null };
-  scope.readScopeFor.mockReset();
+  scope.scopeForRequest.mockReset();
   scope.canWrite.mockReset();
   svc.listServices.mockReset();
   svc.createService.mockReset();
 
-  scope.readScopeFor.mockResolvedValue({ clinicId: 3n, doctorId: null, empty: false });
+  scope.scopeForRequest.mockResolvedValue({
+    scope: { clinicId: 3n, doctorId: null, empty: false },
+  });
   scope.canWrite.mockReturnValue(true);
   svc.listServices.mockResolvedValue({ services: [], total: 0, page: 1, perPage: 20 });
   svc.createService.mockResolvedValue({
@@ -2912,7 +2992,9 @@ describe('POST /api/v1/services', () => {
 
   it('lets a SUPER_ADMIN choose the clinic', async () => {
     auth.actor = { id: 'root', role: 'SUPER_ADMIN', practiceId: null };
-    scope.readScopeFor.mockResolvedValue({ clinicId: null, doctorId: null, empty: false });
+    scope.scopeForRequest.mockResolvedValue({
+      scope: { clinicId: null, doctorId: null, empty: false },
+    });
 
     await POST(post({ ...validBody, clinicId: 99 }));
 
@@ -2921,7 +3003,9 @@ describe('POST /api/v1/services', () => {
 
   it('asks a SUPER_ADMIN for a clinic when none is given', async () => {
     auth.actor = { id: 'root', role: 'SUPER_ADMIN', practiceId: null };
-    scope.readScopeFor.mockResolvedValue({ clinicId: null, doctorId: null, empty: false });
+    scope.scopeForRequest.mockResolvedValue({
+      scope: { clinicId: null, doctorId: null, empty: false },
+    });
 
     const res = await POST(post(validBody));
 
@@ -2947,6 +3031,15 @@ describe('POST /api/v1/services', () => {
     });
 
     expect((await POST(post(validBody))).status).toBe(400);
+  });
+
+  it('passes a scope-layer 403 straight through instead of throwing', async () => {
+    scope.scopeForRequest.mockResolvedValue({
+      response: NextResponse.json({ status: 403 }, { status: 403 }),
+    });
+
+    expect((await POST(post(validBody))).status).toBe(403);
+    expect(svc.createService).not.toHaveBeenCalled();
   });
 
   it('maps an unknown-category error to 422', async () => {
@@ -2981,7 +3074,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import type { Actor } from '@/lib/auth';
 import { badRequest, conflict, forbidden, validationError } from '@/lib/problem-details';
-import { readScopeFor, canWrite } from '@/services/service-catalog/scope';
+import { scopeForRequest, canWrite } from '@/services/service-catalog/scope';
 import {
   listServices,
   createService,
@@ -3006,8 +3099,10 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     );
   }
 
-  const scope = await readScopeFor(actor);
-  return NextResponse.json(await listServices(parsed.data, scope));
+  const scoped = await scopeForRequest(actor);
+  if ('response' in scoped) return scoped.response;
+
+  return NextResponse.json(await listServices(parsed.data, scoped.scope));
 });
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
@@ -3040,8 +3135,10 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 
   // A clinic admin is pinned to their own clinic whatever the body says. A super admin
   // has no clinic of their own, so they must name one.
-  const scope = await readScopeFor(actor);
-  const clinicId = scope.clinicId ?? (parsed.data.clinicId ?? null);
+  const scoped = await scopeForRequest(actor);
+  if ('response' in scoped) return scoped.response;
+
+  const clinicId = scoped.scope.clinicId ?? (parsed.data.clinicId ?? null);
   if (clinicId === null) {
     return NextResponse.json(
       validationError('clinic_required', 'clinicId is required', undefined, {
@@ -3077,7 +3174,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/integration/services/collection-route.test.ts`
-Expected: PASS, 14 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -3112,7 +3209,7 @@ vi.mock('@/lib/auth', () => ({
     handler(req, { actor: auth.actor, params: ctx?.params ?? {} }),
 }));
 
-const scope = vi.hoisted(() => ({ readScopeFor: vi.fn(), canWrite: vi.fn() }));
+const scope = vi.hoisted(() => ({ scopeForRequest: vi.fn(), canWrite: vi.fn() }));
 vi.mock('@/services/service-catalog/scope', async (orig) => ({
   ...(await orig<any>()),
   ...scope,
@@ -3128,6 +3225,7 @@ vi.mock('@/services/service-catalog/service', async (orig) => ({
   ...svc,
 }));
 
+import { NextResponse } from 'next/server';
 import { GET, PUT, DELETE } from '@/app/api/v1/services/[id]/route';
 
 const url = 'http://localhost/api/v1/services/501';
@@ -3147,11 +3245,13 @@ const summary = { id: 501, serviceId: 101, name: 'Konseling Individu' };
 
 beforeEach(() => {
   auth.actor = { id: 'actor-1', role: 'CLINIC_ADMIN', practiceId: null };
-  scope.readScopeFor.mockReset();
+  scope.scopeForRequest.mockReset();
   scope.canWrite.mockReset();
   Object.values(svc).forEach((f) => f.mockReset());
 
-  scope.readScopeFor.mockResolvedValue({ clinicId: 3n, doctorId: null, empty: false });
+  scope.scopeForRequest.mockResolvedValue({
+    scope: { clinicId: 3n, doctorId: null, empty: false },
+  });
   scope.canWrite.mockReturnValue(true);
   svc.getService.mockResolvedValue(summary);
   svc.updateService.mockResolvedValue(summary);
@@ -3170,6 +3270,15 @@ describe('GET /api/v1/services/{id}', () => {
     svc.getService.mockResolvedValue(null);
 
     expect((await GET(req(), ctx('501'))).status).toBe(404);
+  });
+
+  it('passes a scope-layer 403 straight through instead of throwing', async () => {
+    scope.scopeForRequest.mockResolvedValue({
+      response: NextResponse.json({ status: 403 }, { status: 403 }),
+    });
+
+    expect((await GET(req(), ctx('501'))).status).toBe(403);
+    expect(svc.getService).not.toHaveBeenCalled();
   });
 
   it('400s a non-numeric id before it can become NaN in SQL', async () => {
@@ -3287,7 +3396,7 @@ import { withAuth } from '@/lib/auth';
 import type { Actor } from '@/lib/auth';
 import { conflict, forbidden, notFound, validationError } from '@/lib/problem-details';
 import {
-  readScopeFor,
+  scopeForRequest,
   canWrite,
   parseServiceId,
   invalidIdResponse,
@@ -3331,8 +3440,10 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const id = parseServiceId(ctx.params.id);
   if (id === null) return invalidIdResponse();
 
-  const scope = await readScopeFor(actor);
-  const service = await getService(id, scope);
+  const scoped = await scopeForRequest(actor);
+  if ('response' in scoped) return scoped.response;
+
+  const service = await getService(id, scoped.scope);
   if (!service) {
     return NextResponse.json(notFound('service_not_found', 'Service not found'), { status: 404 });
   }
@@ -3368,9 +3479,11 @@ export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
     );
   }
 
-  const scope = await readScopeFor(actor);
+  const scoped = await scopeForRequest(actor);
+  if ('response' in scoped) return scoped.response;
+
   try {
-    return NextResponse.json(await updateService(id, parsed.data, scope, actor.id));
+    return NextResponse.json(await updateService(id, parsed.data, scoped.scope, actor.id));
   } catch (err) {
     return toErrorResponse(err);
   }
@@ -3387,9 +3500,11 @@ export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
     });
   }
 
-  const scope = await readScopeFor(actor);
+  const scoped = await scopeForRequest(actor);
+  if ('response' in scoped) return scoped.response;
+
   try {
-    return NextResponse.json(await deleteService(id, scope, actor.id));
+    return NextResponse.json(await deleteService(id, scoped.scope, actor.id));
   } catch (err) {
     return toErrorResponse(err);
   }
@@ -3399,12 +3514,12 @@ export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/integration/services/item-route.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Run everything and type-check**
 
 Run: `npx vitest run && npm run type-check`
-Expected: no new failures relative to the pre-existing baseline, no type errors.
+Expected: the whole suite green (the branch baseline is 134/134 files, 1218/1218 tests), no type errors.
 
 - [ ] **Step 6: Commit**
 
