@@ -54,26 +54,31 @@ export async function findCatalogueByNameAndType(
   return row ? { id: row.id } : null;
 }
 
-export async function createCatalogue(input: {
+type CatalogueRowInput = {
   name: string;
   type: string;
   /** JSON snapshot of the static-data row, as KiviCare stores it. */
   category: string | null;
   price: string;
   status: 0 | 1;
-}): Promise<bigint> {
-  return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      `INSERT INTO wp_kc_services (name, type, category, price, status, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      input.name,
-      input.type,
-      input.category,
-      input.price,
-      input.status,
-    );
-    return lastInsertId(tx);
-  });
+};
+
+/** The bare INSERT, on whatever connection `tx` is pinned to. No transaction of its own. */
+async function insertCatalogueRow(tx: Prisma.TransactionClient, input: CatalogueRowInput): Promise<bigint> {
+  await tx.$executeRawUnsafe(
+    `INSERT INTO wp_kc_services (name, type, category, price, status, created_at)
+     VALUES (?, ?, ?, ?, ?, NOW())`,
+    input.name,
+    input.type,
+    input.category,
+    input.price,
+    input.status,
+  );
+  return lastInsertId(tx);
+}
+
+export async function createCatalogue(input: CatalogueRowInput): Promise<bigint> {
+  return prisma.$transaction(async (tx) => insertCatalogueRow(tx, input));
 }
 
 /* ------------------------------------------------------------------ */
@@ -130,7 +135,7 @@ export async function findConflictingMapping(opts: {
   return { mappingId: BigInt(rows[0].mapping_id), doctorId: BigInt(rows[0].doctor_id) };
 }
 
-export async function insertMapping(input: {
+type MappingRowInput = {
   serviceId: bigint;
   doctorId: bigint;
   clinicId: bigint;
@@ -139,22 +144,60 @@ export async function insertMapping(input: {
   telemedService: 'yes' | 'no';
   status: 0 | 1;
   isPublic: 0 | 1;
-}): Promise<bigint> {
+};
+
+/** The bare INSERT, on whatever connection `tx` is pinned to. No transaction of its own. */
+async function insertMappingRow(tx: Prisma.TransactionClient, input: MappingRowInput): Promise<bigint> {
+  await tx.$executeRawUnsafe(
+    `INSERT INTO wp_kc_service_doctor_mapping
+       (service_id, doctor_id, clinic_id, charges, duration, telemed_service, status, is_public, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    input.serviceId,
+    input.doctorId,
+    input.clinicId,
+    input.charges,
+    input.duration,
+    input.telemedService,
+    input.status,
+    input.isPublic,
+  );
+  return lastInsertId(tx);
+}
+
+export async function insertMapping(input: MappingRowInput): Promise<bigint> {
+  return prisma.$transaction(async (tx) => insertMappingRow(tx, input));
+}
+
+/**
+ * Create (or reuse) the catalogue row and every per-psychologist mapping in one
+ * transaction, so a failure on mapping N rolls back the catalogue insert and mappings
+ * 1..N-1 rather than leaving them committed. See `createService`'s own comment on why a
+ * partially applied create is worse than a rejection.
+ */
+export async function createServiceWithMappings(input: {
+  /** Reuse an existing catalogue row, or create one. */
+  catalogue: { reuseId: bigint } | CatalogueRowInput;
+  mappings: Array<{
+    doctorId: bigint;
+    clinicId: bigint;
+    charges: string;
+    duration: number;
+    telemedService: 'yes' | 'no';
+    status: 0 | 1;
+    isPublic: 0 | 1;
+  }>;
+}): Promise<{ serviceId: bigint; mappingIds: bigint[] }> {
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      `INSERT INTO wp_kc_service_doctor_mapping
-         (service_id, doctor_id, clinic_id, charges, duration, telemed_service, status, is_public, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      input.serviceId,
-      input.doctorId,
-      input.clinicId,
-      input.charges,
-      input.duration,
-      input.telemedService,
-      input.status,
-      input.isPublic,
-    );
-    return lastInsertId(tx);
+    const serviceId =
+      'reuseId' in input.catalogue ? input.catalogue.reuseId : await insertCatalogueRow(tx, input.catalogue);
+
+    const mappingIds: bigint[] = [];
+    for (const mapping of input.mappings) {
+      const id = await insertMappingRow(tx, { ...mapping, serviceId });
+      mappingIds.push(id);
+    }
+
+    return { serviceId, mappingIds };
   });
 }
 

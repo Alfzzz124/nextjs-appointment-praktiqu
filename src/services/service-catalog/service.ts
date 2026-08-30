@@ -12,10 +12,9 @@ import {
 } from '@/repositories/wp/services.repo';
 import {
   findCatalogueByNameAndType,
-  createCatalogue,
+  createServiceWithMappings,
   doctorsMappedToClinic,
   findConflictingMapping,
-  insertMapping,
   type MappingPatch,
 } from '@/repositories/wp/services.write';
 import { findServiceTypeById } from '@/repositories/wp/static-data.repo';
@@ -194,7 +193,12 @@ export async function createService(
 ): Promise<CreatedService> {
   const { type, json, category } = await resolveCategory(input.categoryId);
 
-  const doctorIds = input.doctorIds.map((d) => BigInt(d));
+  // A duplicate id (`doctorIds: [5, 5]`) would otherwise insert twin mapping rows: the
+  // table has no unique constraint, and `findConflictingMapping` only catches conflicts
+  // against *existing* rows, not duplicates within the same request. De-duplicate before
+  // any check runs, keeping first-seen order so the response's doctor order matches what
+  // the caller sent.
+  const doctorIds = [...new Set(input.doctorIds.map((d) => BigInt(d)))];
   const clinic = BigInt(clinicId);
 
   // KiviCare refuses the whole request when any doctor is not at the clinic rather than
@@ -222,16 +226,19 @@ export async function createService(
   const price = String(input.price);
 
   // The catalogue is global, so an identical name+type from another clinic is reused
-  // rather than duplicated — this is KiviCare's own behaviour.
+  // rather than duplicated — this is KiviCare's own behaviour. The reuse decision stays
+  // here, as a business rule; only the resulting `{ reuseId }` or the fields for a new row
+  // cross into the repository.
   const existing = await findCatalogueByNameAndType(input.name, type);
-  const serviceId =
-    existing?.id ??
-    (await createCatalogue({ name: input.name, type, category: json, price, status: 1 }));
+  const catalogue = existing
+    ? { reuseId: existing.id }
+    : { name: input.name, type, category: json, price, status: 1 as const };
 
-  const mappings: Array<{ id: number; doctorId: number }> = [];
-  for (const doctorId of doctorIds) {
-    const id = await insertMapping({
-      serviceId,
+  // One transaction for the catalogue row (reuse or insert) and every mapping: a failure
+  // on any mapping rolls the whole thing back rather than leaving a partial create behind.
+  const { serviceId, mappingIds } = await createServiceWithMappings({
+    catalogue,
+    mappings: doctorIds.map((doctorId) => ({
       doctorId,
       clinicId: clinic,
       charges: price,
@@ -239,9 +246,10 @@ export async function createService(
       telemedService: input.telemedService,
       status: input.status,
       isPublic: input.isPublic,
-    });
-    mappings.push({ id: Number(id), doctorId: Number(doctorId) });
-  }
+    })),
+  });
+
+  const mappings = mappingIds.map((id, i) => ({ id: Number(id), doctorId: Number(doctorIds[i]) }));
 
   await audit('service.created', {
     userId: actorId,

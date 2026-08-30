@@ -34,6 +34,7 @@ vi.mock('@/repositories/wp/appointments.repo', () => ({
 import {
   findCatalogueByNameAndType,
   createCatalogue,
+  createServiceWithMappings,
   doctorsMappedToClinic,
   findConflictingMapping,
   insertMapping,
@@ -193,6 +194,86 @@ describe('insertMapping', () => {
     expect(sql).toContain('INSERT INTO wp_kc_service_doctor_mapping');
     expect(args).toEqual([101n, 8100001n, 3n, '250000', 60, 'no', 1, 1]);
     expectPlaceholdersMatchArgs(sql, args);
+  });
+});
+
+describe('createServiceWithMappings', () => {
+  const mapping = (doctorId: bigint) => ({
+    doctorId,
+    clinicId: 3n,
+    charges: '250000',
+    duration: 60,
+    telemedService: 'no' as const,
+    status: 1 as const,
+    isPublic: 1 as const,
+  });
+
+  it('does the whole create in a single transaction', async () => {
+    db.$executeRawUnsafe.mockResolvedValue(1);
+    db.$queryRawUnsafe
+      .mockResolvedValueOnce([{ id: 101 }]) // catalogue LAST_INSERT_ID()
+      .mockResolvedValueOnce([{ id: 501 }]) // mapping 1 LAST_INSERT_ID()
+      .mockResolvedValueOnce([{ id: 502 }]); // mapping 2 LAST_INSERT_ID()
+
+    const result = await createServiceWithMappings({
+      catalogue: { name: 'Konseling Individu', type: 'psychology_services', category: '{"id":7}', price: '250000', status: 1 },
+      mappings: [mapping(8100001n), mapping(8100002n)],
+    });
+
+    expect(result).toEqual({ serviceId: 101n, mappingIds: [501n, 502n] });
+    // Everything — catalogue insert and both mapping inserts — must run inside one
+    // $transaction call, not one per statement, or a failure partway would leave earlier
+    // inserts committed.
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the catalogue INSERT on the reuse path', async () => {
+    db.$executeRawUnsafe.mockResolvedValue(1);
+    db.$queryRawUnsafe.mockResolvedValueOnce([{ id: 777 }]); // the one mapping's LAST_INSERT_ID()
+
+    const result = await createServiceWithMappings({
+      catalogue: { reuseId: 909n },
+      mappings: [mapping(8100001n)],
+    });
+
+    expect(result).toEqual({ serviceId: 909n, mappingIds: [777n] });
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    // Only the mapping insert ran — no catalogue row was written for a reused service.
+    expect(db.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    const [sql, ...args] = db.$executeRawUnsafe.mock.calls[0];
+    expect(sql).toContain('INSERT INTO wp_kc_service_doctor_mapping');
+    expect(args).toEqual([909n, 8100001n, 3n, '250000', 60, 'no', 1, 1]);
+  });
+
+  it('inserts the catalogue row, then each mapping in order, on the create path', async () => {
+    db.$executeRawUnsafe.mockResolvedValue(1);
+    db.$queryRawUnsafe
+      .mockResolvedValueOnce([{ id: 101 }])
+      .mockResolvedValueOnce([{ id: 501 }])
+      .mockResolvedValueOnce([{ id: 502 }]);
+
+    await createServiceWithMappings({
+      catalogue: { name: 'Konseling Individu', type: 'psychology_services', category: '{"id":7}', price: '250000', status: 1 },
+      mappings: [mapping(8100001n), mapping(8100002n)],
+    });
+
+    expect(db.$executeRawUnsafe).toHaveBeenCalledTimes(3);
+    const [catalogueSql, ...catalogueArgs] = db.$executeRawUnsafe.mock.calls[0];
+    expect(catalogueSql).toContain('INSERT INTO wp_kc_services');
+    expect(catalogueArgs).toEqual(['Konseling Individu', 'psychology_services', '{"id":7}', '250000', 1]);
+
+    const [mapping1Sql, ...mapping1Args] = db.$executeRawUnsafe.mock.calls[1];
+    expect(mapping1Sql).toContain('INSERT INTO wp_kc_service_doctor_mapping');
+    // service_id is the id LAST_INSERT_ID() returned for the catalogue row, not reused
+    // from the caller — the mapping insert must reference what this same transaction
+    // just created.
+    expect(mapping1Args[0]).toBe(101n);
+    expect(mapping1Args[1]).toBe(8100001n);
+
+    const [mapping2Sql, ...mapping2Args] = db.$executeRawUnsafe.mock.calls[2];
+    expect(mapping2Sql).toContain('INSERT INTO wp_kc_service_doctor_mapping');
+    expect(mapping2Args[0]).toBe(101n);
+    expect(mapping2Args[1]).toBe(8100002n);
   });
 });
 
