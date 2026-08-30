@@ -243,17 +243,28 @@ async function resolvePublicServiceMapping(
  * Bookable slots for one professional, service and date.
  *
  * `null` means there is no such active professional, or the service is not one they
- * offer publicly — a 404 either way, distinct from "no slots that day" (`[]`).
+ * offer publicly — a 404 either way, distinct from "no slots that day" (`[]`). A day
+ * that is open but wholly in the past — every window's start already gone by — is the
+ * `[]` case too: the professional is bookable, there is just nothing left to offer.
  *
  * Unlike the previous implementation this subtracts real bookings and off days: it
  * shares `generateSlots` with the authenticated slot API, so the public page and the
  * staff calendar cannot disagree about what is free.
+ *
+ * Also drops any slot whose start has already passed, for the same reason and in the
+ * same way as `getPublicSlotsForRange`: this is a public endpoint, a patient is
+ * choosing a future appointment, and a slot that has already started is never a valid
+ * choice. `generateSlots` itself must keep offering those — the authenticated staff
+ * path uses it so a receptionist can record a walk-in that happened this morning. `now`
+ * is injectable, defaulting to the current time, so the rule is testable without
+ * freezing the clock.
  */
 export async function getPublicSlots(opts: {
   professionalId: number;
   date: string;
   serviceId: number;
   clinicId?: number;
+  now?: Date;
 }): Promise<PublicSlot[] | null> {
   const resolved = await resolvePublicServiceMapping(
     opts.professionalId,
@@ -262,6 +273,7 @@ export async function getPublicSlots(opts: {
   );
   if (!resolved) return null;
   const { mapping } = resolved;
+  const now = opts.now ?? new Date();
 
   // Which clinic the slots belong to comes from the mapping: a doctor may work at
   // several, and the service they were asked about says which one this is.
@@ -272,7 +284,9 @@ export async function getPublicSlots(opts: {
     Number(mapping.clinicId),
   );
 
-  return slots.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime }));
+  return slots
+    .filter((s) => !isPast(s.date, s.startTime, now))
+    .map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime }));
 }
 
 export interface PublicDaySlots {
