@@ -187,6 +187,176 @@ export async function listServicesForDoctor(opts: {
 }
 
 /* ------------------------------------------------------------------ */
+/* Clinic service listing — the mapping is the resource                */
+/* ------------------------------------------------------------------ */
+/**
+ * `/api/v1/services` treats a mapping row as the resource, not the catalogue: price,
+ * duration, telemed flag and status all live on the mapping, and only the mapping has a
+ * `clinic_id` to scope by.
+ */
+
+export type ClinicServiceRow = {
+  /** The mapping row id — this is the `{id}` in `/api/v1/services/{id}`. */
+  id: bigint;
+  serviceId: bigint;
+  doctorId: bigint;
+  clinicId: bigint;
+  name: string;
+  type: string | null;
+  /** Raw JSON snapshot KiviCare keeps in `wp_kc_services.category`. */
+  category: string | null;
+  charges: string | null;
+  durationMinutes: number | null;
+  telemedService: string | null;
+  isPublic: boolean;
+  isActive: boolean;
+  nameAlias: string | null;
+  createdAt: Date;
+};
+
+export type ListClinicServicesQuery = {
+  page: number;
+  perPage: number;
+  search?: string;
+  clinicId?: bigint;
+  doctorId?: bigint;
+  includeInactive?: boolean;
+};
+
+export type PaginatedClinicServices = {
+  items: ClinicServiceRow[];
+  total: number;
+  page: number;
+  perPage: number;
+};
+
+const MAPPING_SELECT = {
+  id: true,
+  serviceId: true,
+  doctorId: true,
+  clinicId: true,
+  charges: true,
+  duration: true,
+  isPublic: true,
+  status: true,
+  telemedService: true,
+  serviceNameAlias: true,
+  createdAt: true,
+} as const;
+
+type MappingRow = {
+  id: bigint;
+  serviceId: bigint;
+  doctorId: bigint;
+  clinicId: bigint;
+  charges: string | null;
+  duration: number | null;
+  isPublic: number;
+  status: number;
+  telemedService: string | null;
+  serviceNameAlias: string | null;
+  createdAt: Date;
+};
+
+type CatalogueRow = { id: bigint; name: string; type: string | null; category: string | null };
+
+/** Fetch the catalogue rows for a set of mappings, keyed by id-as-string. */
+async function catalogueFor(mappings: MappingRow[]): Promise<Map<string, CatalogueRow>> {
+  if (mappings.length === 0) return new Map();
+  const rows = await prisma.kcService.findMany({
+    where: { id: { in: mappings.map((m) => m.serviceId) } },
+    select: { id: true, name: true, type: true, category: true },
+  });
+  return new Map((rows as CatalogueRow[]).map((r) => [r.id.toString(), r]));
+}
+
+function toClinicService(m: MappingRow, s: CatalogueRow): ClinicServiceRow {
+  return {
+    id: m.id,
+    serviceId: m.serviceId,
+    doctorId: m.doctorId,
+    clinicId: m.clinicId,
+    name: s.name,
+    type: s.type,
+    category: s.category,
+    charges: m.charges,
+    durationMinutes: m.duration ?? null,
+    telemedService: m.telemedService,
+    isPublic: m.isPublic === 1,
+    isActive: m.status === STATUS_ACTIVE,
+    nameAlias: m.serviceNameAlias,
+    createdAt: m.createdAt,
+  };
+}
+
+export async function listClinicServices(
+  query: ListClinicServicesQuery,
+): Promise<PaginatedClinicServices> {
+  const { page, perPage, offset } = paginate(query.page, query.perPage);
+
+  const where: Record<string, unknown> = {};
+  if (!query.includeInactive) where.status = STATUS_ACTIVE;
+  if (query.clinicId !== undefined) where.clinicId = query.clinicId;
+  if (query.doctorId !== undefined) where.doctorId = query.doctorId;
+
+  const search = query.search?.trim();
+  if (search) {
+    // The name lives on the catalogue, which has no Prisma relation to the mapping.
+    // Resolve matching catalogue ids first, then filter the mapping on them.
+    const matches = await prisma.kcService.findMany({
+      where: { name: { contains: search } },
+      select: { id: true },
+    });
+    if (matches.length === 0) return { items: [], total: 0, page, perPage };
+    where.serviceId = { in: matches.map((m) => m.id) };
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.kcServiceDoctorMapping.findMany({
+      where,
+      select: MAPPING_SELECT,
+      orderBy: { id: 'asc' },
+      skip: offset,
+      take: perPage,
+    }),
+    prisma.kcServiceDoctorMapping.count({ where }),
+  ]);
+
+  const mappings = rows as MappingRow[];
+  const byId = await catalogueFor(mappings);
+
+  // `total` deliberately counts mappings, not survivors: it is the count the pagination
+  // arithmetic is built on, and dropping orphans from it would make page sizes lie.
+  return {
+    items: mappings
+      .filter((m) => byId.has(m.serviceId.toString()))
+      .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!)),
+    total,
+    page,
+    perPage,
+  };
+}
+
+/**
+ * One mapping by id, regardless of `status`.
+ *
+ * Soft-deleted rows stay fetchable by id on purpose — `GET /services/{id}` should show
+ * an admin what they just deactivated rather than 404.
+ */
+export async function findMappingById(id: bigint): Promise<ClinicServiceRow | null> {
+  const row = await prisma.kcServiceDoctorMapping.findUnique({
+    where: { id },
+    select: MAPPING_SELECT,
+  });
+  if (!row) return null;
+
+  const mapping = row as MappingRow;
+  const byId = await catalogueFor([mapping]);
+  const service = byId.get(mapping.serviceId.toString());
+  return service ? toClinicService(mapping, service) : null;
+}
+
+/* ------------------------------------------------------------------ */
 /* Writes — doctor↔service assignments                                 */
 /* ------------------------------------------------------------------ */
 /**
