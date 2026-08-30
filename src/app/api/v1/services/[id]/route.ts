@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import type { Actor } from '@/lib/auth';
-import { conflict, forbidden, notFound, validationError } from '@/lib/problem-details';
+import { badRequest, conflict, forbidden, notFound, validationError } from '@/lib/problem-details';
 import {
   scopeForRequest,
   canWrite,
@@ -37,6 +37,12 @@ function toErrorResponse(err: unknown): NextResponse {
         validationError('validation_failed', 'Invalid service data', undefined, err.errors),
         { status: 422 },
       );
+    }
+    // Not reachable from update or delete today, but both are typed to produce it and the
+    // collection route maps it. Without this branch it would fall through to the re-throw
+    // and surface as a 500 — a silent divergence between the two sibling routes.
+    if (err._tag === 'bad_request') {
+      return NextResponse.json(badRequest(err.code, err.message), { status: 400 });
     }
     if (err._tag === 'conflict') {
       const body = conflict(err.code, err.message);

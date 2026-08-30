@@ -2913,7 +2913,7 @@ git commit -m "feat(services): soft-delete an offering, gated on upcoming appoin
 - Test: `tests/integration/services/collection-route.test.ts`
 
 **Interfaces:**
-- Consumes: `listServices`, `createService`, `isServiceCatalogError` (Tasks 6–7); `readScopeFor`, `canWrite` (Task 3); `listServicesQuerySchema`, `createServiceSchema`, `toFieldErrors` (Task 4).
+- Consumes: `listServices`, `createService`, `isServiceCatalogError` (Tasks 6–7); `scopeForRequest`, `canWrite` (Task 3); `listServicesQuerySchema`, `createServiceSchema`, `toFieldErrors` (Task 4).
 - Produces: `GET` and `POST` handlers.
 
 - [ ] **Step 1: Write the failing test**
@@ -3245,7 +3245,7 @@ git commit -m "feat(services): add GET and POST /api/v1/services"
 - Test: `tests/integration/services/item-route.test.ts`
 
 **Interfaces:**
-- Consumes: `getService`, `updateService`, `deleteService`, `isServiceCatalogError` (Tasks 6, 8, 9); `readScopeFor`, `canWrite`, `parseServiceId`, `invalidIdResponse` (Task 3); `updateServiceSchema`, `toFieldErrors` (Task 4).
+- Consumes: `getService`, `updateService`, `deleteService`, `isServiceCatalogError` (Tasks 6, 8, 9); `scopeForRequest`, `canWrite`, `parseServiceId`, `invalidIdResponse` (Task 3); `updateServiceSchema`, `toFieldErrors` (Task 4).
 - Produces: `GET`, `PUT`, `DELETE` handlers.
 
 - [ ] **Step 1: Write the failing test**
@@ -3376,6 +3376,18 @@ describe('PUT /api/v1/services/{id}', () => {
     expect((await PUT(req('PUT', { price: 1 }), ctx('501'))).status).toBe(404);
   });
 
+  it('400s a bad_request tag rather than letting it fall through to a 500', async () => {
+    // Not reachable from updateService today, but the error union permits it and the
+    // collection route maps it. Both sibling routes must agree.
+    svc.updateService.mockRejectedValue({
+      _tag: 'bad_request',
+      code: 'doctors_not_in_clinic',
+      message: 'nope',
+    });
+
+    expect((await PUT(req('PUT', { price: 1 }), ctx('501'))).status).toBe(400);
+  });
+
   it('409s a name collision', async () => {
     svc.updateService.mockRejectedValue({
       _tag: 'conflict',
@@ -3447,7 +3459,7 @@ Create `src/app/api/v1/services/[id]/route.ts`:
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import type { Actor } from '@/lib/auth';
-import { conflict, forbidden, notFound, validationError } from '@/lib/problem-details';
+import { badRequest, conflict, forbidden, notFound, validationError } from '@/lib/problem-details';
 import {
   scopeForRequest,
   canWrite,
@@ -3475,6 +3487,12 @@ function toErrorResponse(err: unknown): NextResponse {
         validationError('validation_failed', 'Invalid service data', undefined, err.errors),
         { status: 422 },
       );
+    }
+    // Not reachable from update or delete today, but both are typed to produce it and the
+    // collection route maps it. Without this branch it would fall through to the re-throw
+    // and surface as a 500 — a silent divergence between the two sibling routes.
+    if (err._tag === 'bad_request') {
+      return NextResponse.json(badRequest(err.code, err.message), { status: 400 });
     }
     if (err._tag === 'conflict') {
       const body = conflict(err.code, err.message);
@@ -3567,7 +3585,7 @@ export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/integration/services/item-route.test.ts`
-Expected: PASS, 14 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 5: Run everything and type-check**
 

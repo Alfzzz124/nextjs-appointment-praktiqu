@@ -121,6 +121,18 @@ describe('PUT /api/v1/services/{id}', () => {
     expect((await PUT(req('PUT', { price: 1 }), ctx('501'))).status).toBe(404);
   });
 
+  it('400s a bad_request tag rather than letting it fall through to a 500', async () => {
+    // Not reachable from updateService today, but the error union permits it and the
+    // collection route maps it. Both sibling routes must agree.
+    svc.updateService.mockRejectedValue({
+      _tag: 'bad_request',
+      code: 'doctors_not_in_clinic',
+      message: 'nope',
+    });
+
+    expect((await PUT(req('PUT', { price: 1 }), ctx('501'))).status).toBe(400);
+  });
+
   it('409s a name collision', async () => {
     svc.updateService.mockRejectedValue({
       _tag: 'conflict',
