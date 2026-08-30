@@ -15,13 +15,21 @@
  * Reads live in `services.repo.ts`.
  */
 import { prisma } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import { APPOINTMENT_STATUS } from './appointments.repo';
 
-/** Fetch the id of the last row this connection inserted. */
-async function lastInsertId(): Promise<bigint> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+/**
+ * Fetch the id of the last row inserted on this same connection.
+ *
+ * `LAST_INSERT_ID()` is per-connection, so this must run on the same `tx` that issued
+ * the INSERT — never on a fresh `prisma.$queryRawUnsafe`, which may check out a
+ * different connection from the pool and return `0` or another request's id.
+ */
+async function lastInsertId(tx: Prisma.TransactionClient): Promise<bigint> {
+  const rows = await tx.$queryRawUnsafe<Array<{ id: bigint | number }>>(
     `SELECT LAST_INSERT_ID() AS id`,
   );
+  if (rows.length === 0) throw new Error('LAST_INSERT_ID() returned no row');
   return BigInt(rows[0].id);
 }
 
@@ -54,16 +62,18 @@ export async function createCatalogue(input: {
   price: string;
   status: 0 | 1;
 }): Promise<bigint> {
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_services (name, type, category, price, status, created_at)
-     VALUES (?, ?, ?, ?, ?, NOW())`,
-    input.name,
-    input.type,
-    input.category,
-    input.price,
-    input.status,
-  );
-  return lastInsertId();
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_services (name, type, category, price, status, created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      input.name,
+      input.type,
+      input.category,
+      input.price,
+      input.status,
+    );
+    return lastInsertId(tx);
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -130,20 +140,22 @@ export async function insertMapping(input: {
   status: 0 | 1;
   isPublic: 0 | 1;
 }): Promise<bigint> {
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_service_doctor_mapping
-       (service_id, doctor_id, clinic_id, charges, duration, telemed_service, status, is_public, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-    input.serviceId,
-    input.doctorId,
-    input.clinicId,
-    input.charges,
-    input.duration,
-    input.telemedService,
-    input.status,
-    input.isPublic,
-  );
-  return lastInsertId();
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_service_doctor_mapping
+         (service_id, doctor_id, clinic_id, charges, duration, telemed_service, status, is_public, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      input.serviceId,
+      input.doctorId,
+      input.clinicId,
+      input.charges,
+      input.duration,
+      input.telemedService,
+      input.status,
+      input.isPublic,
+    );
+    return lastInsertId(tx);
+  });
 }
 
 export type MappingPatch = {
