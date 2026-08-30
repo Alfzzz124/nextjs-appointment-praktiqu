@@ -26,7 +26,7 @@ import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
 import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
 import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service';
-import { buildDaySlots, eachDate } from '@/services/booking/slot-math';
+import { buildDaySlots, eachDate, toMinutes } from '@/services/booking/slot-math';
 
 export interface PublicClinic {
   id: number;
@@ -281,6 +281,42 @@ export interface PublicDaySlots {
 }
 
 /**
+ * Local calendar date as `YYYY-MM-DD`. Never via `toISOString()`, which names the
+ * previous day on any server running ahead of UTC.
+ */
+function localDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`;
+}
+
+/** Minutes past local midnight for an instant, the basis the slot maths uses. */
+function localMinutes(d: Date): number {
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/**
+ * Drop slots that have already started.
+ *
+ * Public only, and deliberately so. A patient is choosing a future appointment, so a
+ * slot whose start has passed is never a valid choice. The authenticated staff path
+ * (`generateSlots`) must NOT do this: a receptionist recording a walk-in that
+ * happened this morning has a legitimate reason to pick a past slot, and hiding
+ * those would silently break that workflow.
+ *
+ * Compared in local clinic time, like everything else here — the slot times are
+ * local wall-clock strings and `now` is read through local getters, so no UTC
+ * conversion enters the arithmetic. A slot is past when its START is at or before
+ * `now`, matching the guard the retired slot generator carried.
+ */
+function isPast(date: string, startTime: string, now: Date): boolean {
+  const today = localDate(now);
+  if (date < today) return true;
+  if (date > today) return false;
+  return toMinutes(startTime) <= localMinutes(now);
+}
+
+/**
  * Bookable slots for one professional and service across a date range.
  *
  * Same rules as `getPublicSlots`, in one pass: five queries for a fortnight
@@ -289,6 +325,9 @@ export interface PublicDaySlots {
  *
  * `null` means no such active professional, or the service is not one they
  * offer publicly — a 404 either way, distinct from "nothing free" (`slots: []`).
+ *
+ * `now` is injectable so the past-slot rule can be tested without freezing the
+ * clock; it defaults to the current time.
  */
 export async function getPublicSlotsForRange(opts: {
   professionalId: number;
@@ -296,6 +335,7 @@ export async function getPublicSlotsForRange(opts: {
   from: string;
   to: string;
   clinicId?: number;
+  now?: Date;
 }): Promise<PublicDaySlots[] | null> {
   const resolved = await resolvePublicServiceMapping(
     opts.professionalId,
@@ -307,6 +347,7 @@ export async function getPublicSlotsForRange(opts: {
 
   const doctorId = BigInt(opts.professionalId);
   const clinicId = BigInt(mapping.clinicId);
+  const now = opts.now ?? new Date();
 
   const [sessions, blockedByDate] = await Promise.all([
     listClinicSessions({ clinicId, doctorId }),
@@ -338,7 +379,9 @@ export async function getPublicSlotsForRange(opts: {
 
     return {
       date,
-      slots: slots.map((s) => ({ date, startTime: s.startTime, endTime: s.endTime })),
+      slots: slots
+        .filter((s) => !isPast(date, s.startTime, now))
+        .map((s) => ({ date, startTime: s.startTime, endTime: s.endTime })),
     };
   });
 }

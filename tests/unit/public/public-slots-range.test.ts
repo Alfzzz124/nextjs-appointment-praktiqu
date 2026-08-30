@@ -59,6 +59,13 @@ const SERVICE_ID = 3;
 const MONDAY = '2026-08-31';
 const TUESDAY = '2026-09-01';
 
+/**
+ * Every call passes an explicit `now`. The reader hides slots that have already
+ * started, so without one these dates would silently start emptying themselves the
+ * moment the wall clock passed them.
+ */
+const MONDAY_MIDNIGHT = new Date('2026-08-31T00:00:00');
+
 function happyPath() {
   (doctors.findDoctorById as any).mockResolvedValue({ id: 7n, status: 1 });
   (services.listServicesForDoctor as any).mockResolvedValue([
@@ -81,6 +88,7 @@ describe('getPublicSlotsForRange', () => {
   it('returns one entry per day in the range, inclusive', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: TUESDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.map((d) => d.date)).toEqual([MONDAY, TUESDAY]);
   });
@@ -88,6 +96,7 @@ describe('getPublicSlotsForRange', () => {
   it('uses the service duration, not the window slot size', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual([
       '09:00:00', '10:00:00', '11:00:00',
@@ -97,6 +106,7 @@ describe('getPublicSlotsForRange', () => {
   it('leaves a day with no matching session empty', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: TUESDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.[1].slots).toEqual([]);
   });
@@ -107,6 +117,7 @@ describe('getPublicSlotsForRange', () => {
     });
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['09:00:00', '11:00:00']);
   });
@@ -117,6 +128,7 @@ describe('getPublicSlotsForRange', () => {
     });
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: TUESDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.[0].slots).toHaveLength(3);
   });
@@ -126,6 +138,7 @@ describe('getPublicSlotsForRange', () => {
     (offDays.isOffOn as any).mockReturnValue(true);
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.[0].slots).toEqual([]);
   });
@@ -137,6 +150,7 @@ describe('getPublicSlotsForRange', () => {
     (offDays.isOffOn as any).mockReturnValue(true);
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['09:00:00', '11:00:00']);
   });
@@ -145,6 +159,7 @@ describe('getPublicSlotsForRange', () => {
     (doctors.findDoctorById as any).mockResolvedValue({ id: 7n, status: 0 });
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days).toBeNull();
   });
@@ -153,6 +168,7 @@ describe('getPublicSlotsForRange', () => {
     (services.listServicesForDoctor as any).mockResolvedValue([]);
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect(days).toBeNull();
   });
@@ -160,6 +176,7 @@ describe('getPublicSlotsForRange', () => {
   it('queries the repositories once for the whole range, not once per day', async () => {
     await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: '2026-09-13',
+      now: MONDAY_MIDNIGHT,
     });
     expect((appts.listAppointments as any).mock.calls).toHaveLength(1);
     expect((sessions.listClinicSessions as any).mock.calls).toHaveLength(1);
@@ -169,10 +186,76 @@ describe('getPublicSlotsForRange', () => {
   it('asks for public services only', async () => {
     await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
     });
     expect((services.listServicesForDoctor as any).mock.calls[0][0]).toMatchObject({
       publicOnly: true,
     });
+  });
+});
+
+describe('getPublicSlotsForRange — slots already past', () => {
+  /**
+   * A patient is choosing a future appointment, so a slot whose start has gone by is
+   * never a valid choice. (The staff reader deliberately keeps them: a receptionist
+   * recording this morning's walk-in has to be able to select one.)
+   */
+  it('hides the slots of today that have already started', async () => {
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: new Date('2026-08-31T10:15:00'),
+    });
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['11:00:00']);
+  });
+
+  it('treats a slot starting exactly now as past', async () => {
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: new Date('2026-08-31T10:00:00'),
+    });
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['11:00:00']);
+  });
+
+  it('keeps a slot that has not started yet', async () => {
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: new Date('2026-08-31T08:59:00'),
+    });
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual([
+      '09:00:00', '10:00:00', '11:00:00',
+    ]);
+  });
+
+  it('empties a day that is wholly in the past, without closing later days', async () => {
+    (sessions.listClinicSessions as any).mockResolvedValue([
+      { day: 'mon', startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 30 },
+      { day: 'tue', startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 30 },
+    ]);
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: TUESDAY,
+      now: new Date('2026-09-01T07:00:00'),
+    });
+    expect(days?.[0].slots).toEqual([]);
+    expect(days?.[1].slots).toHaveLength(3);
+  });
+
+  it('compares against local clinic time, not UTC', async () => {
+    // 23:30 local on the Monday. Read as UTC on a server ahead of UTC this instant
+    // belongs to the Tuesday, which would leave the whole Monday on offer.
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: new Date('2026-08-31T23:30:00'),
+    });
+    expect(days?.[0].slots).toEqual([]);
+  });
+
+  it('defaults to the current time when no now is given', async () => {
+    // 2020-08-31 is also a Monday, so the session matches and the only thing that can
+    // empty the day is the default clock being later than 2020.
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: '2020-08-31', to: '2020-08-31',
+    });
+    expect(days?.[0].slots).toEqual([]);
   });
 });
 
