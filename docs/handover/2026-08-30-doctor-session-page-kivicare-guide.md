@@ -421,7 +421,9 @@ POST /api/v1/professional-sessions/bulk/delete
 
 ## Bagian 7 — Status back-end
 
-Semua yang dibutuhkan halaman ini **sudah ada di `main`** per 31 Agustus 2026:
+Semua yang dibutuhkan halaman ini **sudah ada di `main` dan sudah live di
+`staging2.praktiqu.com`** per 31 Agustus 2026 — sudah diuji langsung di sana terhadap data
+asli (45 jadwal terbaca, istirahat terekonstruksi benar pada jadwal yang dibuat KiviCare):
 
 - `GET /professional-sessions/grouped`, `GET|PUT|DELETE /professional-sessions/week` — baru.
 - Resource-nya dipindah dari `/doctor-sessions` ke `/professional-sessions`; path lama
@@ -440,6 +442,20 @@ skema `DoctorSessionWeek`, `DoctorSessionWeekSave`, dan `DoctorSessionGroup`.
 
 Kalau ada yang terasa kurang saat implementasi, bilang — jangan diakali dari sisi
 front-end.
+
+### Dua keanehan data yang mungkin kamu temui
+
+Keduanya sudah kami ketahui dan sedang diputuskan penanganannya — kalau ketemu, tidak perlu
+dilaporkan sebagai bug:
+
+1. **Satu baris tanpa nama di list.** Ada jadwal lama dengan `doctor_id = 0` (user yang
+   tidak ada) berisi 35 baris di clinic 4. Belum difilter, jadi masih muncul sebagai satu
+   baris kosong. Tampilkan apa adanya dulu; kami yang akan membereskan di sisi data atau
+   query.
+2. **Satu jadwal menolak disimpan tanpa diubah.** `doctor 249` di clinic 25 hari Sabtu
+   memakai celah 5 menit antar sesi sebagai buffer, dan aturan "istirahat minimal 15 menit"
+   menolaknya. Kemungkinan besar minimum itu akan kami turunkan ke 5 menit — kalau berubah,
+   angka di Bagian 3 ikut kami perbarui dan kami kabari.
 
 ---
 
