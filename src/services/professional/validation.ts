@@ -64,14 +64,36 @@ export const professionalStatusEnum = z.enum([
 // Availability Window
 // ============================================
 
+/**
+ * One stretch of a day the professional works.
+ *
+ * The shape mirrors what `GET` returns and what `setWeeklySchedule` consumes: a KiviCare
+ * day slug and wall-clock times, not a numeric weekday and minute offsets. The two used
+ * to disagree — the route validated `{dayOfWeek, startMinute, endMinute}` and then handed
+ * it to a service reading `{day, startTime, endTime}`, so every request 422'd whichever
+ * shape it sent.
+ */
+const AVAILABILITY_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+
 export const availabilityWindowSchema = z.object({
-  dayOfWeek: z.number().int().min(0).max(6),
-  startMinute: z.number().int().min(0).max(1439),
-  endMinute: z.number().int().min(0).max(1439),
-}).refine(
-  (data) => data.endMinute > data.startMinute,
-  { message: 'endMinute must be greater than startMinute' },
-);
+  day: z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
+  startTime: z.string().regex(AVAILABILITY_TIME_RE, 'startTime must be HH:MM or HH:MM:SS'),
+  endTime: z.string().regex(AVAILABILITY_TIME_RE, 'endTime must be HH:MM or HH:MM:SS'),
+  slotDurationMinutes: z.coerce.number().int().min(1).max(240).default(30),
+})
+  // The `TIME` column and the service both speak HH:MM:SS; a form sends HH:MM.
+  .transform((w) => ({ ...w, startTime: withSeconds(w.startTime), endTime: withSeconds(w.endTime) }))
+  .refine(
+    (data) => toMinutesOfDay(data.endTime) > toMinutesOfDay(data.startTime),
+    { message: 'endTime must be after startTime' },
+  );
+
+function withSeconds(t: string): string { return t.length === 5 ? `${t}:00` : t; }
+
+function toMinutesOfDay(t: string): number {
+  const [h, m] = t.split(':');
+  return Number(h) * 60 + Number(m);
+}
 
 export const setAvailabilityInputSchema = z.object({
   schedule: z.array(availabilityWindowSchema).min(1, 'At least one availability window is required'),

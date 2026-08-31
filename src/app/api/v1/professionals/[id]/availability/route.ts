@@ -13,6 +13,7 @@ import {
   getWeeklySchedule,
   setWeeklySchedule,
   isAvailabilityError,
+  type AvailabilityWindow,
 } from '@/services/professional/availability.service';
 import { setAvailabilityInputSchema } from '@/services/professional/validation';
 import type { Actor } from '@/lib/auth';
@@ -97,7 +98,7 @@ export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   }
 
   try {
-    await setWeeklySchedule(id, clinicId, parsed.data.schedule as never);
+    await setWeeklySchedule(id, clinicId, parsed.data.schedule as AvailabilityWindow[]);
     const schedule = await getWeeklySchedule(id, clinicId);
     return NextResponse.json({ professionalId: id, clinicId, schedule });
   } catch (err) {

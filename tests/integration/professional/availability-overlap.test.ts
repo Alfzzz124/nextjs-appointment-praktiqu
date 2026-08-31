@@ -1,98 +1,111 @@
 /**
- * Integration tests for professional availability overlap (FR-015).
- * T039b: overlapping window rejection
+ * The contract of PUT /api/v1/professionals/:id/availability.
+ *
+ * These used to assert a payload of `{dayOfWeek, startMinute, endMinute}` — the shape the
+ * route's zod schema accepted. The service behind that route reads `{day, startTime,
+ * endTime, slotDurationMinutes}`, so every request that satisfied the schema was rejected
+ * one layer down and the endpoint could never succeed. The tests missed it by checking the
+ * schema in isolation and never calling the service, so they now go all the way through.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setAvailabilityInputSchema } from '@/services/professional/validation';
+import { getWeeklySchedule, setWeeklySchedule } from '@/services/professional/availability.service';
+import { assertTestDb, cleanup, seedClinicAdmin } from '../../billing/fixtures';
 
-describe('Availability Overlap Integration (FR-015)', () => {
-  it('should reject two overlapping windows on Monday', () => {
-    const payload = {
-      schedule: [
-        { dayOfWeek: 1, startMinute: 540, endMinute: 720 },  // Mon 09:00-12:00
-        { dayOfWeek: 1, startMinute: 660, endMinute: 780 },  // Mon 11:00-13:00 (overlaps!)
-      ],
-    };
+const CLINIC = 9_000_301, ADMIN = 9_000_302, DOCTOR = 9_000_310;
 
-    const result = setAvailabilityInputSchema.safeParse(payload);
-    // Note: Zod schema doesn't check overlap; the service layer does (FR-015)
-    expect(result.success).toBe(true); // passes Zod but service will reject
-  });
+const window = (over: Record<string, unknown> = {}) => ({
+  day: 'mon', startTime: '09:00', endTime: '12:00', slotDurationMinutes: 30, ...over,
+});
 
-  it('should accept non-overlapping windows on same day', () => {
-    const payload = {
-      schedule: [
-        { dayOfWeek: 1, startMinute: 540, endMinute: 600 },  // Mon 09:00-10:00
-        { dayOfWeek: 1, startMinute: 600, endMinute: 660 },  // Mon 10:00-11:00 (adjacent)
-      ],
-    };
-
-    const result = setAvailabilityInputSchema.safeParse(payload);
+describe('availability payload validation', () => {
+  it('accepts the shape the service consumes, and pads HH:MM to HH:MM:SS', () => {
+    const result = setAvailabilityInputSchema.safeParse({ schedule: [window()] });
     expect(result.success).toBe(true);
+    expect(result.success && result.data.schedule[0]).toEqual({
+      day: 'mon', startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 30,
+    });
   });
 
-  it('should accept windows on different days', () => {
-    const payload = {
-      schedule: [
-        { dayOfWeek: 1, startMinute: 540, endMinute: 720 },  // Mon 09:00-12:00
-        { dayOfWeek: 3, startMinute: 540, endMinute: 720 },  // Wed 09:00-12:00
-        { dayOfWeek: 5, startMinute: 540, endMinute: 720 },  // Fri 09:00-12:00
-      ],
-    };
-
-    const result = setAvailabilityInputSchema.safeParse(payload);
-    expect(result.success).toBe(true);
+  it('leaves an HH:MM:SS payload alone', () => {
+    const result = setAvailabilityInputSchema.safeParse({
+      schedule: [window({ startTime: '09:00:00', endTime: '12:00:00' })],
+    });
+    expect(result.success && result.data.schedule[0].startTime).toBe('09:00:00');
   });
 
-  it('should reject endMinute before startMinute', () => {
-    const payload = {
-      schedule: [
-        { dayOfWeek: 1, startMinute: 720, endMinute: 540 },  // end before start!
-      ],
-    };
+  it('defaults the slot duration when the client omits it', () => {
+    const { slotDurationMinutes, ...noSlot } = window();
+    const result = setAvailabilityInputSchema.safeParse({ schedule: [noSlot] });
+    expect(result.success && result.data.schedule[0].slotDurationMinutes).toBe(30);
+  });
 
-    const result = setAvailabilityInputSchema.safeParse(payload);
+  it('rejects the old numeric shape, which no layer accepts', () => {
+    const result = setAvailabilityInputSchema.safeParse({
+      schedule: [{ dayOfWeek: 1, startMinute: 540, endMinute: 720 }],
+    });
     expect(result.success).toBe(false);
   });
 
-  it('should reject empty schedule', () => {
-    const payload = { schedule: [] };
-
-    const result = setAvailabilityInputSchema.safeParse(payload);
-    expect(result.success).toBe(false);
+  it('rejects an end at or before the start', () => {
+    expect(setAvailabilityInputSchema.safeParse({
+      schedule: [window({ startTime: '12:00', endTime: '09:00' })],
+    }).success).toBe(false);
+    expect(setAvailabilityInputSchema.safeParse({
+      schedule: [window({ startTime: '09:00', endTime: '09:00' })],
+    }).success).toBe(false);
   });
 
-  it('should accept single window', () => {
-    const payload = {
-      schedule: [
-        { dayOfWeek: 1, startMinute: 540, endMinute: 720 },
-      ],
-    };
-
-    const result = setAvailabilityInputSchema.safeParse(payload);
-    expect(result.success).toBe(true);
+  it('rejects an unknown day and a malformed time', () => {
+    expect(setAvailabilityInputSchema.safeParse({ schedule: [window({ day: 'monday' })] }).success).toBe(false);
+    expect(setAvailabilityInputSchema.safeParse({ schedule: [window({ startTime: '9am' })] }).success).toBe(false);
   });
 
-  it('should validate dayOfWeek range (0-6)', () => {
-    const invalidPayload = {
-      schedule: [
-        { dayOfWeek: 7, startMinute: 540, endMinute: 720 }, // 7 is out of range
-      ],
-    };
+  it('rejects an empty schedule', () => {
+    expect(setAvailabilityInputSchema.safeParse({ schedule: [] }).success).toBe(false);
+  });
+});
 
-    const result = setAvailabilityInputSchema.safeParse(invalidPayload);
-    expect(result.success).toBe(false);
+describe('availability service (FR-015)', () => {
+  beforeAll(async () => {
+    assertTestDb();
+    await cleanup();
+    await seedClinicAdmin({ userId: ADMIN, clinicId: CLINIC });
+  });
+  afterAll(cleanup);
+
+  it('stores what the route validated — schema output feeds the service unchanged', async () => {
+    const parsed = setAvailabilityInputSchema.safeParse({
+      schedule: [
+        window({ day: 'mon', startTime: '09:00', endTime: '12:00' }),
+        window({ day: 'mon', startTime: '13:00', endTime: '17:00' }),
+        window({ day: 'wed', startTime: '08:00', endTime: '11:00', slotDurationMinutes: 45 }),
+      ],
+    });
+    expect(parsed.success).toBe(true);
+
+    await setWeeklySchedule(DOCTOR, CLINIC, (parsed as any).data.schedule);
+
+    const week = await getWeeklySchedule(DOCTOR, CLINIC);
+    expect(week.mon.map((w) => `${w.startTime}-${w.endTime}`)).toEqual([
+      '09:00:00-12:00:00', '13:00:00-17:00:00',
+    ]);
+    expect(week.wed[0].slotDurationMinutes).toBe(45);
+    expect(week.tue).toEqual([]);
   });
 
-  it('should validate minutes range (0-1439)', () => {
-    const invalidPayload = {
-      schedule: [
-        { dayOfWeek: 1, startMinute: 1500, endMinute: 720 }, // 1500 > 1439
-      ],
-    };
+  it('rejects two windows that cover the same minute', async () => {
+    await expect(setWeeklySchedule(DOCTOR, CLINIC, [
+      window({ startTime: '09:00:00', endTime: '12:00:00' }),
+      window({ startTime: '11:00:00', endTime: '13:00:00' }),
+    ] as any)).rejects.toMatchObject({ _tag: 'conflict' });
+  });
 
-    const result = setAvailabilityInputSchema.safeParse(invalidPayload);
-    expect(result.success).toBe(false);
+  it('accepts adjacent windows on the same day', async () => {
+    await expect(setWeeklySchedule(DOCTOR, CLINIC, [
+      window({ startTime: '09:00:00', endTime: '10:00:00' }),
+      window({ startTime: '10:00:00', endTime: '11:00:00' }),
+    ] as any)).resolves.toBeDefined();
   });
 });
