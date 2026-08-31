@@ -263,6 +263,61 @@ export const doctorSessionUpdateSchema = z.object({
   timeSlot: z.coerce.number().int().min(1).max(240).optional(),
 }).strict();
 
+/* ---------------------------------------------------------------- */
+/* Weekly schedule — the shape the scheduling UI actually edits       */
+/*                                                                    */
+/* One screen edits a whole week for one (doctor × clinic), the way   */
+/* KiviCare's own dashboard does. A day with a break is stored as two */
+/* rows and the break is the gap between them, so the payload carries */
+/* the user's mental model (one session + N breaks) and the service   */
+/* does the splitting.                                                */
+/* ---------------------------------------------------------------- */
+
+const timeRangeSchema = z.object({
+  start: z.string().regex(TIME_RE),
+  end: z.string().regex(TIME_RE),
+});
+
+export const doctorSessionWeekQuerySchema = z.object({
+  doctorId: z.coerce.number().int(),
+  clinicId: z.coerce.number().int().optional(),   // derived from actor for non-super
+});
+
+export const doctorSessionWeekSaveSchema = z.object({
+  clinicId: z.coerce.number().int().optional(),
+  doctorId: z.coerce.number().int(),
+  timeSlot: z.coerce.number().int().min(1).max(240).default(30),
+  days: z.array(z.object({
+    day: z.enum(DAY_ENUM),
+    enabled: z.coerce.boolean().default(false),
+    /** Required when `enabled`; the service reports the missing day by name. */
+    mainSession: timeRangeSchema.nullish(),
+    breaks: z.array(timeRangeSchema).max(12).default([]),
+  })).min(1).max(7),
+});
+
+export const doctorSessionGroupListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.union([z.coerce.number().int().min(1).max(100), z.literal('all')]).default(10),
+  clinicId: z.coerce.number().int().optional(),
+  doctorId: z.coerce.number().int().optional(),
+  search: z.string().max(200).optional(),
+  orderBy: z.enum(['doctor_name', 'clinic_name', 'time_slot']).default('doctor_name'),
+  order: z.enum(['asc', 'desc']).default('asc'),
+});
+
+/** Bulk delete accepts either raw row ids or whole (doctor × clinic) schedules. */
+export const doctorSessionBulkDeleteSchema = z.object({
+  ids: z.array(z.coerce.number().int()).max(100).optional(),
+  groups: z.array(z.object({
+    doctorId: z.coerce.number().int(),
+    clinicId: z.coerce.number().int(),
+  })).max(100).optional(),
+}).refine(
+  (v) => (v.ids?.length ?? 0) > 0 || (v.groups?.length ?? 0) > 0,
+  { message: 'Provide ids or groups' },
+);
+
 export const SCHEDULE_MODULE = ['clinic', 'doctor'] as const;
 export const SCHEDULE_SELECTION = ['single', 'range', 'multiple'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

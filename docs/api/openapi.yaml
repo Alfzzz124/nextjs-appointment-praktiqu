@@ -45,7 +45,7 @@ tags:
     description: Custom Fields endpoints (9 operations)
   - name: dashboard
     description: Dashboard endpoints (5 operations)
-  - name: doctor-sessions
+  - name: professional-sessions
     description: Doctor Sessions endpoints (8 operations)
   - name: email-templates
     description: Email Templates endpoints (6 operations)
@@ -3277,13 +3277,18 @@ paths:
   /api/v1/doctor-sessions:
     get:
       tags:
-        - doctor-sessions
-      summary: List doctor sessions
-      operationId: get_api_v1_doctor_sessions
-      description: |-
+        - professional-sessions
+      summary: List schedules
+      operationId: get_api_v1_professional_sessions_alias
+      description: >-
         **Capability:** `doctor_session_read`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       responses:
         '200':
           description: Success
@@ -3297,15 +3302,21 @@ paths:
           $ref: '#/components/responses/Forbidden'
       security:
         - bearerAuth: []
+      deprecated: true
     post:
       tags:
-        - doctor-sessions
-      summary: Create doctor sessions
-      operationId: post_api_v1_doctor_sessions
-      description: |-
+        - professional-sessions
+      summary: Create schedules
+      operationId: post_api_v1_professional_sessions_alias
+      description: >-
         **Capability:** `doctor_session_manage`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       requestBody:
         required: true
         content:
@@ -3327,6 +3338,7 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+      deprecated: true
   /api/v1/doctor-sessions/{id}:
     parameters:
       - name: id
@@ -3336,13 +3348,18 @@ paths:
           type: string
     delete:
       tags:
-        - doctor-sessions
-      summary: Delete doctor sessions by id
-      operationId: delete_api_v1_doctor_sessions_id
-      description: |-
+        - professional-sessions
+      summary: Delete schedules by id
+      operationId: delete_api_v1_professional_sessions_id_alias
+      description: >-
         **Capability:** `doctor_session_manage`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       responses:
         '200':
           description: Success
@@ -3358,15 +3375,21 @@ paths:
           $ref: '#/components/responses/NotFound'
       security:
         - bearerAuth: []
+      deprecated: true
     get:
       tags:
-        - doctor-sessions
-      summary: Get doctor sessions by id
-      operationId: get_api_v1_doctor_sessions_id
-      description: |-
+        - professional-sessions
+      summary: Get schedules by id
+      operationId: get_api_v1_professional_sessions_id_alias
+      description: >-
         **Capability:** `doctor_session_read`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       responses:
         '200':
           description: Success
@@ -3382,15 +3405,21 @@ paths:
           $ref: '#/components/responses/NotFound'
       security:
         - bearerAuth: []
+      deprecated: true
     put:
       tags:
-        - doctor-sessions
-      summary: Update doctor sessions by id
-      operationId: put_api_v1_doctor_sessions_id
-      description: |-
+        - professional-sessions
+      summary: Update schedules by id
+      operationId: put_api_v1_professional_sessions_id_alias
+      description: >-
         **Capability:** `doctor_session_manage`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       requestBody:
         required: true
         content:
@@ -3414,16 +3443,22 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+      deprecated: true
   /api/v1/doctor-sessions/bulk/delete:
     post:
       tags:
-        - doctor-sessions
-      summary: Delete (POST) — doctor sessions
-      operationId: post_api_v1_doctor_sessions_bulk_delete
-      description: |-
+        - professional-sessions
+      summary: Delete (POST) — schedules
+      operationId: post_api_v1_professional_sessions_bulk_delete_alias
+      description: >-
         **Capability:** `doctor_session_manage`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       requestBody:
         required: true
         content:
@@ -3454,16 +3489,22 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+      deprecated: true
   /api/v1/doctor-sessions/export:
     get:
       tags:
-        - doctor-sessions
-      summary: Export (GET) — doctor sessions
-      operationId: get_api_v1_doctor_sessions_export
-      description: |-
+        - professional-sessions
+      summary: Export (GET) — schedules
+      operationId: get_api_v1_professional_sessions_export_alias
+      description: >-
         **Capability:** `doctor_session_read`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       responses:
         '200':
           description: Success
@@ -3477,16 +3518,111 @@ paths:
           $ref: '#/components/responses/Forbidden'
       security:
         - bearerAuth: []
+      deprecated: true
+  /api/v1/doctor-sessions/grouped:
+    get:
+      tags:
+        - professional-sessions
+      summary: List schedules, one row per doctor and clinic
+      operationId: get_api_v1_professional_sessions_grouped_alias
+      description: >-
+        The shape the scheduling list screen renders: a doctor working Monday and Tuesday
+
+        with a lunch break is four stored rows but one line here. Rows of 00:00:00-00:00:00
+
+        (legacy KiviCare junk) are excluded.
+
+
+        **Capability:** `doctor_session_read`
+
+
+        **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: clinicId
+          in: query
+          schema:
+            type: integer
+        - name: doctorId
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: Matches doctor display name or clinic name.
+          schema:
+            type: string
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+            enum:
+              - doctor_name
+              - clinic_name
+              - time_slot
+            default: doctor_name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+      responses:
+        '200':
+          description: Grouped schedules
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/KcEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessions:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DoctorSessionGroup'
+                          pagination:
+                            type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      deprecated: true
   /api/v1/doctor-sessions/module:
     get:
       tags:
-        - doctor-sessions
-      summary: Module (GET) — doctor sessions
-      operationId: get_api_v1_doctor_sessions_module
-      description: |-
+        - professional-sessions
+      summary: Module (GET) — schedules
+      operationId: get_api_v1_professional_sessions_module_alias
+      description: >-
         **Capability:** `doctor_session_read`
 
+
         **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
       responses:
         '200':
           description: Success
@@ -3500,6 +3636,155 @@ paths:
           $ref: '#/components/responses/Forbidden'
       security:
         - bearerAuth: []
+      deprecated: true
+  /api/v1/doctor-sessions/week:
+    get:
+      tags:
+        - professional-sessions
+      summary: Read one doctor's week at one clinic
+      operationId: get_api_v1_professional_sessions_week_alias
+      description: >-
+        Returns all seven days, each either disabled or carrying a session and its breaks.
+
+        A doctor with no schedule yet is not an error - the "add" form asks for exactly
+
+        this and gets seven disabled days.
+
+
+        `clinicId` is required for a SUPER_ADMIN and derived from the actor for everyone
+
+        else.
+
+
+        **Capability:** `doctor_session_read`
+
+
+        **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
+      parameters:
+        - name: doctorId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: clinicId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The week, in the shape the form binds to
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/KcEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DoctorSessionWeek'
+        '400':
+          description: doctorId or clinicId missing
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      deprecated: true
+    put:
+      tags:
+        - professional-sessions
+      summary: Replace one doctor's whole week at one clinic
+      operationId: put_api_v1_professional_sessions_week_alias
+      description: >-
+        Replaces every stored row for that (doctor, clinic) in one transaction: what the
+
+        screen submits *is* the schedule, so a day left out is a day removed.
+
+
+        A day with breaks is stored as several rows with the breaks as the gaps between
+
+        them; the service does that split. Rules enforced here match the ones the form
+
+        shows: at least one enabled day, session at least 30 minutes, break at least 15
+
+        minutes, breaks inside the session and not overlapping each other. A violation is
+
+        a `400` whose `message` is the sentence to show the user.
+
+
+        **Capability:** `doctor_session_manage`
+
+
+        **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorSessionWeekSave'
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '400':
+          description: A validation rule failed; `message` is user-facing
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      deprecated: true
+    delete:
+      tags:
+        - professional-sessions
+      summary: Delete one doctor's whole schedule at one clinic
+      operationId: delete_api_v1_professional_sessions_week_alias
+      description: >-
+        **Capability:** `doctor_session_manage`
+
+
+        **Response envelope:** KC `{status,message,data}`
+
+
+        **Deprecated.** Use the same operation under `/api/v1/professional-sessions`. This path is an alias
+        kept for existing integrations and will be removed.
+      parameters:
+        - name: doctorId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: clinicId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      deprecated: true
   /api/v1/email-templates:
     get:
       tags:
@@ -7207,6 +7492,430 @@ paths:
       responses:
         '200':
           description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions:
+    get:
+      tags:
+        - professional-sessions
+      summary: List schedules
+      operationId: get_api_v1_professional_sessions
+      description: |-
+        **Capability:** `doctor_session_read`
+
+        **Response envelope:** KC `{status,message,data}`
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+    post:
+      tags:
+        - professional-sessions
+      summary: Create schedules
+      operationId: post_api_v1_professional_sessions
+      description: |-
+        **Capability:** `doctor_session_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      tags:
+        - professional-sessions
+      summary: Delete schedules by id
+      operationId: delete_api_v1_professional_sessions_id
+      description: |-
+        **Capability:** `doctor_session_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+    get:
+      tags:
+        - professional-sessions
+      summary: Get schedules by id
+      operationId: get_api_v1_professional_sessions_id
+      description: |-
+        **Capability:** `doctor_session_read`
+
+        **Response envelope:** KC `{status,message,data}`
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+    put:
+      tags:
+        - professional-sessions
+      summary: Update schedules by id
+      operationId: put_api_v1_professional_sessions_id
+      description: |-
+        **Capability:** `doctor_session_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions/bulk/delete:
+    post:
+      tags:
+        - professional-sessions
+      summary: Delete (POST) — schedules
+      operationId: post_api_v1_professional_sessions_bulk_delete
+      description: |-
+        **Capability:** `doctor_session_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                  maxItems: 100
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions/export:
+    get:
+      tags:
+        - professional-sessions
+      summary: Export (GET) — schedules
+      operationId: get_api_v1_professional_sessions_export
+      description: |-
+        **Capability:** `doctor_session_read`
+
+        **Response envelope:** KC `{status,message,data}`
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions/grouped:
+    get:
+      tags:
+        - professional-sessions
+      summary: List schedules, one row per professional and clinic
+      operationId: get_api_v1_professional_sessions_grouped
+      description: |-
+        The shape the scheduling list screen renders: a professional working Monday and Tuesday
+        with a lunch break is four stored rows but one line here. Rows of 00:00:00-00:00:00
+        (legacy KiviCare junk) are excluded.
+
+        **Capability:** `doctor_session_read`
+
+        **Response envelope:** KC `{status,message,data}`
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: clinicId
+          in: query
+          schema:
+            type: integer
+        - name: doctorId
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: Matches doctor display name or clinic name.
+          schema:
+            type: string
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+            enum:
+              - doctor_name
+              - clinic_name
+              - time_slot
+            default: doctor_name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+      responses:
+        '200':
+          description: Grouped schedules
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/KcEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessions:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DoctorSessionGroup'
+                          pagination:
+                            type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions/module:
+    get:
+      tags:
+        - professional-sessions
+      summary: Module (GET) — schedules
+      operationId: get_api_v1_professional_sessions_module
+      description: |-
+        **Capability:** `doctor_session_read`
+
+        **Response envelope:** KC `{status,message,data}`
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/v1/professional-sessions/week:
+    get:
+      tags:
+        - professional-sessions
+      summary: Read one professional's week at one clinic
+      operationId: get_api_v1_professional_sessions_week
+      description: |-
+        Returns all seven days, each either disabled or carrying a session and its breaks.
+        A professional with no schedule yet is not an error - the "add" form asks for exactly
+        this and gets seven disabled days.
+
+        `clinicId` is required for a SUPER_ADMIN and derived from the actor for everyone
+        else.
+
+        **Capability:** `doctor_session_read`
+
+        **Response envelope:** KC `{status,message,data}`
+      parameters:
+        - name: doctorId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: clinicId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The week, in the shape the form binds to
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/KcEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DoctorSessionWeek'
+        '400':
+          description: doctorId or clinicId missing
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+    put:
+      tags:
+        - professional-sessions
+      summary: Replace one professional's whole week at one clinic
+      operationId: put_api_v1_professional_sessions_week
+      description: |-
+        Replaces every stored row for that (professional, clinic) in one transaction: what the
+        screen submits *is* the schedule, so a day left out is a day removed.
+
+        A day with breaks is stored as several rows with the breaks as the gaps between
+        them; the service does that split. Rules enforced here match the ones the form
+        shows: at least one enabled day, session at least 30 minutes, break at least 15
+        minutes, breaks inside the session and not overlapping each other. A violation is
+        a `400` whose `message` is the sentence to show the user.
+
+        **Capability:** `doctor_session_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorSessionWeekSave'
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KcEnvelope'
+        '400':
+          description: A validation rule failed; `message` is user-facing
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+    delete:
+      tags:
+        - professional-sessions
+      summary: Delete one professional's whole schedule at one clinic
+      operationId: delete_api_v1_professional_sessions_week
+      description: |-
+        **Capability:** `doctor_session_manage`
+
+        **Response envelope:** KC `{status,message,data}`
+      parameters:
+        - name: doctorId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: clinicId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Removed
           content:
             application/json:
               schema:
@@ -11782,6 +12491,154 @@ components:
       name: X-PraktiQU-Webhook-Signature
       description: HMAC signature of the raw request body, verified by verifyPaymentWebhookSignature. Not a bearer JWT.
   schemas:
+    DoctorSessionGroup:
+      type: object
+      description: One doctor's schedule at one clinic, as the list screen shows it.
+      properties:
+        id:
+          type: integer
+          description: An addressable row of the group; the group itself is keyed by doctor_id + clinic_id.
+        doctor_id:
+          type: integer
+        clinic_id:
+          type: integer
+        doctor_name:
+          type: string
+          nullable: true
+        doctor_email:
+          type: string
+          nullable: true
+        clinic_name:
+          type: string
+          nullable: true
+        clinic_email:
+          type: string
+          nullable: true
+        days:
+          type: array
+          description: Days worked, in week order.
+          items:
+            type: string
+            enum:
+              - mon
+              - tue
+              - wed
+              - thu
+              - fri
+              - sat
+              - sun
+        time_slot:
+          type: integer
+          nullable: true
+          description: Appointment length in minutes.
+        window_count:
+          type: integer
+          description: Stored rows behind this line - more than one per day when the day has breaks.
+    DoctorSessionTimeRange:
+      type: object
+      properties:
+        start:
+          type: string
+          example: '09:00'
+        end:
+          type: string
+          example: '17:00'
+      required:
+        - start
+        - end
+    DoctorSessionWeekDay:
+      type: object
+      properties:
+        day:
+          type: string
+          enum:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
+        enabled:
+          type: boolean
+        mainSession:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DoctorSessionTimeRange'
+        breaks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DoctorSessionTimeRange'
+    DoctorSessionWeek:
+      type: object
+      description: A doctor's week at one clinic, in the shape the scheduling form binds to.
+      properties:
+        doctor_id:
+          type: integer
+        clinic_id:
+          type: integer
+        doctor_name:
+          type: string
+          nullable: true
+        clinic_name:
+          type: string
+          nullable: true
+        time_slot:
+          type: integer
+          description: Appointment length in minutes; falls back to the module default when no schedule exists yet.
+        days:
+          type: array
+          description: Always seven entries, Monday first.
+          items:
+            $ref: '#/components/schemas/DoctorSessionWeekDay'
+    DoctorSessionWeekSave:
+      type: object
+      properties:
+        doctorId:
+          type: integer
+        clinicId:
+          type: integer
+          description: Required for a SUPER_ADMIN; derived from the actor otherwise.
+        timeSlot:
+          type: integer
+          minimum: 1
+          maximum: 240
+          default: 30
+        days:
+          type: array
+          minItems: 1
+          maxItems: 7
+          description: Days omitted here are removed from the schedule.
+          items:
+            type: object
+            properties:
+              day:
+                type: string
+                enum:
+                  - mon
+                  - tue
+                  - wed
+                  - thu
+                  - fri
+                  - sat
+                  - sun
+              enabled:
+                type: boolean
+              mainSession:
+                nullable: true
+                description: Required when enabled. HH:MM or HH:MM:SS.
+                allOf:
+                  - $ref: '#/components/schemas/DoctorSessionTimeRange'
+              breaks:
+                type: array
+                maxItems: 12
+                items:
+                  $ref: '#/components/schemas/DoctorSessionTimeRange'
+            required:
+              - day
+      required:
+        - doctorId
+        - days
     KcEnvelope:
       type: object
       properties:

@@ -4,4 +4,4 @@
  * The resource is `/api/v1/professional-sessions`; this file only re-exports it, so the
  * two paths can never drift. Remove once no client calls the old name.
  */
-export { GET, PUT, DELETE } from '../../professional-sessions/[id]/route';
+export { GET } from '../../professional-sessions/grouped/route';
