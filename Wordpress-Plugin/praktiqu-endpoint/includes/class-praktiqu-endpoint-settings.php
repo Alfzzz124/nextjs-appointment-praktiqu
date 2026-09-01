@@ -65,6 +65,11 @@ final class Settings
             'sanitize_callback' => [$this, 'sanitize_fx_rate'],
             'default'           => '18000',
         ]);
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_paypal_markup_percent', [
+            'type'              => 'string',
+            'sanitize_callback' => [$this, 'sanitize_markup_percent'],
+            'default'           => '0',
+        ]);
     }
 
     /**
@@ -109,6 +114,32 @@ final class Settings
         }
         if ($trimmed !== $current) {
             update_option('praktiqu_endpoint_paypal_idr_rate_updated', gmdate('c'));
+        }
+        return $trimmed;
+    }
+
+    /**
+     * Keep the foreign-patient markup between 0 and 100, and stamp when it
+     * last changed — mirrors sanitize_fx_rate()'s behaviour, but 0 is a
+     * valid, meaningful value here (it means "no markup"), unlike the rate.
+     *
+     * A value above 100 is far more likely a typo (e.g. an extra digit)
+     * than an intended 100%+ surcharge, so it's rejected like any other bad
+     * input.
+     *
+     * A rejected value keeps the stored one, same rationale as the rate
+     * field: a blank or malformed submission must not silently change what
+     * foreign patients are charged.
+     */
+    public function sanitize_markup_percent(string $value): string
+    {
+        $current = (string) get_option('praktiqu_endpoint_paypal_markup_percent', '0');
+        $trimmed = trim($value);
+        if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed < 0 || (float) $trimmed > 100) {
+            return $current;
+        }
+        if ($trimmed !== $current) {
+            update_option('praktiqu_endpoint_paypal_markup_percent_updated', gmdate('c'));
         }
         return $trimmed;
     }
@@ -265,7 +296,7 @@ final class Settings
                                 placeholder="18000"
                             />
                             <p class="description">
-                                <?php esc_html_e('PayPal does not support IDR, so PayPal and card orders are charged in USD. This rate divides: a HIGHER rate charges the payer FEWER dollars. At 18000, a Rp 200.000 service is charged $11.12.', 'praktiqu-endpoint'); ?>
+                                <?php esc_html_e('PayPal does not support IDR, so PayPal and card orders are charged in USD. This should be the honest market rate — keep it tracking the real exchange rate, not adjusted to change what a patient pays. To charge foreign patients more (or less), use the Foreign Patient Markup field below instead.', 'praktiqu-endpoint'); ?>
                                 <?php
                                 $rate_updated = (string) get_option('praktiqu_endpoint_paypal_idr_rate_updated', '');
                                 if ($rate_updated !== '') {
@@ -273,6 +304,34 @@ final class Settings
                                         /* translators: %s is an ISO-8601 timestamp. */
                                         __('Last changed: %s', 'praktiqu-endpoint'),
                                         $rate_updated
+                                    ));
+                                }
+                                ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="praktiqu_endpoint_paypal_markup_percent"><?php esc_html_e('Foreign Patient Markup (%)', 'praktiqu-endpoint'); ?></label>
+                        </th>
+                        <td>
+                            <input
+                                type="text"
+                                id="praktiqu_endpoint_paypal_markup_percent"
+                                name="praktiqu_endpoint_paypal_markup_percent"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_paypal_markup_percent', '0')); ?>"
+                                class="regular-text"
+                                placeholder="0"
+                            />
+                            <p class="description">
+                                <?php esc_html_e('Extra percentage added on top of the converted amount, for foreign patients. The FX rate above should stay the honest market rate; put the business markup here. At rate 18000 and markup 10%, a Rp 200.000 service is charged $12.23.', 'praktiqu-endpoint'); ?>
+                                <?php
+                                $markup_updated = (string) get_option('praktiqu_endpoint_paypal_markup_percent_updated', '');
+                                if ($markup_updated !== '') {
+                                    echo '<br/>' . esc_html(sprintf(
+                                        /* translators: %s is an ISO-8601 timestamp. */
+                                        __('Last changed: %s', 'praktiqu-endpoint'),
+                                        $markup_updated
                                     ));
                                 }
                                 ?>
