@@ -7,9 +7,9 @@
 
 ## Problem
 
-The clinic wants to accept PayPal alongside Xendit. The WooCommerce PayPal Payments
-plugin is already installed and connected, but no payment can succeed through it: the
-store currency is IDR, which PayPal does not support.
+The clinic wants to accept PayPal alongside Xendit, and requires a card option. The
+WooCommerce PayPal Payments plugin is already installed and connected, but no payment can
+succeed through it: the store currency is IDR, which PayPal does not support.
 
 ## Audit of the existing setup (2026-09-01, `appointment.praktiqu.com`)
 
@@ -42,7 +42,37 @@ available; a real transaction would reach PayPal and be rejected.
 
 **Also noted:** `use_sandbox: false` — the connection is in **live** mode, so any test
 transaction moves real money. `authorize_only: false`, `capture_virtual_orders: false`,
-`three_d_secure: no-3d-secure`.
+`three_d_secure: no-3d-secure`, `landing_page: 'any'`.
+
+### Card availability
+
+The merchant's PayPal capabilities, read from the cached seller status, are
+`PPCP_STANDARD` (SUBSCRIBED), `PAYPAL_CHECKOUT`, `EXPRESS_CHECKOUT`, **`GUEST_CHECKOUT`**,
+`PAYPAL_CHECKOUT_ALTERNATIVE_PAYMENT_METHODS`, `PAYPAL_CHECKOUT_PAY_WITH_PAYPAL_CREDIT`,
+`INSTALLMENTS`, `SUBSCRIPTIONS`, `QR_CODE`, `SEND_INVOICE`, `ACCEPT_DONATIONS`,
+`WITHDRAW_FUNDS_TO_DOMESTIC_BANK` — all `ACTIVE`.
+
+**On-site card fields are impossible.** Advanced Card Processing (DCC) requires country
+eligibility. The plugin's matrix (`modules/ppcp-api-client/services.php:414`, filterable
+as `woocommerce_paypal_payments_supported_country_card_matrix`) lists 43 countries — `AU
+AT BE BG CN C2 CY CZ DE DK EE ES FI FR GB GR HK HU IE IT US CA LI LT LU LV MT MX NL NO PL
+PT RO SE SI SK SG JP YT RE GP GF MQ` — and **`ID` is not among them**. This matches the
+capability set: `CUSTOM_CARD_PROCESSING` is absent, only `PPCP_STANDARD` is granted.
+Accordingly `ppcp-credit-card-gateway`, `ppcp-axo-gateway` (Fastlane),
+`ppcp-applepay_settings`, and `ppcp-googlepay_settings` are all `enabled: no` and cannot
+usefully be enabled.
+
+**Card through PayPal's hosted page works.** `GUEST_CHECKOUT` being ACTIVE means a payer
+with no PayPal account can pay by debit or credit card on the hosted page. Card is
+therefore already reachable today, merged into the single PayPal page.
+
+**`ppcp-card-button-gateway` is not a usable second gateway for us**, despite being
+`enabled: yes`. `CardButtonGateway::process_payment()` has the same
+`PayPalOrderMissingException` fallback, but calls `create_order($wc_order)` with no
+`funding_source` argument, so it defaults to `'paypal'` and produces a PayPal order
+identical to `ppcp-gateway`'s. The two gateways differ only in which button the browser
+clicked; driven server-side they are the same thing. Routing a "card" method through it
+would add a branch with no behavioural difference.
 
 ## Feasibility of the server-side call (verified by reading PPCP source)
 
@@ -85,10 +115,20 @@ Approved by the user on 2026-09-01:
    an app restart — notably avoiding the cPanel Node.js Selector env-var route, where a
    trailing space in a key name once silently broke payment webhooks for a day. The plugin
    returns the charged figures to Next.js, which records them.
-5. **Rounding is always up (ceiling)** for foreign currency. Any rounding difference
+5. **Initial rate: 18000 IDR per USD**, set by the user. See *Risks* — as a divisor, a
+   rate above the market rate charges the payer less, so this figure discounts foreign
+   payments rather than buffering the clinic. It is a wp-admin field, changeable in one
+   click.
+6. **Rounding is always up (ceiling)** for foreign currency. Any rounding difference
    accrues to the clinic, never undercharges.
-6. **Test in PayPal sandbox**, not live, then restore live credentials.
-7. **Scope is API + plugin only.** The Laravel front-end is Rafiq's and read-only for us;
+7. **Card is a third method, `card`.** The user requires a card option; merged or separate
+   was left to us. It routes through the same `ppcp-gateway` but overrides
+   `landing_page` to `GUEST_CHECKOUT`, so the payer lands on the card form instead of the
+   PayPal login form. Chosen over merging into one `paypal` method because a visible card
+   button is what a patient without a PayPal account looks for, and the extra cost is one
+   scoped filter. On-site card fields are not an option at all (see *Card availability*).
+8. **Test in PayPal sandbox**, not live, then restore live credentials.
+9. **Scope is API + plugin only.** The Laravel front-end is Rafiq's and read-only for us;
    the method-selector UI is handed off with a contract document.
 
 ## Design
@@ -96,11 +136,13 @@ Approved by the user on 2026-09-01:
 ### Data flow
 
 ```
-POST /public/payments { token, method: 'xendit' | 'paypal' }
+POST /public/payments { token, method: 'xendit' | 'paypal' | 'card' }
   └→ createWcOrder({ ..., method })
        └→ plugin  POST /praktiqu/v1/payments/order
-            ├─ method=xendit → order currency IDR → gateway xendit*   (unchanged)
-            └─ method=paypal → order currency USD → gateway ppcp-gateway
+            ├─ xendit → order currency IDR → gateway xendit*          (unchanged)
+            ├─ paypal → order currency USD → gateway ppcp-gateway
+            └─ card   → order currency USD → gateway ppcp-gateway
+                                           + landing_page GUEST_CHECKOUT
                  └→ process_payment() → PayPal hosted checkout URL
   ← { orderId, checkoutUrl, chargedAmount, chargedCurrency, fxRate }
 
@@ -114,21 +156,39 @@ payer approves on PayPal
 ### WordPress plugin — `praktiqu-endpoint` 1.4.0 → 1.5.0
 
 **New setting.** `praktiqu_endpoint_paypal_idr_rate` — rupiah per 1 USD, an integer or
-decimal such as `16500`. Registered on the existing Settings → PraktiQU Endpoint screen
+decimal, seeded to `18000`. Registered on the existing Settings → PraktiQU Endpoint screen
 alongside the payment webhook fields, following the same `register_setting` +
 `sanitize_callback` pattern. A companion option stores the last-modified timestamp and
-the screen displays it, so a stale rate is visible rather than silent.
+the screen displays it, so a stale rate is visible rather than silent. The field's help
+text states the direction explicitly — a higher rate charges the payer fewer dollars —
+because the intuition runs the other way.
 
 **Gateway resolution.** `resolve_xendit_gateway()` becomes
 `resolve_gateway(string $method): ?WC_Payment_Gateway`:
 
 - `xendit` — first enabled gateway whose id starts with `xendit` (today's behaviour).
-- `paypal` — the enabled gateway with id `ppcp-gateway`.
+- `paypal`, `card` — the enabled gateway with id `ppcp-gateway`.
 
 `create_order()` reads `$input['method']` and **defaults to `xendit`** when absent, so
-every existing caller keeps working untouched.
+every existing caller keeps working untouched. An unrecognised method is rejected with
+`WP_Error('unknown_method', …, ['status' => 400])` before any WC order is created, so a
+typo cannot silently fall through to Xendit and charge in the wrong currency.
 
-**Conversion (only when `method === 'paypal'`).** Before line items are added:
+**Card landing page (only when `method === 'card'`).** Immediately before
+`process_payment()`, add a closure to the plugin filter
+`ppcp_create_order_request_body_data` (`modules/ppcp-api-client/src/Endpoint/
+OrderEndpoint.php:173`) that sets
+`$data['payment_source']['paypal']['experience_context']['landing_page'] =
+'GUEST_CHECKOUT'`. Remove the filter in a `finally` block so it cannot leak into a later
+request on the same PHP process. `GUEST_CHECKOUT` is PPCP's own constant
+(`ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT`); the store setting is currently `'any'`,
+which maps to `NO_PREFERENCE`.
+
+Using the plugin's documented filter, rather than editing PPCP or hand-rolling a PayPal
+API call, keeps the change update-safe and leaves a single code path for both PayPal
+methods.
+
+**Conversion (when `method` is `paypal` or `card`).** Before line items are added:
 
 1. Read the rate. If it is missing, non-numeric, or `<= 0`, cancel the just-created WC
    order and return `WP_Error('paypal_rate_missing', …, ['status' => 503])`.
@@ -180,7 +240,7 @@ the schema mixes app tables with `wp_` tables.
 
 | Column | Type | Default |
 | --- | --- | --- |
-| `gateway` | `VARCHAR(32)` | `'xendit'` |
+| `gateway` | `VARCHAR(32)` | `'xendit'` — stores the method: `xendit`, `paypal`, or `card` |
 | `chargedCurrency` | `VARCHAR(3)` | `'IDR'` |
 | `chargedAmount` | `DECIMAL(12,2)` | — |
 | `fxRate` | `DECIMAL(12,2)` | `NULL` |
@@ -196,7 +256,7 @@ The defaults keep every existing row valid with no backfill.
   persist the charged figures onto the `payment_orders` row they create.
 - `POST /public/payments` and `POST /sessions/payment-verify` (which both initiates and
   verifies the staff flow) accept
-  `method: z.enum(['xendit', 'paypal']).default('xendit')`.
+  `method: z.enum(['xendit', 'paypal', 'card']).default('xendit')`.
 - `PaymentStatusView` gains `chargedAmount` and `chargedCurrency` alongside
   `expectedAmount`, so the front-end can display `$12.35` rather than a rupiah figure the
   payer was never charged. Returned by `checkPublicPaymentStatus`,
@@ -213,6 +273,7 @@ computation (`computePublicAmount`, `computeSessionAmountFromBill`) are not touc
 
 | Condition | Result |
 | --- | --- |
+| Unrecognised `method` | `WP_Error` 400 `unknown_method`, no WC order created |
 | Rate missing / non-numeric / `<= 0` | WC order cancelled, `WP_Error` 503 `paypal_rate_missing` |
 | No enabled `ppcp-gateway` | WC order cancelled, `WP_Error` 503 (mirrors the Xendit branch) |
 | PayPal API rejects the order | Notice captured via `wc_get_notices()`, WC order cancelled, `WP_Error` 502 |
@@ -226,8 +287,8 @@ order is left holding a slot.
 
 - **Unit (`tests/payments/`)** — the ceiling conversion, including the float-error case
   and a zero/negative rate; `markPaid`'s currency branch for both IDR and USD; the
-  `method` parameter defaulting to `xendit` on both routes. The existing seven test files
-  must stay green.
+  `method` parameter defaulting to `xendit` and rejecting an unknown value on both routes.
+  The existing seven test files must stay green.
 - **Plugin** — `php -l` on every changed file.
 - **End-to-end, in PayPal sandbox:** create a sandbox REST app, swap the sandbox client
   id/secret into PPCP, re-register the webhook, then run a public booking through
@@ -235,6 +296,11 @@ order is left holding a slot.
   `sandbox.paypal.com`, pay with a sandbox buyer account, and confirm the appointment
   moves `PENDING → BOOKED` and the patient lands on the front-end success URL. Repeat for
   a session bill. Then restore the live credentials and re-register the live webhook.
+- **Card method** — the same run with `method: 'card'`, checking two things: the hosted
+  page opens on the card form rather than the PayPal login, and paying with a sandbox
+  **card** (no PayPal account) completes the booking. Then a `paypal` order immediately
+  afterwards in the same PHP process, to prove the landing-page filter was removed and did
+  not leak.
 - **Regression** — one Xendit booking after the change, to prove the default path is
   untouched.
 
@@ -255,11 +321,21 @@ order is left holding a slot.
 - **Failure and cancel land on the WooCommerce checkout page.** PPCP hardcodes
   `cancel_url = wc_get_checkout_url()`, exactly as the Xendit plugin does. This is the
   same technical debt already accepted on 2026-07-24, and is not addressed here.
-- **A stale FX rate is the clinic's exposure.** The last-modified timestamp makes it
-  visible. A buffer over the market rate is advisable, since the difference is borne by
-  the clinic.
+- **The configured rate of 18000 discounts foreign payments.** The rate is a divisor
+  (`USD = IDR / rate`), so a figure above the market rate charges fewer dollars. At a
+  market rate near 16500, a Rp 200.000 service is charged $11.11 and settles to about
+  Rp 183.315 — roughly 8% below list, before PayPal's fees. A rate *below* market is what
+  buffers the clinic. The user set 18000 knowingly; it is a wp-admin field and changing it
+  needs no deploy. Flagged here so nobody later reads it as a safety margin.
 - **PayPal cross-border fees (~4.4% + a fixed fee)** mean the clinic receives less than
-  `chargedAmount`. Not a defect, but it must inform pricing.
+  `chargedAmount`. Combined with the rate above, the effective shortfall per PayPal
+  transaction is roughly 12–13% of the rupiah list price.
+- **A stale FX rate is the clinic's exposure.** The last-modified timestamp makes it
+  visible on the settings screen.
+- **`landing_page` is a preference, not a contract.** PayPal may still show the
+  account-login option on a `card` order. The requirement — that a card option exists —
+  holds either way, because `GUEST_CHECKOUT` is active; only the pre-selected form is at
+  stake.
 - **The connection is currently live.** No test transaction may run before the sandbox
   credentials are in place.
 - **PayPal expires an unapproved order after roughly three hours**, while our auto-cancel
@@ -273,3 +349,5 @@ order is left holding a slot.
 - Refunds through the API (PPCP supports `process_refund`, but no route drives it today).
 - Currencies other than USD.
 - Changes to disbursement, the webhook secret, the auto-cancel job, or the Xendit path.
+- On-site card fields, Apple Pay, Google Pay, and Fastlane — all require Advanced Card
+  Processing, for which Indonesia is not eligible. Not deferred; unavailable.
