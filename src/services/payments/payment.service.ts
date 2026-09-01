@@ -146,6 +146,8 @@ export async function getPaymentOrderByWcOrderId(wcOrderId: number): Promise<Pay
 export interface MarkPaidInput {
   wcOrderId: number;
   amountPaid: number;
+  /** ISO 4217 code from the webhook. Omitted means IDR (pre-1.5.0 plugin). */
+  currency?: string;
   transactionId: string;
   webhookPayload: unknown;
 }
@@ -154,8 +156,19 @@ export interface MarkPaidInput {
 export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | null> {
   const order = await prisma.paymentOrder.findUnique({ where: { wcOrderId: input.wcOrderId } });
   if (!order) throw new UnknownOrderError(`No payment order for wcOrderId ${input.wcOrderId}`);
-  if (order.status === 'pending' && Math.abs(order.expectedAmount - input.amountPaid) > AMOUNT_TOLERANCE_RUPIAH) {
-    throw new AmountMismatchError(`Expected ${order.expectedAmount} (±${AMOUNT_TOLERANCE_RUPIAH}), got ${input.amountPaid}`);
+  if (order.status === 'pending') {
+    // A PayPal order is charged in USD, so comparing against the rupiah
+    // expectedAmount would read 11.12 vs 200000 as a catastrophic mismatch and
+    // leave a genuinely-paid appointment stuck in PENDING.
+    const { chargedAmount, chargedCurrency } = chargedView(order);
+    const currency = input.currency ?? chargedCurrency;
+    const tolerance = currency === 'IDR' ? AMOUNT_TOLERANCE_RUPIAH : AMOUNT_TOLERANCE_MINOR_UNIT;
+    const expected = currency === 'IDR' ? order.expectedAmount : chargedAmount;
+    if (Math.abs(expected - input.amountPaid) > tolerance) {
+      throw new AmountMismatchError(
+        `Expected ${expected} ${currency} (±${tolerance}), got ${input.amountPaid}`,
+      );
+    }
   }
 
   const result = await prisma.paymentOrder.updateMany({
@@ -217,6 +230,9 @@ const VERIFY_FALLBACK_MS = 2 * 60 * 1000; // 2 minutes — see Global Constraint
  *  Σround(line) and round(Σline) — tolerate a small drift rather than
  *  rejecting a genuinely-correct payment. */
 const AMOUNT_TOLERANCE_RUPIAH = 2;
+
+/** One cent. USD is charged to 2 decimals, so anything beyond this is a real mismatch. */
+const AMOUNT_TOLERANCE_MINOR_UNIT = 0.01;
 
 export interface PaymentStatusView {
   status: PaymentStatus;
@@ -434,6 +450,7 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
       updated = await markPaid({
         wcOrderId: order.wcOrderId,
         amountPaid: wcStatus.amount,
+        currency: wcStatus.currency,
         transactionId: wcStatus.transactionId ?? '',
         webhookPayload: { source: 'verify-fallback', wcStatus },
       });

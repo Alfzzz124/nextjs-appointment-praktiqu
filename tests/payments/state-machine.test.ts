@@ -81,3 +81,87 @@ describe('payment.service state machine', () => {
     });
   });
 });
+
+describe('markPaid — currency-aware amount check', () => {
+  it('accepts a USD payment that matches the stored charge', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 11.12, currency: 'USD', transactionId: 'PP-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+
+  it('rejects a USD payment short by more than a cent', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+      source: 'public',
+    } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 10.0, currency: 'USD', transactionId: 'PP-1', webhookPayload: {} }),
+    ).rejects.toThrow(AmountMismatchError);
+  });
+
+  it('does not compare a USD payment against the rupiah expectedAmount', async () => {
+    // The bug this guards: 11.12 vs 200000 would look like a catastrophic
+    // mismatch and leave a genuinely-paid appointment stuck in PENDING.
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 11.12, currency: 'USD', transactionId: 'PP-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+
+  it('keeps the rupiah tolerance for an IDR order', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 43,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 200000,
+      chargedCurrency: 'IDR',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    // Within ±2 rupiah: accepted, exactly as before this change.
+    await expect(
+      markPaid({ wcOrderId: 43, amountPaid: 199999, transactionId: 'X-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+
+  it('treats a missing currency as IDR, so a pre-1.5.0 plugin still works', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 43,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: null,
+      chargedCurrency: 'IDR',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 43, amountPaid: 200000, transactionId: 'X-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+});
