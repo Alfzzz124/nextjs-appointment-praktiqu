@@ -8,7 +8,10 @@ import { KcError } from '@/lib/kc-response';
 export const dynamic = 'force-dynamic';
 
 const STAFF_ROLES = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'] as const;
-const bodySchema = z.object({ billId: z.string().min(1) });
+const bodySchema = z.object({
+  billId: z.string().min(1),
+  method: z.enum(['xendit', 'paypal', 'card']).default('xendit'),
+});
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const gate = await requireRoles(req, STAFF_ROLES);
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await ensureSessionPayment(parsed.data.billId);
+    const result = await ensureSessionPayment(parsed.data.billId, parsed.data.method);
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     if (err instanceof KcError) {

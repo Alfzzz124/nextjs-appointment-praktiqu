@@ -11,7 +11,10 @@ import { badRequest, notFound, conflict } from '@/lib/problem-details';
 
 export const dynamic = 'force-dynamic';
 
-const bodySchema = z.object({ token: z.string().min(1) });
+const bodySchema = z.object({
+  token: z.string().min(1),
+  method: z.enum(['xendit', 'paypal', 'card']).default('xendit'),
+});
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await req.json().catch(() => ({}));
@@ -28,7 +31,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await initiatePublicPayment(appointmentId);
+    const result = await initiatePublicPayment(appointmentId, parsed.data.method);
     return NextResponse.json({ data: result }, { status: 201 });
   } catch (err) {
     if (err instanceof AppointmentNotFoundError) {

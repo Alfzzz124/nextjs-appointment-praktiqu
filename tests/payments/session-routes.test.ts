@@ -57,6 +57,40 @@ describe('POST /sessions/payment-verify', () => {
   });
 });
 
+describe('POST /sessions/payment-verify — method', () => {
+  const staff = { actor: { id: 'u1', role: 'RECEPTIONIST', practiceId: 'p1' } };
+
+  it('defaults to xendit when the body omits a method', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockResolvedValue({
+      checkoutUrl: 'https://wp/checkout/9', status: 'pending',
+      expectedAmount: 200000, chargedAmount: 200000, chargedCurrency: 'IDR',
+    });
+    await paymentVerify(req({ billId: '9' }));
+    expect(svc.ensureSessionPayment).toHaveBeenCalledWith('9', 'xendit');
+  });
+
+  it('forwards paypal and returns the charged figures', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockResolvedValue({
+      checkoutUrl: 'https://paypal.com/checkout/abc', status: 'pending',
+      expectedAmount: 200000, chargedAmount: 11.12, chargedCurrency: 'USD',
+    });
+    const res = await paymentVerify(req({ billId: '9', method: 'paypal' }));
+    expect(svc.ensureSessionPayment).toHaveBeenCalledWith('9', 'paypal');
+    const body = await res.json();
+    expect(body.data.chargedAmount).toBe(11.12);
+    expect(body.data.chargedCurrency).toBe('USD');
+  });
+
+  it('400 on an unknown method, without calling the service', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    const res = await paymentVerify(req({ billId: '9', method: 'gopay' }));
+    expect(res.status).toBe(400);
+    expect(svc.ensureSessionPayment).not.toHaveBeenCalled();
+  });
+});
+
 function webhookReq(rawBody: string, signature: string | null) {
   const headers: Record<string, string> = {};
   if (signature) headers['x-praktiqu-webhook-signature'] = signature;
