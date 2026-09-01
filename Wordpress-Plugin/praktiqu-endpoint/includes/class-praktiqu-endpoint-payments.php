@@ -81,13 +81,20 @@ final class Payments
             // Unlike the rate, an absent/invalid markup is not a hard failure:
             // "no markup configured" is a legitimate state (clamp to 0.0 and
             // proceed), whereas an absent rate makes the charge itself
-            // undefined (hard-fails above). sanitize_markup_percent() already
-            // keeps the stored option within [0, 100] on save, but this reads
-            // get_option() directly, so re-validate here too.
+            // undefined (hard-fails above). sanitize_markup_percent() keeps the
+            // stored option within [0, 100] on save, but that guard only covers
+            // values that went through the settings form — wp-cli, another
+            // plugin, or a direct DB edit can still write something out of
+            // range. So both ends are re-clamped here too, defence-in-depth,
+            // not validation: an out-of-range value is silently clamped into
+            // [0, 100] and the request proceeds, it never becomes a 503 (only
+            // a missing/non-positive rate does that, above).
             $markup_raw = get_option('praktiqu_endpoint_paypal_markup_percent', '0');
             $markup     = is_numeric($markup_raw) ? (float) $markup_raw : 0.0;
             if ($markup < 0) {
                 $markup = 0.0;
+            } elseif ($markup > 100) {
+                $markup = 100.0;
             }
         }
 
@@ -110,10 +117,15 @@ final class Payments
 
         // fxRate returned to the caller is the EFFECTIVE rate (rate adjusted
         // for markup), deliberately different from the raw market rate saved
-        // as praktiqu_fx_rate meta below: expectedAmount / fxRate has to
-        // reconstruct chargedAmount for reconciliation months later, and
+        // as praktiqu_fx_rate meta below: expectedAmount / fxRate approximately
+        // reconstructs chargedAmount for reconciliation months later, and
         // chargedAmount already has the markup baked in, so fxRate must too.
-        // Do not "fix" one of these two figures to match the other.
+        // "Approximately" is not hand-waving: per-line ceiling rounding (decision
+        // 6) means a multi-line order's chargedAmount is always a little above the
+        // unrounded conversion, so the two figures never match to the cent — that
+        // gap is the accumulated per-line ceiling remainder, and it accrues to the
+        // clinic by design. Do not "fix" one of these two figures to match the
+        // other; the gap is expected, not a bug.
         // $markup is clamped to >= 0 above, so this denominator is always
         // >= 1 — no divide-by-zero guard needed.
         $fx_rate = $is_foreign ? $rate / (1 + $markup / 100) : null;
