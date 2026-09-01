@@ -5,6 +5,7 @@
  */
 
 import type { AllowedMime } from '@/services/uploads/validate-upload';
+import { toNum } from '@/lib/kc-num';
 
 export interface PaymentOrderItem {
   name: string;
@@ -15,6 +16,9 @@ export interface PaymentOrderTax {
   name: string;
   amount: number;
 }
+
+/** Payment methods the WP plugin's create_order() accepts. */
+export type PaymentMethod = 'xendit' | 'paypal' | 'card';
 
 export interface CreateWcOrderInput {
   source: 'public' | 'session';
@@ -27,11 +31,20 @@ export interface CreateWcOrderInput {
   taxes: PaymentOrderTax[];
   returnUrl: string;
   cancelUrl: string;
+  /** Omitted means 'xendit' — the plugin applies the same default. */
+  method?: PaymentMethod;
 }
 
 export interface CreateWcOrderResult {
   orderId: number;
   checkoutUrl: string;
+  /** What the payer will actually be billed, in `chargedCurrency`. Null from a
+   *  pre-1.5.0 plugin, which does not report it. */
+  chargedAmount: number | null;
+  /** ISO 4217 code. 'IDR' for Xendit; 'USD' for paypal/card. */
+  chargedCurrency: string;
+  /** Rupiah per 1 unit of `chargedCurrency`; null when no conversion happened. */
+  fxRate: number | null;
 }
 
 export interface WcOrderStatus {
@@ -40,6 +53,8 @@ export interface WcOrderStatus {
   isPaid: boolean;
   transactionId: string | null;
   amount: number;
+  /** ISO 4217 code. Absent from a pre-1.5.0 plugin, in which case 'IDR'. */
+  currency: string;
 }
 
 const WP_ENDPOINT = process.env.WORDPRESS_URL ?? 'http://localhost:9001';
@@ -168,7 +183,16 @@ export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWc
   } catch {
     throw new WpEndpointError('WC order create returned invalid JSON', res.status);
   }
-  return { orderId: data.orderId, checkoutUrl: data.checkoutUrl };
+  // A plugin older than 1.5.0 omits these three. Report chargedAmount as null
+  // rather than coercing it to 0 — the service layer substitutes the rupiah
+  // expectedAmount for null, whereas a 0 would be stored as a real charge of nothing.
+  return {
+    orderId: data.orderId,
+    checkoutUrl: data.checkoutUrl,
+    chargedAmount: data.chargedAmount === null || data.chargedAmount === undefined ? null : toNum(data.chargedAmount),
+    chargedCurrency: typeof data.chargedCurrency === 'string' ? data.chargedCurrency : 'IDR',
+    fxRate: data.fxRate === null || data.fxRate === undefined ? null : toNum(data.fxRate),
+  };
 }
 
 export async function getWcOrderStatus(orderId: number): Promise<WcOrderStatus> {
@@ -191,6 +215,7 @@ export async function getWcOrderStatus(orderId: number): Promise<WcOrderStatus> 
     isPaid: data.isPaid,
     transactionId: data.transactionId ?? null,
     amount: data.amount,
+    currency: typeof data.currency === 'string' ? data.currency : 'IDR',
   };
 }
 
