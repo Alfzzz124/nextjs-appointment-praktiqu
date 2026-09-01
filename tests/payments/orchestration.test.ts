@@ -207,6 +207,33 @@ describe('initiatePublicPayment', () => {
     expect(result.chargedAmount).not.toBe(0);
     expect(result.chargedAmount).not.toBeNull();
   });
+
+  it('forwards method to createWcOrder and persists gateway/chargedCurrency/chargedAmount/fxRate for a paypal order', async () => {
+    // Nothing previously asserted that `method` reaches createWcOrder, or that the
+    // foreign-charge figures survive onto the payment_orders row — only the
+    // null-fallback case above was covered for public bookings.
+    db.paymentOrder.findFirst.mockResolvedValue(null);
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 42, checkoutUrl: 'https://wp/checkout/42',
+      chargedAmount: 11.12, chargedCurrency: 'USD', fxRate: 18000,
+    });
+    db.paymentOrder.create.mockResolvedValue({ id: 'po_paypal' });
+
+    const result = await initiatePublicPayment(APPOINTMENT, 'paypal');
+
+    expect(wpEndpoint.createWcOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'paypal' }),
+    );
+    expect(db.paymentOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        gateway: 'paypal',
+        chargedCurrency: 'USD',
+        chargedAmount: 11.12,
+        fxRate: 18000,
+      }),
+    }));
+    expect(result.chargedCurrency).toBe('USD');
+  });
 });
 
 describe('checkPublicPaymentStatus — verify fallback', () => {
@@ -472,5 +499,31 @@ describe('ensureSessionPayment — null chargedAmount fallback', () => {
     expect(result.chargedAmount).toBe(150000);
     expect(result.chargedAmount).not.toBe(0);
     expect(result.chargedAmount).not.toBeNull();
+  });
+
+  it('forwards method to createWcOrder and persists gateway/chargedCurrency/chargedAmount/fxRate for a paypal order', async () => {
+    db.paymentOrder.findFirst.mockResolvedValue(null); // no existing order for this bill
+    vi.mocked(getBill).mockResolvedValue(bill(150000) as never);
+    db.kcUser.findUnique.mockResolvedValue({ displayName: 'Jane Doe', userEmail: 'jane@x.com' });
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 99, checkoutUrl: 'https://wp/checkout/99',
+      chargedAmount: 8.34, chargedCurrency: 'USD', fxRate: 18000,
+    });
+    db.paymentOrder.create.mockResolvedValue({ id: 'po_paypal_session' });
+
+    const result = await ensureSessionPayment(BILL_ID, 'paypal');
+
+    expect(wpEndpoint.createWcOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'paypal' }),
+    );
+    expect(db.paymentOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        gateway: 'paypal',
+        chargedCurrency: 'USD',
+        chargedAmount: 8.34,
+        fxRate: 18000,
+      }),
+    }));
+    expect(result.chargedCurrency).toBe('USD');
   });
 });

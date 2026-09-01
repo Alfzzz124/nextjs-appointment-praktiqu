@@ -479,7 +479,13 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
     } catch (err) {
       if (err instanceof AmountMismatchError) {
         await logging.error('Verify-fallback amount mismatch — leaving order pending for manual review', err, {
-          metadata: { wcOrderId: order.wcOrderId, expectedAmount: order.expectedAmount, wcAmount: wcStatus.amount },
+          metadata: {
+            wcOrderId: order.wcOrderId,
+            expectedAmount: order.expectedAmount,
+            chargedCurrency: chargedView(order).chargedCurrency,
+            wcAmount: wcStatus.amount,
+            wcCurrency: wcStatus.currency,
+          },
         });
         return order;
       }
