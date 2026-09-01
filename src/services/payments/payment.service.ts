@@ -161,7 +161,29 @@ export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | nul
     // expectedAmount would read 11.12 vs 200000 as a catastrophic mismatch and
     // leave a genuinely-paid appointment stuck in PENDING.
     const { chargedAmount, chargedCurrency } = chargedView(order);
-    const currency = input.currency ?? chargedCurrency;
+    // The currency used for the comparison MUST agree with the comparand it's
+    // compared against. `chargedView` falls back to `order.expectedAmount` —
+    // a rupiah figure — whenever the row has no `chargedAmount` of its own.
+    // If we let a webhook-reported non-IDR `input.currency` win in that case,
+    // we'd compare a rupiah number against a dollar-scale amountPaid under a
+    // ±0.01 tolerance, which always fails and wrongly leaves a paid order
+    // PENDING. So only let `input.currency` override the stored currency when
+    // the row actually recorded its own charge. Do NOT simplify this back to
+    // `input.currency ?? chargedCurrency`.
+    const hasOwnCharge = order.chargedAmount !== null;
+    if (!hasOwnCharge && input.currency && input.currency !== chargedCurrency) {
+      await logging.warn(
+        'Payment webhook reported a currency for an order with no recorded charge — comparing under the stored currency',
+        {
+          metadata: {
+            wcOrderId: input.wcOrderId,
+            reportedCurrency: input.currency,
+            storedCurrency: chargedCurrency,
+          },
+        },
+      );
+    }
+    const currency = hasOwnCharge ? (input.currency ?? chargedCurrency) : chargedCurrency;
     const tolerance = currency === 'IDR' ? AMOUNT_TOLERANCE_RUPIAH : AMOUNT_TOLERANCE_MINOR_UNIT;
     const expected = currency === 'IDR' ? order.expectedAmount : chargedAmount;
     if (Math.abs(expected - input.amountPaid) > tolerance) {
