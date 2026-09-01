@@ -8879,12 +8879,13 @@ paths:
       summary: Initiate Payment (POST) — public
       operationId: post_api_v1_public_payments
       description: >-
-        Guest initiates a WooCommerce/Xendit checkout for a pending appointment, using the signed appointment
-        token from booking (not a JWT). Fails if the appointment isn't `PENDING`, or if a payment was already
-        initiated and is still pending — poll `POST /api/v1/public/payment-verify` instead in that case.
+        Guest initiates a WooCommerce checkout (Xendit, PayPal, or card — see `method`) for a pending
+        appointment, using the signed appointment token from booking (not a JWT). Fails if the appointment
+        isn't `PENDING`, or if a payment was already initiated and is still pending — poll
+        `POST /api/v1/public/payment-verify` instead in that case.
 
 
-        **Response envelope:** `{ data: { checkoutUrl } }` / RFC-7807 problem+json.
+        **Response envelope:** `{ data: { checkoutUrl, chargedAmount, chargedCurrency } }` / RFC-7807 problem+json.
       requestBody:
         required: true
         content:
@@ -8895,6 +8896,14 @@ paths:
                 token:
                   type: string
                   description: Signed appointment token (see `POST /api/v1/public/booking`).
+                method:
+                  type: string
+                  enum: [xendit, paypal, card]
+                  default: xendit
+                  description: >-
+                    Omitted means `xendit` (IDR). `paypal` and `card` both charge in USD via
+                    PayPal's hosted page and differ only in which form it opens on. An
+                    unrecognised value is a 400, never a silent fallback.
               required:
                 - token
       responses:
@@ -12042,8 +12051,9 @@ paths:
       operationId: post_api_v1_sessions_payment_verify
       description: >-
         Staff-only. Ensures a payment order exists for a bill: if none exists, or the existing one is
-        `failed`/`expired`/`cancelled`, a fresh WooCommerce/Xendit checkout is created and its URL returned;
-        otherwise the existing (non-terminal) order's current status is returned with `checkoutUrl: null`.
+        `failed`/`expired`/`cancelled`, a fresh WooCommerce checkout (Xendit, PayPal, or card — see
+        `method`) is created and its URL returned; otherwise the existing (non-terminal) order's current
+        status is returned with `checkoutUrl: null`.
 
 
         **Response envelope:** `{ data: SessionPaymentEnsureResult }` / RFC-7807 problem+json.
@@ -12056,6 +12066,14 @@ paths:
               properties:
                 billId:
                   type: string
+                method:
+                  type: string
+                  enum: [xendit, paypal, card]
+                  default: xendit
+                  description: >-
+                    Omitted means `xendit` (IDR). `paypal` and `card` both charge in USD via
+                    PayPal's hosted page and differ only in which form it opens on. An
+                    unrecognised value is a 400, never a silent fallback.
               required:
                 - billId
       responses:
@@ -12718,16 +12736,35 @@ components:
         expectedAmount:
           type: number
           description: Amount (IDR) expected for this payment order.
+        chargedAmount:
+          type: number
+          description: >-
+            What the payer was actually billed, in `chargedCurrency`. Display THIS, not
+            `expectedAmount` — for a PayPal payment `expectedAmount` is a rupiah figure the
+            payer never saw.
+        chargedCurrency:
+          type: string
+          description: ISO 4217. `IDR` for Xendit; `USD` for paypal/card.
       required:
         - status
         - expectedAmount
+        - chargedAmount
+        - chargedCurrency
     CheckoutUrlResult:
       type: object
       properties:
         checkoutUrl:
           type: string
+        chargedAmount:
+          type: number
+          description: What the payer will be billed, in `chargedCurrency`.
+        chargedCurrency:
+          type: string
+          description: ISO 4217. `IDR` for Xendit; `USD` for paypal/card.
       required:
         - checkoutUrl
+        - chargedAmount
+        - chargedCurrency
     SessionPaymentEnsureResult:
       allOf:
         - $ref: '#/components/schemas/PaymentStatusView'

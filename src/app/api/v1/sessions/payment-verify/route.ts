@@ -4,11 +4,21 @@ import { requireRoles } from '@/lib/auth/route-guards';
 import { ensureSessionPayment } from '@/services/payments/payment.service';
 import { badRequest } from '@/lib/problem-details';
 import { KcError } from '@/lib/kc-response';
+import type { PaymentMethod } from '@/lib/wp-endpoint';
 
 export const dynamic = 'force-dynamic';
 
 const STAFF_ROLES = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST'] as const;
-const bodySchema = z.object({ billId: z.string().min(1) });
+
+// `satisfies` ties this list to `PaymentMethod` at compile time: adding a method to one
+// without the other is now a type error, not a silent gap. No runtime behaviour change —
+// `as const satisfies` only narrows the literal type checked by `tsc`.
+const PAYMENT_METHODS = ['xendit', 'paypal', 'card'] as const satisfies readonly PaymentMethod[];
+
+const bodySchema = z.object({
+  billId: z.string().min(1),
+  method: z.enum(PAYMENT_METHODS).default('xendit'),
+});
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const gate = await requireRoles(req, STAFF_ROLES);
@@ -22,7 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await ensureSessionPayment(parsed.data.billId);
+    const result = await ensureSessionPayment(parsed.data.billId, parsed.data.method);
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     if (err instanceof KcError) {

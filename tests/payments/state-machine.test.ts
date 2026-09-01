@@ -28,6 +28,7 @@ describe('payment.service state machine', () => {
       data: {
         source: 'public', appointmentId: 'appt_1', billId: null, encounterId: null,
         wcOrderId: 42, expectedAmount: 100000, status: 'pending',
+        gateway: 'xendit', chargedAmount: 100000, chargedCurrency: 'IDR', fxRate: null,
       },
     });
   });
@@ -78,5 +79,116 @@ describe('payment.service state machine', () => {
       where: { wcOrderId: 42, status: 'pending' },
       data: { status: 'failed', webhookPayload: { reason: 'declined' } },
     });
+  });
+});
+
+describe('markPaid — currency-aware amount check', () => {
+  it('accepts a USD payment that matches the stored charge', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 11.12, currency: 'USD', transactionId: 'PP-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+
+  it('rejects a USD payment short by more than a cent', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+      source: 'public',
+    } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 10.0, currency: 'USD', transactionId: 'PP-1', webhookPayload: {} }),
+    ).rejects.toThrow(AmountMismatchError);
+  });
+
+  it('does not compare a USD payment against the rupiah expectedAmount', async () => {
+    // The bug this guards: for this same USD row, a webhook that reports the
+    // rupiah `expectedAmount` (200000) as the paid amount must be REJECTED —
+    // if the comparand ever regressed to `expectedAmount` instead of the
+    // stored `chargedAmount` (11.12), this would wrongly be accepted.
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 42,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+      source: 'public',
+    } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 200000, currency: 'USD', transactionId: 'PP-1', webhookPayload: {} }),
+    ).rejects.toThrow(AmountMismatchError);
+  });
+
+  it('keeps the rupiah tolerance for an IDR order', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 43,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: 200000,
+      chargedCurrency: 'IDR',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    // Within ±2 rupiah: accepted, exactly as before this change.
+    await expect(
+      markPaid({ wcOrderId: 43, amountPaid: 199999, transactionId: 'X-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+
+  it('treats a missing currency as IDR, so a pre-1.5.0 plugin still works', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 43,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: null,
+      chargedCurrency: 'IDR',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 43, amountPaid: 200000, transactionId: 'X-1', webhookPayload: {} }),
+    ).resolves.not.toThrow();
+  });
+
+  it('uses the stored currency, not the webhook-reported one, when the row has no recorded charge', async () => {
+    // Anomalous state: chargedAmount is null (predates the column, so
+    // chargedView falls back to the rupiah expectedAmount) but the webhook
+    // claims USD. The comparand can only ever be the rupiah expectedAmount
+    // here, so the stored IDR currency must govern the comparison. amountPaid
+    // is 1 rupiah off expectedAmount — inside the ±2 rupiah tolerance but
+    // well outside the ±0.01 dollar tolerance, so this only passes if the
+    // IDR tolerance is actually the one applied. If `currency` regressed to
+    // `input.currency ?? chargedCurrency`, this would compare against the
+    // ±0.01 dollar tolerance and produce a false AmountMismatchError,
+    // wrongly leaving a genuinely-paid order pending.
+    mockPrisma.paymentOrder.findUnique.mockResolvedValue({
+      wcOrderId: 44,
+      status: 'pending',
+      expectedAmount: 200000,
+      chargedAmount: null,
+      chargedCurrency: 'IDR',
+      source: 'public',
+    } as any);
+    mockPrisma.paymentOrder.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    await expect(
+      markPaid({ wcOrderId: 44, amountPaid: 199999, currency: 'USD', transactionId: 'PP-2', webhookPayload: {} }),
+    ).resolves.not.toThrow();
   });
 });

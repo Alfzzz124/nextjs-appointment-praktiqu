@@ -36,7 +36,7 @@ describe('POST /public/payments', () => {
     expect(res.status).toBe(201);
     expect((await res.json()).data.checkoutUrl).toBe('https://wp/checkout/1');
     // The numeric id reaches the service, not the raw token payload.
-    expect(svc.initiatePublicPayment).toHaveBeenCalledWith(5150);
+    expect(svc.initiatePublicPayment).toHaveBeenCalledWith(5150, 'xendit');
   });
 
   it('409 when the appointment is not pending', async () => {
@@ -69,5 +69,48 @@ describe('POST /public/payment-verify', () => {
     (svc.checkPublicPaymentStatus as any).mockRejectedValue(new (svc as any).UnknownOrderError());
     const res = await verify(req({ token: 'good' }));
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /public/payments — method', () => {
+  it('defaults to xendit when the body omits a method', async () => {
+    (svc.initiatePublicPayment as any).mockResolvedValue({
+      checkoutUrl: 'https://wp/checkout/1',
+      chargedAmount: 200000,
+      chargedCurrency: 'IDR',
+    });
+    const res = await initiate(req({ token: 'good' }));
+    expect(res.status).toBe(201);
+    expect(svc.initiatePublicPayment).toHaveBeenCalledWith(5150, 'xendit');
+  });
+
+  it('forwards paypal and returns the charged figures', async () => {
+    (svc.initiatePublicPayment as any).mockResolvedValue({
+      checkoutUrl: 'https://paypal.com/checkout/abc',
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+    });
+    const res = await initiate(req({ token: 'good', method: 'paypal' }));
+    expect(res.status).toBe(201);
+    expect(svc.initiatePublicPayment).toHaveBeenCalledWith(5150, 'paypal');
+    const body = await res.json();
+    expect(body.data.chargedAmount).toBe(11.12);
+    expect(body.data.chargedCurrency).toBe('USD');
+  });
+
+  it('forwards card', async () => {
+    (svc.initiatePublicPayment as any).mockResolvedValue({
+      checkoutUrl: 'https://paypal.com/checkout/abc',
+      chargedAmount: 11.12,
+      chargedCurrency: 'USD',
+    });
+    await initiate(req({ token: 'good', method: 'card' }));
+    expect(svc.initiatePublicPayment).toHaveBeenCalledWith(5150, 'card');
+  });
+
+  it('400 on an unknown method, without calling the service', async () => {
+    const res = await initiate(req({ token: 'good', method: 'gopay' }));
+    expect(res.status).toBe(400);
+    expect(svc.initiatePublicPayment).not.toHaveBeenCalled();
   });
 });

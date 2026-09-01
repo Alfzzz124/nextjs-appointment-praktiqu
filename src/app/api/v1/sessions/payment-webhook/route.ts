@@ -19,6 +19,7 @@ const payloadSchema = z.object({
   event: z.enum(['payment.completed', 'payment.failed', 'payment.expired']),
   wcOrderId: z.number(),
   amountPaid: z.number().optional(),
+  currency: z.string().optional(),
   transactionId: z.string().optional(),
 });
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!parsed.success) {
     return NextResponse.json({ status: false, message: 'Invalid payload' }, { status: 400 });
   }
-  const { event, wcOrderId, amountPaid, transactionId } = parsed.data;
+  const { event, wcOrderId, amountPaid, currency, transactionId } = parsed.data;
 
   const order = await getPaymentOrderByWcOrderId(wcOrderId);
   if (!order) {
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await markPaid({
         wcOrderId,
         amountPaid: amountPaid ?? 0,
+        currency,
         transactionId: transactionId ?? '',
         webhookPayload: parsed.data,
       });

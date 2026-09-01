@@ -44,14 +44,68 @@ final class Payments
             return new \WP_Error('woocommerce_missing', 'WooCommerce is not active', ['status' => 503]);
         }
 
+        $method = (string) ($input['method'] ?? 'xendit');
+        if (!in_array($method, ['xendit', 'paypal', 'card'], true)) {
+            return new \WP_Error(
+                'unknown_method',
+                sprintf('Unknown payment method "%s"', $method),
+                ['status' => 400]
+            );
+        }
+
+        // PayPal has no IDR (verified against the PPCP plugin's own supported list),
+        // so paypal/card orders are priced in USD from a rate the clinic maintains
+        // in wp-admin. Xendit orders stay in the store currency, untouched.
+        //
+        // Resolved before wc_create_order(): it needs nothing from the order, and a
+        // missing rate is a request-level failure like the unknown-method check
+        // above. Doing this after order creation meant a missing rate cancelled the
+        // order it had just created — correctly not treated as ours by
+        // is_praktiqu_order() (no praktiqu_* meta is written yet, so no spurious
+        // webhook), but still an unsweepable, unidentifiable cancelled order sitting
+        // in WooCommerce with debt this project already carries too much of. Now a
+        // missing rate creates no order at all.
+        $is_foreign = ($method === 'paypal' || $method === 'card');
+        $rate       = 0.0;
+        if ($is_foreign) {
+            $rate = (float) get_option('praktiqu_endpoint_paypal_idr_rate', '0');
+            if ($rate <= 0) {
+                return new \WP_Error(
+                    'paypal_rate_missing',
+                    'PayPal FX rate is not configured (Settings -> PraktiQU Endpoint)',
+                    ['status' => 503]
+                );
+            }
+        }
+
         $order = wc_create_order();
+        if (is_wp_error($order)) {
+            return new \WP_Error(
+                'order_create_failed',
+                'Failed to create WooCommerce order: ' . $order->get_error_message(),
+                ['status' => 500]
+            );
+        }
+
+        if ($is_foreign) {
+            $order->set_currency('USD');
+        }
+
+        // Computed once so the metadata and both return paths below cannot
+        // disagree about what currency/rate the patient was actually charged.
+        $charge_currency = $is_foreign ? 'USD' : get_woocommerce_currency();
+        $fx_rate         = $is_foreign ? $rate : null;
 
         foreach ((array) ($input['items'] ?? []) as $item) {
+            $price = (float) ($item['price'] ?? 0);
+            if ($is_foreign) {
+                $price = Money::idr_to_foreign($price, $rate);
+            }
             $product = new \WC_Product_Simple();
             $product->set_name((string) ($item['name'] ?? 'Service'));
             $product->set_status('publish');
-            $product->set_price((string) ($item['price'] ?? 0));
-            $product->set_regular_price((string) ($item['price'] ?? 0));
+            $product->set_price((string) $price);
+            $product->set_regular_price((string) $price);
             $product->set_virtual(true);
             $product->set_sold_individually(true);
             $product->set_catalog_visibility('hidden');
@@ -66,6 +120,9 @@ final class Payments
             if ($amount <= 0) {
                 continue;
             }
+            if ($is_foreign) {
+                $amount = Money::idr_to_foreign($amount, $rate);
+            }
             $fee = new \WC_Order_Item_Fee();
             $fee->set_name((string) ($tax['name'] ?? 'Tax'));
             $fee->set_amount((string) $amount);
@@ -75,6 +132,23 @@ final class Payments
 
         $order->set_billing_email((string) ($input['customerEmail'] ?? ''));
         $order->update_meta_data('praktiqu_source', (string) ($input['source'] ?? 'public'));
+        $order->update_meta_data('praktiqu_method', $method);
+        // The raw rupiah figure the clinic's disbursement reconciles against —
+        // computed plainly (rather than via array_map/array_merge) because
+        // this is the number that has to be obviously correct.
+        $expected_idr = 0.0;
+        foreach ((array) ($input['items'] ?? []) as $row) {
+            $expected_idr += (float) ($row['price'] ?? $row['amount'] ?? 0);
+        }
+        foreach ((array) ($input['taxes'] ?? []) as $row) {
+            $expected_idr += (float) ($row['price'] ?? $row['amount'] ?? 0);
+        }
+
+        $order->update_meta_data('praktiqu_charge_currency', $charge_currency);
+        $order->update_meta_data('praktiqu_expected_idr', (string) $expected_idr);
+        if ($is_foreign) {
+            $order->update_meta_data('praktiqu_fx_rate', (string) $rate);
+        }
         if (!empty($input['appointmentId'])) {
             $order->update_meta_data('praktiqu_appointment_id', (string) $input['appointmentId']);
         }
@@ -91,8 +165,52 @@ final class Payments
             $order->update_meta_data('praktiqu_cancel_url', esc_url_raw((string) $input['cancelUrl']));
         }
 
-        $order->calculate_totals();
-        $order->save();
+        // wc_get_price_decimals() reads the store-wide woocommerce_price_num_decimals
+        // option, not a per-order setting. calculate_totals() rounds every line and
+        // the final total to that many decimals, which can erase the per-line ceil
+        // Money::idr_to_foreign() just applied (e.g. store set to 0 decimals turns
+        // a $0.28 foreign total into $0 — see the invariant check below). Pin 2
+        // decimals for the duration of this order's calculation only, and only for
+        // a foreign (USD) order; a domestic Xendit order keeps the store's own
+        // setting, unchanged. The filter is removed in `finally` so an exception
+        // thrown by calculate_totals()/save() can't leave it registered for the
+        // rest of THIS request. It does not need to guard against leaking into a
+        // later, separate request: WordPress rebuilds $wp_filter on every
+        // bootstrap, so a PHP-FPM worker reusing a process carries compiled code
+        // across requests, never filter state.
+        $decimals_filter = static fn (): int => 2;
+        if ($is_foreign) {
+            add_filter('wc_get_price_decimals', $decimals_filter);
+        }
+        try {
+            $order->calculate_totals();
+            $order->save();
+        } finally {
+            if ($is_foreign) {
+                remove_filter('wc_get_price_decimals', $decimals_filter);
+            }
+        }
+
+        // Guard against a rounding failure being mistaken for a free service:
+        // if the input priced out to a non-zero rupiah figure but the order's
+        // total collapsed to <= 0 anyway (e.g. the decimals assumption above
+        // fails for some other reason), that is a bug, not a free booking —
+        // don't let it fall into payment_complete() below.
+        if ($expected_idr > 0 && (float) $order->get_total() <= 0) {
+            $order->update_status(
+                'cancelled',
+                'PraktiQU: rounding collapsed a non-zero charge to a zero total'
+            );
+            return new \WP_Error(
+                'amount_collapsed',
+                sprintf(
+                    'Charge collapsed to zero: expected Rp %d but the WooCommerce order total came out to %s. This is a rounding failure, not a free service.',
+                    (int) round($expected_idr),
+                    (string) $order->get_total()
+                ),
+                ['status' => 500]
+            );
+        }
 
         // Free service (total 0, below Xendit's minimum): no invoice. Complete
         // the order so our woocommerce_order_status_changed hook books the slot,
@@ -100,15 +218,22 @@ final class Payments
         if ((float) $order->get_total() <= 0) {
             $order->payment_complete();
             return [
-                'orderId'     => $order->get_id(),
-                'checkoutUrl' => (string) ($input['returnUrl'] ?? $order->get_checkout_order_received_url()),
+                'orderId'         => $order->get_id(),
+                'checkoutUrl'     => (string) ($input['returnUrl'] ?? $order->get_checkout_order_received_url()),
+                'chargedAmount'   => 0.0,
+                'chargedCurrency' => $charge_currency,
+                'fxRate'          => $fx_rate,
             ];
         }
 
-        $gateway = $this->resolve_xendit_gateway();
+        $gateway = $this->resolve_gateway($method);
         if ($gateway === null) {
-            $order->update_status('cancelled', 'PraktiQU: no enabled Xendit gateway');
-            return new \WP_Error('xendit_gateway_missing', 'No enabled Xendit payment gateway', ['status' => 503]);
+            $order->update_status('cancelled', sprintf('PraktiQU: no enabled gateway for method "%s"', $method));
+            return new \WP_Error(
+                'gateway_missing',
+                sprintf('No enabled payment gateway for method "%s"', $method),
+                ['status' => 503]
+            );
         }
 
         // process_payment() early-returns unless the order's payment method
@@ -124,10 +249,24 @@ final class Payments
             wc_clear_notices();
         }
 
-        $result = $gateway->process_payment($order->get_id());
+        $card_filter = $method === 'card' ? $this->force_card_landing_page() : null;
+        try {
+            $result = $gateway->process_payment($order->get_id());
+        } finally {
+            // Remove it in `finally`, not after the call: process_payment() can
+            // throw, and without `finally` that would leave the filter registered
+            // for the rest of THIS request, pushing a later PayPal order in the
+            // same request onto the card form too. (A separate, later HTTP request
+            // is not at risk either way: WordPress rebuilds $wp_filter on every
+            // bootstrap, so a PHP-FPM worker reusing a process carries compiled
+            // code across requests, never filter state.)
+            if ($card_filter !== null) {
+                remove_filter('ppcp_create_order_request_body_data', $card_filter, 10);
+            }
+        }
 
         if (!is_array($result) || ($result['result'] ?? '') !== 'success' || empty($result['redirect'])) {
-            $message = 'Failed to create Xendit invoice';
+            $message = sprintf('Failed to start payment via "%s"', $method);
             if (function_exists('wc_get_notices')) {
                 $errors = wc_get_notices('error');
                 if (!empty($errors)) {
@@ -136,33 +275,84 @@ final class Payments
                 }
                 wc_clear_notices();
             }
-            $order->update_status('cancelled', 'PraktiQU: Xendit invoice creation failed');
-            return new \WP_Error('xendit_invoice_failed', $message, ['status' => 502]);
+            $order->update_status('cancelled', sprintf('PraktiQU: payment start failed for method "%s"', $method));
+            return new \WP_Error('payment_start_failed', $message, ['status' => 502]);
         }
 
         return [
-            'orderId'     => $order->get_id(),
-            'checkoutUrl' => (string) $result['redirect'],
+            'orderId'         => $order->get_id(),
+            'checkoutUrl'     => (string) $result['redirect'],
+            'chargedAmount'   => (float) $order->get_total(),
+            'chargedCurrency' => $charge_currency,
+            'fxRate'          => $fx_rate,
         ];
     }
 
     /**
-     * First enabled Xendit gateway (id prefixed with 'xendit'). The hosted
-     * invoice shows every enabled Xendit method regardless of which gateway
-     * triggers it, so the specific pick only sets the page's pre-highlighted
-     * method.
+     * The enabled WooCommerce gateway that serves a payment method.
+     *
+     * - xendit: first enabled gateway whose id starts with 'xendit'. The hosted
+     *   invoice shows every enabled Xendit method regardless of which gateway
+     *   triggers it, so the specific pick only sets the page's pre-highlighted
+     *   method.
+     * - paypal, card: 'ppcp-gateway'. Both use the same gateway; 'card' differs
+     *   only in the landing page requested from PayPal (see
+     *   force_card_landing_page()). 'ppcp-card-button-gateway' is NOT used
+     *   even though it is enabled: driven server-side its process_payment() calls
+     *   create_order() with no funding_source, so it produces a PayPal order
+     *   identical to ppcp-gateway's. The two differ only in which browser button
+     *   was clicked.
      */
-    private function resolve_xendit_gateway(): ?\WC_Payment_Gateway
+    private function resolve_gateway(string $method): ?\WC_Payment_Gateway
     {
         if (!function_exists('WC') || !WC()->payment_gateways()) {
             return null;
         }
         foreach (WC()->payment_gateways()->payment_gateways() as $gateway) {
-            if (strpos((string) $gateway->id, 'xendit') === 0 && $gateway->enabled === 'yes') {
+            if ((string) $gateway->enabled !== 'yes') {
+                continue;
+            }
+            $id = (string) $gateway->id;
+            if ($method === 'xendit' && strpos($id, 'xendit') === 0) {
+                return $gateway;
+            }
+            if (($method === 'paypal' || $method === 'card') && $id === 'ppcp-gateway') {
                 return $gateway;
             }
         }
         return null;
+    }
+
+    /**
+     * Ask PayPal to open its hosted page on the guest card form rather than the
+     * account-login form, for the 'card' method only.
+     *
+     * Indonesia is not eligible for Advanced Card Processing -- the PPCP plugin's
+     * own country matrix omits ID, and this merchant holds only PPCP_STANDARD --
+     * so card fields cannot be hosted on our own pages. Cards must go through
+     * PayPal's page, where the merchant's active GUEST_CHECKOUT capability lets a
+     * payer with no PayPal account pay by card. All this does is choose which
+     * form that page opens on.
+     *
+     * Uses PPCP's documented `ppcp_create_order_request_body_data` filter rather
+     * than editing PPCP or hand-rolling a PayPal API call, so it survives plugin
+     * updates.
+     *
+     * @return callable The registered closure, so the caller can remove it.
+     */
+    private function force_card_landing_page(): callable
+    {
+        $filter = static function ($data) {
+            if (!is_array($data)) {
+                return $data;
+            }
+            // GUEST_CHECKOUT is PPCP's own constant value
+            // (ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT).
+            $data['payment_source']['paypal']['experience_context']['landing_page'] = 'GUEST_CHECKOUT';
+            return $data;
+        };
+        add_filter('ppcp_create_order_request_body_data', $filter, 10, 1);
+        return $filter;
     }
 
     /**
@@ -191,12 +381,15 @@ final class Payments
         if (!$order instanceof \WC_Order) {
             return new \WP_Error('order_not_found', 'WooCommerce order not found', ['status' => 404]);
         }
+        [$amount, $currency] = $this->order_amount_and_currency($order);
+
         return [
             'orderId'       => $order_id,
             'status'        => $order->get_status(),
             'isPaid'        => $order->is_paid(),
             'transactionId' => $order->get_transaction_id() ?: null,
-            'amount'        => (int) round((float) $order->get_total()),
+            'amount'        => $amount,
+            'currency'      => $currency,
         ];
     }
 
@@ -249,6 +442,25 @@ final class Payments
     }
 
     /**
+     * An order's charge currency and its amount at that currency's precision.
+     *
+     * Rupiah has no fractional subunit in practice, so IDR amounts stay integers
+     * exactly as before. Anything else keeps 2 decimals -- rounding a $12.35 USD
+     * order to 12 would fail the app's amount check and leave the appointment
+     * stuck in PENDING.
+     *
+     * @return array{0: float|int, 1: string}
+     */
+    private function order_amount_and_currency(\WC_Order $order): array
+    {
+        $currency = (string) ($order->get_meta('praktiqu_charge_currency') ?: $order->get_currency());
+        $total    = (float) $order->get_total();
+        return $currency === 'IDR'
+            ? [(int) round($total), $currency]
+            : [round($total, 2), $currency];
+    }
+
+    /**
      * Fire a payment-specific webhook, signed with the dedicated payment
      * webhook secret (see Settings — kept separate from the general secret
      * used for password/user events).
@@ -261,10 +473,13 @@ final class Payments
         }
         $secret = (string) get_option('praktiqu_endpoint_payment_webhook_secret', '');
 
+        [$amount, $currency] = $this->order_amount_and_currency($order);
+
         $payload = [
             'event'         => $event,
             'wcOrderId'     => $order->get_id(),
-            'amountPaid'    => (int) round((float) $order->get_total()),
+            'amountPaid'    => $amount,
+            'currency'      => $currency,
             'transactionId' => $order->get_transaction_id() ?: null,
             'source'        => $order->get_meta('praktiqu_source') ?: 'public',
             'issuedAt'      => gmdate('c'),
