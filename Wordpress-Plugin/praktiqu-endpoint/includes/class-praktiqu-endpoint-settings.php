@@ -104,12 +104,20 @@ final class Settings
      * A rejected value keeps the stored one: a blank or malformed submission
      * must not zero the rate, because Payments::create_order() treats a
      * non-positive rate as a hard failure and would refuse every PayPal order.
+     * A rejection also registers a settings-API error so the admin sees *why*
+     * the value on screen didn't change, instead of a plain "Settings saved"
+     * that reads as success.
      */
     public function sanitize_fx_rate(string $value): string
     {
         $current = (string) get_option('praktiqu_endpoint_paypal_idr_rate', '18000');
         $trimmed = trim($value);
         if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed <= 0) {
+            add_settings_error(
+                'praktiqu_endpoint_paypal_idr_rate',
+                'praktiqu_invalid_fx_rate',
+                __('PayPal FX Rate was not updated: it must be a number greater than 0. The previous value was kept.', 'praktiqu-endpoint')
+            );
             return $current;
         }
         if ($trimmed !== $current) {
@@ -129,13 +137,21 @@ final class Settings
      *
      * A rejected value keeps the stored one, same rationale as the rate
      * field: a blank or malformed submission must not silently change what
-     * foreign patients are charged.
+     * foreign patients are charged. A rejection also registers a
+     * settings-API error, same as sanitize_fx_rate() — without it, a typo'd
+     * markup (e.g. "150") saves silently at the old value while the screen
+     * still says "Settings saved," which reads as success when it isn't.
      */
     public function sanitize_markup_percent(string $value): string
     {
         $current = (string) get_option('praktiqu_endpoint_paypal_markup_percent', '0');
         $trimmed = trim($value);
         if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed < 0 || (float) $trimmed > 100) {
+            add_settings_error(
+                'praktiqu_endpoint_paypal_markup_percent',
+                'praktiqu_invalid_markup_percent',
+                __('Foreign Patient Markup was not updated: it must be a number between 0 and 100. The previous value was kept.', 'praktiqu-endpoint')
+            );
             return $current;
         }
         if ($trimmed !== $current) {
@@ -174,6 +190,14 @@ final class Settings
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('PraktiQU Endpoint Settings', 'praktiqu-endpoint'); ?></h1>
+
+            <?php
+            // Renders any add_settings_error() notices registered by the
+            // sanitize_* callbacks above (e.g. a rejected FX rate or markup) —
+            // without this call the rejection happens silently and the page
+            // just shows WordPress's generic "Settings saved" notice.
+            settings_errors();
+            ?>
 
             <h2><?php esc_html_e('Service Token', 'praktiqu-endpoint'); ?></h2>
             <?php if ($token_set): ?>
