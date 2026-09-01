@@ -44,6 +44,15 @@ final class Payments
             return new \WP_Error('woocommerce_missing', 'WooCommerce is not active', ['status' => 503]);
         }
 
+        $method = (string) ($input['method'] ?? 'xendit');
+        if (!in_array($method, ['xendit', 'paypal', 'card'], true)) {
+            return new \WP_Error(
+                'unknown_method',
+                sprintf('Unknown payment method "%s"', $method),
+                ['status' => 400]
+            );
+        }
+
         $order = wc_create_order();
 
         foreach ((array) ($input['items'] ?? []) as $item) {
@@ -75,6 +84,7 @@ final class Payments
 
         $order->set_billing_email((string) ($input['customerEmail'] ?? ''));
         $order->update_meta_data('praktiqu_source', (string) ($input['source'] ?? 'public'));
+        $order->update_meta_data('praktiqu_method', $method);
         if (!empty($input['appointmentId'])) {
             $order->update_meta_data('praktiqu_appointment_id', (string) $input['appointmentId']);
         }
@@ -105,10 +115,14 @@ final class Payments
             ];
         }
 
-        $gateway = $this->resolve_xendit_gateway();
+        $gateway = $this->resolve_gateway($method);
         if ($gateway === null) {
-            $order->update_status('cancelled', 'PraktiQU: no enabled Xendit gateway');
-            return new \WP_Error('xendit_gateway_missing', 'No enabled Xendit payment gateway', ['status' => 503]);
+            $order->update_status('cancelled', sprintf('PraktiQU: no enabled gateway for method "%s"', $method));
+            return new \WP_Error(
+                'gateway_missing',
+                sprintf('No enabled payment gateway for method "%s"', $method),
+                ['status' => 503]
+            );
         }
 
         // process_payment() early-returns unless the order's payment method
@@ -127,7 +141,7 @@ final class Payments
         $result = $gateway->process_payment($order->get_id());
 
         if (!is_array($result) || ($result['result'] ?? '') !== 'success' || empty($result['redirect'])) {
-            $message = 'Failed to create Xendit invoice';
+            $message = sprintf('Failed to start payment via "%s"', $method);
             if (function_exists('wc_get_notices')) {
                 $errors = wc_get_notices('error');
                 if (!empty($errors)) {
@@ -136,8 +150,8 @@ final class Payments
                 }
                 wc_clear_notices();
             }
-            $order->update_status('cancelled', 'PraktiQU: Xendit invoice creation failed');
-            return new \WP_Error('xendit_invoice_failed', $message, ['status' => 502]);
+            $order->update_status('cancelled', sprintf('PraktiQU: payment start failed for method "%s"', $method));
+            return new \WP_Error('payment_start_failed', $message, ['status' => 502]);
         }
 
         return [
@@ -147,18 +161,34 @@ final class Payments
     }
 
     /**
-     * First enabled Xendit gateway (id prefixed with 'xendit'). The hosted
-     * invoice shows every enabled Xendit method regardless of which gateway
-     * triggers it, so the specific pick only sets the page's pre-highlighted
-     * method.
+     * The enabled WooCommerce gateway that serves a payment method.
+     *
+     * - xendit: first enabled gateway whose id starts with 'xendit'. The hosted
+     *   invoice shows every enabled Xendit method regardless of which gateway
+     *   triggers it, so the specific pick only sets the page's pre-highlighted
+     *   method.
+     * - paypal, card: 'ppcp-gateway'. Both use the same gateway; 'card' differs
+     *   only in the landing page requested from PayPal (see
+     *   force_card_landing_page()). 'ppcp-card-button-gateway' is NOT used
+     *   even though it is enabled: driven server-side its process_payment() calls
+     *   create_order() with no funding_source, so it produces a PayPal order
+     *   identical to ppcp-gateway's. The two differ only in which browser button
+     *   was clicked.
      */
-    private function resolve_xendit_gateway(): ?\WC_Payment_Gateway
+    private function resolve_gateway(string $method): ?\WC_Payment_Gateway
     {
         if (!function_exists('WC') || !WC()->payment_gateways()) {
             return null;
         }
         foreach (WC()->payment_gateways()->payment_gateways() as $gateway) {
-            if (strpos((string) $gateway->id, 'xendit') === 0 && $gateway->enabled === 'yes') {
+            if ((string) $gateway->enabled !== 'yes') {
+                continue;
+            }
+            $id = (string) $gateway->id;
+            if ($method === 'xendit' && strpos($id, 'xendit') === 0) {
+                return $gateway;
+            }
+            if (($method === 'paypal' || $method === 'card') && $id === 'ppcp-gateway') {
                 return $gateway;
             }
         }
