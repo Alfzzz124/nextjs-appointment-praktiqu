@@ -53,6 +53,31 @@ final class Payments
             );
         }
 
+        // PayPal has no IDR (verified against the PPCP plugin's own supported list),
+        // so paypal/card orders are priced in USD from a rate the clinic maintains
+        // in wp-admin. Xendit orders stay in the store currency, untouched.
+        //
+        // Resolved before wc_create_order(): it needs nothing from the order, and a
+        // missing rate is a request-level failure like the unknown-method check
+        // above. Doing this after order creation meant a missing rate cancelled the
+        // order it had just created — correctly not treated as ours by
+        // is_praktiqu_order() (no praktiqu_* meta is written yet, so no spurious
+        // webhook), but still an unsweepable, unidentifiable cancelled order sitting
+        // in WooCommerce with debt this project already carries too much of. Now a
+        // missing rate creates no order at all.
+        $is_foreign = ($method === 'paypal' || $method === 'card');
+        $rate       = 0.0;
+        if ($is_foreign) {
+            $rate = (float) get_option('praktiqu_endpoint_paypal_idr_rate', '0');
+            if ($rate <= 0) {
+                return new \WP_Error(
+                    'paypal_rate_missing',
+                    'PayPal FX rate is not configured (Settings -> PraktiQU Endpoint)',
+                    ['status' => 503]
+                );
+            }
+        }
+
         $order = wc_create_order();
         if (is_wp_error($order)) {
             return new \WP_Error(
@@ -62,21 +87,7 @@ final class Payments
             );
         }
 
-        // PayPal has no IDR (verified against the PPCP plugin's own supported list),
-        // so paypal/card orders are priced in USD from a rate the clinic maintains
-        // in wp-admin. Xendit orders stay in the store currency, untouched.
-        $is_foreign = ($method === 'paypal' || $method === 'card');
-        $rate       = 0.0;
         if ($is_foreign) {
-            $rate = (float) get_option('praktiqu_endpoint_paypal_idr_rate', '0');
-            if ($rate <= 0) {
-                $order->update_status('cancelled', 'PraktiQU: PayPal FX rate not configured');
-                return new \WP_Error(
-                    'paypal_rate_missing',
-                    'PayPal FX rate is not configured (Settings -> PraktiQU Endpoint)',
-                    ['status' => 503]
-                );
-            }
             $order->set_currency('USD');
         }
 
