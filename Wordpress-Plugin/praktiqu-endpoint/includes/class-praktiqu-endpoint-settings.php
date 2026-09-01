@@ -60,6 +60,11 @@ final class Settings
             'sanitize_callback' => [$this, 'sanitize_payment_secret'],
             'default'           => '',
         ]);
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_paypal_idr_rate', [
+            'type'              => 'string',
+            'sanitize_callback' => [$this, 'sanitize_fx_rate'],
+            'default'           => '18000',
+        ]);
     }
 
     /**
@@ -85,6 +90,27 @@ final class Settings
             return (string) get_option('praktiqu_endpoint_payment_webhook_secret', '');
         }
         return $value;
+    }
+
+    /**
+     * Keep the FX rate a positive number, and stamp when it last changed so a
+     * stale rate is visible on the settings screen rather than silent.
+     *
+     * A rejected value keeps the stored one: a blank or malformed submission
+     * must not zero the rate, because Payments::create_order() treats a
+     * non-positive rate as a hard failure and would refuse every PayPal order.
+     */
+    public function sanitize_fx_rate(string $value): string
+    {
+        $current = (string) get_option('praktiqu_endpoint_paypal_idr_rate', '18000');
+        $trimmed = trim($value);
+        if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed <= 0) {
+            return $current;
+        }
+        if ($trimmed !== $current) {
+            update_option('praktiqu_endpoint_paypal_idr_rate_updated', gmdate('c'));
+        }
+        return $trimmed;
     }
 
     public function maybe_show_activation_notice(): void
@@ -222,6 +248,34 @@ final class Settings
                             />
                             <p class="description">
                                 <?php esc_html_e('Must match the PraktiQU Next.js app\'s PAYMENT_WEBHOOK_SECRET env var exactly.', 'praktiqu-endpoint'); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="praktiqu_endpoint_paypal_idr_rate"><?php esc_html_e('PayPal FX Rate (IDR per 1 USD)', 'praktiqu-endpoint'); ?></label>
+                        </th>
+                        <td>
+                            <input
+                                type="text"
+                                id="praktiqu_endpoint_paypal_idr_rate"
+                                name="praktiqu_endpoint_paypal_idr_rate"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_paypal_idr_rate', '18000')); ?>"
+                                class="regular-text"
+                                placeholder="18000"
+                            />
+                            <p class="description">
+                                <?php esc_html_e('PayPal does not support IDR, so PayPal and card orders are charged in USD. This rate divides: a HIGHER rate charges the payer FEWER dollars. At 18000, a Rp 200.000 service is charged $11.12.', 'praktiqu-endpoint'); ?>
+                                <?php
+                                $rate_updated = (string) get_option('praktiqu_endpoint_paypal_idr_rate_updated', '');
+                                if ($rate_updated !== '') {
+                                    echo '<br/>' . esc_html(sprintf(
+                                        /* translators: %s is an ISO-8601 timestamp. */
+                                        __('Last changed: %s', 'praktiqu-endpoint'),
+                                        $rate_updated
+                                    ));
+                                }
+                                ?>
                             </p>
                         </td>
                     </tr>
