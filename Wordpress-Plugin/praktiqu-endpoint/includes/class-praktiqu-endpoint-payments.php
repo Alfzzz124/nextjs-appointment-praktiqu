@@ -362,12 +362,15 @@ final class Payments
         if (!$order instanceof \WC_Order) {
             return new \WP_Error('order_not_found', 'WooCommerce order not found', ['status' => 404]);
         }
+        [$amount, $currency] = $this->order_amount_and_currency($order);
+
         return [
             'orderId'       => $order_id,
             'status'        => $order->get_status(),
             'isPaid'        => $order->is_paid(),
             'transactionId' => $order->get_transaction_id() ?: null,
-            'amount'        => (int) round((float) $order->get_total()),
+            'amount'        => $amount,
+            'currency'      => $currency,
         ];
     }
 
@@ -420,6 +423,25 @@ final class Payments
     }
 
     /**
+     * An order's charge currency and its amount at that currency's precision.
+     *
+     * Rupiah has no fractional subunit in practice, so IDR amounts stay integers
+     * exactly as before. Anything else keeps 2 decimals -- rounding a $12.35 USD
+     * order to 12 would fail the app's amount check and leave the appointment
+     * stuck in PENDING.
+     *
+     * @return array{0: float|int, 1: string}
+     */
+    private function order_amount_and_currency(\WC_Order $order): array
+    {
+        $currency = (string) ($order->get_meta('praktiqu_charge_currency') ?: $order->get_currency());
+        $total    = (float) $order->get_total();
+        return $currency === 'IDR'
+            ? [(int) round($total), $currency]
+            : [round($total, 2), $currency];
+    }
+
+    /**
      * Fire a payment-specific webhook, signed with the dedicated payment
      * webhook secret (see Settings — kept separate from the general secret
      * used for password/user events).
@@ -432,10 +454,13 @@ final class Payments
         }
         $secret = (string) get_option('praktiqu_endpoint_payment_webhook_secret', '');
 
+        [$amount, $currency] = $this->order_amount_and_currency($order);
+
         $payload = [
             'event'         => $event,
             'wcOrderId'     => $order->get_id(),
-            'amountPaid'    => (int) round((float) $order->get_total()),
+            'amountPaid'    => $amount,
+            'currency'      => $currency,
             'transactionId' => $order->get_transaction_id() ?: null,
             'source'        => $order->get_meta('praktiqu_source') ?: 'public',
             'issuedAt'      => gmdate('c'),
