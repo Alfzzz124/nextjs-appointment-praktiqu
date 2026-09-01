@@ -63,12 +63,24 @@ final class Settings
         register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_paypal_idr_rate', [
             'type'              => 'string',
             'sanitize_callback' => [$this, 'sanitize_fx_rate'],
-            'default'           => '18000',
+            // Deliberately '' and not '18000'. WordPress's update_option() compares the
+            // submitted value against get_option() with NO passed default, which returns
+            // the registered default — so if that default were '18000', an admin typing
+            // 18000 into a never-saved field would submit a value equal to the current
+            // one, update_option() would write nothing, and no row would ever be created.
+            // create_order() reads this option with an explicit '0' fallback and treats a
+            // non-positive rate as a hard failure, so the row's absence means every
+            // paypal/card order 503s. Net effect of a '18000' default: setting the rate to
+            // exactly the value we recommend is a silent no-op that disables the feature.
+            'default'           => '',
         ]);
         register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_paypal_markup_percent', [
             'type'              => 'string',
             'sanitize_callback' => [$this, 'sanitize_markup_percent'],
-            'default'           => '0',
+            // '' rather than '0' for the same reason as the rate above, so that saving an
+            // explicit 0 is a real change and gets its "Last changed" stamp. A missing row
+            // still means no markup: create_order() falls back to '0'.
+            'default'           => '',
         ]);
     }
 
@@ -110,7 +122,7 @@ final class Settings
      */
     public function sanitize_fx_rate(string $value): string
     {
-        $current = (string) get_option('praktiqu_endpoint_paypal_idr_rate', '18000');
+        $current = (string) get_option('praktiqu_endpoint_paypal_idr_rate', '');
         $trimmed = trim($value);
         if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed <= 0) {
             add_settings_error(
@@ -144,7 +156,7 @@ final class Settings
      */
     public function sanitize_markup_percent(string $value): string
     {
-        $current = (string) get_option('praktiqu_endpoint_paypal_markup_percent', '0');
+        $current = (string) get_option('praktiqu_endpoint_paypal_markup_percent', '');
         $trimmed = trim($value);
         if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed < 0 || (float) $trimmed > 100) {
             add_settings_error(
@@ -315,7 +327,7 @@ final class Settings
                                 type="text"
                                 id="praktiqu_endpoint_paypal_idr_rate"
                                 name="praktiqu_endpoint_paypal_idr_rate"
-                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_paypal_idr_rate', '18000')); ?>"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_paypal_idr_rate', '')); ?>"
                                 class="regular-text"
                                 placeholder="18000"
                             />
@@ -343,7 +355,7 @@ final class Settings
                                 type="text"
                                 id="praktiqu_endpoint_paypal_markup_percent"
                                 name="praktiqu_endpoint_paypal_markup_percent"
-                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_paypal_markup_percent', '0')); ?>"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_paypal_markup_percent', '')); ?>"
                                 class="regular-text"
                                 placeholder="0"
                             />
