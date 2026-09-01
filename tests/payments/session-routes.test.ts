@@ -194,3 +194,33 @@ describe.each([
     expect(res.status).toBe(404);
   });
 });
+
+describe('POST /sessions/payment-webhook — null transactionId', () => {
+  // The plugin sends `$order->get_transaction_id() ?: null`, so transactionId is null
+  // for every payment.expired and payment.failed event. A schema of
+  // z.string().optional() accepts undefined but REJECTS null, so both failure events
+  // 400'd while payment.completed (which carries a real capture id) passed. On the
+  // live box that meant a cancelled WooCommerce order never released its appointment.
+  it('accepts payment.expired with transactionId: null', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 49746, source: 'public', status: 'pending' });
+    (svc.markExpired as any).mockResolvedValue({ wcOrderId: 49746, source: 'public', status: 'expired' });
+    const res = await webhook(webhookReq(JSON.stringify({
+      event: 'payment.expired', wcOrderId: 49746, amountPaid: 48.89, currency: 'USD', transactionId: null,
+    }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.markExpired).toHaveBeenCalledWith(49746);
+    expect(svc.cancelIfStillPending).toHaveBeenCalled();
+  });
+
+  it('accepts payment.failed with transactionId: null', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 49747, source: 'public', status: 'pending' });
+    (svc.markFailed as any).mockResolvedValue({ wcOrderId: 49747, source: 'public', status: 'failed' });
+    const res = await webhook(webhookReq(JSON.stringify({
+      event: 'payment.failed', wcOrderId: 49747, transactionId: null,
+    }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.markFailed).toHaveBeenCalled();
+  });
+});

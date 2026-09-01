@@ -20,7 +20,13 @@ const payloadSchema = z.object({
   wcOrderId: z.number(),
   amountPaid: z.number().optional(),
   currency: z.string().optional(),
-  transactionId: z.string().optional(),
+  // Nullable, not just optional: the plugin sends
+  // `$order->get_transaction_id() ?: null`, which is null for every order without
+  // one -- i.e. every payment.expired and payment.failed event. z.string().optional()
+  // accepts undefined but rejects null, so both failure events were rejected with
+  // 400 Invalid payload while payment.completed (which carries a real capture id)
+  // passed. The consumer below is already null-safe (`transactionId ?? ''`).
+  transactionId: z.string().nullable().optional(),
 });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
