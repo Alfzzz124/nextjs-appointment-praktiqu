@@ -45,6 +45,35 @@ check('zero stays zero', Money::idr_to_foreign(0, 18000), 0.0);
 // A tax line, to prove the same helper serves both item and tax amounts.
 check('tax line converts', Money::idr_to_foreign(20000, 18000), 1.12);
 
+echo "\nMoney::idr_to_foreign with markup\n";
+
+// Default markup (0.0) must make the 2-arg call and the 3-arg call agree
+// exactly, proving the new parameter is a no-op unless supplied.
+check(
+    'markup 0 matches the 2-arg call (200000)',
+    Money::idr_to_foreign(200000, 18000, 0),
+    Money::idr_to_foreign(200000, 18000)
+);
+check(
+    'markup 0 matches the 2-arg call (180000)',
+    Money::idr_to_foreign(180000, 18000, 0),
+    Money::idr_to_foreign(180000, 18000)
+);
+
+// 200000/18000 = 11.111111... ; * 1.10 = 12.222222... -> ceil -> 12.23
+check('markup 10 on an item line', Money::idr_to_foreign(200000, 18000, 10), 12.23);
+
+// 180000/18000 = 10 exactly; * 1.10 = 11.00 exactly. The inner round(..., 6)
+// guard must stop binary-float error from turning this into 11.01 -- this is
+// the float-inflation case, now under markup rather than a bare rate.
+check('markup 10 keeps an exact result exact', Money::idr_to_foreign(180000, 18000, 10), 11.0);
+
+// A tax line: 20000/18000 = 1.111111... ; * 1.10 = 1.222222... -> ceil -> 1.23
+check('markup 10 on a tax line', Money::idr_to_foreign(20000, 18000, 10), 1.23);
+
+// markup 100 doubles the converted amount: 180000/18000 = 10; * 2.00 = 20.0 exactly.
+check('markup 100 doubles the amount', Money::idr_to_foreign(180000, 18000, 100), 20.0);
+
 echo "\nMoney::idr_to_foreign rejects a bad rate\n";
 
 foreach ([0.0, -1.0] as $bad) {
@@ -56,6 +85,16 @@ foreach ([0.0, -1.0] as $bad) {
     }
     check('rate ' . $bad . ' throws', $threw, true);
 }
+
+echo "\nMoney::idr_to_foreign rejects a negative markup\n";
+
+$threw = false;
+try {
+    Money::idr_to_foreign(100000, 18000, -1);
+} catch (\InvalidArgumentException $e) {
+    $threw = true;
+}
+check('markup -1 throws', $threw, true);
 
 echo "\n" . ($failures === 0 ? "ALL PASS\n" : "{$failures} FAILURE(S)\n");
 exit($failures === 0 ? 0 : 1);
