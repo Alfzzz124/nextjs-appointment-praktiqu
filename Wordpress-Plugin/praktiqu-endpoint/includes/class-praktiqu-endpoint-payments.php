@@ -293,6 +293,25 @@ final class Payments
         $card_filter = $method === 'card' ? $this->force_card_landing_page() : null;
         try {
             $result = $gateway->process_payment($order->get_id());
+        } catch (\Throwable $e) {
+            // process_payment() runs third-party gateway code and our own filters, and a
+            // throw here used to escape create_order() entirely. That was worse than a
+            // failed payment: the WC order stayed `wc-pending` with no payment_orders row,
+            // and because Next.js enqueues the auto-cancel job only AFTER create_order()
+            // returns, the appointment sat PENDING with nothing to reap it — a slot held
+            // forever. (Observed 2026-09-01: a stdClass/array mistake in
+            // force_card_landing_page() did exactly this.) Convert it into the same
+            // cancel-and-WP_Error shape every other failure path here uses, so the
+            // "no orphan order holds a slot" invariant holds for throws too.
+            $order->update_status(
+                'cancelled',
+                sprintf('PraktiQU: payment start threw for method "%s"', $method)
+            );
+            return new \WP_Error(
+                'payment_start_threw',
+                sprintf('Failed to start payment via "%s": %s', $method, $e->getMessage()),
+                ['status' => 502]
+            );
         } finally {
             // Remove it in `finally`, not after the call: process_payment() can
             // throw, and without `finally` that would leave the filter registered
@@ -387,9 +406,39 @@ final class Payments
             if (!is_array($data)) {
                 return $data;
             }
+            // `payment_source` is a stdClass, NOT a nested array: PPCP builds it from a
+            // PaymentSource entity constructed with `(object)` casts, so every level
+            // under it is an object too. An earlier version of this filter wrote
+            // $data['payment_source']['paypal'][...] and fataled the whole request with
+            // "Cannot use object of type stdClass as array" — which, because it threw
+            // rather than returning WP_Error, also orphaned the WooCommerce order and
+            // left the appointment PENDING with no auto-cancel job to reap it.
+            // Both shapes are handled here rather than assuming either: PPCP is a
+            // third-party plugin and this is its internal request body, so the shape can
+            // change under us on any update.
+            if (!isset($data['payment_source'])) {
+                return $data;
+            }
+            $source = $data['payment_source'];
+
             // GUEST_CHECKOUT is PPCP's own constant value
             // (ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT).
-            $data['payment_source']['paypal']['experience_context']['landing_page'] = 'GUEST_CHECKOUT';
+            if (is_object($source)) {
+                if (!isset($source->paypal) || !is_object($source->paypal)) {
+                    return $data;
+                }
+                if (!isset($source->paypal->experience_context) || !is_object($source->paypal->experience_context)) {
+                    $source->paypal->experience_context = new \stdClass();
+                }
+                $source->paypal->experience_context->landing_page = 'GUEST_CHECKOUT';
+                // $source is the same object $data['payment_source'] references, so the
+                // mutation above is already visible through $data — no reassignment needed.
+                return $data;
+            }
+
+            if (is_array($source) && isset($source['paypal'])) {
+                $data['payment_source']['paypal']['experience_context']['landing_page'] = 'GUEST_CHECKOUT';
+            }
             return $data;
         };
         add_filter('ppcp_create_order_request_body_data', $filter, 10, 1);
