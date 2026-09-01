@@ -54,6 +54,13 @@ final class Payments
         }
 
         $order = wc_create_order();
+        if (is_wp_error($order)) {
+            return new \WP_Error(
+                'order_create_failed',
+                'Failed to create WooCommerce order: ' . $order->get_error_message(),
+                ['status' => 500]
+            );
+        }
 
         // PayPal has no IDR (verified against the PPCP plugin's own supported list),
         // so paypal/card orders are priced in USD from a rate the clinic maintains
@@ -72,6 +79,11 @@ final class Payments
             }
             $order->set_currency('USD');
         }
+
+        // Computed once so the metadata and both return paths below cannot
+        // disagree about what currency/rate the patient was actually charged.
+        $charge_currency = $is_foreign ? 'USD' : get_woocommerce_currency();
+        $fx_rate         = $is_foreign ? $rate : null;
 
         foreach ((array) ($input['items'] ?? []) as $item) {
             $price = (float) ($item['price'] ?? 0);
@@ -110,13 +122,19 @@ final class Payments
         $order->set_billing_email((string) ($input['customerEmail'] ?? ''));
         $order->update_meta_data('praktiqu_source', (string) ($input['source'] ?? 'public'));
         $order->update_meta_data('praktiqu_method', $method);
-        $order->update_meta_data('praktiqu_charge_currency', $is_foreign ? 'USD' : get_woocommerce_currency());
-        $order->update_meta_data('praktiqu_expected_idr', (string) array_sum(
-            array_map(
-                static fn ($row): float => (float) ($row['price'] ?? $row['amount'] ?? 0),
-                array_merge((array) ($input['items'] ?? []), (array) ($input['taxes'] ?? []))
-            )
-        ));
+        // The raw rupiah figure the clinic's disbursement reconciles against —
+        // computed plainly (rather than via array_map/array_merge) because
+        // this is the number that has to be obviously correct.
+        $expected_idr = 0.0;
+        foreach ((array) ($input['items'] ?? []) as $row) {
+            $expected_idr += (float) ($row['price'] ?? $row['amount'] ?? 0);
+        }
+        foreach ((array) ($input['taxes'] ?? []) as $row) {
+            $expected_idr += (float) ($row['price'] ?? $row['amount'] ?? 0);
+        }
+
+        $order->update_meta_data('praktiqu_charge_currency', $charge_currency);
+        $order->update_meta_data('praktiqu_expected_idr', (string) $expected_idr);
         if ($is_foreign) {
             $order->update_meta_data('praktiqu_fx_rate', (string) $rate);
         }
@@ -136,8 +154,48 @@ final class Payments
             $order->update_meta_data('praktiqu_cancel_url', esc_url_raw((string) $input['cancelUrl']));
         }
 
-        $order->calculate_totals();
-        $order->save();
+        // wc_get_price_decimals() reads the store-wide woocommerce_price_num_decimals
+        // option, not a per-order setting. calculate_totals() rounds every line and
+        // the final total to that many decimals, which can erase the per-line ceil
+        // Money::idr_to_foreign() just applied (e.g. store set to 0 decimals turns
+        // a $0.28 foreign total into $0 — see the invariant check below). Pin 2
+        // decimals for the duration of this order's calculation only, and only for
+        // a foreign (USD) order; a domestic Xendit order keeps the store's own
+        // setting, unchanged. The filter is removed in `finally` so it cannot leak
+        // into a later request on the same PHP-FPM process.
+        $decimals_filter = static fn (): int => 2;
+        if ($is_foreign) {
+            add_filter('wc_get_price_decimals', $decimals_filter);
+        }
+        try {
+            $order->calculate_totals();
+            $order->save();
+        } finally {
+            if ($is_foreign) {
+                remove_filter('wc_get_price_decimals', $decimals_filter);
+            }
+        }
+
+        // Guard against a rounding failure being mistaken for a free service:
+        // if the input priced out to a non-zero rupiah figure but the order's
+        // total collapsed to <= 0 anyway (e.g. the decimals assumption above
+        // fails for some other reason), that is a bug, not a free booking —
+        // don't let it fall into payment_complete() below.
+        if ($expected_idr > 0 && (float) $order->get_total() <= 0) {
+            $order->update_status(
+                'cancelled',
+                'PraktiQU: rounding collapsed a non-zero charge to a zero total'
+            );
+            return new \WP_Error(
+                'amount_collapsed',
+                sprintf(
+                    'Charge collapsed to zero: expected Rp %d but the WooCommerce order total came out to %s. This is a rounding failure, not a free service.',
+                    (int) round($expected_idr),
+                    (string) $order->get_total()
+                ),
+                ['status' => 500]
+            );
+        }
 
         // Free service (total 0, below Xendit's minimum): no invoice. Complete
         // the order so our woocommerce_order_status_changed hook books the slot,
@@ -148,8 +206,8 @@ final class Payments
                 'orderId'         => $order->get_id(),
                 'checkoutUrl'     => (string) ($input['returnUrl'] ?? $order->get_checkout_order_received_url()),
                 'chargedAmount'   => 0.0,
-                'chargedCurrency' => $is_foreign ? 'USD' : get_woocommerce_currency(),
-                'fxRate'          => $is_foreign ? $rate : null,
+                'chargedCurrency' => $charge_currency,
+                'fxRate'          => $fx_rate,
             ];
         }
 
@@ -196,8 +254,8 @@ final class Payments
             'orderId'         => $order->get_id(),
             'checkoutUrl'     => (string) $result['redirect'],
             'chargedAmount'   => (float) $order->get_total(),
-            'chargedCurrency' => $is_foreign ? 'USD' : get_woocommerce_currency(),
-            'fxRate'          => $is_foreign ? $rate : null,
+            'chargedCurrency' => $charge_currency,
+            'fxRate'          => $fx_rate,
         ];
     }
 
