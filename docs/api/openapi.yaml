@@ -12748,6 +12748,8 @@ components:
       required:
         - status
         - expectedAmount
+        - chargedAmount
+        - chargedCurrency
     CheckoutUrlResult:
       type: object
       properties:

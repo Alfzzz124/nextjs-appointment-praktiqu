@@ -17,6 +17,12 @@ today's behaviour exactly, so **no front-end change is required to keep working*
 `paypal` and `card` reach the same PayPal page; they differ only in which form it opens
 on. A payer with no PayPal account can pay by card on either.
 
+## Not available
+
+Card fields rendered inside our own pages, Apple Pay, Google Pay, and PayPal Fastlane all
+require PayPal's Advanced Card Processing, for which **Indonesia is not eligible**. These
+are unavailable, not merely unbuilt — do not design UI that assumes them.
+
 ## Requests
 
 ```http
@@ -34,9 +40,10 @@ Content-Type: application/json
 { "billId": "9", "method": "paypal" }
 ```
 
-`method` is one of `xendit` | `paypal` | `card`. Anything else is **400**; it is not
-silently defaulted, because falling back to Xendit would charge rupiah for a payment the
-patient chose to make in dollars.
+`method` is one of `xendit` | `paypal` | `card`. Anything else is **400** — including an
+explicit `null`, which is not the same as omitting the key. Omit the key entirely to get
+the `xendit` default; a `null` is rejected. Nothing is silently defaulted, because falling
+back to Xendit would charge rupiah for a payment the patient chose to make in dollars.
 
 ## Responses
 
@@ -77,9 +84,3 @@ saw on their statement.
   Xendit and PayPal plugins hardcode this and neither exposes a filter. Known technical
   debt, unchanged by this work. Keep polling `/public/payment-verify`; an unpaid
   appointment auto-cancels after 1 hour regardless.
-
-## Not available
-
-Card fields rendered inside our own pages, Apple Pay, Google Pay, and PayPal Fastlane all
-require PayPal's Advanced Card Processing, for which **Indonesia is not eligible**. These
-are unavailable, not merely unbuilt — do not design UI that assumes them.
