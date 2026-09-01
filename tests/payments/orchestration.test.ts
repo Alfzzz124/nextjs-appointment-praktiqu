@@ -62,10 +62,10 @@ const logging = vi.hoisted(() => ({
 vi.mock('@/lib/logging', () => logging);
 
 import {
-  initiatePublicPayment, checkPublicPaymentStatus,
+  initiatePublicPayment, checkPublicPaymentStatus, ensureSessionPayment,
   AppointmentNotFoundError, AppointmentNotPendingError, PaymentAlreadyInitiatedError,
 } from '@/services/payments/payment.service';
-import { calculateTax } from '@/services/billing/bill.service';
+import { calculateTax, getBill } from '@/services/billing/bill.service';
 
 const APPOINTMENT = 5150;
 const DOCTOR = 29;
@@ -185,6 +185,27 @@ describe('initiatePublicPayment', () => {
       clinic_id: CLINIC,
       doctor_id: DOCTOR,
     });
+  });
+
+  it('falls back to expectedAmount when the plugin is pre-1.5.0 and reports no chargedAmount (regression: dropping "?? expectedAmount" would store/display a charge of 0)', async () => {
+    // `createWcOrder` (src/lib/wp-endpoint.ts) returns chargedAmount: null whenever the
+    // WordPress plugin predates 1.5.0 and doesn't send the field back — a real deploy
+    // shape, not a hypothetical: a `.next`-only deploy can put a new app in front of an
+    // old plugin. This is exactly what a pre-1.5.0 mapper produces (chargedCurrency
+    // defaults to 'IDR', fxRate stays null) — see wp-endpoint.ts lines 189-195.
+    db.paymentOrder.findFirst.mockResolvedValue(null);
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 42, checkoutUrl: 'https://wp/checkout/42',
+      chargedAmount: null, chargedCurrency: 'IDR', fxRate: null,
+    });
+    db.paymentOrder.create.mockResolvedValue({ id: 'po_1' });
+
+    const result = await initiatePublicPayment(APPOINTMENT);
+
+    // 100000 is the rupiah expectedAmount for this fixture's service price + 0 tax.
+    expect(result.chargedAmount).toBe(100000);
+    expect(result.chargedAmount).not.toBe(0);
+    expect(result.chargedAmount).not.toBeNull();
   });
 });
 
@@ -416,5 +437,40 @@ describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
 
     expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
     expect(jobsClient.jobs.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureSessionPayment — null chargedAmount fallback', () => {
+  const BILL_ID = '77';
+
+  function bill(totalAmount: number) {
+    return {
+      id: 77, invoiceId: 77, date: new Date('2026-07-01T00:00:00Z'), status: 'unpaid',
+      clinic: { id: CLINIC }, doctor: { id: DOCTOR }, patient: { id: 461 },
+      patientEncounter: { id: 91, appointmentId: APPOINTMENT },
+      serviceItems: [{ id: 1, serviceId: SERVICE, service_name: 'Consult', quantity: 1, price: totalAmount, total: totalAmount }],
+      service_total: totalAmount, discount: 0,
+      totalTax: 0, taxItems: [], total_amount: totalAmount, actual_amount: totalAmount,
+    };
+  }
+
+  it('falls back to expectedAmount when the plugin is pre-1.5.0 and reports no chargedAmount (regression: dropping "?? expectedAmount" would store/display a charge of 0)', async () => {
+    // Same real-deploy scenario as the initiatePublicPayment case above: a plugin older
+    // than 1.5.0 never sends chargedAmount back, so createWcOrder reports null. A
+    // coerced 0 here would be shown to staff as "charged Rp 0" for a real bill.
+    db.paymentOrder.findFirst.mockResolvedValue(null); // no existing order for this bill
+    vi.mocked(getBill).mockResolvedValue(bill(150000) as never);
+    db.kcUser.findUnique.mockResolvedValue({ displayName: 'Jane Doe', userEmail: 'jane@x.com' });
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 99, checkoutUrl: 'https://wp/checkout/99',
+      chargedAmount: null, chargedCurrency: 'IDR', fxRate: null,
+    });
+    db.paymentOrder.create.mockResolvedValue({ id: 'po_2' });
+
+    const result = await ensureSessionPayment(BILL_ID);
+
+    expect(result.chargedAmount).toBe(150000);
+    expect(result.chargedAmount).not.toBe(0);
+    expect(result.chargedAmount).not.toBeNull();
   });
 });
