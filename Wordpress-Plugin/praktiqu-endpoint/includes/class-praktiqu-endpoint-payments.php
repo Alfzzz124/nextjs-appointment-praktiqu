@@ -234,7 +234,17 @@ final class Payments
             wc_clear_notices();
         }
 
-        $result = $gateway->process_payment($order->get_id());
+        $card_filter = $method === 'card' ? $this->force_card_landing_page() : null;
+        try {
+            $result = $gateway->process_payment($order->get_id());
+        } finally {
+            // Remove it in `finally`, not after the call: PHP-FPM reuses a process
+            // across requests, so a leaked filter would push a later PayPal order
+            // onto the card form too.
+            if ($card_filter !== null) {
+                remove_filter('ppcp_create_order_request_body_data', $card_filter, 10);
+            }
+        }
 
         if (!is_array($result) || ($result['result'] ?? '') !== 'success' || empty($result['redirect'])) {
             $message = sprintf('Failed to start payment via "%s"', $method);
@@ -292,6 +302,38 @@ final class Payments
             }
         }
         return null;
+    }
+
+    /**
+     * Ask PayPal to open its hosted page on the guest card form rather than the
+     * account-login form, for the 'card' method only.
+     *
+     * Indonesia is not eligible for Advanced Card Processing -- the PPCP plugin's
+     * own country matrix omits ID, and this merchant holds only PPCP_STANDARD --
+     * so card fields cannot be hosted on our own pages. Cards must go through
+     * PayPal's page, where the merchant's active GUEST_CHECKOUT capability lets a
+     * payer with no PayPal account pay by card. All this does is choose which
+     * form that page opens on.
+     *
+     * Uses PPCP's documented `ppcp_create_order_request_body_data` filter rather
+     * than editing PPCP or hand-rolling a PayPal API call, so it survives plugin
+     * updates.
+     *
+     * @return callable The registered closure, so the caller can remove it.
+     */
+    private function force_card_landing_page(): callable
+    {
+        $filter = static function ($data) {
+            if (!is_array($data)) {
+                return $data;
+            }
+            // GUEST_CHECKOUT is PPCP's own constant value
+            // (ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT).
+            $data['payment_source']['paypal']['experience_context']['landing_page'] = 'GUEST_CHECKOUT';
+            return $data;
+        };
+        add_filter('ppcp_create_order_request_body_data', $filter, 10, 1);
+        return $filter;
     }
 
     /**
