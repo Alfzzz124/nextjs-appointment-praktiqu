@@ -161,8 +161,12 @@ final class Payments
         // a $0.28 foreign total into $0 — see the invariant check below). Pin 2
         // decimals for the duration of this order's calculation only, and only for
         // a foreign (USD) order; a domestic Xendit order keeps the store's own
-        // setting, unchanged. The filter is removed in `finally` so it cannot leak
-        // into a later request on the same PHP-FPM process.
+        // setting, unchanged. The filter is removed in `finally` so an exception
+        // thrown by calculate_totals()/save() can't leave it registered for the
+        // rest of THIS request. It does not need to guard against leaking into a
+        // later, separate request: WordPress rebuilds $wp_filter on every
+        // bootstrap, so a PHP-FPM worker reusing a process carries compiled code
+        // across requests, never filter state.
         $decimals_filter = static fn (): int => 2;
         if ($is_foreign) {
             add_filter('wc_get_price_decimals', $decimals_filter);
@@ -238,9 +242,13 @@ final class Payments
         try {
             $result = $gateway->process_payment($order->get_id());
         } finally {
-            // Remove it in `finally`, not after the call: PHP-FPM reuses a process
-            // across requests, so a leaked filter would push a later PayPal order
-            // onto the card form too.
+            // Remove it in `finally`, not after the call: process_payment() can
+            // throw, and without `finally` that would leave the filter registered
+            // for the rest of THIS request, pushing a later PayPal order in the
+            // same request onto the card form too. (A separate, later HTTP request
+            // is not at risk either way: WordPress rebuilds $wp_filter on every
+            // bootstrap, so a PHP-FPM worker reusing a process carries compiled
+            // code across requests, never filter state.)
             if ($card_filter !== null) {
                 remove_filter('ppcp_create_order_request_body_data', $card_filter, 10);
             }

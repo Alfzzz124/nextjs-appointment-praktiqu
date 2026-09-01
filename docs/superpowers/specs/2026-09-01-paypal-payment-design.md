@@ -179,8 +179,11 @@ typo cannot silently fall through to Xendit and charge in the wrong currency.
 `ppcp_create_order_request_body_data` (`modules/ppcp-api-client/src/Endpoint/
 OrderEndpoint.php:173`) that sets
 `$data['payment_source']['paypal']['experience_context']['landing_page'] =
-'GUEST_CHECKOUT'`. Remove the filter in a `finally` block so it cannot leak into a later
-request on the same PHP process. `GUEST_CHECKOUT` is PPCP's own constant
+'GUEST_CHECKOUT'`. Remove the filter in a `finally` block so a thrown exception can't leave
+it registered for the rest of *this* request. (It is not a defence against a later,
+separate request: WordPress rebuilds `$wp_filter` on every bootstrap, so PHP-FPM reusing a
+process across requests carries compiled code, never filter state.) `GUEST_CHECKOUT` is
+PPCP's own constant
 (`ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT`); the store setting is currently `'any'`,
 which maps to `NO_PREFERENCE`.
 
@@ -188,11 +191,12 @@ Using the plugin's documented filter, rather than editing PPCP or hand-rolling a
 API call, keeps the change update-safe and leaves a single code path for both PayPal
 methods.
 
-**Conversion (when `method` is `paypal` or `card`).** Before line items are added:
+**Conversion (when `method` is `paypal` or `card`).** Before the WC order is even created:
 
-1. Read the rate. If it is missing, non-numeric, or `<= 0`, cancel the just-created WC
-   order and return `WP_Error('paypal_rate_missing', …, ['status' => 503])`.
-2. `$order->set_currency('USD')`.
+1. Read the rate. If it is missing, non-numeric, or `<= 0`, create no WC order and return
+   `WP_Error('paypal_rate_missing', …, ['status' => 503])` — mirrors the unknown-method
+   check above, and leaves nothing unsweepable behind.
+2. `$order->set_currency('USD')` (after `wc_create_order()`, since this step needs the order).
 3. Convert **each** item price and **each** tax amount independently:
 
    ```php
@@ -274,7 +278,7 @@ computation (`computePublicAmount`, `computeSessionAmountFromBill`) are not touc
 | Condition | Result |
 | --- | --- |
 | Unrecognised `method` | `WP_Error` 400 `unknown_method`, no WC order created |
-| Rate missing / non-numeric / `<= 0` | WC order cancelled, `WP_Error` 503 `paypal_rate_missing` |
+| Rate missing / non-numeric / `<= 0` | No WC order created, `WP_Error` 503 `paypal_rate_missing` (resolved before `wc_create_order()` — see below) |
 | No enabled `ppcp-gateway` | WC order cancelled, `WP_Error` 503 (mirrors the Xendit branch) |
 | PayPal API rejects the order | Notice captured via `wc_get_notices()`, WC order cancelled, `WP_Error` 502 |
 | Converted total below PayPal's minimum | WC order cancelled, `WP_Error` 502 with the PayPal message |
@@ -298,9 +302,14 @@ order is left holding a slot.
   a session bill. Then restore the live credentials and re-register the live webhook.
 - **Card method** — the same run with `method: 'card'`, checking two things: the hosted
   page opens on the card form rather than the PayPal login, and paying with a sandbox
-  **card** (no PayPal account) completes the booking. Then a `paypal` order immediately
-  afterwards in the same PHP process, to prove the landing-page filter was removed and did
-  not leak.
+  **card** (no PayPal account) completes the booking. The landing-page filter's cleanup
+  is verified by code review (the `finally` block), not by a live "run another order
+  right after" step — two separate HTTP requests never share `$wp_filter` state (see
+  above), so such a step would pass regardless of whether the `finally` exists.
+- **Tax line** — a `paypal` order for a service with a tax line, the one genuinely new
+  code path versus Xendit (a tax line becomes a `WC_Order_Item_Fee`, and PPCP must
+  itemise the purchase unit so the parts sum to the total). Assert the PayPal page's
+  total matches `chargedAmount` and the booking completes.
 - **Regression** — one Xendit booking after the change, to prove the default path is
   untouched.
 
