@@ -64,13 +64,26 @@ SHOW COLUMNS FROM payment_orders WHERE Field IN ('gateway', 'chargedCurrency', '
 
 Upload `Wordpress-Plugin/praktiqu-endpoint/` to
 `~/appointment.praktiqu.com/wp-content/plugins/praktiqu-endpoint/`, keeping a timestamped
-backup of the existing directory. Verify plugin health reports `"version":"1.5.0"`.
+backup of the existing directory. Verify plugin health reports `"version":"1.6.0"`.
 
-Then in **Settings → PraktiQU Endpoint**, set **PayPal FX Rate (IDR per 1 USD)** to
-`18000` and save. Confirm "Last changed" appears.
+Then in **Settings → PraktiQU Endpoint**, set **both** fields and save:
+
+- **PayPal FX Rate (IDR per 1 USD)** — `18000`, the honest market rate.
+- **Foreign Patient Markup (%)** — the clinic's business markup, e.g. `10`.
+
+Confirm "Last changed" appears next to each field independently.
 
 > The rate divides: `USD = IDR / rate`. A **higher** rate charges the payer **fewer**
-> dollars. At 18000 a Rp 200.000 service is charged $11.12.
+> dollars — but the rate is no longer the knob for that. Use the markup field to charge
+> foreign patients more or less; keep the rate tracking the real exchange rate.
+>
+> The markup defaults to `0` (a fresh install, or an upgrade from 1.5.0 that hasn't set
+> it yet, behaves exactly as before — no markup, not a failure). **Forgetting to set the
+> markup after this deploy is a silent no-markup charge, not an error** — nothing will
+> flag it, so confirm the value explicitly rather than assuming it carried over.
+>
+> At rate 18000 and markup 10%, a Rp 200.000 service is charged $12.23 (was $11.12 with
+> no markup).
 
 ## 3. Prisma client on the server
 
@@ -111,8 +124,9 @@ Curl from a local machine hits a JS bot-check WAF and returns an HTML "One momen
 please..." page rather than JSON — **run these from the server itself.**
 
 - [ ] `POST /public/payments {"token":"…","method":"paypal"}` → 201, `checkoutUrl` on
-  `sandbox.paypal.com`, `chargedCurrency: "USD"`, `chargedAmount` = ceil of
-  `total_idr / 18000`.
+  `sandbox.paypal.com`, `chargedCurrency: "USD"`, `chargedAmount` = per-line ceil of
+  `(item_or_tax_idr / 18000) × (1 + markup / 100)`, using whatever markup was set in
+  step 2 (e.g. `10` → the total is ~10% above the no-markup figure).
 - [ ] Pay with the sandbox buyer account → appointment goes `PENDING → BOOKED`, patient
   lands on the front-end success URL.
 - [ ] `method: "card"` → the hosted page opens on the **card form**, and paying with a
