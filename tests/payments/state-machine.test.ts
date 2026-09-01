@@ -28,6 +28,7 @@ describe('payment.service state machine', () => {
       data: {
         source: 'public', appointmentId: 'appt_1', billId: null, encounterId: null,
         wcOrderId: 42, expectedAmount: 100000, status: 'pending',
+        gateway: 'xendit', chargedAmount: 100000, chargedCurrency: 'IDR', fxRate: null,
       },
     });
   });

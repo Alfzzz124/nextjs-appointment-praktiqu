@@ -131,12 +131,19 @@ describe('initiatePublicPayment', () => {
 
   it('creates a WC order + payment_orders row + auto-cancel job on success', async () => {
     db.paymentOrder.findFirst.mockResolvedValue(null);
-    wpEndpoint.createWcOrder.mockResolvedValue({ orderId: 42, checkoutUrl: 'https://wp/checkout/42' });
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 42, checkoutUrl: 'https://wp/checkout/42',
+      chargedAmount: 100000, chargedCurrency: 'IDR', fxRate: null,
+    });
     db.paymentOrder.create.mockResolvedValue({ id: 'po_1' });
 
     const result = await initiatePublicPayment(APPOINTMENT);
 
-    expect(result).toEqual({ checkoutUrl: 'https://wp/checkout/42' });
+    expect(result).toEqual({
+      checkoutUrl: 'https://wp/checkout/42',
+      chargedAmount: 100000,
+      chargedCurrency: 'IDR',
+    });
     expect(db.paymentOrder.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         wcOrderId: 42,

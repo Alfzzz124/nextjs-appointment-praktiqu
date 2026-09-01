@@ -92,3 +92,27 @@ describe('payment.service webhook signature', () => {
     vi.unstubAllEnvs();
   });
 });
+
+import { chargedView } from '@/services/payments/payment.service';
+
+describe('chargedView', () => {
+  it('reads the stored USD charge', () => {
+    const view = chargedView({ expectedAmount: 200000, chargedAmount: 11.12, chargedCurrency: 'USD' } as any);
+    expect(view).toEqual({ chargedAmount: 11.12, chargedCurrency: 'USD' });
+  });
+
+  it('falls back to the rupiah expectedAmount on a row that predates the column', () => {
+    // Rows written before 2026-09-01 have chargedAmount NULL; they are all Xendit
+    // orders, so expectedAmount already is the charge.
+    const view = chargedView({ expectedAmount: 200000, chargedAmount: null, chargedCurrency: 'IDR' } as any);
+    expect(view).toEqual({ chargedAmount: 200000, chargedCurrency: 'IDR' });
+  });
+
+  it('converts a Prisma Decimal, which is an object rather than a number', () => {
+    // Prisma returns DECIMAL columns as Decimal instances; toNum() handles them
+    // via String(), and a bare `as number` would silently produce NaN downstream.
+    const decimalLike = { toString: () => '11.12' };
+    const view = chargedView({ expectedAmount: 200000, chargedAmount: decimalLike, chargedCurrency: 'USD' } as any);
+    expect(view.chargedAmount).toBe(11.12);
+  });
+});

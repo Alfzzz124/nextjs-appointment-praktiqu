@@ -107,6 +107,10 @@ export interface CreatePaymentOrderInput {
   encounterId?: string | null;
   wcOrderId: number;
   expectedAmount: number;
+  gateway?: PaymentMethod;
+  chargedAmount?: number | null;
+  chargedCurrency?: string;
+  fxRate?: number | null;
 }
 
 export async function createPaymentOrder(input: CreatePaymentOrderInput): Promise<PaymentOrder> {
@@ -119,6 +123,10 @@ export async function createPaymentOrder(input: CreatePaymentOrderInput): Promis
       wcOrderId: input.wcOrderId,
       expectedAmount: input.expectedAmount,
       status: 'pending',
+      gateway: input.gateway ?? 'xendit',
+      chargedAmount: input.chargedAmount ?? input.expectedAmount, // null/undefined -> the rupiah figure
+      chargedCurrency: input.chargedCurrency ?? 'IDR',
+      fxRate: input.fxRate ?? null,
     },
   });
 }
@@ -188,7 +196,7 @@ export async function markExpired(wcOrderId: number): Promise<PaymentOrder | nul
 // avoids dead exported code (YAGNI).
 
 import { signAppointmentToken } from '@/lib/public/appointment-token';
-import { createWcOrder, getWcOrderStatus } from '@/lib/wp-endpoint';
+import { createWcOrder, getWcOrderStatus, type PaymentMethod } from '@/lib/wp-endpoint';
 import { jobs } from '@/lib/jobs/client';
 import { getBill } from '@/services/billing/bill.service';
 import { logging } from '@/lib/logging';
@@ -212,10 +220,32 @@ const AMOUNT_TOLERANCE_RUPIAH = 2;
 
 export interface PaymentStatusView {
   status: PaymentStatus;
+  /** Always integer rupiah — the app's own source of truth. */
   expectedAmount: number;
+  /** What the payer was billed, in `chargedCurrency`. */
+  chargedAmount: number;
+  chargedCurrency: string;
 }
 
-export async function initiatePublicPayment(appointmentId: number): Promise<{ checkoutUrl: string }> {
+/**
+ * What the payer was actually billed, for display.
+ *
+ * `chargedAmount` is NULL on rows written before the column existed. Those are
+ * all Xendit orders in rupiah, where `expectedAmount` already is the charge, so
+ * that is the fallback. Prisma hands back a `Decimal` object rather than a
+ * number, which is why this goes through `toNum` instead of a cast.
+ */
+export function chargedView(order: PaymentOrder): { chargedAmount: number; chargedCurrency: string } {
+  return {
+    chargedAmount: order.chargedAmount === null ? order.expectedAmount : toNum(order.chargedAmount),
+    chargedCurrency: order.chargedCurrency || 'IDR',
+  };
+}
+
+export async function initiatePublicPayment(
+  appointmentId: number,
+  method: PaymentMethod = 'xendit',
+): Promise<{ checkoutUrl: string; chargedAmount: number; chargedCurrency: string }> {
   const appt = await findSessionById(appointmentId);
   if (!appt) throw new AppointmentNotFoundError();
   if (appt.status !== SESSION_STATUS.PENDING) throw new AppointmentNotPendingError();
@@ -256,6 +286,7 @@ export async function initiatePublicPayment(appointmentId: number): Promise<{ ch
     taxes,
     returnUrl: `${getPublicAppUrl()}/book/payment/success?appt=${token}`,
     cancelUrl: `${getPublicAppUrl()}/book/payment/cancel?appt=${token}`,
+    method,
   });
 
   await createPaymentOrder({
@@ -263,6 +294,10 @@ export async function initiatePublicPayment(appointmentId: number): Promise<{ ch
     appointmentId: orderKey,
     wcOrderId: wcOrder.orderId,
     expectedAmount,
+    gateway: method,
+    chargedAmount: wcOrder.chargedAmount,
+    chargedCurrency: wcOrder.chargedCurrency,
+    fxRate: wcOrder.fxRate,
   });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',
@@ -270,7 +305,11 @@ export async function initiatePublicPayment(appointmentId: number): Promise<{ ch
     args: { wcOrderId: wcOrder.orderId },
   });
 
-  return { checkoutUrl: wcOrder.checkoutUrl };
+  return {
+    checkoutUrl: wcOrder.checkoutUrl,
+    chargedAmount: wcOrder.chargedAmount ?? expectedAmount,
+    chargedCurrency: wcOrder.chargedCurrency,
+  };
 }
 
 export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
@@ -424,24 +463,38 @@ export async function checkPublicPaymentStatus(appointmentId: number): Promise<P
   const order = await getPaymentOrderByAppointment(String(appointmentId));
   if (!order) throw new UnknownOrderError('No payment found for this appointment');
   const reconciled = await reconcileIfStale(order);
-  return { status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };
+  return {
+    status: reconciled.status as PaymentStatus,
+    expectedAmount: reconciled.expectedAmount,
+    ...chargedView(reconciled),
+  };
 }
 
 export async function checkSessionPaymentStatus(billId: string): Promise<PaymentStatusView> {
   const order = await getPaymentOrderByBill(billId);
   if (!order) throw new UnknownOrderError('No payment found for this bill');
   const reconciled = await reconcileIfStale(order);
-  return { status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };
+  return {
+    status: reconciled.status as PaymentStatus,
+    expectedAmount: reconciled.expectedAmount,
+    ...chargedView(reconciled),
+  };
 }
 
 export async function ensureSessionPayment(
   billId: string,
-): Promise<{ checkoutUrl: string | null; status: PaymentStatus; expectedAmount: number }> {
+  method: PaymentMethod = 'xendit',
+): Promise<{ checkoutUrl: string | null; status: PaymentStatus; expectedAmount: number; chargedAmount: number; chargedCurrency: string }> {
   const existing = await getPaymentOrderByBill(billId);
   if (existing) {
     const reconciled = await reconcileIfStale(existing);
     if (reconciled.status !== 'failed' && reconciled.status !== 'expired' && reconciled.status !== 'cancelled') {
-      return { checkoutUrl: null, status: reconciled.status as PaymentStatus, expectedAmount: reconciled.expectedAmount };
+      return {
+        checkoutUrl: null,
+        status: reconciled.status as PaymentStatus,
+        expectedAmount: reconciled.expectedAmount,
+        ...chargedView(reconciled),
+      };
     }
     // failed/expired/cancelled — fall through and create a fresh order.
   }
@@ -463,6 +516,7 @@ export async function ensureSessionPayment(
     taxes,
     returnUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-success`,
     cancelUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-cancel`,
+    method,
   });
 
   await createPaymentOrder({
@@ -471,6 +525,10 @@ export async function ensureSessionPayment(
     encounterId: String(bill.patientEncounter.id),
     wcOrderId: wcOrder.orderId,
     expectedAmount,
+    gateway: method,
+    chargedAmount: wcOrder.chargedAmount,
+    chargedCurrency: wcOrder.chargedCurrency,
+    fxRate: wcOrder.fxRate,
   });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',
@@ -478,5 +536,11 @@ export async function ensureSessionPayment(
     args: { wcOrderId: wcOrder.orderId },
   });
 
-  return { checkoutUrl: wcOrder.checkoutUrl, status: 'pending', expectedAmount };
+  return {
+    checkoutUrl: wcOrder.checkoutUrl,
+    status: 'pending',
+    expectedAmount,
+    chargedAmount: wcOrder.chargedAmount ?? expectedAmount,
+    chargedCurrency: wcOrder.chargedCurrency,
+  };
 }
