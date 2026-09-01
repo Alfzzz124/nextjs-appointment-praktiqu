@@ -350,10 +350,12 @@ order is left holding a slot.
    A `.next`-only deploy does not regenerate the Prisma client — that exact omission
    previously made `/public/payment-verify` return 500 because `prisma.paymentOrder` was
    undefined.
-3. Deploy plugin 1.5.0 to `appointment.praktiqu.com` (`wp-cli` is not on PATH on that
+3. Deploy plugin 1.6.0 to `appointment.praktiqu.com` (`wp-cli` is not on PATH on that
    box; activate through WordPress's own `activate_plugin()` if needed).
-4. Set the FX rate in wp-admin before enabling PayPal in the front-end.
-5. Verify plugin health returns `1.5.0`.
+4. Set both the FX rate and the foreign-patient markup in wp-admin before enabling
+   PayPal in the front-end — a forgotten markup does not fail, it silently defaults to
+   0 (no markup) on every foreign charge until someone notices.
+5. Verify plugin health returns `1.6.0`.
 
 ## Risks and accepted limitations
 
@@ -368,8 +370,15 @@ order is left holding a slot.
   no longer applies to the rate field itself. A misconfigured or forgotten markup is now
   the equivalent risk — flagged in that subsection instead.
 - **PayPal cross-border fees (~4.4% + a fixed fee)** mean the clinic receives less than
-  `chargedAmount`. Combined with the rate above, the effective shortfall per PayPal
-  transaction is roughly 12–13% of the rupiah list price.
+  `chargedAmount`. The rate itself is neutral (see the correction above), so this fee is
+  the shortfall on its own — not stacked with any rate discount. The foreign-patient
+  markup setting is what is meant to offset it; at the user's stated `+10%` target the
+  clinic comes out ahead of the fee, not behind, though the exact crossover depends on
+  the merchant's actual PayPal fee schedule, which has not been confirmed against the
+  live account (~4.4% + fixed fee is PayPal's published cross-border rate, not a verified
+  figure for this merchant). Separately, withdrawing PayPal balance to a rupiah bank
+  account may incur PayPal's own currency-conversion spread on top of the transaction
+  fee — also unconfirmed, and not to be guessed at here.
 - **A stale FX rate is the clinic's exposure.** The last-modified timestamp makes it
   visible on the settings screen.
 - **`landing_page` is a preference, not a contract.** PayPal may still show the
