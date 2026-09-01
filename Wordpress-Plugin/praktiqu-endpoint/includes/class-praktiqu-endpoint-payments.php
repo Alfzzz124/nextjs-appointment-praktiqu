@@ -55,12 +55,34 @@ final class Payments
 
         $order = wc_create_order();
 
+        // PayPal has no IDR (verified against the PPCP plugin's own supported list),
+        // so paypal/card orders are priced in USD from a rate the clinic maintains
+        // in wp-admin. Xendit orders stay in the store currency, untouched.
+        $is_foreign = ($method === 'paypal' || $method === 'card');
+        $rate       = 0.0;
+        if ($is_foreign) {
+            $rate = (float) get_option('praktiqu_endpoint_paypal_idr_rate', '0');
+            if ($rate <= 0) {
+                $order->update_status('cancelled', 'PraktiQU: PayPal FX rate not configured');
+                return new \WP_Error(
+                    'paypal_rate_missing',
+                    'PayPal FX rate is not configured (Settings -> PraktiQU Endpoint)',
+                    ['status' => 503]
+                );
+            }
+            $order->set_currency('USD');
+        }
+
         foreach ((array) ($input['items'] ?? []) as $item) {
+            $price = (float) ($item['price'] ?? 0);
+            if ($is_foreign) {
+                $price = Money::idr_to_foreign($price, $rate);
+            }
             $product = new \WC_Product_Simple();
             $product->set_name((string) ($item['name'] ?? 'Service'));
             $product->set_status('publish');
-            $product->set_price((string) ($item['price'] ?? 0));
-            $product->set_regular_price((string) ($item['price'] ?? 0));
+            $product->set_price((string) $price);
+            $product->set_regular_price((string) $price);
             $product->set_virtual(true);
             $product->set_sold_individually(true);
             $product->set_catalog_visibility('hidden');
@@ -75,6 +97,9 @@ final class Payments
             if ($amount <= 0) {
                 continue;
             }
+            if ($is_foreign) {
+                $amount = Money::idr_to_foreign($amount, $rate);
+            }
             $fee = new \WC_Order_Item_Fee();
             $fee->set_name((string) ($tax['name'] ?? 'Tax'));
             $fee->set_amount((string) $amount);
@@ -85,6 +110,16 @@ final class Payments
         $order->set_billing_email((string) ($input['customerEmail'] ?? ''));
         $order->update_meta_data('praktiqu_source', (string) ($input['source'] ?? 'public'));
         $order->update_meta_data('praktiqu_method', $method);
+        $order->update_meta_data('praktiqu_charge_currency', $is_foreign ? 'USD' : get_woocommerce_currency());
+        $order->update_meta_data('praktiqu_expected_idr', (string) array_sum(
+            array_map(
+                static fn ($row): float => (float) ($row['price'] ?? $row['amount'] ?? 0),
+                array_merge((array) ($input['items'] ?? []), (array) ($input['taxes'] ?? []))
+            )
+        ));
+        if ($is_foreign) {
+            $order->update_meta_data('praktiqu_fx_rate', (string) $rate);
+        }
         if (!empty($input['appointmentId'])) {
             $order->update_meta_data('praktiqu_appointment_id', (string) $input['appointmentId']);
         }
@@ -110,8 +145,11 @@ final class Payments
         if ((float) $order->get_total() <= 0) {
             $order->payment_complete();
             return [
-                'orderId'     => $order->get_id(),
-                'checkoutUrl' => (string) ($input['returnUrl'] ?? $order->get_checkout_order_received_url()),
+                'orderId'         => $order->get_id(),
+                'checkoutUrl'     => (string) ($input['returnUrl'] ?? $order->get_checkout_order_received_url()),
+                'chargedAmount'   => 0.0,
+                'chargedCurrency' => $is_foreign ? 'USD' : get_woocommerce_currency(),
+                'fxRate'          => $is_foreign ? $rate : null,
             ];
         }
 
@@ -155,8 +193,11 @@ final class Payments
         }
 
         return [
-            'orderId'     => $order->get_id(),
-            'checkoutUrl' => (string) $result['redirect'],
+            'orderId'         => $order->get_id(),
+            'checkoutUrl'     => (string) $result['redirect'],
+            'chargedAmount'   => (float) $order->get_total(),
+            'chargedCurrency' => $is_foreign ? 'USD' : get_woocommerce_currency(),
+            'fxRate'          => $is_foreign ? $rate : null,
         ];
     }
 
