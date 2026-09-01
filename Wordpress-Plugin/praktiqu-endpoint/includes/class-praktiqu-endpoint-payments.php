@@ -403,42 +403,38 @@ final class Payments
     private function force_card_landing_page(): callable
     {
         $filter = static function ($data) {
-            if (!is_array($data)) {
+            if (!is_array($data) || !isset($data['payment_source']['paypal'])) {
                 return $data;
             }
-            // `payment_source` is a stdClass, NOT a nested array: PPCP builds it from a
-            // PaymentSource entity constructed with `(object)` casts, so every level
-            // under it is an object too. An earlier version of this filter wrote
-            // $data['payment_source']['paypal'][...] and fataled the whole request with
-            // "Cannot use object of type stdClass as array" — which, because it threw
-            // rather than returning WP_Error, also orphaned the WooCommerce order and
-            // left the appointment PENDING with no auto-cancel job to reap it.
-            // Both shapes are handled here rather than assuming either: PPCP is a
-            // third-party plugin and this is its internal request body, so the shape can
-            // change under us on any update.
-            if (!isset($data['payment_source'])) {
-                return $data;
-            }
-            $source = $data['payment_source'];
 
+            // The request body nests THREE different container types, which is why a
+            // naive $data['payment_source']['paypal']['experience_context'][...] write
+            // fatals with "Cannot use object of type stdClass as array". Read from
+            // PPCP 4.1.2 rather than guessed:
+            //
+            //   OrderEndpoint::create()  $data['payment_source'] = array(name => properties)
+            //                            -> payment_source is an ARRAY, keyed 'paypal'
+            //   PaymentSource::properties(): object
+            //                            -> the 'paypal' value is a stdClass
+            //   ...->build()->to_array() -> its experience_context property is an ARRAY
+            //
+            // So: array -> stdClass -> array. Verified against the live sandbox.
+            $paypal = $data['payment_source']['paypal'];
+            if (!is_object($paypal)) {
+                return $data;
+            }
+
+            $context = $paypal->experience_context ?? null;
+            if (!is_array($context)) {
+                $context = [];
+            }
             // GUEST_CHECKOUT is PPCP's own constant value
             // (ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT).
-            if (is_object($source)) {
-                if (!isset($source->paypal) || !is_object($source->paypal)) {
-                    return $data;
-                }
-                if (!isset($source->paypal->experience_context) || !is_object($source->paypal->experience_context)) {
-                    $source->paypal->experience_context = new \stdClass();
-                }
-                $source->paypal->experience_context->landing_page = 'GUEST_CHECKOUT';
-                // $source is the same object $data['payment_source'] references, so the
-                // mutation above is already visible through $data — no reassignment needed.
-                return $data;
-            }
+            $context['landing_page'] = 'GUEST_CHECKOUT';
+            // $paypal is an object handle, so this mutation is visible through $data
+            // without writing the array element back.
+            $paypal->experience_context = $context;
 
-            if (is_array($source) && isset($source['paypal'])) {
-                $data['payment_source']['paypal']['experience_context']['landing_page'] = 'GUEST_CHECKOUT';
-            }
             return $data;
         };
         add_filter('ppcp_create_order_request_body_data', $filter, 10, 1);
