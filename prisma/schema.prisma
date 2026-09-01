@@ -969,7 +969,14 @@ model PaymentOrder {
   // for PayPal/card it is the ceiling-converted USD figure. NULL on rows that
   // predate this column — treat NULL as "expectedAmount, in IDR".
   chargedAmount   Decimal?  @db.Decimal(12, 2)
-  fxRate          Decimal?  @db.Decimal(12, 2) // rupiah per 1 USD at charge time
+  // Effective rate (market rate / (1 + markup / 100)), not the raw market rate — the
+  // raw rate and the markup percentage live separately on the WooCommerce order meta
+  // (praktiqu_fx_rate, praktiqu_markup_percent), not here. expectedAmount / fxRate
+  // approximately reconstructs chargedAmount (per-line ceiling rounding means it's
+  // never exact to the cent; the gap accrues to the clinic by design). Decimal(12,2)
+  // truncates a repeating effective rate (e.g. 16363.636363... -> 16363.64); relative
+  // error ~2e-7, sub-micro-cent on a real order — fine as-is, no migration needed.
+  fxRate          Decimal?  @db.Decimal(12, 2)
   expectedAmount Int // integer rupiah
   status         String    @default("pending") // pending|paid|failed|expired|cancelled
   transactionId  String?
