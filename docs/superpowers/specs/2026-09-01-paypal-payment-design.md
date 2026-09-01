@@ -116,9 +116,11 @@ Approved by the user on 2026-09-01:
    trailing space in a key name once silently broke payment webhooks for a day. The plugin
    returns the charged figures to Next.js, which records them.
 5. **Initial rate: 18000 IDR per USD**, set by the user. See *Risks* — as a divisor, a
-   rate above the market rate charges the payer less, so this figure discounts foreign
-   payments rather than buffering the clinic. It is a wp-admin field, changeable in one
-   click.
+   rate above the market rate charges the payer less. **Correction (2026-09-01, see
+   markup-vs-rate decision below): this was based on a wrong market assumption.** The
+   live market rate is also ~18000 IDR/USD, so this figure is neutral — it converts at
+   roughly the honest market rate, neither discounting nor buffering the clinic. It is a
+   wp-admin field, changeable in one click.
 6. **Rounding is always up (ceiling)** for foreign currency. Any rounding difference
    accrues to the clinic, never undercharges.
 7. **Card is a third method, `card`.** The user requires a card option; merged or separate
@@ -130,6 +132,34 @@ Approved by the user on 2026-09-01:
 8. **Test in PayPal sandbox**, not live, then restore live credentials.
 9. **Scope is API + plugin only.** The Laravel front-end is Rafiq's and read-only for us;
    the method-selector UI is handed off with a contract document.
+
+### Addendum (2026-09-01): FX rate vs. foreign-patient markup
+
+Shipped later the same day as a follow-up to decision 5. The single
+`praktiqu_endpoint_paypal_idr_rate` setting conflated three independent things: the
+market FX rate, PayPal's cross-border fees, and the clinic's business markup for
+foreign patients. Because the rate is a *divisor* (`USD = IDR / rate`), "charge more"
+meant *lowering* the number — the opposite of the intuition, and the direct cause of
+decision 5's wrong "18000 discounts" claim above (that claim assumed a market rate
+below 18000; the real market rate is also ~18000, so the figure was actually neutral).
+
+Fix: a second, independent setting, `praktiqu_endpoint_paypal_markup_percent` (plugin
+1.6.0). The rate stays an honest market figure that tracks the real exchange rate; the
+markup is a separate, explicit business decision (`+10%` was the user's target) that
+doesn't move when the market does. `Money::idr_to_foreign()` applies the markup inside
+the ceiling, per line, same as the rate — so the markup's own sub-cent remainder also
+accrues to the clinic rather than being shaved off.
+
+This introduces two different "rate" figures per order, both intentional:
+
+- `praktiqu_fx_rate` (order meta) stays the **raw market rate** — unchanged from before
+  this addendum — because disbursement reads WooCommerce order data, not our database,
+  and needs the raw components to reconcile a disputed payment. A new
+  `praktiqu_markup_percent` meta sits alongside it.
+- `fxRate` (API response, and the `payment_orders.fxRate` column) is now the
+  **effective rate**: `rate / (1 + markup / 100)`. This keeps `expectedAmount / fxRate`
+  reconstructing `chargedAmount` — since `chargedAmount` has the markup baked in,
+  `fxRate` has to as well, or the reconstruction breaks.
 
 ## Design
 
@@ -320,25 +350,35 @@ order is left holding a slot.
    A `.next`-only deploy does not regenerate the Prisma client — that exact omission
    previously made `/public/payment-verify` return 500 because `prisma.paymentOrder` was
    undefined.
-3. Deploy plugin 1.5.0 to `appointment.praktiqu.com` (`wp-cli` is not on PATH on that
+3. Deploy plugin 1.6.0 to `appointment.praktiqu.com` (`wp-cli` is not on PATH on that
    box; activate through WordPress's own `activate_plugin()` if needed).
-4. Set the FX rate in wp-admin before enabling PayPal in the front-end.
-5. Verify plugin health returns `1.5.0`.
+4. Set both the FX rate and the foreign-patient markup in wp-admin before enabling
+   PayPal in the front-end — a forgotten markup does not fail, it silently defaults to
+   0 (no markup) on every foreign charge until someone notices.
+5. Verify plugin health returns `1.6.0`.
 
 ## Risks and accepted limitations
 
 - **Failure and cancel land on the WooCommerce checkout page.** PPCP hardcodes
   `cancel_url = wc_get_checkout_url()`, exactly as the Xendit plugin does. This is the
   same technical debt already accepted on 2026-07-24, and is not addressed here.
-- **The configured rate of 18000 discounts foreign payments.** The rate is a divisor
-  (`USD = IDR / rate`), so a figure above the market rate charges fewer dollars. At a
-  market rate near 16500, a Rp 200.000 service is charged $11.11 and settles to about
-  Rp 183.315 — roughly 8% below list, before PayPal's fees. A rate *below* market is what
-  buffers the clinic. The user set 18000 knowingly; it is a wp-admin field and changing it
-  needs no deploy. Flagged here so nobody later reads it as a safety margin.
+- **Correction (2026-09-01):** this bullet originally claimed the configured rate of
+  18000 discounts foreign payments, assuming a market rate near 16500. That assumption
+  was wrong — the live market rate is also ~18000, so the original 18000 figure was
+  neutral, not a discount. See the *FX rate vs. foreign-patient markup* subsection below
+  for the fix: the rate and the business markup are now separate settings, so this risk
+  no longer applies to the rate field itself. A misconfigured or forgotten markup is now
+  the equivalent risk — flagged in that subsection instead.
 - **PayPal cross-border fees (~4.4% + a fixed fee)** mean the clinic receives less than
-  `chargedAmount`. Combined with the rate above, the effective shortfall per PayPal
-  transaction is roughly 12–13% of the rupiah list price.
+  `chargedAmount`. The rate itself is neutral (see the correction above), so this fee is
+  the shortfall on its own — not stacked with any rate discount. The foreign-patient
+  markup setting is what is meant to offset it; at the user's stated `+10%` target the
+  clinic comes out ahead of the fee, not behind, though the exact crossover depends on
+  the merchant's actual PayPal fee schedule, which has not been confirmed against the
+  live account (~4.4% + fixed fee is PayPal's published cross-border rate, not a verified
+  figure for this merchant). Separately, withdrawing PayPal balance to a rupiah bank
+  account may incur PayPal's own currency-conversion spread on top of the transaction
+  fee — also unconfirmed, and not to be guessed at here.
 - **A stale FX rate is the clinic's exposure.** The last-modified timestamp makes it
   visible on the settings screen.
 - **`landing_page` is a preference, not a contract.** PayPal may still show the

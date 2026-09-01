@@ -67,6 +67,7 @@ final class Payments
         // missing rate creates no order at all.
         $is_foreign = ($method === 'paypal' || $method === 'card');
         $rate       = 0.0;
+        $markup     = 0.0;
         if ($is_foreign) {
             $rate = (float) get_option('praktiqu_endpoint_paypal_idr_rate', '0');
             if ($rate <= 0) {
@@ -75,6 +76,25 @@ final class Payments
                     'PayPal FX rate is not configured (Settings -> PraktiQU Endpoint)',
                     ['status' => 503]
                 );
+            }
+
+            // Unlike the rate, an absent/invalid markup is not a hard failure:
+            // "no markup configured" is a legitimate state (clamp to 0.0 and
+            // proceed), whereas an absent rate makes the charge itself
+            // undefined (hard-fails above). sanitize_markup_percent() keeps the
+            // stored option within [0, 100] on save, but that guard only covers
+            // values that went through the settings form — wp-cli, another
+            // plugin, or a direct DB edit can still write something out of
+            // range. So both ends are re-clamped here too, defence-in-depth,
+            // not validation: an out-of-range value is silently clamped into
+            // [0, 100] and the request proceeds, it never becomes a 503 (only
+            // a missing/non-positive rate does that, above).
+            $markup_raw = get_option('praktiqu_endpoint_paypal_markup_percent', '0');
+            $markup     = is_numeric($markup_raw) ? (float) $markup_raw : 0.0;
+            if ($markup < 0) {
+                $markup = 0.0;
+            } elseif ($markup > 100) {
+                $markup = 100.0;
             }
         }
 
@@ -94,12 +114,26 @@ final class Payments
         // Computed once so the metadata and both return paths below cannot
         // disagree about what currency/rate the patient was actually charged.
         $charge_currency = $is_foreign ? 'USD' : get_woocommerce_currency();
-        $fx_rate         = $is_foreign ? $rate : null;
+
+        // fxRate returned to the caller is the EFFECTIVE rate (rate adjusted
+        // for markup), deliberately different from the raw market rate saved
+        // as praktiqu_fx_rate meta below: expectedAmount / fxRate approximately
+        // reconstructs chargedAmount for reconciliation months later, and
+        // chargedAmount already has the markup baked in, so fxRate must too.
+        // "Approximately" is not hand-waving: per-line ceiling rounding (decision
+        // 6) means a multi-line order's chargedAmount is always a little above the
+        // unrounded conversion, so the two figures never match to the cent — that
+        // gap is the accumulated per-line ceiling remainder, and it accrues to the
+        // clinic by design. Do not "fix" one of these two figures to match the
+        // other; the gap is expected, not a bug.
+        // $markup is clamped to >= 0 above, so this denominator is always
+        // >= 1 — no divide-by-zero guard needed.
+        $fx_rate = $is_foreign ? $rate / (1 + $markup / 100) : null;
 
         foreach ((array) ($input['items'] ?? []) as $item) {
             $price = (float) ($item['price'] ?? 0);
             if ($is_foreign) {
-                $price = Money::idr_to_foreign($price, $rate);
+                $price = Money::idr_to_foreign($price, $rate, $markup);
             }
             $product = new \WC_Product_Simple();
             $product->set_name((string) ($item['name'] ?? 'Service'));
@@ -121,7 +155,7 @@ final class Payments
                 continue;
             }
             if ($is_foreign) {
-                $amount = Money::idr_to_foreign($amount, $rate);
+                $amount = Money::idr_to_foreign($amount, $rate, $markup);
             }
             $fee = new \WC_Order_Item_Fee();
             $fee->set_name((string) ($tax['name'] ?? 'Tax'));
@@ -147,7 +181,14 @@ final class Payments
         $order->update_meta_data('praktiqu_charge_currency', $charge_currency);
         $order->update_meta_data('praktiqu_expected_idr', (string) $expected_idr);
         if ($is_foreign) {
+            // praktiqu_fx_rate is the RAW market rate, not the effective rate
+            // returned as fxRate above — disbursement reads WooCommerce order
+            // data rather than our database, so both the raw rate and the raw
+            // markup have to survive here on their own, even though fxRate
+            // already folds them together for reconciliation. Deliberately
+            // different figures; do not "fix" one to match the other.
             $order->update_meta_data('praktiqu_fx_rate', (string) $rate);
+            $order->update_meta_data('praktiqu_markup_percent', (string) $markup);
         }
         if (!empty($input['appointmentId'])) {
             $order->update_meta_data('praktiqu_appointment_id', (string) $input['appointmentId']);
