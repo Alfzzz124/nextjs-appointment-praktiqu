@@ -90,10 +90,34 @@ final class Settings
      */
     public function sanitize_secret(string $value): string
     {
-        if ($value === '' || $value === str_repeat('*', 8)) {
+        if (self::is_unchanged_secret($value)) {
             return (string) get_option('praktiqu_endpoint_webhook_secret', '');
         }
         return $value;
+    }
+
+    /**
+     * Whether a submitted secret means "leave the stored one alone".
+     *
+     * True for an empty submission, and for a value made only of asterisks of ANY
+     * length. That second case is not paranoia — it is a bug this plugin shipped:
+     * the form used to render the mask as str_repeat('*', max(8, strlen($secret)))
+     * while the sanitizer only recognised exactly 8 asterisks. A 27-character
+     * secret therefore rendered as 27 asterisks, failed the 8-asterisk check, and
+     * was stored verbatim the next time ANY field on the settings page was saved.
+     * Measured 2026-09-01: praktiqu_endpoint_payment_webhook_secret held 27
+     * asterisks, so every payment webhook 401'd and appointments were never
+     * released after their WooCommerce order was cancelled.
+     *
+     * The fields no longer render a mask into `value` at all, so this should not be
+     * reachable — it stays as a guard for a stale or cached form.
+     */
+    private static function is_unchanged_secret(string $value): bool
+    {
+        if ($value === '') {
+            return true;
+        }
+        return (bool) preg_match('/^\*+$/', $value);
     }
 
     /**
@@ -103,7 +127,7 @@ final class Settings
      */
     public function sanitize_payment_secret(string $value): string
     {
-        if ($value === '' || $value === str_repeat('*', 8)) {
+        if (self::is_unchanged_secret($value)) {
             return (string) get_option('praktiqu_endpoint_payment_webhook_secret', '');
         }
         return $value;
@@ -268,7 +292,7 @@ final class Settings
                                 type="text"
                                 id="praktiqu_endpoint_webhook_secret"
                                 name="praktiqu_endpoint_webhook_secret"
-                                value="<?php echo esc_attr($webhook_secret === '' ? '' : str_repeat('*', max(8, strlen($webhook_secret)))); ?>"
+                                value=""
                                 class="regular-text"
                                 placeholder="<?php esc_attr_e('(unchanged)', 'praktiqu-endpoint'); ?>"
                             />
@@ -309,7 +333,7 @@ final class Settings
                                 type="text"
                                 id="praktiqu_endpoint_payment_webhook_secret"
                                 name="praktiqu_endpoint_payment_webhook_secret"
-                                value="<?php echo esc_attr($payment_secret === '' ? '' : str_repeat('*', max(8, strlen($payment_secret)))); ?>"
+                                value=""
                                 class="regular-text"
                                 placeholder="<?php esc_attr_e('(unchanged)', 'praktiqu-endpoint'); ?>"
                             />
