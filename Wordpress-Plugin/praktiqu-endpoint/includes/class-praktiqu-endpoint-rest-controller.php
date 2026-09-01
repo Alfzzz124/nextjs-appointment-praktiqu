@@ -309,7 +309,17 @@ final class REST_Controller
             'args'                => [
                 'hook'  => ['required' => true, 'type' => 'string'],
                 'runAt' => ['required' => true, 'type' => 'integer'],
-                'args'  => ['required' => false, 'type' => 'array', 'default' => []],
+                // 'object', NOT 'array'. The Next.js jobs client sends named args as a
+                // JSON object (`{"wcOrderId":49736,"webhookToken":null}`), and it always
+                // spreads webhookToken in, so `args` is never empty. WP REST validates
+                // the schema BEFORE the handler runs and rejects an object against
+                // 'array' with 400 rest_invalid_param -- so every enqueue failed, 100%
+                // of the time, and Action Scheduler never received a single job. The
+                // handler below already casts to array, so only the schema was wrong.
+                // Measured 2026-09-01: zero praktiqu_payment_auto_cancel actions had
+                // ever been scheduled, meaning unpaid PENDING appointments held their
+                // slots forever, and session reminders/auto-complete never fired either.
+                'args'  => ['required' => false, 'type' => 'object', 'default' => []],
             ],
         ]);
 
@@ -320,7 +330,8 @@ final class REST_Controller
             'permission_callback' => [Plugin::class, 'verify_service_token'],
             'args'                => [
                 'hook'  => ['required' => true, 'type' => 'string'],
-                'args'  => ['required' => false, 'type' => 'array', 'default' => []],
+                // 'object' for the same reason as the enqueue route above.
+                'args'  => ['required' => false, 'type' => 'object', 'default' => []],
             ],
         ]);
 
