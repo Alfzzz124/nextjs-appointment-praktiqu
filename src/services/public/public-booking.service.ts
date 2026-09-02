@@ -100,7 +100,7 @@ export class AppointmentInsertError extends Error {
  * will still be a refusal in ten minutes. The plugin's own message is deliberately
  * NOT carried to the client — it names internal routes — but it is logged.
  */
-export class UpstreamWriteError extends Error {
+export class UpstreamWriteError extends WpEndpointError {
   readonly code = 'UPSTREAM_WRITE_FAILED';
 
   constructor(
@@ -108,7 +108,20 @@ export class UpstreamWriteError extends Error {
     readonly upstreamStatus: number,
     readonly operation: 'create_patient' | 'update_patient' | 'create_appointment',
   ) {
-    super(message);
+    // Extends `WpEndpointError`, and passes the upstream status up as `status`, so that
+    // wrapping a failure does not hide what it was.
+    //
+    // This is load-bearing. `isRetrySafeFailure` decides whether the route may replay a
+    // booking by reading `status` off a `WpEndpointError`. Wrapping those failures in a
+    // bare `Error` — as this class first did — silently withdrew every one of them from
+    // the retry gate: auto-retry stopped, and no test noticed, because the route-level
+    // retry suite mocks the service and never reaches this conversion. See
+    // `tests/public-booking/retry-through-service.test.ts`, which does.
+    //
+    // `upstreamStatus` is kept as its own field rather than folded into `status`: the
+    // route's taxonomy reads it by name, and it says plainly which side the number came
+    // from.
+    super(message, upstreamStatus);
     this.name = 'UpstreamWriteError';
   }
 }

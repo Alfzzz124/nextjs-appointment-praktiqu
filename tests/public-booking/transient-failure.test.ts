@@ -217,12 +217,34 @@ describe('POST /public/appointments — recovers on its own', () => {
 });
 
 describe('POST /public/appointments — permanent failures stay non-retryable', () => {
-  it('keeps 500 for a missing service token (WpConfigError)', async () => {
+  /**
+   * A missing service token is 503 — the service genuinely cannot serve — but with NO
+   * `Retry-After`, because waiting changes nothing about a broken deploy. Promising a
+   * wait that cannot help is the one answer worse than saying nothing.
+   */
+  it('answers a missing service token 503 upstream_misconfigured, with no Retry-After', async () => {
     (createPublicAppointment as any).mockRejectedValue(
       new WpConfigError('WORDPRESS_SERVICE_TOKEN not set'),
     );
 
-    expect((await post()).status).toBe(500);
+    const res = await post();
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.code).toBe('upstream_misconfigured');
+    expect(res.headers.get('Retry-After')).toBeNull();
+  });
+
+  it('never replays a missing service token — it is permanent, not busy', async () => {
+    let calls = 0;
+    (createPublicAppointment as any).mockImplementation(async () => {
+      calls += 1;
+      throw new WpConfigError('WORDPRESS_SERVICE_TOKEN not set');
+    });
+
+    await post();
+
+    expect(calls).toBe(1);
   });
 
   it('keeps 500 when the professional has no practice attached', async () => {
