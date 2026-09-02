@@ -10,7 +10,9 @@ import {
   SlotConflictError,
 } from '@/services/public/public-booking.service';
 import { createRateLimiter, tupleKey } from '@/lib/rate-limit';
-import { validationError, tooManyRequests, conflict, notFound } from '@/lib/problem-details';
+import { validationError, tooManyRequests, conflict, notFound, serviceUnavailable } from '@/lib/problem-details';
+import { isTransientBackendFailure, TRANSIENT_RETRY_AFTER_SECONDS } from '@/lib/transient-failure';
+import { withRetry } from '@/lib/retry';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,10 +43,29 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const appointment = await createPublicAppointment(parsed.data);
+    // Replayed on its own when the attempt provably wrote nothing — a full connection
+    // pool is not something to make the guest press a button about. Only
+    // `isRetrySafeFailure` gets replayed; the write is not idempotent.
+    const appointment = await withRetry(() => createPublicAppointment(parsed.data));
     limiter.recordSuccess(key);
     return NextResponse.json({ data: appointment }, { status: 201 });
   } catch (err) {
+    // Ahead of everything else, including recordFailure: an outage is not the guest's
+    // fault, and spending their attempt budget on it would lock them out of the very
+    // retry this response asks for. The hold is deliberately left unconsumed too, so
+    // the retry can have the same slot back.
+    if (isTransientBackendFailure(err)) {
+      console.error('[public/appointments] transient backend failure — retryable:', err);
+      const p = serviceUnavailable(
+        'service_unavailable',
+        'The booking service is temporarily unavailable — please try again in a moment',
+      );
+      return NextResponse.json(p, {
+        status: p.status,
+        headers: { 'Retry-After': String(TRANSIENT_RETRY_AFTER_SECONDS) },
+      });
+    }
+
     limiter.recordFailure(key);
     if (err instanceof HoldExpiredError) {
       const p = conflict('hold_expired', 'Slot no longer available — please select another time');
