@@ -13,6 +13,7 @@
  * Source of truth: docs/superpowers/specs/2026-09-08-session-reminders-design.md
  */
 import { jobs } from '@/lib/jobs/client';
+import { logging } from '@/lib/logging';
 import { buildUtcDateTime, timeToMinutes } from '@/lib/time';
 import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo';
 import type { ReminderOffset } from './reminder-email';
@@ -57,20 +58,34 @@ export function sessionStartsAtUtc(row: SessionRow): Date | null {
  *
  * Selalu membatalkan lebih dulu, lalu menjadwalkan ulang hanya bila sesinya BOOKED dan
  * waktunya masih di depan. `now` disuntikkan supaya test bisa memindahkan waktu.
+ *
+ * Gagal menjadwalkan pengingat tidak boleh pernah menggagalkan booking-nya. `jobs.enqueue`
+ * dan `jobs.cancel` sudah menelan error mereka sendiri, tapi `sessionStartsAtUtc` (lewat
+ * `buildUtcDateTime` → `fromZonedTime`) bisa melempar `RangeError` untuk zona waktu IANA
+ * yang cacat. Seluruh badan fungsi karena itu dibungkus: error dicatat lalu ditelan,
+ * bukan dilempar ke pemanggil di `session.service.ts`.
  */
 export async function syncSessionReminders(row: SessionRow, now: Date = new Date()): Promise<void> {
-  for (const channel of REMINDER_OFFSETS) {
-    await jobs.cancel({ hook: REMINDER_HOOK, args: reminderArgs(row.id, channel) });
-  }
+  try {
+    for (const channel of REMINDER_OFFSETS) {
+      await jobs.cancel({ hook: REMINDER_HOOK, args: reminderArgs(row.id, channel) });
+    }
 
-  if (row.status !== SESSION_STATUS.BOOKED) return;
+    if (row.status !== SESSION_STATUS.BOOKED) return;
 
-  const startsAt = sessionStartsAtUtc(row);
-  if (!startsAt) return;
+    const startsAt = sessionStartsAtUtc(row);
+    if (!startsAt) return;
 
-  for (const channel of REMINDER_OFFSETS) {
-    const runAt = new Date(startsAt.getTime() - LEAD_MS[channel]);
-    if (runAt.getTime() <= now.getTime()) continue;
-    await jobs.enqueue({ hook: REMINDER_HOOK, runAt, args: reminderArgs(row.id, channel) });
+    for (const channel of REMINDER_OFFSETS) {
+      const runAt = new Date(startsAt.getTime() - LEAD_MS[channel]);
+      if (runAt.getTime() <= now.getTime()) continue;
+      await jobs.enqueue({ hook: REMINDER_HOOK, runAt, args: reminderArgs(row.id, channel) });
+    }
+  } catch (err) {
+    await logging.error('Failed to sync session reminders', err, {
+      resource: 'session',
+      resourceId: String(row.id),
+      metadata: { status: row.status, timezone: row.timezone },
+    });
   }
 }

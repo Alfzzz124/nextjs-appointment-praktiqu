@@ -15,6 +15,11 @@ import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo
 const jobsClient = vi.hoisted(() => ({ jobs: { enqueue: vi.fn(), cancel: vi.fn() } }));
 vi.mock('@/lib/jobs/client', () => jobsClient);
 
+const log = vi.hoisted(() => ({
+  logging: { audit: vi.fn(), warn: vi.fn(), error: vi.fn(), activity: vi.fn(), system: vi.fn() },
+}));
+vi.mock('@/lib/logging', () => log);
+
 import { syncSessionReminders, reminderArgs, sessionStartsAtUtc } from '@/services/session/reminder-schedule';
 
 // Kamis, 10 September 2026, 09:30 Asia/Jakarta = 02:30 UTC.
@@ -46,6 +51,7 @@ const JAUH_SEBELUM = new Date('2026-09-01T00:00:00Z');
 beforeEach(() => {
   jobsClient.jobs.enqueue.mockReset();
   jobsClient.jobs.cancel.mockReset();
+  log.logging.error.mockClear();
 });
 
 describe('reminderArgs — urutan kunci adalah kontraknya', () => {
@@ -141,5 +147,35 @@ describe('syncSessionReminders — sesi yang bukan BOOKED', () => {
       { sessionId: 7, channel: 'email_24h' },
       { sessionId: 7, channel: 'email_1h' },
     ]);
+  });
+});
+
+describe('syncSessionReminders — isolasi kegagalan', () => {
+  // Menjadwalkan pengingat tidak boleh pernah menggagalkan booking-nya.
+  // `jobs.enqueue`/`jobs.cancel` sudah menelan error sendiri; ini menutup jalur
+  // sisanya — apa pun yang terlempar dari badan fungsi (mis. zona waktu IANA
+  // yang cacat lewat `buildUtcDateTime` → `fromZonedTime`) tidak boleh sampai
+  // ke pemanggil (`createSession`/`transitionSession`), karena tulisan aslinya
+  // sudah ter-commit saat kail ini jalan.
+  it('tidak melempar untuk zona waktu yang cacat, dan pembatalan tetap dicoba', async () => {
+    await expect(
+      syncSessionReminders(row({ timezone: 'Not/AZone' }), JAUH_SEBELUM),
+    ).resolves.toBeUndefined();
+
+    expect(jobsClient.jobs.cancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('menangkap dan mencatat error apa pun dari badan fungsi, lalu kembali normal', async () => {
+    const boom = new Error('WordPress Action Scheduler unreachable');
+    jobsClient.jobs.cancel.mockRejectedValueOnce(boom);
+
+    await expect(syncSessionReminders(row(), JAUH_SEBELUM)).resolves.toBeUndefined();
+
+    expect(log.logging.error).toHaveBeenCalledTimes(1);
+    expect(log.logging.error).toHaveBeenCalledWith(
+      expect.any(String),
+      boom,
+      expect.objectContaining({ resourceId: '7' }),
+    );
   });
 });

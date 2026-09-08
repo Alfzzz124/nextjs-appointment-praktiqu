@@ -13,6 +13,8 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo';
+import { CLIENT_STATUS } from '@/repositories/wp/patients.repo';
+import { PROFESSIONAL_STATUS } from '@/repositories/wp/doctors.repo';
 
 // `vi.mock` factories are hoisted above all top-level `const`s, so each mock's holder
 // object must be created inside `vi.hoisted` to be visible from the factory (see
@@ -44,6 +46,43 @@ const log = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/logging', () => log);
 
+const patients = vi.hoisted(() => ({ findPatientById: vi.fn() }));
+vi.mock('@/repositories/wp/patients.repo', async (orig) => {
+  const actual = await (orig as () => Promise<Record<string, unknown>>)();
+  return { ...actual, findPatientById: (...a: unknown[]) => patients.findPatientById(...a) };
+});
+
+const doctors = vi.hoisted(() => ({ findDoctorById: vi.fn() }));
+vi.mock('@/repositories/wp/doctors.repo', async (orig) => {
+  const actual = await (orig as () => Promise<Record<string, unknown>>)();
+  return { ...actual, findDoctorById: (...a: unknown[]) => doctors.findDoctorById(...a) };
+});
+
+const services = vi.hoisted(() => ({ listServicesForDoctor: vi.fn() }));
+vi.mock('@/repositories/wp/services.repo', () => services);
+
+const offDays = vi.hoisted(() => ({
+  listDoctorOffDays: vi.fn().mockResolvedValue([]),
+  listClinicOffDays: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('@/repositories/wp/off-days.repo', async (orig) => {
+  const actual = await (orig as () => Promise<Record<string, unknown>>)();
+  return {
+    ...actual,
+    listDoctorOffDays: (...a: unknown[]) => offDays.listDoctorOffDays(...a),
+    listClinicOffDays: (...a: unknown[]) => offDays.listClinicOffDays(...a),
+  };
+});
+
+const appointmentsRepo = vi.hoisted(() => ({ findConflictingAppointments: vi.fn().mockResolvedValue([]) }));
+vi.mock('@/repositories/wp/appointments.repo', async (orig) => {
+  const actual = await (orig as () => Promise<Record<string, unknown>>)();
+  return {
+    ...actual,
+    findConflictingAppointments: (...a: unknown[]) => appointmentsRepo.findConflictingAppointments(...a),
+  };
+});
+
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
     id: 7,
@@ -74,7 +113,15 @@ beforeEach(() => {
   schedule.syncSessionReminders.mockClear();
   repo.findSessionById.mockReset();
   writes.setAppointmentStatus.mockClear();
+  writes.createAppointment.mockReset();
+  writes.cancelAppointment.mockReset();
   kcActor.resolveKcActor.mockReset().mockResolvedValue({ actor: ACTOR, wpUserId: 1n, clinicId: 1n });
+  patients.findPatientById.mockReset();
+  doctors.findDoctorById.mockReset();
+  services.listServicesForDoctor.mockReset();
+  offDays.listDoctorOffDays.mockReset().mockResolvedValue([]);
+  offDays.listClinicOffDays.mockReset().mockResolvedValue([]);
+  appointmentsRepo.findConflictingAppointments.mockReset().mockResolvedValue([]);
 });
 
 describe('kail di transitionSession', () => {
@@ -113,5 +160,69 @@ describe('kail di transitionSession', () => {
     ).rejects.toThrow(/Cannot transition/);
 
     expect(schedule.syncSessionReminders).not.toHaveBeenCalled();
+  });
+});
+
+describe('kail di createSession', () => {
+  // `createSession` memanggil, berurutan: resolveKcActor, findPatientById, findDoctorById,
+  // listServicesForDoctor, listDoctorOffDays/listClinicOffDays, findConflictingAppointments,
+  // createAppointment, logging.audit, lalu findSessionById untuk baca ulang pasca-insert.
+  // Aktor staf (SUPER_ADMIN) supaya sesinya keluar BOOKED, bukan PENDING — lihat
+  // `status = args.forceBooked || isStaff ? BOOKED : PENDING` di session.service.ts.
+  it('menyerahkan baris hasil baca ulang pasca-insert, dipanggil tepat sekali', async () => {
+    patients.findPatientById.mockResolvedValueOnce({
+      id: 522n,
+      status: CLIENT_STATUS.ACTIVE,
+    });
+    doctors.findDoctorById.mockResolvedValueOnce({
+      id: 119n,
+      status: PROFESSIONAL_STATUS.ACTIVE,
+    });
+    services.listServicesForDoctor.mockResolvedValueOnce([
+      {
+        mappingId: 1n,
+        serviceId: 3n,
+        doctorId: 119n,
+        clinicId: 1n,
+        name: 'Konsultasi',
+        type: null,
+        charges: '100000',
+        durationMinutes: 60,
+        isPublic: true,
+        isActive: true,
+        telemedService: null,
+        nameAlias: null,
+      },
+    ]);
+    writes.createAppointment.mockResolvedValueOnce({
+      id: 42,
+      status: 1,
+      clinicId: 1,
+      doctorId: 119,
+      patientId: 522,
+      startDate: '2026-09-10',
+      startTime: '09:30:00',
+      timezone: 'Asia/Jakarta',
+      serviceIds: [3],
+      notified: true,
+    });
+    const readback = row({ id: 42, status: SESSION_STATUS.BOOKED });
+    repo.findSessionById.mockResolvedValueOnce(readback);
+
+    const { createSession } = await import('@/services/session/session.service');
+    await createSession({
+      actor: ACTOR as never,
+      input: {
+        clientId: 522,
+        professionalId: 119,
+        serviceId: 3,
+        clinicId: 1,
+        slotDate: '2026-09-10',
+        startTime: '09:30:00',
+      },
+    });
+
+    expect(schedule.syncSessionReminders).toHaveBeenCalledTimes(1);
+    expect(schedule.syncSessionReminders).toHaveBeenCalledWith(readback);
   });
 });
