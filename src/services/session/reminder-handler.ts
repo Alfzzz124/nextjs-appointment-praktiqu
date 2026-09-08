@@ -35,7 +35,14 @@ function isOffset(value: unknown): value is ReminderOffset {
 }
 
 function isSessionId(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+  // Nilai ini menyeberangi batas JSON dari WordPress — Action Scheduler bisa saja
+  // mengirim id sebagai string numerik ("7"). Dikoersi dulu sebelum divalidasi:
+  // pengecekan tipe langsung akan menolak "7" dan diam-diam menjatuhkan pengingat
+  // pasien itu, kegagalan yang jauh lebih buruk daripada menerima string numerik
+  // yang valid. Number(...) pada input non-numerik (null, undefined, "abc") jadi
+  // NaN dan tetap gagal di Number.isSafeInteger, jadi guard-nya tidak melonggar.
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0;
 }
 
 export async function handleSessionReminder(

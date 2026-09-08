@@ -98,6 +98,17 @@ describe('handleSessionReminder — jalur normal', () => {
       }),
     );
   });
+
+  it('menerima sessionId sebagai string numerik — payload webhook WordPress adalah JSON', async () => {
+    repo.findSessionById.mockResolvedValue(row());
+
+    await handleSessionReminder({ sessionId: '7', channel: 'email_24h' }, SEBELUM);
+
+    expect(repo.findSessionById).toHaveBeenCalled();
+    expect(email.sendEmail).toHaveBeenCalledTimes(2);
+    const tujuan = email.sendEmail.mock.calls.map((c) => c[0].to);
+    expect(tujuan).toEqual(['ada@contoh.test', 'pamela@klinik.test']);
+  });
 });
 
 describe('handleSessionReminder — penerima tanpa email', () => {
