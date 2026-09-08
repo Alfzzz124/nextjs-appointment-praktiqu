@@ -16,8 +16,6 @@ export interface EnqueueJobOptions {
   hook: JobHook;
   runAt: Date;
   args?: Record<string, unknown>;
-  /** Optional PraktiQU webhook token for the WP job handler to call us back */
-  webhookToken?: string;
 }
 
 export type JobHook =
@@ -63,7 +61,7 @@ export async function enqueue(options: EnqueueJobOptions): Promise<void> {
       body: JSON.stringify({
         hook: options.hook,
         runAt: Math.floor(options.runAt.getTime() / 1000), // Unix seconds (WP AS expects seconds)
-        args: { ...options.args, webhookToken: options.webhookToken },
+        args: options.args ?? {},
       }),
     });
 
