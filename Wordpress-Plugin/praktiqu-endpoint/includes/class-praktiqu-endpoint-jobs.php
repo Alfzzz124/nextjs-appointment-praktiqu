@@ -34,11 +34,13 @@ final class Jobs
 
     private Service $service;
     private Payments $payments;
+    private Jobs_Webhook $jobs_webhook;
 
-    public function __construct(Service $service, Payments $payments)
+    public function __construct(Service $service, Payments $payments, Jobs_Webhook $jobs_webhook)
     {
-        $this->service = $service;
-        $this->payments = $payments;
+        $this->service      = $service;
+        $this->payments     = $payments;
+        $this->jobs_webhook = $jobs_webhook;
     }
 
     /**
@@ -108,7 +110,7 @@ final class Jobs
      */
     public function handle_session_auto_complete(int $session_id): void
     {
-        $this->service->send_webhook('session.auto_complete', [
+        $this->jobs_webhook->send('session.auto_complete', [
             'sessionId' => $session_id,
         ]);
     }
@@ -121,7 +123,7 @@ final class Jobs
      */
     public function handle_session_send_reminder(int $session_id, string $channel = 'email'): void
     {
-        $this->service->send_webhook('session.reminder', [
+        $this->jobs_webhook->send('session.reminder', [
             'sessionId' => $session_id,
             'channel'   => $channel,
         ]);
