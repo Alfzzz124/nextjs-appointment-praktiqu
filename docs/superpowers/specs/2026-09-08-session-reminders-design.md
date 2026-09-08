@@ -58,7 +58,7 @@ Ada tiga pintu masuk booking, dan ketiganya jatuh ke dua titik hook:
 Jadi:
 
 - **`createSession`** — jadwalkan bila status hasilnya `BOOKED`.
-- **`transitionSession`** ([`session.service.ts:438`](../../../src/services/session/session.service.ts)) — jadwalkan bila `target === BOOKED`; batalkan bila `target` adalah `CANCELLED` atau `REJECTED`.
+- **`transitionSession`** ([`session.service.ts:438`](../../../src/services/session/session.service.ts)) — jadwalkan bila `target === BOOKED`; batalkan bila `target` adalah `CANCELLED`. Tidak ada status `REJECTED` — `SESSION_STATUS` hanya punya lima nilai dan penolakan dipetakan ke `CANCELLED` (lihat komentar di `session.service.ts:472` dan `sessions/[id]/reject/route.ts:53`).
 
 Booking tamu tidak butuh hook sendiri; ia lewat jalur kedua saat disetujui.
 
@@ -145,6 +145,7 @@ Tiga modul baru dan dua berkas yang diubah. Masing-masing punya satu tujuan dan 
 
 | Berkas | Tugas | Bergantung pada |
 | --- | --- | --- |
+| `src/repositories/wp/sessions.repo.ts` (ubah) | Tambah `professionalEmail` ke `SessionRow`. Ditemukan saat perencanaan: `SELECT_SQL` sudah men-join `wp_users du` tapi tidak pernah mengambil `du.user_email`, jadi email profesional tidak tersedia sama sekali. Penambahan kolom bersifat aditif |
 | `src/services/session/reminder-schedule.ts` (baru) | Hitung dua `runAt`, lewati yang sudah lewat, enqueue dan cancel | `@/lib/jobs` saja |
 | `src/services/session/reminder-email.ts` (baru) | Murni: sesi + penerima + offset → `{subject, html, text}` | tidak ada |
 | `src/services/session/reminder-handler.ts` (baru) | Terima `{sessionId, channel}`, guard, susun, kirim, catat audit — **dan panggil `registerJobHandler('session.reminder', …)` di lingkup modul** | repo sesi, `reminder-email`, `@/lib/email`, `@/lib/logging` |
