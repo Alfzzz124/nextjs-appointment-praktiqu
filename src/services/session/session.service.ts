@@ -44,6 +44,7 @@ import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
 import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
+import { syncSessionReminders } from './reminder-schedule';
 
 export { SESSION_STATUS, canTransition, normaliseStatus };
 export type { SessionStatus };
@@ -346,6 +347,11 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
       502,
     );
   }
+
+  // Staf membuat sesi langsung BOOKED; klien membuatnya PENDING. syncSessionReminders
+  // memutuskan dari row.status, jadi kail ini tidak perlu tahu bedanya.
+  await syncSessionReminders(row);
+
   return toSession(row);
 }
 
@@ -480,6 +486,11 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
 
   const updated = await findSessionById(sessionId);
   if (!updated) throw new SessionServiceError('not_found', 'Session not found', 404);
+
+  // Persetujuan menjadwalkan, pembatalan membersihkan. Booking tamu lahir PENDING dan
+  // lewat sini saat disetujui, jadi ia tidak butuh kail sendiri.
+  await syncSessionReminders(updated);
+
   return toSession(updated);
 }
 
