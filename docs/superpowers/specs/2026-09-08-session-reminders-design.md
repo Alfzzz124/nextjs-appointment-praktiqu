@@ -32,8 +32,8 @@ Lebih banyak dari yang diduga. Yang sudah siap:
 | Handler WordPress | **sudah ada dan terdaftar**, komentarnya menyebut "T-24h or T-1h reminder trigger" | `Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-jobs.php:51` |
 | Handler itu kirim webhook `session.reminder` | **TIDAK — lihat §3b** | memanggil `Service::send_webhook()` yang tidak pernah ada |
 | Nama hook di type union | sudah dideklarasikan | `src/lib/jobs/client.ts:25` |
-| `jobs.enqueue` dengan `runAt` | sudah, terbukti jalan | pola di `src/services/payments/payment.service.ts:340` |
-| `jobs.cancel` per (hook, args) | sudah, terbukti jalan | pola di `src/services/payments/payment.service.ts:364` dan `:432` |
+| `jobs.enqueue` dengan `runAt` | mekanisme ada, dan bug skema `args` yang dulu mematikannya sudah diperbaiki (1 September 2026, commit `7f422f8`) — tapi belum ada satu proses enqueue pun yang benar-benar teramati mendarat di Action Scheduler sejak itu. Komentar plugin sendiri (`class-praktiqu-endpoint-rest-controller.php:319-321`) mencatat nol job pernah berhasil dijadwalkan sebelum perbaikan itu. Verifikasi ujung-ke-ujung untuk ini ada di runbook | pola di `src/services/payments/payment.service.ts:340` |
+| `jobs.cancel` per (hook, args) | sama seperti di atas: mekanisme ada, belum teramati jalan end-to-end | pola di `src/services/payments/payment.service.ts:364` dan `:432` |
 | Penerima webhook + verifikasi HMAC | sudah | `src/app/api/v1/webhooks/wordpress-jobs/route.ts` |
 | Pengiriman email | sudah, dan tidak pernah melempar | `src/lib/email.ts` |
 | Jejak audit yang persisten | sudah — `logging.audit()` menulis ke `LogEntry` | `src/lib/logging.ts:100`, tulisnya di `:140` |
@@ -66,34 +66,42 @@ Ditemukan saat mengerjakan Task 4, dengan membaca sumber plugin. Tiga hal patah,
 
 Pengirim webhook khusus jobs, dengan **opsi URL dan rahasia sendiri** — `praktiqu_endpoint_jobs_webhook_url` dan `praktiqu_endpoint_jobs_webhook_secret` — mengikuti pola dua-opsi yang sudah ada. Diputuskan 8 September: memakai ulang opsi event-user berarti dua bentuk payload berbagi satu tujuan dan satu rahasia, jadi merotasi rahasia user akan mematikan callback job tanpa suara.
 
-Bentuk payload wajib `{ event, data }`, karena itu yang dibaca `processWebhook`. Penandatanganan menyalin `dispatch_webhook` yang sudah terbukti: HMAC-SHA256 hex atas body JSON, di header `X-PraktiQU-Webhook-Signature`. `Jobs` disambungkan ke pengirim baru itu, bukan ke `Service`. Itu sekaligus menghidupkan `praktiqu_session_auto_complete`, yang patah dengan cara yang sama dan hanya tidak terlihat karena tidak ada yang menjadwalkannya.
+Bentuk payload wajib `{ event, data }`, karena itu yang dibaca `processWebhook`. Penandatanganannya menyalin pola yang sudah terbukti benar-benar terpakai: `Payments::dispatch_payment_webhook` (`class-praktiqu-endpoint-payments.php:554`), yang memposting ke penerima hidup di `src/app/api/v1/sessions/payment-webhook/route.ts` — bukan `Hooks::dispatch_webhook`, yang event user-nya tampaknya tidak punya penerima sama sekali (lihat §12). Matematika penandatanganannya identik di ketiganya — HMAC-SHA256 hex atas body JSON, di header `X-PraktiQU-Webhook-Signature` — jadi tidak ada klaim soal kodenya yang berubah, hanya rujukan mana yang "sudah terbukti". `Jobs` disambungkan ke pengirim baru itu, bukan ke `Service`. Itu sekaligus menghidupkan `praktiqu_session_auto_complete`, yang patah dengan cara yang sama dan hanya tidak terlihat karena tidak ada yang menjadwalkannya.
 
-### Kontrak args tetap utuh, walau ada kunci ketiga
+### Kontrak args: urutan kunci, bukan nama — dan enqueue/cancel wajib identik
 
-`jobs.enqueue` selalu menempelkan `webhookToken` ke args (`src/lib/jobs/client.ts:16`), dan komentar plugin mencatat payload terukur `{"wcOrderId":49736,"webhookToken":null}`. Itu aman: `add_action(..., 10, 2)` membatasi callback ke dua argumen, jadi nilai ketiga dibuang WordPress selama `sessionId` dan `channel` ada di depan. Yang dipaku test kita adalah urutan kunci di helper — bagian yang memang kita kendalikan.
+`jobs.enqueue` mengirim persis dua kunci di kabel: `{"sessionId":N,"channel":"email_24h"|"email_1h"}`. Versi awal catatan ini bilang ada kunci ketiga, `webhookToken`, yang katanya aman karena `add_action(..., 10, 2)` membatasi callback ke dua argumen sehingga nilai ketiga dibuang. **Itu tidak pernah benar.** `JSON.stringify` membuang properti bernilai `undefined`, dan tidak ada pemanggil yang pernah mengisi `webhookToken` — jadi payload di kabel selalu persis dua kunci sejak awal. Sekarang malah lebih tegas: pass perbaikan kode menghapus seluruh penyisipan `webhookToken` dari `enqueue`, jadi `enqueue` dan `cancel` menyusun `args` dengan cara yang identik.
+
+Yang jadi kontrak adalah **urutan** kunci, bukan namanya — karena Action Scheduler mengeksekusi dengan `do_action_ref_array($hook, array_values($args))`, yang membuang nama kunci dan meneruskan nilainya secara posisional (lihat §6 untuk rinciannya). Bagian itu tetap benar dan tidak berubah.
+
+Yang wajib dijaga sekarang: `enqueue` dan `cancel` harus menyusun `args` **identik**, karena `as_unschedule_all_actions` di WordPress mencocokkan berdasarkan string `args` yang persis sama. Kalau keduanya pernah berbeda lagi — misalnya satu menyisipkan field tambahan yang tidak dimiliki yang lain — pembatalan job berhenti bekerja tanpa suara, dan itu satu-satunya mekanisme idempotensi yang dimiliki fitur ini (lihat §7). Test `tests/payments/jobs-client.test.ts` sekarang memakukan bahwa `enqueue` dan `cancel` men-serialize `args` yang sama persis menjadi string JSON yang sama.
+
+Alasan `add_action(..., 10, 2)` bukan lagi penjelasan kenapa payload hari ini aman — payloadnya sudah dua kunci sejak awal, jadi tidak ada nilai ketiga untuk dibuang. Kalau argumen itu masih layak disebut sama sekali, sebutkan sebagai jaring pengaman kalau suatu hari nanti ada nilai ketiga yang benar-benar terkirim — bukan sebagai deskripsi payload yang berlaku sekarang.
 
 ### Verifikasi
 
 Plugin bisa diuji tanpa WordPress dan tanpa server: `tests/test-money.php` sudah menetapkan polanya — plain PHP, tanpa PHPUnit, dijalankan di container `php:8.3-cli`. Terbukti jalan: lint 16 berkas bersih dan harness-nya ALL PASS. PHP 8.3 juga ada di server untuk lint pasca-deploy.
 
-## 4. Titik pemicu — dua, bukan tiga
+## 4. Titik pemicu — tiga titik hook, bukan dua
 
 Pengingat dijadwalkan saat sesi **menjadi BOOKED**. Sesi PENDING tidak dapat pengingat, supaya tidak ada pasien yang diingatkan soal sesi yang ternyata ditolak.
 
-Ada tiga pintu masuk booking, dan ketiganya jatuh ke dua titik hook:
+Ada empat pintu masuk booking, dan mereka jatuh ke **tiga** titik hook:
 
 | Pintu masuk | Status awal | Dijadwalkan di |
 | --- | --- | --- |
 | `createSession` oleh staf | **BOOKED** langsung — `session.service.ts:319`: `args.forceBooked \|\| isStaff ? BOOKED : PENDING` | `createSession` |
 | `createSession` oleh klien | PENDING | `transitionSession` saat disetujui |
 | `createPublicAppointment` (tamu) | PENDING, sengaja — `public-booking.service.ts:308` menjelaskan KiviCare menahan email "booked" sampai dikonfirmasi, dan booking tamu memang yang paling perlu di-review dulu | `transitionSession` saat disetujui |
+| pembayaran booking tamu lunas (`applyPaidSideEffectsPublic`) | PENDING | titik hook ketiga, di `payment.service.ts` setelah status jadi BOOKED |
 
 Jadi:
 
 - **`createSession`** — jadwalkan bila status hasilnya `BOOKED`.
 - **`transitionSession`** ([`session.service.ts:438`](../../../src/services/session/session.service.ts)) — jadwalkan bila `target === BOOKED`; batalkan bila `target` adalah `CANCELLED`. Tidak ada status `REJECTED` — `SESSION_STATUS` hanya punya lima nilai dan penolakan dipetakan ke `CANCELLED` (lihat komentar di `session.service.ts:472` dan `sessions/[id]/reject/route.ts:53`).
+- **`applyPaidSideEffectsPublic`** (`src/services/payments/payment.service.ts`) — ditemukan pada pass perbaikan kode: saat pembayaran booking tamu lunas, fungsi ini menandai sesi BOOKED langsung dan mengurus efek sampingnya sendiri, di luar `transitionSession`. Itu butuh panggilan `syncSessionReminders` sendiri, yang ditambahkan di titik ini.
 
-Booking tamu tidak butuh hook sendiri; ia lewat jalur kedua saat disetujui.
+Booking tamu dengan demikian punya dua jalur ke BOOKED: disetujui manual (jalur `transitionSession` di atas) atau pembayarannya lunas duluan (jalur `applyPaidSideEffectsPublic`). Keduanya memanggil `syncSessionReminders`, jadi mana pun yang terjadi lebih dulu tetap menjadwalkan pengingatnya.
 
 ## 5. Alur ujung-ke-ujung
 
@@ -107,7 +115,7 @@ sesi menjadi BOOKED
 
 WP-Cron menyala
   └─ handle_session_send_reminder($sessionId, $channel)
-       └─ send_webhook('session.reminder', { sessionId, channel })
+       └─ $this->jobs_webhook->send('session.reminder', { sessionId, channel })
 
 POST /api/v1/webhooks/wordpress-jobs   (HMAC diverifikasi lebih dulu)
   └─ handler 'session.reminder'  ← handler pertama yang pernah didaftarkan

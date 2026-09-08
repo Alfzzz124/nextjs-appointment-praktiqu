@@ -5,6 +5,12 @@ the T-24h / T-1h session reminder feature. Consumes all of Tasks 1–8; this tas
 product code. **Executing any step below is a human decision — this file does not deploy
 anything, and nothing here was run against staging.**
 
+**Scope: staging only.** Every hostname, option value, and verification query below targets
+`staging2.praktiqu.com` / `appointment.praktiqu.com`. A production run needs its own Jobs
+Webhook URL and secret (never copy staging's), its own on-screen version confirmation, and
+its own pass through the verification steps below — nothing here should be treated as
+validated for production without repeating it there.
+
 Two hosts are involved and they are not the same machine:
 
 - **Next.js app**: `staging2.praktiqu.com`.
@@ -24,13 +30,12 @@ behavior on its own.
 
 The reverse order is not safe. If the Next.js app goes out first, it starts calling
 `jobs.enqueue()` for every session that becomes BOOKED, scheduling
-`praktiqu_session_send_reminder` (and `praktiqu_session_auto_complete`) actions on Action
-Scheduler. Against the **still-installed 1.6.5** plugin, those hooks fire into
-`handle_session_send_reminder()` / `handle_session_auto_complete()` bodies that called a
-method that does not exist on that version — a fatal error inside the Action Scheduler
-run, recorded as a **failed** action. That's a broken window: real sessions get scheduled
-into jobs that are guaranteed to blow up, and by the time anyone notices, backfilling the
-missed reminders is manual.
+`praktiqu_session_send_reminder` actions on Action Scheduler. Against the
+**still-installed 1.6.5** plugin, that hook fires into a `handle_session_send_reminder()`
+body that called a method that does not exist on that version — a fatal error inside the
+Action Scheduler run, recorded as a **failed** action. That's a broken window: real
+sessions get scheduled into jobs that are guaranteed to blow up, and by the time anyone
+notices, backfilling the missed reminders is manual.
 
 So: plugin up first (silent, since the option is still empty), fill in the two options,
 confirm the plugin is live and correct, *then* deploy the app.
@@ -55,6 +60,31 @@ ssh -p 45022 praktiqu@101.50.1.106 'PID=$(pgrep -u praktiqu -f staging2.praktiqu
 
 `WORDPRESS_SERVICE_TOKEN` and `WORDPRESS_WEBHOOK_SECRET` are both already populated on the
 live Next.js process — this step only needs to read the second one, not set either.
+
+**Open question to settle while you're in there.** An earlier reading of the process
+environment showed both `WORDPRESS_WEBHOOK_SECRET` and `WORDPRESS_SERVICE_TOKEN` starting
+with the same 6-character prefix — suggestive that they might be the *same* value, but not
+proof, and the process could not be re-read afterward to confirm. If they are the same, one
+credential is doing two jobs (inbound webhook signing here, outbound service-token auth for
+the WordPress REST calls in `src/lib/jobs/client.ts`), and rotating either one breaks both
+directions at once. Check without printing either value:
+
+```bash
+ssh -p 45022 praktiqu@101.50.1.106 '
+  PID=$(pgrep -u praktiqu -f staging2.praktiqu.com | head -1)
+  ENV=$(tr "\0" "\n" < /proc/$PID/environ)
+  A=$(echo "$ENV" | sed -n "s/^WORDPRESS_WEBHOOK_SECRET=//p" | sha256sum)
+  B=$(echo "$ENV" | sed -n "s/^WORDPRESS_SERVICE_TOKEN=//p" | sha256sum)
+  [ "$A" = "$B" ] && echo "SAME VALUE" || echo "DIFFERENT VALUES"
+'
+```
+
+If it prints `SAME VALUE`: treat the two as one credential for planning purposes — a future
+rotation of either one must update both the WordPress-side jobs-webhook secret and the
+service-token side in the same maintenance window, or one direction breaks silently. If it
+prints `DIFFERENT VALUES`, they can be rotated independently as intended — but this is a
+live check, not a settled fact, so re-run it after any future rotation rather than assuming
+today's answer still holds.
 
 The secret field on the settings page renders **masked**, with an `(unchanged)` placeholder
 and an empty `value=""` attribute (`includes/class-praktiqu-endpoint-settings.php`). That is
@@ -85,6 +115,20 @@ SELECT action_id, hook, status, scheduled_date_gmt, args
 Expected: two `pending` rows — one scheduled ~24h before the session start time, one ~1h
 before — with `args` containing `sessionId` and `channel`.
 
+Alongside that SQL query, the app now writes an audit event — `session.reminder.scheduled`
+— to `LogEntry`, once per successfully enqueued job, carrying the `channel` and `runAt`.
+Seeing two of those rows for the session you scheduled is a Next.js-side confirmation that
+`enqueue()` at least attempted the call; it doesn't by itself prove the row landed in Action
+Scheduler (the SQL query above is still what proves that), but it narrows a "zero rows"
+result down to "never tried" vs. "tried, but WordPress rejected or dropped it."
+
+If a reminder instead gets *skipped* once the webhook does arrive, look for a
+`session.reminder.skipped` audit row with a `reason`: `status` (session is no longer
+`BOOKED`), `sudah_dimulai` (start time already passed), `jadwal_tidak_lengkap` (session is
+missing a date or start time), or `waktu_tidak_valid` — new on this branch, for a session
+whose stored date/time/timezone no longer resolves to a valid instant (a malformed IANA
+timezone, for example).
+
 **If you get zero rows**, `jobs.enqueue()` silently did nothing. The most likely cause is
 `WORDPRESS_SERVICE_TOKEN` missing on the Next.js process — `enqueue()` logs
 `[jobs] WORDPRESS_SERVICE_TOKEN not set — job not scheduled` and `return`s before making any
@@ -94,23 +138,26 @@ same `/proc/<pid>/environ` technique as step 2.
 ## 4. Verify the args arrive in the right order on the PHP side
 
 This is the only way to prove `$session_id` receives the session id and not the channel
-string. Two independent things had to line up for this to be correct, and neither can be
-checked from a unit test alone:
+string. The wire payload is exactly `{"sessionId":N,"channel":"email_24h"|"email_1h"}` — two
+keys, no more. Key **order** is the contract and key names are not:
 
-- Next.js's `jobs.enqueue()` (`src/lib/jobs/client.ts`) sends
-  `args: { sessionId, channel, webhookToken }` — `webhookToken` is appended as a **third**
-  key.
+- Next.js's `jobs.enqueue()` (`src/lib/jobs/client.ts`) sends `args: { sessionId, channel }`
+  in that order.
 - The plugin's `Jobs::register()` wires the hook with
-  `add_action('praktiqu_session_send_reminder', [...], 10, 2)` — only **two** positional
-  args. Action Scheduler calls the hook with
-  `do_action_ref_array($hook, array_values($args))`, so keys are discarded entirely and
-  values arrive positionally. `add_action`'s arg count of 2 is what drops `webhookToken`
-  before it reaches `handle_session_send_reminder(int $session_id, string $channel)`.
+  `add_action('praktiqu_session_send_reminder', [...], 10, 2)`. Action Scheduler calls the
+  hook with `do_action_ref_array($hook, array_values($args))`, so key names are discarded
+  entirely and the two values arrive positionally, in insertion order, at
+  `handle_session_send_reminder(int $session_id, string $channel)`.
 
-If either side's field order or that `2` ever drifts, `$session_id` silently receives the
-channel string (or the token) instead of the session id, and nothing before staging would
-catch it — Task 7 pins the payload shape on the plugin side and Task 9's own tests pin the
-key order on the Next.js side, but only a live run proves the two agree.
+If either side's field order ever drifts, `$session_id` silently receives the channel string
+instead of the session id, and nothing before staging would catch it — Task 7 pins the
+payload shape on the plugin side and Task 9's own tests pin the key order on the Next.js
+side, but only a live run proves the two agree. Separately, `jobs.enqueue()` and
+`jobs.cancel()` must build that `args` object identically to each other, because
+`as_unschedule_all_actions` matches on the exact serialized `args` string — if they ever
+diverge, cancellation silently stops matching the action it's supposed to remove, and that's
+the only idempotency mechanism this feature has. `tests/payments/jobs-client.test.ts` now
+pins that the two calls serialize identically.
 
 Schedule a job with `runAt` a few minutes in the future, wait for it to fire, then check:
 
@@ -124,6 +171,27 @@ and the Next.js application log for a `session.reminder.sent` audit line (see
 `src/lib/logging`) carrying the correct `sessionId`. If the id logged there doesn't match the
 session you scheduled, the positional-arg wiring has drifted — stop and do not proceed to
 production.
+
+**If the Action Scheduler log shows the action `complete`, but no `session.reminder.sent`
+audit row shows up at all — not even for the wrong session — the POST was most likely
+rejected before it ever reached the handler.** `Jobs_Webhook::send()` posts with
+`'blocking' => false`, so from WordPress's side the action reads `complete` regardless of
+what happened to the HTTP request; a rejected POST looks identical to a delivered one on the
+WP side, and WordPress logs nothing either way. Check the Next.js access log for
+`/api/v1/webhooks/wordpress-jobs` instead:
+
+- **401** — the two secrets disagree: `praktiqu_endpoint_jobs_webhook_secret` on WordPress
+  and `WORDPRESS_WEBHOOK_SECRET` on the Next.js process are not the same value.
+- **403 or 415** — the request was rejected before reaching the route, most likely the
+  staging WAF; this project has already hit a WAF edge block returning 415 on other JSON
+  POSTs (see `docs/handover/2026-07-13-public-endpoints-deploy-and-postman.md`, "known
+  hammering→415 edge block").
+
+**Rotation note.** The jobs-webhook signing secret has two homes — the
+`praktiqu_endpoint_jobs_webhook_secret` WordPress option and `WORDPRESS_WEBHOOK_SECRET` on
+the Next.js process. Both must change together in the same maintenance window; changing one
+without the other reproduces exactly the silent-401 failure mode above, and — because of the
+`blocking => false` behavior — neither side will show an obvious error telling you why.
 
 ## 5. Known state: `session.auto_complete` fails quietly, not loudly
 
@@ -155,11 +223,20 @@ App down first, then plugin — the reverse of the deploy order, for the same re
 
 Before rolling back, **empty the Jobs Webhook URL option** so the still-installed 1.6.6
 plugin doesn't fire callbacks against a Next.js app that's already gone (or, worse, isn't
-gone yet but is mid-rollback and inconsistent). Then roll back the app, then downgrade the
-plugin to 1.6.5.
+gone yet but is mid-rollback and inconsistent). The URL field genuinely clears — its
+sanitizer is plain `esc_url_raw`, with no placeholder-preserving behavior. **The secret
+field does not clear the same way**: `sanitize_jobs_secret()` treats a blank submission as
+"leave the stored value alone" (the same placeholder-preserving behavior as the other two
+webhook secrets on this settings page), so submitting the form with the secret left blank
+will *not* wipe `praktiqu_endpoint_jobs_webhook_secret`. Don't rely on blanking the secret
+field to disable anything — the URL field is what actually turns the callback off.
 
-Cancel whatever reminder/auto-complete jobs are left pending, so they don't fire against
-1.6.5 after the downgrade:
+**Cancel whatever reminder/auto-complete jobs are left pending next, before touching the
+plugin version** — not after. A reminder that fires in the gap between downgrading the
+plugin and cancelling its pending jobs hits 1.6.5's ghost `Service::send_webhook()` call and
+fatals, which is exactly the broken-window scenario the deploy order in §1 exists to avoid;
+doing this step after the downgrade instead of before reintroduces that same window during
+rollback.
 
 ```sql
 UPDATE wp_actionscheduler_actions
@@ -167,6 +244,13 @@ UPDATE wp_actionscheduler_actions
  WHERE hook IN ('praktiqu_session_send_reminder', 'praktiqu_session_auto_complete')
    AND status = 'pending';
 ```
+
+This uses raw SQL rather than `wp action-scheduler cancel` / `as_unschedule_all_actions`
+because wp-cli is not usable on this host (see the staging-ssh memory notes) — there's no
+CLI shortcut to reach for here, so don't spend time looking for one.
+
+Only once the pending jobs are cancelled: roll back the app, then downgrade the plugin to
+1.6.5.
 
 ## What this does not cover
 
