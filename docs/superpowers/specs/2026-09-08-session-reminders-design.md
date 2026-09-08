@@ -2,7 +2,14 @@
 
 **Tanggal:** 8 September 2026
 **Status:** disetujui, siap direncanakan
-**Cakupan:** backend saja. Tidak ada perubahan plugin WordPress, tidak ada perubahan skema.
+**Cakupan:** backend Next.js **dan** plugin `praktiqu-endpoint`. Tidak ada perubahan skema database.
+
+> **Amandemen 8 September 2026 (saat eksekusi).** Versi pertama spec ini menetapkan "tidak ada
+> perubahan plugin WordPress" dan menyatakan di §2 bahwa handler WordPress-nya sudah mengirim
+> webhook. **Keduanya salah.** Handler itu memanggil method yang tidak pernah ada, jadi jalur
+> callback job belum pernah hidup — dan constraint itu ternyata kehati-hatian aku sendiri soal
+> risiko deploy, bukan batasan nyata: plugin itu milik proyek ini, sudah terpasang di server,
+> dan memang dibuat sebagai jalan keluar untuk fitur yang butuh arsitektur WordPress. Lihat §3b.
 
 ---
 
@@ -23,7 +30,7 @@ Lebih banyak dari yang diduga. Yang sudah siap:
 | Bagian | Status | Lokasi |
 | --- | --- | --- |
 | Handler WordPress | **sudah ada dan terdaftar**, komentarnya menyebut "T-24h or T-1h reminder trigger" | `Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-jobs.php:51` |
-| Handler itu kirim webhook `session.reminder` | sudah | file yang sama, `handle_session_send_reminder()` |
+| Handler itu kirim webhook `session.reminder` | **TIDAK — lihat §3b** | memanggil `Service::send_webhook()` yang tidak pernah ada |
 | Nama hook di type union | sudah dideklarasikan | `src/lib/jobs/client.ts:25` |
 | `jobs.enqueue` dengan `runAt` | sudah, terbukti jalan | pola di `src/services/payments/payment.service.ts:340` |
 | `jobs.cancel` per (hook, args) | sudah, terbukti jalan | pola di `src/services/payments/payment.service.ts:364` dan `:432` |
@@ -37,11 +44,37 @@ Yang belum: sisi Next.js yang menjadwalkan, yang membatalkan, dan yang mendaftar
 
 **Dipilih: WordPress Action Scheduler menjadwalkan, webhook balik, Next.js yang mengirim email.**
 
-Ini yang plumbing-nya memang dibangun untuk itu. Nol perubahan skema, nol perubahan plugin WordPress — yang terakhir itu bukan detail kecil: plugin `praktiqu-endpoint` pernah hilang dari WP selama 7 minggu dan membuat semua login membalas 503, jadi setiap deploy plugin adalah risiko yang lebih baik dihindari kalau tidak perlu.
+Ini yang plumbing-nya memang dibangun untuk itu, dan nol perubahan skema database.
+
+Versi pertama spec ini menambahkan "nol perubahan plugin WordPress" sebagai keunggulan, dengan alasan plugin `praktiqu-endpoint` pernah hilang dari WP selama 7 minggu dan membuat semua login membalas 503. Risiko deploy itu nyata dan tetap perlu runbook, **tapi menjadikannya constraint adalah kesalahan** — separuh WordPress dari kontrak ini memang belum ada, jadi tidak ada cara menghindarinya. Plugin itu milik proyek ini dan sudah terpasang; ia justru alat yang disiapkan untuk kasus seperti ini.
 
 **Ditolak — Next.js menjadwalkan sendiri (cron eksternal + tabel due-reminders).** Butuh tabel baru, dan di repo ini `DATABASE_URL` menunjuk database WordPress yang sama, jadi perubahan skema harus lewat SQL berlingkup dan bukan `db push` (lihat `docs/architecture/shadow-tables-audit.md`). Plus butuh cron cPanel baru dan endpoint baru, dan menduplikasi apa yang Action Scheduler sudah lakukan. Juga bertentangan dengan keputusan C8 yang menetapkan Action Scheduler sebagai job runner.
 
 **Ditolak — WordPress mengirim emailnya sendiri.** Memindahkan logika notifikasi ke PHP dan memecahnya ke dua kodebase. Juga mempersulit rencana rewrite backend: logika yang tinggal di plugin WordPress tidak ikut terbawa.
+
+## 3b. Separuh WordPress yang belum ada
+
+Ditemukan saat mengerjakan Task 4, dengan membaca sumber plugin. Tiga hal patah, dan ketiganya berdiri sendiri.
+
+**1. `Service::send_webhook()` tidak pernah ada.** `Jobs::handle_session_send_reminder` (`class-praktiqu-endpoint-jobs.php:124`) dan `handle_session_auto_complete` (`:111`) sama-sama memanggilnya, tapi `$this->service` bertipe `Service`, yang sepuluh methodnya semua soal autentikasi dan user. Grep di seluruh `Wordpress-Plugin/` menemukan `send_webhook` hanya di dua tempat pemanggilan itu. Jadi job pengingat menyala, PHP fatal "Call to undefined method", Action Scheduler menangkapnya dan menandai action gagal. Tidak ada webhook yang pernah terkirim. Terverifikasi juga di plugin **yang terpasang di server** (v1.6.5, identik dengan repo), jadi ini bug hidup di produksi.
+
+**2. Bentuk payload tidak cocok.** Pengirim bertanda tangan yang benar-benar bekerja adalah `Hooks::dispatch_webhook` (`class-praktiqu-endpoint-hooks.php:140`) — HMAC-SHA256 atas body JSON di header `X-PraktiQU-Webhook-Signature`, sudah benar. Tapi payload-nya **datar**: `{event, wpUserId, issuedAt, source, ...extra}`. `processWebhook` di Next.js membaca `payload.event` lalu memanggil `handler(payload.data)` — ia butuh objek `data` bersarang yang tidak pernah dihasilkan `dispatch_webhook`. Menyambungkan `Jobs` ke situ apa adanya akan menyerahkan `undefined` ke handler.
+
+**3. Tidak ada tujuan untuk jobs.** Plugin mendaftarkan dua opsi URL (`class-praktiqu-endpoint-settings.php:43,53`): `praktiqu_endpoint_webhook_url` untuk event user dan `praktiqu_endpoint_payment_webhook_url` untuk pembayaran. Tidak ada URL jobs. Rahasianya pun tinggal di opsi `praktiqu_endpoint_webhook_secret`, sedangkan penerima jobs di Next.js memverifikasi dari env `WORDPRESS_WEBHOOK_SECRET` — dua tempat penyimpanan berbeda.
+
+### Yang akan dibangun
+
+Pengirim webhook khusus jobs, dengan **opsi URL dan rahasia sendiri** — `praktiqu_endpoint_jobs_webhook_url` dan `praktiqu_endpoint_jobs_webhook_secret` — mengikuti pola dua-opsi yang sudah ada. Diputuskan 8 September: memakai ulang opsi event-user berarti dua bentuk payload berbagi satu tujuan dan satu rahasia, jadi merotasi rahasia user akan mematikan callback job tanpa suara.
+
+Bentuk payload wajib `{ event, data }`, karena itu yang dibaca `processWebhook`. Penandatanganan menyalin `dispatch_webhook` yang sudah terbukti: HMAC-SHA256 hex atas body JSON, di header `X-PraktiQU-Webhook-Signature`. `Jobs` disambungkan ke pengirim baru itu, bukan ke `Service`. Itu sekaligus menghidupkan `praktiqu_session_auto_complete`, yang patah dengan cara yang sama dan hanya tidak terlihat karena tidak ada yang menjadwalkannya.
+
+### Kontrak args tetap utuh, walau ada kunci ketiga
+
+`jobs.enqueue` selalu menempelkan `webhookToken` ke args (`src/lib/jobs/client.ts:16`), dan komentar plugin mencatat payload terukur `{"wcOrderId":49736,"webhookToken":null}`. Itu aman: `add_action(..., 10, 2)` membatasi callback ke dua argumen, jadi nilai ketiga dibuang WordPress selama `sessionId` dan `channel` ada di depan. Yang dipaku test kita adalah urutan kunci di helper — bagian yang memang kita kendalikan.
+
+### Verifikasi
+
+Plugin bisa diuji tanpa WordPress dan tanpa server: `tests/test-money.php` sudah menetapkan polanya — plain PHP, tanpa PHPUnit, dijalankan di container `php:8.3-cli`. Terbukti jalan: lint 16 berkas bersih dan harness-nya ALL PASS. PHP 8.3 juga ada di server untuk lint pasca-deploy.
 
 ## 4. Titik pemicu — dua, bukan tiga
 
@@ -181,3 +214,7 @@ Bukan lupa — diputuskan tidak diperbaiki di sini.
 - **Menyambungkan fitur template email.** Lihat §8.
 - **Menyeragamkan bahasa empat pengirim email yang ada.** Lihat §8.
 - **Menghapus model `AppointmentReminder`.** Milik Fase 4 audit shadow-table, bukan pekerjaan ini.
+- **Membetulkan `Hooks::dispatch_webhook` atau event user-nya.** Payload datarnya adalah kontrak
+  terpisah dan tidak disentuh. Perlu dicatat: tidak ada route di Next.js yang menerimanya
+  (`src/app/api/v1/webhooks/` hanya berisi `wordpress-jobs`), jadi event user tampaknya juga
+  tidak punya penerima — temuan tersendiri, di luar cakupan di sini.

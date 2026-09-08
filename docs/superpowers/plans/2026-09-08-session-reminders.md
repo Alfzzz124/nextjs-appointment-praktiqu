@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Backend saja.** Tidak ada perubahan pada plugin WordPress. Tidak ada perubahan skema Prisma.
+- **Backend Next.js dan plugin `praktiqu-endpoint`.** Tidak ada perubahan skema Prisma. Plugin itu milik proyek ini dan terpasang di server; ia dalam cakupan sejak amandemen 8 September (lihat spec §3b).
 - **Urutan kunci `args` adalah kontraknya, bukan namanya.** Action Scheduler mengeksekusi dengan `do_action_ref_array($hook, array_values($this->get_args()))` — `array_values()` membuang kunci. `args` harus selalu ditulis `{ sessionId, channel }` dalam urutan itu, karena handler PHP-nya `handle_session_send_reminder(int $session_id, string $channel = 'email')` menerimanya secara posisional.
 - **Nama hook:** `praktiqu_session_send_reminder`. Nama event webhook: `session.reminder`.
 - **Nilai `channel`:** hanya `'email_24h'` dan `'email_1h'`.
@@ -21,7 +21,9 @@
 - **Guard jam mulai tanpa masa tenggang:** kalau `startsAt <= now` saat webhook tiba, tidak ada email dikirim.
 - **Penerima tanpa email dilewati, bukan bikin gagal.** Handler tidak boleh melempar karena alamat email kosong.
 - **Salinan email berbahasa Indonesia.**
-- **Semua test wajib jalan tanpa database.** MySQL tidak tersedia di lingkungan dev (Docker tidak aktif di distro WSL ini), jadi test yang butuh DB tidak akan pernah dijalankan. Mock `@/lib/db`, `@/lib/jobs/client`, dan `@/lib/email`.
+- **Test unit tetap harus jalan tanpa database** — mock `@/lib/db`, `@/lib/jobs/client`, dan `@/lib/email`. Itu bukan lagi karena keterbatasan lingkungan, tapi karena test yang cepat dan tak bergantung DB lebih berguna.
+- **Baseline sekarang hijau: `npm test` = 154 berkas / 1522 test, semua lulus.** MySQL sudah hidup (container `praktiqu-mysql`). Jadi kegagalan apa pun, di berkas mana pun, adalah regresi nyata — tidak ada lagi "noise lingkungan" untuk disingkirkan.
+- **PHP diuji di container, bukan di server.** `docker run --rm -v "$(pwd)":/p -w /p php:8.3-cli` — terbukti melint 16 berkas plugin bersih dan menjalankan `php tests/test-money.php` sampai ALL PASS.
 - **Jalankan `npx tsc --noEmit` sebelum setiap commit.** Harus bersih.
 
 ## File Structure
@@ -1135,7 +1137,7 @@ describe('pendaftaran handler session.reminder', () => {
 Run: `npx vitest run tests/unit/session/reminder-registration.test.ts`
 Expected: FAIL — `processWebhook` membalas `true` tapi `findSessionById` tidak pernah dipanggil, karena belum ada handler terdaftar.
 
-Kalau yang gagal justru pada verifikasi tanda tangan, periksa nama variabel lingkungan yang dibaca `verifyWebhookSignature` di `src/lib/jobs/webhook-handler.ts` dan sesuaikan `SECRET` di test.
+Nama variabel lingkungan dan format digest-nya sudah diverifikasi: `webhook-handler.ts:17` membaca `process.env.WORDPRESS_WEBHOOK_SECRET`, dan tanda tangannya HMAC-SHA256 dalam **hex**. Keduanya sudah sesuai di test. Perhatikan bahwa `WEBHOOK_SECRET` dibaca saat modul dimuat, jadi penetapan `process.env` di test harus terjadi sebelum `await import(...)` — itu sebabnya kedua impor di test ini dinamis, bukan statis.
 
 - [ ] **Step 3: Impor modul handler di route**
 
@@ -1380,18 +1382,464 @@ kail identik dan booking tamu ikut tertutup lewat jalur persetujuan."
 
 ---
 
+
+### Task 7: Pengirim webhook jobs di plugin
+
+Plugin punya pengirim bertanda tangan yang bekerja (`Hooks::dispatch_webhook`), tapi payload-nya datar dan tujuannya untuk event user. Task ini menambah pengirim khusus jobs yang menghasilkan `{ event, data }` — bentuk yang `processWebhook` di Next.js baca — dengan opsi URL dan rahasia sendiri.
+
+Bagian yang murni (`build_body`, `sign`) dipisah dari yang menyentuh WordPress (`send`), supaya keduanya bisa diuji di container PHP tanpa WordPress. Itu pola yang sudah ditetapkan `Money` dan alasannya sama.
+
+**Files:**
+- Create: `Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-jobs-webhook.php`
+- Modify: `Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-settings.php` (dua `register_setting` baru di dekat baris 43-53, dua baris form di tabel webhook)
+- Test: `Wordpress-Plugin/praktiqu-endpoint/tests/test-jobs-webhook.php`
+
+**Interfaces:**
+- Consumes: tidak ada.
+- Produces: `PraktiQU\Endpoint\Jobs_Webhook` dengan `URL_OPTION`, `SECRET_OPTION`, `build_body(string $event, array $data): string|false`, `sign(string $body, string $secret): string`, dan `send(string $event, array $data): void`. Task 8 memanggil `send`.
+
+- [ ] **Step 1: Tulis test yang gagal**
+
+```php
+<?php
+/**
+ * Assertions for Jobs_Webhook::build_body() and ::sign(). Plain PHP — no PHPUnit, no
+ * WordPress — so it runs in a bare `php:8.3-cli` container, same as tests/test-money.php.
+ *
+ * What matters here is the wire contract with Next.js:
+ *   - the body MUST be { event, data }, because processWebhook() reads payload.event and
+ *     then calls handler(payload.data). A flat payload hands the handler undefined.
+ *   - the signature MUST be HMAC-SHA256 hex over the raw body, because
+ *     verifyWebhookSignature() in src/lib/jobs/webhook-handler.ts computes exactly that
+ *     and compares with timingSafeEqual.
+ */
+
+declare(strict_types=1);
+
+define('PRAKTIQU_ENDPOINT_JOBS_WEBHOOK_TEST', true);
+require_once __DIR__ . '/../includes/class-praktiqu-endpoint-jobs-webhook.php';
+
+use PraktiQU\Endpoint\Jobs_Webhook;
+
+$failures = 0;
+
+function check(string $label, $actual, $expected): void
+{
+    global $failures;
+    if ($actual === $expected) {
+        echo "  ok   {$label}\n";
+        return;
+    }
+    $failures++;
+    echo "  FAIL {$label}\n";
+    echo "       expected: " . var_export($expected, true) . "\n";
+    echo "       actual:   " . var_export($actual, true) . "\n";
+}
+
+echo "Jobs_Webhook::build_body\n";
+
+$body = Jobs_Webhook::build_body('session.reminder', ['sessionId' => 7, 'channel' => 'email_24h']);
+check('nests the payload under data', $body, '{"event":"session.reminder","data":{"sessionId":7,"channel":"email_24h"}}');
+
+$decoded = json_decode((string) $body, true);
+check('event is top level', $decoded['event'], 'session.reminder');
+check('sessionId lives under data', $decoded['data']['sessionId'], 7);
+check('channel lives under data', $decoded['data']['channel'], 'email_24h');
+check('no stray top-level keys', array_keys($decoded), ['event', 'data']);
+
+$empty = Jobs_Webhook::build_body('session.reminder', []);
+check('empty data still nests as an object', $empty, '{"event":"session.reminder","data":{}}');
+
+echo "Jobs_Webhook::sign\n";
+
+$secret = 'rahasia-webhook';
+$sig = Jobs_Webhook::sign('{"a":1}', $secret);
+check('hmac sha256 hex over the raw body', $sig, hash_hmac('sha256', '{"a":1}', $secret));
+check('hex is 64 chars', strlen($sig), 64);
+check('empty secret yields an empty signature', Jobs_Webhook::sign('{"a":1}', ''), '');
+check('signature covers the body, not just the event', Jobs_Webhook::sign('{"a":2}', $secret) !== $sig, true);
+
+echo "\n";
+if ($failures > 0) {
+    echo "{$failures} FAILURE(S)\n";
+    exit(1);
+}
+echo "ALL PASS\n";
+```
+
+- [ ] **Step 2: Jalankan test, pastikan gagal**
+
+Run, from the repo root:
+
+```bash
+cd Wordpress-Plugin/praktiqu-endpoint && docker run --rm -v "$(pwd)":/p -w /p php:8.3-cli php tests/test-jobs-webhook.php
+```
+
+Expected: PHP fatal error — `Failed opening required '.../class-praktiqu-endpoint-jobs-webhook.php'`. The class does not exist yet.
+
+- [ ] **Step 3: Tulis kelasnya**
+
+```php
+<?php
+/**
+ * Jobs_Webhook — mengirim callback penyelesaian job dari Action Scheduler ke Next.js.
+ *
+ * Terpisah dari `Hooks::dispatch_webhook` dengan sengaja, karena keduanya bicara dalam
+ * dua kontrak berbeda. `dispatch_webhook` mengirim event user dengan payload DATAR
+ * (`{event, wpUserId, issuedAt, source, ...}`). Penerima job di Next.js
+ * (`src/app/api/v1/webhooks/wordpress-jobs/route.ts` -> `processWebhook`) membaca
+ * `payload.event` lalu memanggil `handler(payload.data)`, jadi ia butuh `data` bersarang.
+ * Memakai ulang pengirim yang datar akan menyerahkan `undefined` ke handler.
+ *
+ * URL dan rahasianya juga milik sendiri, bukan berbagi dengan event user: merotasi
+ * rahasia event user tidak boleh mematikan callback job tanpa suara.
+ *
+ * `build_body()` dan `sign()` sengaja bebas dari WordPress supaya kontrak kabelnya bisa
+ * diuji di container PHP kosong (tests/test-jobs-webhook.php) alih-alih hanya lewat
+ * Action Scheduler yang hidup — pola yang sama, dan alasan yang sama, seperti Money.
+ *
+ * @package PraktiQU\Endpoint
+ */
+
+declare(strict_types=1);
+
+namespace PraktiQU\Endpoint;
+
+// Harness test mendefinisikan PRAKTIQU_ENDPOINT_JOBS_WEBHOOK_TEST supaya berkas ini bisa
+// di-require di luar WordPress. Di luar itu, tanpa ABSPATH tetap berhenti.
+defined('ABSPATH') || defined('PRAKTIQU_ENDPOINT_JOBS_WEBHOOK_TEST') || exit;
+
+final class Jobs_Webhook
+{
+    public const URL_OPTION    = 'praktiqu_endpoint_jobs_webhook_url';
+    public const SECRET_OPTION = 'praktiqu_endpoint_jobs_webhook_secret';
+
+    /**
+     * Bentuk body yang dibaca `processWebhook` di Next.js: `{ event, data }`.
+     *
+     * Memakai `json_encode`, bukan `wp_json_encode`, supaya fungsi ini bisa diuji tanpa
+     * WordPress. Body-nya kita susun sendiri dari nilai skalar, jadi tidak ada yang
+     * dibutuhkan dari pembungkus WordPress-nya.
+     *
+     * `data` di-cast ke object supaya array kosong terbit sebagai `{}`, bukan `[]` —
+     * `handler(payload.data)` di sisi Next.js mengharapkan objek.
+     */
+    public static function build_body(string $event, array $data): string|false
+    {
+        return json_encode([
+            'event' => $event,
+            'data'  => (object) $data,
+        ]);
+    }
+
+    /**
+     * HMAC-SHA256 hex atas body mentah — persis yang dihitung `verifyWebhookSignature()`
+     * di `src/lib/jobs/webhook-handler.ts` sebelum membandingkannya dengan timingSafeEqual.
+     *
+     * Rahasia kosong menghasilkan tanda tangan kosong, meniru `dispatch_webhook`. Sisi
+     * Next.js menolak permintaan tanpa tanda tangan saat rahasianya terpasang.
+     */
+    public static function sign(string $body, string $secret): string
+    {
+        return $secret !== '' ? hash_hmac('sha256', $body, $secret) : '';
+    }
+
+    /**
+     * Kirim satu callback. Fire-and-forget: kegagalan jaringan tidak boleh menjatuhkan
+     * eksekusi action, dan Action Scheduler tidak punya siapa pun untuk dikabari.
+     */
+    public function send(string $event, array $data): void
+    {
+        $url = (string) get_option(self::URL_OPTION, '');
+        if ($url === '') {
+            return; // Belum dikonfigurasi; no-op tanpa suara, sama seperti dispatch_webhook.
+        }
+
+        $body = self::build_body($event, $data);
+        if ($body === false) {
+            return;
+        }
+
+        $secret = (string) get_option(self::SECRET_OPTION, '');
+
+        $response = wp_remote_post($url, [
+            'method'      => 'POST',
+            'timeout'     => 5,
+            'redirection' => 0,
+            'headers'     => [
+                'Content-Type'                 => 'application/json',
+                'X-PraktiQU-Webhook-Event'     => $event,
+                'X-PraktiQU-Webhook-Signature' => self::sign($body, $secret),
+            ],
+            'body'     => $body,
+            'blocking' => false,
+        ]);
+
+        if (is_wp_error($response)) {
+            error_log('[praktiqu-endpoint] jobs webhook failed: ' . $response->get_error_message());
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Jalankan test, pastikan lulus**
+
+Run: `cd Wordpress-Plugin/praktiqu-endpoint && docker run --rm -v "$(pwd)":/p -w /p php:8.3-cli php tests/test-jobs-webhook.php`
+Expected: `ALL PASS`, 11 baris `ok`.
+
+- [ ] **Step 5: Daftarkan dua opsi baru di halaman pengaturan**
+
+Di `class-praktiqu-endpoint-settings.php`, tepat setelah `register_setting` untuk `praktiqu_endpoint_payment_webhook_url` (sekitar baris 53), tambahkan dua pendaftaran yang meniru bentuk tetangganya persis — baca dulu argumen `register_setting` yang sudah ada dan tiru `type`, `sanitize_callback`, dan `default`-nya:
+
+```php
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_jobs_webhook_url', [
+            'type'              => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default'           => '',
+        ]);
+
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_jobs_webhook_secret', [
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        ]);
+```
+
+Lalu tambahkan dua baris form di tabel webhook yang sudah ada, mengikuti markup baris `praktiqu_endpoint_webhook_url` (sekitar baris 270-280) — `<tr>`, `<th>` dengan `<label for>`, `<td>` dengan `<input>`. Label: "Jobs Webhook URL" dan "Jobs Webhook Secret". Teks bantu untuk URL-nya harus menyebut nilai yang benar: `https://<app>/api/v1/webhooks/wordpress-jobs`. Teks bantu untuk rahasianya harus menyebut bahwa ia wajib sama dengan env `WORDPRESS_WEBHOOK_SECRET` di aplikasi Next.js.
+
+- [ ] **Step 6: Lint seluruh plugin**
+
+Run: `cd Wordpress-Plugin/praktiqu-endpoint && docker run --rm -v "$(pwd)":/p -w /p php:8.3-cli sh -c 'for f in praktiqu-endpoint.php includes/*.php; do php -l "$f" || exit 1; done'`
+Expected: `No syntax errors detected` untuk setiap berkas.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-jobs-webhook.php \
+        Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-settings.php \
+        Wordpress-Plugin/praktiqu-endpoint/tests/test-jobs-webhook.php
+git commit -m "feat(plugin): pengirim webhook jobs dengan payload {event,data}
+
+Hooks::dispatch_webhook mengirim payload datar untuk event user, sementara
+processWebhook di Next.js memanggil handler(payload.data) dan butuh data
+bersarang. URL dan rahasianya milik sendiri supaya rotasi rahasia event user
+tidak mematikan callback job tanpa suara.
+
+build_body dan sign bebas WordPress, jadi kontrak kabelnya diuji di container
+PHP kosong seperti Money."
+```
+
+---
+
+### Task 8: Sambungkan handler job ke pengirim itu
+
+`Jobs::handle_session_send_reminder` dan `handle_session_auto_complete` memanggil `$this->service->send_webhook(...)`, tapi `Service` tidak punya method itu — sepuluh methodnya semua soal autentikasi dan user. Grep di seluruh `Wordpress-Plugin/` menemukan `send_webhook` hanya di dua tempat pemanggilan itu. Jadi setiap job yang menyala melempar fatal "Call to undefined method", Action Scheduler menandainya gagal, dan tidak ada webhook yang pernah terkirim. Task ini yang menutupnya.
+
+**Files:**
+- Modify: `Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-jobs.php` (properti + konstruktor sekitar baris 35-41; dua pemanggilan di `:111` dan `:124`)
+- Modify: `Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-plugin.php` (baris 43, tempat `Jobs` disusun)
+- Modify: `Wordpress-Plugin/praktiqu-endpoint/praktiqu-endpoint.php` (blok `require_once`, baris 25-39; dan header `Version:` di baris 6)
+
+**Interfaces:**
+- Consumes: `Jobs_Webhook::send(string $event, array $data): void` dari Task 7.
+- Produces: tidak ada nilai baru.
+
+- [ ] **Step 1: Buktikan dulu bahwa methodnya memang tidak ada**
+
+Ini bukan test, ini verifikasi premis — jalankan dan tempelkan hasilnya ke laporanmu:
+
+```bash
+grep -rn "send_webhook" Wordpress-Plugin/praktiqu-endpoint/
+grep -nE "(public|private|protected) function" Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-service.php
+```
+
+Expected: `send_webhook` muncul hanya di dua pemanggilan di `class-praktiqu-endpoint-jobs.php`, dan daftar method `Service` tidak memuatnya. Kalau ternyata ADA, berhenti dan laporkan — premis task ini salah.
+
+- [ ] **Step 2: Tambahkan require untuk kelas baru**
+
+Di `praktiqu-endpoint.php`, tepat setelah baris `require_once` untuk `class-praktiqu-endpoint-jobs.php`:
+
+```php
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-jobs-webhook.php';
+```
+
+- [ ] **Step 3: Suntikkan pengirimnya ke `Jobs`**
+
+Di `class-praktiqu-endpoint-jobs.php`, tambahkan properti di sebelah `private Service $service;`:
+
+```php
+    private Jobs_Webhook $jobs_webhook;
+```
+
+lalu perluas konstruktornya. Bentuk sekarang adalah `__construct(Service $service, Payments $payments)`; tambahkan parameter ketiga dan simpan:
+
+```php
+    public function __construct(Service $service, Payments $payments, Jobs_Webhook $jobs_webhook)
+    {
+        $this->service      = $service;
+        $this->payments     = $payments;
+        $this->jobs_webhook = $jobs_webhook;
+    }
+```
+
+Pertahankan penugasan `$this->service` dan `$this->payments` yang sudah ada apa adanya — `Service` masih dipakai di tempat lain di kelas ini.
+
+- [ ] **Step 4: Ganti kedua pemanggilan method hantu itu**
+
+Di `handle_session_send_reminder` (sekitar baris 124):
+
+```php
+    public function handle_session_send_reminder(int $session_id, string $channel = 'email'): void
+    {
+        $this->jobs_webhook->send('session.reminder', [
+            'sessionId' => $session_id,
+            'channel'   => $channel,
+        ]);
+    }
+```
+
+Dan di `handle_session_auto_complete` (sekitar baris 111) — patah dengan cara yang sama, dan hanya tidak terlihat karena tidak ada yang menjadwalkannya:
+
+```php
+    public function handle_session_auto_complete(int $session_id): void
+    {
+        $this->jobs_webhook->send('session.auto_complete', [
+            'sessionId' => $session_id,
+        ]);
+    }
+```
+
+- [ ] **Step 5: Sambungkan di `Plugin`**
+
+Di `class-praktiqu-endpoint-plugin.php` baris 43, `Jobs` disusun sebagai `new Jobs($this->service, $this->payments)`. Tambahkan argumen ketiga:
+
+```php
+        $this->jobs     = new Jobs($this->service, $this->payments, new Jobs_Webhook());
+```
+
+- [ ] **Step 6: Naikkan versi plugin**
+
+Di `praktiqu-endpoint.php` baris 6, `Version: 1.6.5` menjadi `Version: 1.6.6`. Kalau ada konstanta versi kedua di berkas itu, naikkan juga — cari `1.6.5` di seluruh berkas plugin dan naikkan setiap kemunculan yang menyatakan versi plugin.
+
+- [ ] **Step 7: Lint dan jalankan kedua harness PHP**
+
+Run: `cd Wordpress-Plugin/praktiqu-endpoint && docker run --rm -v "$(pwd)":/p -w /p php:8.3-cli sh -c 'for f in praktiqu-endpoint.php includes/*.php; do php -l "$f" || exit 1; done; php tests/test-money.php; php tests/test-jobs-webhook.php'`
+Expected: tidak ada syntax error, dan kedua harness `ALL PASS`.
+
+- [ ] **Step 8: Pastikan tidak ada sisa pemanggilan hantu**
+
+Run: `grep -rn "send_webhook" Wordpress-Plugin/praktiqu-endpoint/includes/`
+Expected: hanya `dispatch_webhook` milik `Hooks` yang muncul. Tidak ada lagi `service->send_webhook`.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-jobs.php \
+        Wordpress-Plugin/praktiqu-endpoint/includes/class-praktiqu-endpoint-plugin.php \
+        Wordpress-Plugin/praktiqu-endpoint/praktiqu-endpoint.php
+git commit -m "fix(plugin): handler job memanggil method yang tidak pernah ada
+
+Jobs memanggil Service::send_webhook() untuk session.reminder dan
+session.auto_complete, tapi Service tidak punya method itu — sepuluh methodnya
+semua soal auth/user, dan grep menemukan send_webhook hanya di dua tempat
+pemanggilan itu. Jadi setiap job yang menyala melempar fatal, Action Scheduler
+menandainya gagal, dan tidak ada webhook yang pernah terkirim sejak hook-hook
+itu ditulis. Terverifikasi juga pada plugin yang terpasang di server.
+
+Versi 1.6.6."
+```
+
+---
+
+### Task 9: Runbook deploy dan verifikasi ujung-ke-ujung
+
+Semuanya sampai titik ini diuji per bagian. Task ini yang membuktikan rantainya utuh — dan urutan deploy-nya penting, karena aplikasi dan plugin harus bergerak dalam urutan yang tidak meninggalkan jendela rusak.
+
+**Files:**
+- Create: `docs/deploy/session-reminders-runbook.md`
+
+**Interfaces:**
+- Consumes: semua task sebelumnya.
+- Produces: tidak ada kode.
+
+- [ ] **Step 1: Tulis runbook-nya**
+
+Harus memuat, dengan perintah nyata dan bukan garis besar:
+
+1. **Urutan deploy, dan alasannya.** Plugin lebih dulu, aplikasi kemudian. Alasan: plugin 1.6.6 mengirim `session.reminder` hanya kalau opsi URL-nya terisi, jadi memasangnya lebih dulu tidak mengirim apa pun ke aplikasi lama. Sebaliknya, memasang aplikasi lebih dulu berarti aplikasi mulai menjadwalkan job yang, saat menyala, memanggil method hantu di plugin 1.6.5 dan tercatat gagal di Action Scheduler.
+2. **Dua opsi yang harus diisi manual** di WP Admin setelah plugin ter-deploy: Jobs Webhook URL = `https://staging2.praktiqu.com/api/v1/webhooks/wordpress-jobs`, dan Jobs Webhook Secret = nilai env `WORDPRESS_WEBHOOK_SECRET` pada proses Next.js. Sertakan perintah untuk membaca nilai itu dari proses yang berjalan, karena `.env` di server tidak bisa dipercaya:
+
+```bash
+ssh -p 45022 praktiqu@101.50.1.106 'PID=$(pgrep -u praktiqu -f staging2.praktiqu.com | head -1); tr "\0" "\n" < /proc/$PID/environ | grep "^WORDPRESS_WEBHOOK_SECRET="'
+```
+
+3. **Verifikasi job benar-benar terjadwal.** Jadwalkan satu sesi lalu periksa tabel Action Scheduler:
+
+```sql
+SELECT action_id, hook, status, scheduled_date_gmt, args
+  FROM wp_actionscheduler_actions
+ WHERE hook = 'praktiqu_session_send_reminder'
+ ORDER BY action_id DESC LIMIT 5;
+```
+
+Harapan: dua baris `pending`, satu 24 jam sebelum jam mulai sesi dan satu 1 jam sebelumnya, dengan `args` memuat `sessionId` dan `channel`. **Kalau nol baris**, `jobs.enqueue` diam-diam tidak melakukan apa pun — periksa `WORDPRESS_SERVICE_TOKEN` pada proses Next.js, karena tanpa itu ia `return` tanpa suara.
+
+4. **Verifikasi urutan args tiba benar di sisi PHP.** Inilah satu-satunya cara membuktikan `$session_id` menerima id dan bukan channel. Jadwalkan job dengan `runAt` beberapa menit ke depan, tunggu menyala, lalu periksa `wp_actionscheduler_logs` untuk `action_id` itu dan log aplikasi untuk baris audit `session.reminder.sent`.
+
+5. **Rollback.** Turunkan aplikasi lebih dulu, lalu plugin. Sebelum rollback, kosongkan opsi Jobs Webhook URL supaya plugin 1.6.5 tidak dipanggil dengan job yang masih tertunda. Perintah untuk membatalkan job yang tersisa:
+
+```sql
+UPDATE wp_actionscheduler_actions
+   SET status = 'canceled'
+ WHERE hook IN ('praktiqu_session_send_reminder', 'praktiqu_session_auto_complete')
+   AND status = 'pending';
+```
+
+- [ ] **Step 2: Jalankan gerbang hijau terakhir**
+
+Ketiganya harus lulus, dan tempelkan keluarannya ke laporanmu:
+
+```bash
+npm test
+npx tsc --noEmit
+cd Wordpress-Plugin/praktiqu-endpoint && docker run --rm -v "$(pwd)":/p -w /p php:8.3-cli sh -c 'for f in praktiqu-endpoint.php includes/*.php; do php -l "$f" || exit 1; done; php tests/test-money.php; php tests/test-jobs-webhook.php'
+```
+
+Expected: `npm test` lulus penuh tanpa satu pun kegagalan — baseline sebelum plan ini adalah 154 berkas / 1522 test, jadi hitungannya harus itu ditambah test baru dari plan ini. `tsc` bersih. Lint bersih dan kedua harness PHP `ALL PASS`.
+
+**Jangan deploy, jangan SSH untuk mengubah apa pun, jangan sentuh opsi WP.** Task ini menulis runbook-nya dan membuktikan pohon kerjanya hijau; eksekusinya keputusan manusia.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/deploy/session-reminders-runbook.md
+git commit -m "docs(deploy): runbook pengingat sesi
+
+Plugin lebih dulu, aplikasi kemudian: plugin 1.6.6 diam sampai opsi URL-nya
+diisi, sedangkan urutan sebaliknya membuat aplikasi menjadwalkan job yang
+memanggil method hantu di 1.6.5 dan tercatat gagal.
+
+Memuat dua verifikasi yang tidak bisa dilakukan di luar staging: bahwa job
+benar-benar sampai ke Action Scheduler, dan bahwa urutan args tiba benar di
+sisi PHP."
+```
+
+---
+
 ## Selesai bila
 
 - Sesi yang dibuat staf (BOOKED) menjadwalkan dua job; sesi klien dan tamu (PENDING) tidak, sampai disetujui.
 - Menyetujui sesi PENDING menjadwalkan dua job; membatalkan sesi membuang keduanya.
 - Webhook `session.reminder` mengirim dua email berbahasa Indonesia — klien dan profesional — dan mencatatnya di `LogEntry`.
 - Sesi yang sudah dibatalkan atau sudah dimulai tidak menghasilkan email, meski job-nya tetap menyala.
-- `npx tsc --noEmit` bersih, dan `npm test` tidak punya kegagalan selain `PrismaClientInitializationError`.
-- Tanpa tabel baru, tanpa perubahan skema, tanpa perubahan plugin WordPress.
+- `npx tsc --noEmit` bersih, dan `npm test` lulus **penuh** — nol kegagalan, karena baselinenya hijau.
+- Lint PHP bersih dan kedua harness plugin `ALL PASS`.
+- `Jobs` tidak lagi memanggil method yang tidak ada, dan `session.auto_complete` ikut hidup.
+- Tanpa tabel baru, tanpa perubahan skema database.
 
 ## Verifikasi yang tidak bisa dilakukan di lingkungan ini
 
-Catat keduanya di commit terakhir dan di ledger progres — jangan diam-diam dianggap beres.
+Menyusut jauh sejak amandemen: MySQL dan PHP keduanya tersedia sekarang, jadi hanya dua hal yang benar-benar butuh staging. Keduanya masuk runbook Task 9 dan harus dicatat di ledger — jangan diam-diam dianggap beres.
 
-1. **Job benar-benar sampai ke Action Scheduler.** Butuh `WORDPRESS_SERVICE_TOKEN` dan WordPress yang hidup; `jobs.enqueue` diam-diam tidak melakukan apa pun tanpa token itu (`if (!WP_SERVICE_TOKEN) return`). Verifikasi di staging: jadwalkan satu sesi, lalu cek tabel `wp_actionscheduler_actions` untuk hook `praktiqu_session_send_reminder`.
-2. **Urutan args tiba benar di sisi PHP.** Test kita memaku urutan kunci di sisi kita, tapi hanya eksekusi nyata yang membuktikan `$session_id` menerima id dan bukan channel. Verifikasi di staging dengan menjadwalkan job pada `runAt` beberapa menit ke depan, lalu baca log plugin-nya.
+1. **Job benar-benar sampai ke Action Scheduler.** `jobs.enqueue` diam-diam `return` tanpa `WORDPRESS_SERVICE_TOKEN`. Token itu terpasang di proses staging, tapi hanya baris nyata di `wp_actionscheduler_actions` yang membuktikan rantainya sambung.
+2. **Urutan args tiba benar di sisi PHP.** Test kita memaku urutan kunci di sisi kita, dan Task 7 memaku bentuk payload di sisi plugin, tapi hanya eksekusi nyata yang membuktikan `$session_id` menerima id dan bukan channel — terutama karena `jobs.enqueue` menempelkan `webhookToken` sebagai kunci ketiga dan `add_action(..., 10, 2)` yang membuangnya.
