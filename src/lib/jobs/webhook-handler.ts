@@ -16,15 +16,20 @@ import { logging } from '../logging';
 
 const WEBHOOK_SECRET = process.env.WORDPRESS_WEBHOOK_SECRET ?? '';
 
+/**
+ * Wire shape sent by the WordPress plugin's `Jobs_Webhook::build_body`, which emits
+ * exactly `{event, data}` — no `source` or `at` field. Kept optional here rather than
+ * removed in case a future producer adds them; nothing currently reads either.
+ */
 export interface WebhookPayload {
   /** 'praktiqu-endpoint' */
-  source: string;
+  source?: string;
   /** Event name, e.g. 'session.auto_complete', 'session.reminder' */
   event: string;
   /** Event-specific data */
   data: Record<string, unknown>;
   /** ISO timestamp */
-  at: string;
+  at?: string;
 }
 
 /**
