@@ -58,7 +58,11 @@ export async function handleSessionReminder(
     await logging.warn('session.reminder: sessionId tidak valid', { metadata: { data } });
     return;
   }
-  const sessionId = data.sessionId;
+  // Dikoersi, bukan hanya di-narrow. `isSessionId` mempersempit TIPE-nya ke number, tapi
+  // nilainya tetap apa pun yang datang dari kabel — untuk "7" itu berarti sebuah string
+  // yang TypeScript kini yakini sebagai number. Number() di sini membuat kepercayaan itu
+  // benar sebelum nilainya diteruskan ke query.
+  const sessionId = Number(data.sessionId);
 
   const row = await findSessionById(sessionId);
   if (!row) {
