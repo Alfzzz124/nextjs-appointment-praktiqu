@@ -80,11 +80,16 @@ export async function handleSessionReminder(
   }
 
   const startsAt = sessionStartsAtUtc(row);
-  if (!startsAt || startsAt.getTime() <= now.getTime()) {
+  if (!startsAt || Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= now.getTime()) {
+    const reason = !startsAt
+      ? 'jadwal_tidak_lengkap'
+      : Number.isNaN(startsAt.getTime())
+        ? 'waktu_tidak_valid'
+        : 'sudah_dimulai';
     await logging.audit('session.reminder.skipped', {
       resource: 'session',
       resourceId: String(sessionId),
-      metadata: { channel, reason: startsAt ? 'sudah_dimulai' : 'jadwal_tidak_lengkap' },
+      metadata: { channel, reason },
     });
     return;
   }

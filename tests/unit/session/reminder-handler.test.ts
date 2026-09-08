@@ -168,6 +168,29 @@ describe('handleSessionReminder — guard', () => {
     expect(email.sendEmail).not.toHaveBeenCalled();
   });
 
+  it('tidak melempar dan mencatat skip untuk zona waktu yang menghasilkan Invalid Date', async () => {
+    // `fromZonedTime` (date-fns-tz@3.2.0) tidak melempar untuk IANA yang cacat — ia
+    // mengembalikan sebuah Invalid Date, yang truthy tapi getTime()-nya NaN. Tanpa
+    // pengecekan Number.isNaN eksplisit, NaN lolos dari `NaN <= now.getTime()` (selalu
+    // false) dan berakhir di `buildSessionReminderEmail`, yang melempar RangeError yang
+    // ditelan diam-diam oleh `processWebhook` dan dibalas 200 — pengingatnya hilang
+    // tanpa jejak yang bisa dibedakan dari sekadar "sudah dimulai".
+    repo.findSessionById.mockResolvedValue(row({ timezone: 'Not/AZone' }));
+
+    await expect(
+      handleSessionReminder({ sessionId: 7, channel: 'email_24h' }, SEBELUM),
+    ).resolves.toBeUndefined();
+
+    expect(email.sendEmail).not.toHaveBeenCalled();
+    expect(log.logging.audit).toHaveBeenCalledWith(
+      'session.reminder.skipped',
+      expect.objectContaining({
+        resourceId: '7',
+        metadata: expect.objectContaining({ channel: 'email_24h', reason: 'waktu_tidak_valid' }),
+      }),
+    );
+  });
+
   it('menolak channel yang tidak dikenal tanpa menyentuh database', async () => {
     await handleSessionReminder({ sessionId: 7, channel: 'sms' }, SEBELUM);
 
