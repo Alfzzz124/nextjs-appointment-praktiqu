@@ -96,6 +96,11 @@ export async function syncSessionReminders(row: SessionRow, now: Date = new Date
       const runAt = new Date(startsAt.getTime() - LEAD_MS[channel]);
       if (runAt.getTime() <= now.getTime()) continue;
       await jobs.enqueue({ hook: REMINDER_HOOK, runAt, args: reminderArgs(row.id, channel) });
+      await logging.audit('session.reminder.scheduled', {
+        resource: 'session',
+        resourceId: String(row.id),
+        metadata: { channel, runAt: runAt.toISOString() },
+      });
     }
   } catch (err) {
     await logging.error('Failed to sync session reminders', err, {

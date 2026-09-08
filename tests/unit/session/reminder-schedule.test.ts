@@ -52,6 +52,7 @@ beforeEach(() => {
   jobsClient.jobs.enqueue.mockReset();
   jobsClient.jobs.cancel.mockReset();
   log.logging.error.mockClear();
+  log.logging.audit.mockClear();
 });
 
 describe('reminderArgs — urutan kunci adalah kontraknya', () => {
@@ -102,6 +103,25 @@ describe('syncSessionReminders — sesi BOOKED', () => {
     });
   });
 
+  it('mencatat audit untuk setiap job yang berhasil dijadwalkan', async () => {
+    // Tanpa jejak ini, sebuah pemadaman WordPress yang transien di antara cancel dan
+    // enqueue tidak meninggalkan cara untuk menjawab "apakah pengingat sesi ini pernah
+    // dijadwalkan?" dari tabel LogEntry.
+    await syncSessionReminders(row(), JAUH_SEBELUM);
+
+    expect(log.logging.audit).toHaveBeenCalledTimes(2);
+    expect(log.logging.audit).toHaveBeenNthCalledWith(1, 'session.reminder.scheduled', {
+      resource: 'session',
+      resourceId: '7',
+      metadata: { channel: 'email_24h', runAt: new Date(STARTS_AT.getTime() - 24 * 60 * 60_000).toISOString() },
+    });
+    expect(log.logging.audit).toHaveBeenNthCalledWith(2, 'session.reminder.scheduled', {
+      resource: 'session',
+      resourceId: '7',
+      metadata: { channel: 'email_1h', runAt: new Date(STARTS_AT.getTime() - 60 * 60_000).toISOString() },
+    });
+  });
+
   it('melewati pengingat yang waktunya sudah lewat', async () => {
     // 3 jam sebelum sesi: T-24 jam sudah lewat, T-1 jam belum.
     const now = new Date(STARTS_AT.getTime() - 3 * 60 * 60_000);
@@ -139,7 +159,7 @@ describe('syncSessionReminders — sesi yang bukan BOOKED', () => {
     });
   }
 
-  it('membatalkan dengan args yang sama persis dengan yang dipakai saat enqueue', async () => {
+  it('membatalkan dengan args {sessionId, channel} untuk kedua offset', async () => {
     await syncSessionReminders(row({ status: SESSION_STATUS.CANCELLED }), JAUH_SEBELUM);
 
     const args = jobsClient.jobs.cancel.mock.calls.map((c) => c[0].args);
