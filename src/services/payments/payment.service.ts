@@ -240,6 +240,7 @@ import { cancelAppointment, setAppointmentStatus } from '@/repositories/wp/appoi
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
 import { getPublicAppUrl } from '@/lib/public-url';
+import { syncSessionReminders } from '@/services/session/reminder-schedule';
 
 export class AppointmentNotFoundError extends Error {}
 export class AppointmentNotPendingError extends Error {}
@@ -362,6 +363,11 @@ export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<v
 
   await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED);
   await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
+
+  // Guest bookings never pass through `transitionSession`, so this is the only hook
+  // point that would ever schedule reminders for a publicly-booked session.
+  const booked = await findSessionById(Number(order.appointmentId));
+  if (booked) await syncSessionReminders(booked);
 }
 
 /** KiviCare encounter status: 1 = open, 0 = closed. */
