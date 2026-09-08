@@ -60,10 +60,17 @@ export function sessionStartsAtUtc(row: SessionRow): Date | null {
  * waktunya masih di depan. `now` disuntikkan supaya test bisa memindahkan waktu.
  *
  * Gagal menjadwalkan pengingat tidak boleh pernah menggagalkan booking-nya. `jobs.enqueue`
- * dan `jobs.cancel` sudah menelan error mereka sendiri, tapi `sessionStartsAtUtc` (lewat
- * `buildUtcDateTime` → `fromZonedTime`) bisa melempar `RangeError` untuk zona waktu IANA
- * yang cacat. Seluruh badan fungsi karena itu dibungkus: error dicatat lalu ditelan,
- * bukan dilempar ke pemanggil di `session.service.ts`.
+ * dan `jobs.cancel` sudah menelan error mereka sendiri. Seluruh badan fungsi tetap
+ * dibungkus try/catch untuk menutup jalur sisanya — error dicatat lalu ditelan, bukan
+ * dilempar ke pemanggil di `session.service.ts`.
+ *
+ * Zona waktu IANA yang cacat TIDAK melempar: `date-fns-tz@3.2.0`'s `fromZonedTime`
+ * menelan `RangeError`-nya sendiri secara internal (lewat `isValidTimezoneIANAString`)
+ * dan mengembalikan sebuah `Invalid Date` — objek `Date` yang truthy tapi `getTime()`-nya
+ * `NaN`. Itu jadi bug diam-diam berbahaya sendiri: `NaN` lolos dari perbandingan waktu
+ * lampau (`NaN <= x` selalu `false`) dan berakhir di `JSON.stringify` sebagai `runAt: null`
+ * yang dikirim ke WordPress. Makanya ada pengecekan `Number.isNaN` eksplisit di bawah,
+ * terpisah dari guard null/undefined biasa.
  */
 export async function syncSessionReminders(row: SessionRow, now: Date = new Date()): Promise<void> {
   try {
@@ -74,7 +81,16 @@ export async function syncSessionReminders(row: SessionRow, now: Date = new Date
     if (row.status !== SESSION_STATUS.BOOKED) return;
 
     const startsAt = sessionStartsAtUtc(row);
-    if (!startsAt) return;
+    if (!startsAt || Number.isNaN(startsAt.getTime())) {
+      if (startsAt) {
+        await logging.error('Session has an invalid start time; skipping reminder scheduling', undefined, {
+          resource: 'session',
+          resourceId: String(row.id),
+          metadata: { timezone: row.timezone },
+        });
+      }
+      return;
+    }
 
     for (const channel of REMINDER_OFFSETS) {
       const runAt = new Date(startsAt.getTime() - LEAD_MS[channel]);

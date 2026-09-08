@@ -157,11 +157,17 @@ describe('syncSessionReminders — isolasi kegagalan', () => {
   // yang cacat lewat `buildUtcDateTime` → `fromZonedTime`) tidak boleh sampai
   // ke pemanggil (`createSession`/`transitionSession`), karena tulisan aslinya
   // sudah ter-commit saat kail ini jalan.
-  it('tidak melempar untuk zona waktu yang cacat, dan pembatalan tetap dicoba', async () => {
+  it('menolak zona waktu yang cacat: tidak enqueue, pembatalan tetap dicoba, tidak melempar', async () => {
+    // `fromZonedTime` (date-fns-tz@3.2.0) tidak melempar untuk IANA yang cacat — ia
+    // menelan RangeError-nya sendiri dan mengembalikan sebuah Invalid Date, yang truthy
+    // tapi getTime()-nya NaN. Tanpa pengecekan Number.isNaN eksplisit di
+    // `syncSessionReminders`, NaN itu lolos ke `jobs.enqueue` dan berakhir sebagai
+    // `runAt: null` di wire (lihat reminder-schedule.ts).
     await expect(
       syncSessionReminders(row({ timezone: 'Not/AZone' }), JAUH_SEBELUM),
     ).resolves.toBeUndefined();
 
+    expect(jobsClient.jobs.enqueue).not.toHaveBeenCalled();
     expect(jobsClient.jobs.cancel).toHaveBeenCalledTimes(2);
   });
 
