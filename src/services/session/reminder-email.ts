@@ -49,6 +49,20 @@ function formatWaktu(startsAtUtc: Date, timezone: string): { tanggal: string; ja
   return { tanggal: `${hari}, ${hariAngka} ${BULAN[bulan - 1]} ${tahun}`, jam };
 }
 
+/**
+ * Nama klien/profesional berasal dari wp_usermeta lewat public booking yang hanya
+ * memvalidasi panjang (z.string().min(1).max(255)) — tidak ada larangan karakter.
+ * Jadi harus di-escape sebelum masuk ke `html`; `text` tetap apa adanya.
+ */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function buildSessionReminderEmail(input: SessionReminderEmailInput): BuiltEmail {
   const { tanggal, jam } = formatWaktu(input.startsAtUtc, input.timezone);
 
@@ -63,12 +77,12 @@ export function buildSessionReminderEmail(input: SessionReminderEmailInput): Bui
       ? `Pengingat: sesi Anda besok, ${tanggal} pukul ${jam}`
       : `Pengingat: sesi Anda 1 jam lagi, pukul ${jam}`;
 
-  const html = `<p>Halo ${sapaan},</p>
+  const html = `<p>Halo ${escapeHtml(sapaan)},</p>
 <p>Ini pengingat bahwa sesi Anda berlangsung <strong>${kapan}</strong>.</p>
 <ul>
   <li>Tanggal: ${tanggal}</li>
   <li>Waktu: ${jam}</li>
-  <li>Bersama ${peranLawan}: ${lawan}</li>
+  <li>Bersama ${peranLawan}: ${escapeHtml(lawan)}</li>
 </ul>
 <p>Kalau Anda perlu mengubah jadwal, hubungi klinik sesegera mungkin.</p>`;
 

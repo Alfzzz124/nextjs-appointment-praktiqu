@@ -67,4 +67,18 @@ describe('buildSessionReminderEmail', () => {
     expect(jakarta.text).toContain('09:30');
     expect(utc.text).toContain('02:30');
   });
+
+  it('meng-escape markup pada nama sebelum masuk ke html, tapi membiarkan text apa adanya', () => {
+    const namaJahat = '<img src=x onerror=alert(1)>Ada';
+    const mail = buildSessionReminderEmail({
+      ...base,
+      clientName: namaJahat,
+      offset: 'email_24h',
+      recipient: 'professional', // klien jadi "lawan" di email profesional
+    });
+
+    expect(mail.html).not.toContain(namaJahat);
+    expect(mail.html).toContain('&lt;img src=x onerror=alert(1)&gt;Ada');
+    expect(mail.text).toContain(namaJahat);
+  });
 });
