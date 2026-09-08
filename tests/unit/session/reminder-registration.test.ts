@@ -13,17 +13,25 @@ import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo
 const SECRET = 'rahasia-webhook-untuk-test';
 process.env.WORDPRESS_WEBHOOK_SECRET = SECRET;
 
-const repo = { findSessionById: vi.fn() };
+// `vi.mock` factories are hoisted above all top-level `const`s, so each mock's holder
+// object must be created inside `vi.hoisted` to be visible from the factory (see
+// tests/unit/session/reminder-handler.test.ts). Plain top-level `const`s here would be
+// TDZ-safe only by accident: this file statically imports `SESSION_STATUS` from
+// `@/repositories/wp/sessions.repo`, so that module's mock factory fires before the
+// `const` initializes.
+const repo = vi.hoisted(() => ({ findSessionById: vi.fn() }));
 vi.mock('@/repositories/wp/sessions.repo', async (orig) => {
   const actual = await (orig as () => Promise<Record<string, unknown>>)();
   return { ...actual, findSessionById: (...a: unknown[]) => repo.findSessionById(...a) };
 });
 
-const email = { sendEmail: vi.fn().mockResolvedValue({ ok: true }) };
+const email = vi.hoisted(() => ({ sendEmail: vi.fn().mockResolvedValue({ ok: true }) }));
 vi.mock('@/lib/email', () => email);
-vi.mock('@/lib/logging', () => ({
+
+const log = vi.hoisted(() => ({
   logging: { audit: vi.fn(), warn: vi.fn(), error: vi.fn(), activity: vi.fn(), system: vi.fn() },
 }));
+vi.mock('@/lib/logging', () => log);
 
 function sessionRow(): SessionRow {
   // Jauh di masa depan supaya guard "sudah dimulai" tidak ikut menahannya.
