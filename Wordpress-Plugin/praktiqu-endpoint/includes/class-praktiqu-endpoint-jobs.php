@@ -116,10 +116,14 @@ final class Jobs
     }
 
     /**
-     * Send a session reminder. We notify PraktiQU (which actually composes
-     * and sends the email via its own SMTP path).
+     * Send a session reminder. We only notify PraktiQU; it composes and sends
+     * the email itself (via Resend, not SMTP).
      *
-     * Args: [sessionId (int), channel (string: 'email'|'sms'|'whatsapp')]
+     * Args: [sessionId (int), channel (string: 'email_24h'|'email_1h')].
+     *
+     * The ORDER of those two matters and their names do not: Action Scheduler
+     * executes with `do_action_ref_array($hook, array_values($args))`, so the
+     * keys are discarded and the values arrive positionally.
      */
     public function handle_session_send_reminder(int $session_id, string $channel = 'email'): void
     {
