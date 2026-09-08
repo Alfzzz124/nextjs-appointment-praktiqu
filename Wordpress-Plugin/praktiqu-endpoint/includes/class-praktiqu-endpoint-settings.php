@@ -60,6 +60,16 @@ final class Settings
             'sanitize_callback' => [$this, 'sanitize_payment_secret'],
             'default'           => '',
         ]);
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_jobs_webhook_url', [
+            'type'              => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default'           => '',
+        ]);
+        register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_jobs_webhook_secret', [
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        ]);
         register_setting(self::OPTION_GROUP, 'praktiqu_endpoint_paypal_idr_rate', [
             'type'              => 'string',
             'sanitize_callback' => [$this, 'sanitize_fx_rate'],
@@ -395,6 +405,49 @@ final class Settings
                                     ));
                                 }
                                 ?>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <h2><?php esc_html_e('PraktiQU Jobs Webhook', 'praktiqu-endpoint'); ?></h2>
+                <p class="description">
+                    <?php esc_html_e('Separate URL + secret used to call back into PraktiQU when an Action Scheduler job completes (e.g. session reminders). Kept independent of the webhooks above so rotating this secret cannot silently break other callbacks.', 'praktiqu-endpoint'); ?>
+                </p>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row">
+                            <label for="praktiqu_endpoint_jobs_webhook_url"><?php esc_html_e('Jobs Webhook URL', 'praktiqu-endpoint'); ?></label>
+                        </th>
+                        <td>
+                            <input
+                                type="url"
+                                id="praktiqu_endpoint_jobs_webhook_url"
+                                name="praktiqu_endpoint_jobs_webhook_url"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_jobs_webhook_url', '')); ?>"
+                                class="regular-text"
+                                placeholder="https://praktiqu.example.com/api/v1/webhooks/wordpress-jobs"
+                            />
+                            <p class="description">
+                                <?php esc_html_e('Example: https://<app>/api/v1/webhooks/wordpress-jobs. Leave empty to disable job callbacks.', 'praktiqu-endpoint'); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="praktiqu_endpoint_jobs_webhook_secret"><?php esc_html_e('Jobs Webhook Secret', 'praktiqu-endpoint'); ?></label>
+                        </th>
+                        <td>
+                            <input
+                                type="text"
+                                id="praktiqu_endpoint_jobs_webhook_secret"
+                                name="praktiqu_endpoint_jobs_webhook_secret"
+                                value="<?php echo esc_attr((string) get_option('praktiqu_endpoint_jobs_webhook_secret', '')); ?>"
+                                class="regular-text"
+                                placeholder="<?php esc_attr_e('(unchanged)', 'praktiqu-endpoint'); ?>"
+                            />
+                            <p class="description">
+                                <?php esc_html_e('Must match the PraktiQU Next.js app\'s WORDPRESS_WEBHOOK_SECRET env var exactly.', 'praktiqu-endpoint'); ?>
                             </p>
                         </td>
                     </tr>
