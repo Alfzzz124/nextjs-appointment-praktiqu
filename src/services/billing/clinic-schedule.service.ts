@@ -1,5 +1,6 @@
 // src/services/billing/clinic-schedule.service.ts
 import { prisma } from '@/lib/db';
+import { lastInsertIdNumber } from '@/lib/last-insert-id';
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { ScheduleScope } from '@/services/billing/schedule-scope';
@@ -90,16 +91,18 @@ export interface ScheduleCreateInput {
 }
 export async function createSchedule(input: ScheduleCreateInput, kc: KcActor): Promise<{ id: number }> {
   assertModuleInScope(input.moduleType, input.moduleId, kc);
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_clinic_schedule
-     (start_date, end_date, selection_mode, selected_dates, time_specific, start_time, end_time, timezone, module_type, module_id, description, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-    input.startDate ?? null, input.endDate ?? null, input.selectionMode, input.selectedDates ?? null,
-    input.timeSpecific ? 1 : 0, input.startTime ?? null, input.endTime ?? null, input.timezone ?? null,
-    input.moduleType, input.moduleId, input.description ?? null, input.status,
-  );
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
-  return { id: Number(idRow[0].id) };
+  const id = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_clinic_schedule
+       (start_date, end_date, selection_mode, selected_dates, time_specific, start_time, end_time, timezone, module_type, module_id, description, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      input.startDate ?? null, input.endDate ?? null, input.selectionMode, input.selectedDates ?? null,
+      input.timeSpecific ? 1 : 0, input.startTime ?? null, input.endTime ?? null, input.timezone ?? null,
+      input.moduleType, input.moduleId, input.description ?? null, input.status,
+    );
+    return lastInsertIdNumber(tx);
+  });
+  return { id };
 }
 
 export interface ScheduleUpdateInput {

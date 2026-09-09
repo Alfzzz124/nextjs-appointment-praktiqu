@@ -15,23 +15,9 @@
  * Reads live in `services.repo.ts`.
  */
 import { prisma } from '@/lib/db';
+import { lastInsertId } from '@/lib/last-insert-id';
 import type { Prisma } from '@prisma/client';
 import { ACTIVE_STATUSES } from './appointments.repo';
-
-/**
- * Fetch the id of the last row inserted on this same connection.
- *
- * `LAST_INSERT_ID()` is per-connection, so this must run on the same `tx` that issued
- * the INSERT — never on a fresh `prisma.$queryRawUnsafe`, which may check out a
- * different connection from the pool and return `0` or another request's id.
- */
-async function lastInsertId(tx: Prisma.TransactionClient): Promise<bigint> {
-  const rows = await tx.$queryRawUnsafe<Array<{ id: bigint | number }>>(
-    `SELECT LAST_INSERT_ID() AS id`,
-  );
-  if (rows.length === 0) throw new Error('LAST_INSERT_ID() returned no row');
-  return BigInt(rows[0].id);
-}
 
 /* ------------------------------------------------------------------ */
 /* Catalogue — wp_kc_services                                          */

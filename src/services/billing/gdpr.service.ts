@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { lastInsertIdNumber } from '@/lib/last-insert-id';
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
 
@@ -27,18 +28,22 @@ export async function getConsentVersion(id: number) {
   return { id: Number(r.id), consent_type: r.consent_type, version_number: Number(r.version_number), title: r.title, body_text: r.body_text, legal_basis: r.legal_basis, is_active: Number(r.is_active), created_by: Number(r.created_by), created_at: r.created_at };
 }
 export async function createConsentVersion(input: { consentType: string; title: string; bodyText: string; legalBasis: string; versionNumber?: number }, kc: KcActor): Promise<{ id: number }> {
-  // Auto-increment version_number per consent_type if not provided.
-  let vnum = input.versionNumber;
-  if (vnum === undefined) {
-    const maxRows = await prisma.$queryRawUnsafe<any[]>(`SELECT COALESCE(MAX(version_number),0) mx FROM wp_kc_gdpr_consent_versions WHERE consent_type = ?`, input.consentType);
-    vnum = Number(maxRows[0]?.mx ?? 0) + 1;
-  }
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_gdpr_consent_versions (consent_type, version_number, title, body_text, legal_basis, is_active, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?, NOW())`,
-    input.consentType, vnum, input.title, input.bodyText, input.legalBasis, Number(kc.wpUserId));
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() id`);
-  return { id: Number(idRow[0].id) };
+  // The MAX read is inside the transaction with the INSERT, not before it: read outside
+  // and two concurrent creates for the same consent_type compute the same version_number.
+  const id = await prisma.$transaction(async (tx) => {
+    // Auto-increment version_number per consent_type if not provided.
+    let vnum = input.versionNumber;
+    if (vnum === undefined) {
+      const maxRows = await tx.$queryRawUnsafe<any[]>(`SELECT COALESCE(MAX(version_number),0) mx FROM wp_kc_gdpr_consent_versions WHERE consent_type = ?`, input.consentType);
+      vnum = Number(maxRows[0]?.mx ?? 0) + 1;
+    }
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_gdpr_consent_versions (consent_type, version_number, title, body_text, legal_basis, is_active, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, NOW())`,
+      input.consentType, vnum, input.title, input.bodyText, input.legalBasis, Number(kc.wpUserId));
+    return lastInsertIdNumber(tx);
+  });
+  return { id };
 }
 export async function activateConsentVersion(id: number): Promise<void> {
   const v = await getConsentVersion(id);
@@ -72,12 +77,14 @@ export async function getConsent(id: number, scope: ConsentScope | null) {
 export async function grantConsent(input: { userId?: number; consentType: string; consentVersionId: string; method?: string }, kc: KcActor, ip: string | null): Promise<{ id: number }> {
   const userId = kc.actor.role === 'CLIENT' ? Number(kc.wpUserId) : Number(input.userId ?? 0);
   if (!userId) throw new KcError('userId is required', 400);
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_gdpr_consents (user_id, consent_type, consent_version_id, status, granted_at, ip_address, method, created_at)
-     VALUES (?, ?, ?, 'granted', NOW(), ?, ?, NOW())`,
-    userId, input.consentType, input.consentVersionId, ip ?? null, input.method ?? 'api');
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() id`);
-  return { id: Number(idRow[0].id) };
+  const id = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_gdpr_consents (user_id, consent_type, consent_version_id, status, granted_at, ip_address, method, created_at)
+       VALUES (?, ?, ?, 'granted', NOW(), ?, ?, NOW())`,
+      userId, input.consentType, input.consentVersionId, ip ?? null, input.method ?? 'api');
+    return lastInsertIdNumber(tx);
+  });
+  return { id };
 }
 export async function withdrawConsent(id: number, scope: ConsentScope | null): Promise<void> {
   await getConsent(id, scope); // scope + existence

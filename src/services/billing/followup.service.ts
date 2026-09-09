@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { lastInsertIdNumber } from '@/lib/last-insert-id';
 import { KcError } from '@/lib/kc-response';
 import { sendEmail } from '@/lib/email';
 import type { KcActor } from '@/services/billing/kc-actor';
@@ -200,15 +201,17 @@ export async function createChain(input: ChainCreateInput, kc: KcActor): Promise
     : BigInt(input.doctorId ?? Number(kc.wpUserId));
   if (!clinicId || clinicId <= 0n) throw new KcError('clinicId is required', 400);
 
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_followup_chains (clinic_id, patient_id, doctor_id, diagnosis_id, name, status, created_at_utc)
-     VALUES (?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP())`,
-    clinicId, BigInt(input.patientId), doctorId,
-    input.diagnosisId != null ? BigInt(input.diagnosisId) : null,
-    input.name ?? null,
-  );
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
-  return { id: Number(idRow[0].id) };
+  const id = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_followup_chains (clinic_id, patient_id, doctor_id, diagnosis_id, name, status, created_at_utc)
+       VALUES (?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP())`,
+      clinicId, BigInt(input.patientId), doctorId,
+      input.diagnosisId != null ? BigInt(input.diagnosisId) : null,
+      input.name ?? null,
+    );
+    return lastInsertIdNumber(tx);
+  });
+  return { id };
 }
 
 export interface ChainUpdateInput {
@@ -317,22 +320,27 @@ export async function createFollowup(input: FollowupCreateInput, kc: KcActor): P
   // A followup must belong to an in-scope chain.
   await assertChainInScope(input.chainId, kc.actor.role === 'SUPER_ADMIN' ? null : { clinicId, doctorId: kc.actor.role === 'PROFESSIONAL' ? doctorId : undefined });
 
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_followups
-       (clinic_id, doctor_id, patient_id, encounter_id, chain_id, parent_followup_id,
-        reason, priority, status, created_at_utc, suggested_date_utc, suggested_deadline_utc,
-        metadata, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', UTC_TIMESTAMP(), ?, ?, ?, ?)`,
-    clinicId, doctorId, BigInt(input.patientId),
-    input.encounterId != null ? BigInt(input.encounterId) : null,
-    BigInt(input.chainId),
-    input.parentFollowupId != null ? BigInt(input.parentFollowupId) : null,
-    input.reason, input.priority,
-    input.suggestedDate, input.suggestedDeadline,
-    input.metadata ?? null, kc.wpUserId,
-  );
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
-  const id = Number(idRow[0].id);
+  const id = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_followups
+         (clinic_id, doctor_id, patient_id, encounter_id, chain_id, parent_followup_id,
+          reason, priority, status, created_at_utc, suggested_date_utc, suggested_deadline_utc,
+          metadata, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', UTC_TIMESTAMP(), ?, ?, ?, ?)`,
+      clinicId, doctorId, BigInt(input.patientId),
+      input.encounterId != null ? BigInt(input.encounterId) : null,
+      BigInt(input.chainId),
+      input.parentFollowupId != null ? BigInt(input.parentFollowupId) : null,
+      input.reason, input.priority,
+      input.suggestedDate, input.suggestedDeadline,
+      input.metadata ?? null, kc.wpUserId,
+    );
+    return lastInsertIdNumber(tx);
+  });
+  // Deliberately outside the transaction. `logActivity` writes on the pooled client, so
+  // calling it inside would escape the transaction anyway — and it is called from seven
+  // places, so giving it a `tx` parameter is a wider change than this fix. The id it
+  // receives is now the right one, which is what mattered here.
   await logActivity(id, kc.wpUserId, 'created', null, 'pending');
   return { id };
 }
@@ -456,13 +464,15 @@ export interface ReminderCreateInput {
 
 export async function createReminder(followupId: number, input: ReminderCreateInput, scope: FollowupScope | null): Promise<{ id: number }> {
   await getFollowup(followupId, scope); // scope + existence of parent
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_followup_reminders (followup_id, reminder_type, offset_days, channel, action_id, processed_at)
-     VALUES (?, ?, ?, ?, NULL, NULL)`,
-    followupId, input.reminderType, input.offsetDays, input.channel,
-  );
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
-  return { id: Number(idRow[0].id) };
+  const id = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_followup_reminders (followup_id, reminder_type, offset_days, channel, action_id, processed_at)
+       VALUES (?, ?, ?, ?, NULL, NULL)`,
+      followupId, input.reminderType, input.offsetDays, input.channel,
+    );
+    return lastInsertIdNumber(tx);
+  });
+  return { id };
 }
 
 export async function deleteReminder(reminderId: number, scope: FollowupScope | null): Promise<void> {

@@ -11,6 +11,7 @@
  * holidays, so a direct write skips nothing. See the Writes section below.
  */
 import { prisma } from '@/lib/db';
+import { lastInsertId } from '@/lib/last-insert-id';
 
 export const OFF_DAY_MODULE = { CLINIC: 'clinic', DOCTOR: 'doctor' } as const;
 export type OffDayModule = (typeof OFF_DAY_MODULE)[keyof typeof OFF_DAY_MODULE];
@@ -258,28 +259,27 @@ export async function createOffDay(input: CreateOffDayInput): Promise<bigint> {
     throw new Error('selectionMode "multiple" requires at least one selected date');
   }
 
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_clinic_schedule
-       (module_type, module_id, selection_mode, start_date, end_date, selected_dates,
-        time_specific, start_time, end_time, timezone, description, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
-    input.module,
-    input.moduleId,
-    mode,
-    input.startDate,
-    input.endDate ?? input.startDate,
-    input.selectedDates ? JSON.stringify(input.selectedDates) : null,
-    input.timeSpecific ? 1 : 0,
-    input.startTime ?? null,
-    input.endTime ?? null,
-    input.timezone ?? null,
-    input.description ?? null,
-  );
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_clinic_schedule
+         (module_type, module_id, selection_mode, start_date, end_date, selected_dates,
+          time_specific, start_time, end_time, timezone, description, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+      input.module,
+      input.moduleId,
+      mode,
+      input.startDate,
+      input.endDate ?? input.startDate,
+      input.selectedDates ? JSON.stringify(input.selectedDates) : null,
+      input.timeSpecific ? 1 : 0,
+      input.startTime ?? null,
+      input.endTime ?? null,
+      input.timezone ?? null,
+      input.description ?? null,
+    );
 
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
-    `SELECT LAST_INSERT_ID() AS id`,
-  );
-  return BigInt(rows[0].id);
+    return lastInsertId(tx);
+  });
 }
 
 /**
