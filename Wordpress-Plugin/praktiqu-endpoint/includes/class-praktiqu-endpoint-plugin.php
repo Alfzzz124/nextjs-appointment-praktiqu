@@ -40,7 +40,7 @@ final class Plugin
         $this->doctors = new Doctors();
         $this->clinical_records = new ClinicalRecords();
         $this->encounters = new Encounters($this->clinical_records);
-        $this->jobs     = new Jobs($this->service, $this->payments);
+        $this->jobs     = new Jobs($this->service, $this->payments, new Jobs_Webhook());
         $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments, $this->receptionists, $this->doctors, $this->encounters, $this->clinical_records);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();

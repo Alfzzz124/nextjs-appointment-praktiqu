@@ -18,6 +18,8 @@ delete_option('praktiqu_endpoint_webhook_url');
 delete_option('praktiqu_endpoint_webhook_secret');
 delete_option('praktiqu_endpoint_payment_webhook_url');
 delete_option('praktiqu_endpoint_payment_webhook_secret');
+delete_option('praktiqu_endpoint_jobs_webhook_url');
+delete_option('praktiqu_endpoint_jobs_webhook_secret');
 delete_option('praktiqu_endpoint_paypal_idr_rate');
 delete_option('praktiqu_endpoint_paypal_idr_rate_updated');
 delete_option('praktiqu_endpoint_paypal_markup_percent');

@@ -63,6 +63,7 @@ vi.mock('@/lib/logging', () => logging);
 
 import {
   initiatePublicPayment, checkPublicPaymentStatus, ensureSessionPayment,
+  applyPaidSideEffectsPublic,
   AppointmentNotFoundError, AppointmentNotPendingError, PaymentAlreadyInitiatedError,
 } from '@/services/payments/payment.service';
 import { calculateTax, getBill } from '@/services/billing/bill.service';
@@ -464,6 +465,41 @@ describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
 
     expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
     expect(jobsClient.jobs.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyPaidSideEffectsPublic — schedules session reminders', () => {
+  // Guest bookings never pass through `transitionSession`, so this status write is the
+  // only place that can ever schedule reminders for a publicly-booked session. A future
+  // slotDate is required: `syncSessionReminders` skips any offset whose run time has
+  // already passed relative to the real clock.
+  function bookedRowFuture() {
+    return { ...appointmentRow('BOOKED'), slotDate: '2099-01-15' };
+  }
+
+  it('schedules T-24h and T-1h reminders after booking a paid public order', async () => {
+    sessions.findSessionById
+      .mockResolvedValueOnce(appointmentRow('PENDING'))
+      .mockResolvedValueOnce(bookedRowFuture());
+
+    await applyPaidSideEffectsPublic({ appointmentId: String(APPOINTMENT), wcOrderId: 42 } as any);
+
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    const reminderCalls = jobsClient.jobs.enqueue.mock.calls
+      .map((c) => c[0])
+      .filter((c) => c.hook === 'praktiqu_session_send_reminder');
+    expect(reminderCalls).toHaveLength(2);
+    expect(reminderCalls.map((c) => c.args.channel)).toEqual(['email_24h', 'email_1h']);
+    expect(reminderCalls.every((c) => c.args.sessionId === APPOINTMENT)).toBe(true);
+  });
+
+  it('does not schedule reminders when the appointment was not actually PENDING', async () => {
+    sessions.findSessionById.mockResolvedValue(appointmentRow('BOOKED'));
+
+    await applyPaidSideEffectsPublic({ appointmentId: String(APPOINTMENT), wcOrderId: 42 } as any);
+
+    expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.enqueue).not.toHaveBeenCalled();
   });
 });
 

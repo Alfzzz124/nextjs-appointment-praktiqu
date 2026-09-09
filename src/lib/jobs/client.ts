@@ -16,8 +16,6 @@ export interface EnqueueJobOptions {
   hook: JobHook;
   runAt: Date;
   args?: Record<string, unknown>;
-  /** Optional PraktiQU webhook token for the WP job handler to call us back */
-  webhookToken?: string;
 }
 
 export type JobHook =
@@ -53,22 +51,26 @@ export async function enqueue(options: EnqueueJobOptions): Promise<void> {
     return;
   }
 
-  const res = await fetch(WP_ENDPOINT_JOBS, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-PraktiQU-Service-Token': WP_SERVICE_TOKEN,
-    },
-    body: JSON.stringify({
-      hook: options.hook,
-      runAt: Math.floor(options.runAt.getTime() / 1000), // Unix seconds (WP AS expects seconds)
-      args: { ...options.args, webhookToken: options.webhookToken },
-    }),
-  });
+  try {
+    const res = await fetch(WP_ENDPOINT_JOBS, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PraktiQU-Service-Token': WP_SERVICE_TOKEN,
+      },
+      body: JSON.stringify({
+        hook: options.hook,
+        runAt: Math.floor(options.runAt.getTime() / 1000), // Unix seconds (WP AS expects seconds)
+        args: options.args ?? {},
+      }),
+    });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    console.error(`[jobs] enqueue failed ${res.status}: ${text}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      console.error(`[jobs] enqueue failed ${res.status}: ${text}`);
+    }
+  } catch (err) {
+    console.error('[jobs] enqueue failed:', err);
   }
 }
 

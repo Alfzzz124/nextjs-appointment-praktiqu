@@ -11,6 +11,7 @@
  * hooks the service catalogue but not the doctor-service mapping.
  */
 import { prisma } from '@/lib/db';
+import { lastInsertId } from '@/lib/last-insert-id';
 import { paginate } from './wp-user';
 
 const STATUS_ACTIVE = 1;
@@ -395,22 +396,20 @@ export async function assignServiceToDoctor(opts: {
     return existing.id;
   }
 
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_service_doctor_mapping
-       (service_id, doctor_id, clinic_id, charges, duration, status, is_public, created_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?, NOW())`,
-    opts.serviceId,
-    opts.doctorId,
-    opts.clinicId,
-    opts.charges ?? '0',
-    opts.durationMinutes ?? null,
-    opts.isPublic === false ? 0 : 1,
-  );
-
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
-    `SELECT LAST_INSERT_ID() AS id`,
-  );
-  return BigInt(rows[0].id);
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_service_doctor_mapping
+         (service_id, doctor_id, clinic_id, charges, duration, status, is_public, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, NOW())`,
+      opts.serviceId,
+      opts.doctorId,
+      opts.clinicId,
+      opts.charges ?? '0',
+      opts.durationMinutes ?? null,
+      opts.isPublic === false ? 0 : 1,
+    );
+    return lastInsertId(tx);
+  });
 }
 
 /**

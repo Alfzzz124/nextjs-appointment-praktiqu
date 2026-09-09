@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { lastInsertIdNumber } from '@/lib/last-insert-id';
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
 
@@ -66,12 +67,14 @@ export interface RatingCreateInput { doctorId: number; patientId?: number; revie
 export async function createRating(input: RatingCreateInput, kc: KcActor): Promise<{ id: number }> {
   const patientId = kc.actor.role === 'CLIENT' ? Number(kc.wpUserId) : Number(input.patientId ?? 0);
   if (!patientId) throw new KcError('patientId is required', 400);
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO wp_kc_patient_review (review, review_description, patient_id, doctor_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, NOW(), NOW())`,
-    input.review, input.reviewDescription ?? null, patientId, input.doctorId);
-  const idRow = await prisma.$queryRawUnsafe<any[]>(`SELECT LAST_INSERT_ID() AS id`);
-  return { id: Number(idRow[0].id) };
+  const id = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_patient_review (review, review_description, patient_id, doctor_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NOW(), NOW())`,
+      input.review, input.reviewDescription ?? null, patientId, input.doctorId);
+    return lastInsertIdNumber(tx);
+  });
+  return { id };
 }
 
 export async function deleteRating(id: number, scope: RatingScope | null): Promise<void> {

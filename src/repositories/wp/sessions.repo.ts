@@ -108,6 +108,8 @@ export type SessionRow = {
   professionalName: string;
   clientName: string;
   clientEmail: string;
+  /** Email profesional. String kosong bila `wp_users.user_email`-nya NULL. */
+  professionalEmail: string;
   /** `YYYY-MM-DD` local clinic date — what KiviCare filters on. */
   slotDate: string | null;
   startTime: string | null;
@@ -136,6 +138,7 @@ type RawRow = {
   doctor_first: string | null;
   doctor_last: string | null;
   doctor_display: string | null;
+  doctor_email: string | null;
   patient_first: string | null;
   patient_last: string | null;
   patient_display: string | null;
@@ -173,6 +176,7 @@ function toSession(r: RawRow): SessionRow {
     professionalName: name(r.doctor_first, r.doctor_last, r.doctor_display),
     clientName: name(r.patient_first, r.patient_last, r.patient_display),
     clientEmail: r.patient_email ?? '',
+    professionalEmail: r.doctor_email ?? '',
     slotDate: toDateString(r.appointment_start_date),
     startTime: toTimeString(r.appointment_start_time),
     endTime: toTimeString(r.appointment_end_time),
@@ -195,6 +199,7 @@ const SELECT_SQL = `
          a.appointment_start_date, a.appointment_start_time, a.appointment_end_time,
          a.appointment_timezone, a.visit_type, a.description, a.status, a.created_at,
          df.meta_value AS doctor_first,  dl.meta_value AS doctor_last,  du.display_name AS doctor_display,
+         du.user_email AS doctor_email,
          pf.meta_value AS patient_first, pl.meta_value AS patient_last, pu.display_name AS patient_display,
          pu.user_email AS patient_email
     FROM wp_kc_appointments a

@@ -16,8 +16,26 @@ import { jwtVerify } from 'jose';
 const SECRET = process.env.JWT_SECRET ?? process.env.AUTH_SECRET ?? 'dev-secret-change-me';
 const KEY = new TextEncoder().encode(SECRET);
 
-const PROTECTED_PREFIXES = ['/dashboard', '/admin'];
+/**
+ * The complete public page surface. Everything else under a page URL requires a session.
+ *
+ * This is an explicit *allowlist of what is open*, not a list of what is closed. The
+ * previous shape — a `PROTECTED_PREFIXES` list of what to guard — failed open for every
+ * path nobody remembered to add, and it listed `/dashboard`, which is not a URL at all:
+ * `src/app/(dashboard)/` is a route group, so its pages are served at `/practice/settings`,
+ * `/intervention-plans`, `/billing`, … and matched nothing.
+ */
+const PUBLIC_PAGE_PREFIXES = ['/login', '/register', '/forgot-password', '/reset-password', '/book', '/consent'];
 const PUBLIC_API_PREFIXES = ['/api/v1/public', '/api/v1/auth/otp', '/api/v1/auth/login', '/api/v1/auth/register', '/api/v1/auth/refresh', '/api/v1/auth/forgot-password', '/api/v1/auth/reset-password', '/api/v1/webhooks/wordpress', '/api/v1/webhooks/wordpress-jobs', '/api/v1/auth/health', '/api/health'];
+
+/**
+ * API routes that this middleware gates. The rest of `/api/**` is deliberately left to
+ * each route's own guard (`withAuth` / `getActor`) rather than gated here: the payment
+ * gateway callbacks under `/api/v1/sessions/payment-*` carry no user token — they are
+ * authenticated by an HMAC signature — so a deny-by-default rule over `/api/**` would
+ * reject them before the route could check that signature, and payments would stop.
+ */
+const GATED_API_PREFIXES = ['/api/v1/admin', '/api/v1/auth/me', '/api/v1/auth/logout', '/api/v1/auth/change-password'];
 
 interface AccessClaims {
   sub: string;
@@ -36,18 +54,17 @@ async function verify(token: string): Promise<AccessClaims | null> {
   }
 }
 
+/** Match a prefix on whole path segments, so `/booking-admin` is not covered by `/book`. */
+function underPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
 function isPublic(pathname: string): boolean {
   if (PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p))) return true;
-  if (pathname.startsWith('/login')) return true;
-  if (pathname.startsWith('/forgot-password')) return true;
-  if (pathname.startsWith('/reset-password')) return true;
-  if (pathname.startsWith('/register')) return true;
+  if (pathname === '/') return true; // the marketing landing page
+  if (PUBLIC_PAGE_PREFIXES.some((p) => underPrefix(pathname, p))) return true;
   if (pathname.startsWith('/_next/')) return true;
   if (pathname === '/favicon.ico') return true;
-
-  // ⚠️ TEMPORARY: For dev preview only - remove after checking dashboard
-  if (pathname.startsWith('/dashboard')) return true;
-  if (pathname.startsWith('/admin')) return true;
 
   return false;
 }
@@ -58,7 +75,12 @@ export async function middleware(req: NextRequest) {
   // Always pass through public assets and the public endpoints.
   if (isPublic(pathname)) return NextResponse.next();
 
-  const needsAuth = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p)) || pathname.startsWith('/api/v1/admin') || pathname.startsWith('/api/v1/auth/me') || pathname.startsWith('/api/v1/auth/logout') || pathname.startsWith('/api/v1/auth/change-password');
+  // Deny by default for pages: anything not on the public allowlist above needs a
+  // session. A page added under `(dashboard)` and forgotten therefore fails *closed*
+  // (asks for login) instead of serving itself to anyone.
+  const needsAuth = pathname.startsWith('/api/')
+    ? GATED_API_PREFIXES.some((p) => pathname.startsWith(p))
+    : true;
 
   if (!needsAuth) return NextResponse.next();
 

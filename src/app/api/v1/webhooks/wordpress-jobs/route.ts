@@ -8,6 +8,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { processWebhook } from '@/lib/jobs/webhook-handler';
+// Diimpor demi efek sampingnya: modul ini memanggil registerJobHandler('session.reminder')
+// di lingkup modul. Route handler Next.js adalah modul per-request, jadi impor inilah
+// satu-satunya yang membuat handler terdaftar. JANGAN hapus sebagai "impor tak terpakai" —
+// tests/unit/session/reminder-registration.test.ts menjaga ini.
+import '@/services/session/reminder-handler';
 
 export const dynamic = 'force-dynamic';
 
