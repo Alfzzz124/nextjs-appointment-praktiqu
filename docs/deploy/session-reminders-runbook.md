@@ -61,30 +61,32 @@ ssh -p 45022 praktiqu@101.50.1.106 'PID=$(pgrep -u praktiqu -f staging2.praktiqu
 `WORDPRESS_SERVICE_TOKEN` and `WORDPRESS_WEBHOOK_SECRET` are both already populated on the
 live Next.js process — this step only needs to read the second one, not set either.
 
-**Open question to settle while you're in there.** An earlier reading of the process
-environment showed both `WORDPRESS_WEBHOOK_SECRET` and `WORDPRESS_SERVICE_TOKEN` starting
-with the same 6-character prefix — suggestive that they might be the *same* value, but not
-proof, and the process could not be re-read afterward to confirm. If they are the same, one
-credential is doing two jobs (inbound webhook signing here, outbound service-token auth for
-the WordPress REST calls in `src/lib/jobs/client.ts`), and rotating either one breaks both
-directions at once. Check without printing either value:
+**Settled 2026-09-09 — they are the same value.** `WORDPRESS_WEBHOOK_SECRET` and
+`WORDPRESS_SERVICE_TOKEN` on the live process hash identically, so **one credential is doing
+two jobs**: signing the inbound jobs webhook (WordPress → app) *and* authenticating the
+app's outbound REST calls to `/praktiqu/v1/jobs` (`src/lib/jobs/client.ts`). Rotating either
+one therefore breaks both directions at once, and both sides must change in the same
+maintenance window — the WordPress-side Jobs Webhook Secret option and the cPanel env var.
+
+Re-run the check after any rotation rather than trusting this note; and if you ever want them
+separated, that is a deliberate change to make while nothing is in flight.
+
+**Finding the app process.** `pgrep -f staging2.praktiqu.com` is unreliable — it matches the
+invoking shell's own command line, which returns a PID with no `WORDPRESS_*` environment at
+all and makes it look like the variables have vanished. The real process is LiteSpeed's, with
+a command line beginning `lsnode:/home/praktiqu/staging2.praktiqu.com/`. Select on the
+environment instead:
 
 ```bash
 ssh -p 45022 praktiqu@101.50.1.106 '
-  PID=$(pgrep -u praktiqu -f staging2.praktiqu.com | head -1)
-  ENV=$(tr "\0" "\n" < /proc/$PID/environ)
-  A=$(echo "$ENV" | sed -n "s/^WORDPRESS_WEBHOOK_SECRET=//p" | sha256sum)
-  B=$(echo "$ENV" | sed -n "s/^WORDPRESS_SERVICE_TOKEN=//p" | sha256sum)
-  [ "$A" = "$B" ] && echo "SAME VALUE" || echo "DIFFERENT VALUES"
+  for P in $(ls /proc | grep -E "^[0-9]+$"); do
+    [ -r /proc/$P/environ ] || continue
+    tr "\0" "\n" < /proc/$P/environ 2>/dev/null | grep -q "^WORDPRESS_WEBHOOK_SECRET=" || continue
+    tr "\0" "\n" < /proc/$P/environ | sed -n "s/^WORDPRESS_WEBHOOK_SECRET=//p"
+    break
+  done
 '
 ```
-
-If it prints `SAME VALUE`: treat the two as one credential for planning purposes — a future
-rotation of either one must update both the WordPress-side jobs-webhook secret and the
-service-token side in the same maintenance window, or one direction breaks silently. If it
-prints `DIFFERENT VALUES`, they can be rotated independently as intended — but this is a
-live check, not a settled fact, so re-run it after any future rotation rather than assuming
-today's answer still holds.
 
 The secret field on the settings page renders **masked**, with an `(unchanged)` placeholder
 and an empty `value=""` attribute (`includes/class-praktiqu-endpoint-settings.php`). That is
