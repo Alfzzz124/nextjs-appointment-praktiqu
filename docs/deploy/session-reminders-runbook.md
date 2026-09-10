@@ -71,21 +71,31 @@ maintenance window — the WordPress-side Jobs Webhook Secret option and the cPa
 Re-run the check after any rotation rather than trusting this note; and if you ever want them
 separated, that is a deliberate change to make while nothing is in flight.
 
-**Finding the app process.** `pgrep -f staging2.praktiqu.com` is unreliable — it matches the
-invoking shell's own command line, which returns a PID with no `WORDPRESS_*` environment at
-all and makes it look like the variables have vanished. The real process is LiteSpeed's, with
-a command line beginning `lsnode:/home/praktiqu/staging2.praktiqu.com/`. Select on the
-environment instead:
+**Reading the secret.** Easiest first: **cPanel → Setup Node.js App → Environment
+variables** shows `WORDPRESS_WEBHOOK_SECRET` directly, no shell needed. That is the same
+source the running process reads from, so the two always agree.
+
+From a shell, get a PID and read that PID's environment — two separate steps:
 
 ```bash
-ssh -p 45022 praktiqu@101.50.1.106 '
-  for P in $(ls /proc | grep -E "^[0-9]+$"); do
-    [ -r /proc/$P/environ ] || continue
-    tr "\0" "\n" < /proc/$P/environ 2>/dev/null | grep -q "^WORDPRESS_WEBHOOK_SECRET=" || continue
-    tr "\0" "\n" < /proc/$P/environ | sed -n "s/^WORDPRESS_WEBHOOK_SECRET=//p"
-    break
-  done
-'
+pgrep -f staging2.praktiqu.com                      # prints one PID per app worker
+tr '\0' '\n' < /proc/<PID>/environ | grep '^WORDPRESS_WEBHOOK_SECRET='
+```
+
+LiteSpeed runs **several** workers (two were live on 2026-09-10, up 1d21h and 20h), and every
+one carries the same environment, so any PID from that list works.
+
+> A caveat that has already cost one round trip: the app workers' command line is
+> `lsnode:/home/praktiqu/staging2.praktiqu.com/`. That is a process *name*, not a command —
+> do not try to run it. And `pgrep -f staging2.praktiqu.com` can also match the shell you
+> typed it in, which yields a PID whose environment has no `WORDPRESS_*` at all and makes the
+> variables look like they have vanished. If a PID comes back empty, try the next one, or
+> pick by environment:
+
+```bash
+for P in $(pgrep -f staging2.praktiqu.com); do
+  grep -qa WORDPRESS_WEBHOOK_SECRET /proc/$P/environ 2>/dev/null && echo "$P" && break
+done
 ```
 
 The secret field on the settings page renders **masked**, with an `(unchanged)` placeholder
