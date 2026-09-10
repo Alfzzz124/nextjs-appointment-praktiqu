@@ -264,6 +264,45 @@ CLI shortcut to reach for here, so don't spend time looking for one.
 Only once the pending jobs are cancelled: roll back the app, then downgrade the plugin to
 1.6.5.
 
+## Verified end to end, 2026-09-10
+
+Both verifications this runbook was written for have now been performed on staging, under
+real cron, with no manual traffic to trigger the queue.
+
+Test: enqueued `praktiqu_session_send_reminder` with `sessionId: 999999999` (deliberately
+nonexistent, so nothing is emailed) and `runAt` 100 seconds out, then polled only the
+database — no web requests, so cron was the only possible trigger.
+
+- **Step 3 — jobs reach Action Scheduler.** `HTTP 201`, `{"actionId":621705}`. Row landed in
+  `wp_actionscheduler_actions` with `args` stored verbatim as
+  `{"sessionId":999999999,"channel":"email_1h"}` — two keys, correct order, no third key, and
+  JSON rather than an md5 hash.
+- **Step 4 — args arrive positionally at the PHP handler.** The action went `pending` →
+  `complete` on its own (`action started via WP Cron` → `action complete via WP Cron`), and the
+  app logged, at 10:13:05:
+
+  ```
+  WARN   session.reminder: sesi tidak ditemukan
+  AUDIT  webhook.session.reminder
+  ```
+
+  That warning can only be produced by `$session_id` arriving as `999999999`, so the positional
+  contract holds through `array_values()`. It also proves the HMAC signature verified and the
+  registered handler was dispatched.
+- **`blocking => false` survives CLI cron.** A concern that a non-blocking `wp_remote_post`
+  might be dropped when the CLI script exits proved unfounded — the POST was delivered.
+
+Also fixed the same day: Action Scheduler had wedged on claims leaked since 2024, and there was
+no cron trigger at all. Added to the crontab (watchdog entry left untouched):
+
+```
+* * * * * /usr/local/bin/php /home/praktiqu/appointment.praktiqu.com/wp-cron.php >/dev/null 2>&1
+```
+
+**A gotcha for whoever queries the app's audit log:** the column is `occurredAt`, not
+`occurred_at`. A snake_case query returns zero rows silently and looks exactly like "the
+webhook never arrived" — it cost one wrong conclusion here.
+
 ## What this does not cover
 
 Two things in this feature can only be proven by a live run against staging, and neither has
