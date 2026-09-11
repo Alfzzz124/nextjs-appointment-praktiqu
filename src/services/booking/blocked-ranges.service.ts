@@ -11,16 +11,15 @@
 // Adding a new source of unavailability
 //
 // This function is the seam. A new source is merged in HERE, once, and both readers
-// pick it up. The known upcoming one is Google Calendar busy blocks — Phase 2 of
-// docs/superpowers/specs/2026-08-28-google-calendar-sync-design.md: fetch the
-// professional's busy intervals for the range alongside the queries below and fold
-// them into the per-date `BlockedRange[]`. Do not add it at the call sites; that is
-// the duplication this replaced.
+// pick it up — Google Calendar busy blocks arrived that way and touched neither
+// reader. Do not add one at the call sites; that is the duplication this replaced.
 //
-// Not covered here: the WRITE path. `findConflictingAppointments`, used by
-// public-booking.service.ts and session.service.ts, does its own overlap check, so
-// what this hides from a patient is not the same as what the server refuses to
-// book. Phase 2 has to reconcile the two.
+// The WRITE path does not come through here. `findConflictingAppointments`, used by
+// public-booking.service.ts and session.service.ts, does its own overlap check.
+// `createPublicAppointment` now checks Google busy times separately, right before
+// it writes, because hiding a slot is not enforcing it. The staff path
+// deliberately does NOT: a receptionist booking over the professional's own
+// calendar entry is making an informed decision, not a mistake.
 // ------------------------------------------------------------------------------
 import {
   ACTIVE_STATUSES,

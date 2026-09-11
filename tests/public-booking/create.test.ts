@@ -10,11 +10,14 @@
  * Repositories are mocked: writes go out over the plugin's REST layer, which is not
  * reachable from a unit test. The repositories themselves have DB-backed coverage.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 vi.mock('@/repositories/wp/doctors.repo', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/repositories/wp/doctors.repo')>()),
   findDoctorById: vi.fn(),
+}));
+vi.mock('@/services/integrations/google-busy.service', () => ({
+  googleBusyForRange: vi.fn(async () => ({})),
 }));
 vi.mock('@/repositories/wp/services.repo', () => ({
   listServicesForDoctor: vi.fn(),
@@ -262,6 +265,41 @@ describe('createPublicAppointment', () => {
     await expect(
       createPublicAppointment({ ...INPUT, date, startTime, holdKey }),
     ).resolves.toBeTruthy();
+  });
+
+  it('refuses a slot the professional has blocked in Google Calendar', async () => {
+    // Hiding it in the readers is not enough: a caller can post straight here, and
+    // a page loaded an hour ago is offering a list that has since gone stale.
+    const { googleBusyForRange } = await import('@/services/integrations/google-busy.service');
+    (googleBusyForRange as Mock).mockResolvedValue({
+      // The booking is 10:00-11:00 local; this covers 10:30-11:30.
+      [INPUT.date]: [{ start: 630, end: 690 }],
+    });
+    const holdKey = makeHold();
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
+      SlotConflictError,
+    );
+    // The hold is stale either way; keeping it would block the guest from picking
+    // another time for the rest of its TTL.
+    expect(slotHoldService.get(holdKey)).toBeNull();
+  });
+
+  it('allows a booking that ends exactly when a Google block starts', async () => {
+    const { googleBusyForRange } = await import('@/services/integrations/google-busy.service');
+    (googleBusyForRange as Mock).mockResolvedValue({ [INPUT.date]: [{ start: 660, end: 720 }] });
+    const holdKey = makeHold();
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).resolves.toBeTruthy();
+  });
+
+  it('books anyway when Google cannot be reached', async () => {
+    // googleBusyForRange fails open and returns {}. A Google outage must not stop a
+    // practice taking bookings; the design accepts the occasional double-offer and
+    // handles it by warning the professional.
+    const { googleBusyForRange } = await import('@/services/integrations/google-busy.service');
+    (googleBusyForRange as Mock).mockResolvedValue({});
+    const holdKey = makeHold();
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).resolves.toBeTruthy();
   });
 
   it('throws SlotConflictError and releases the hold when the slot is taken', async () => {

@@ -20,6 +20,8 @@ import { z } from 'zod';
 import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { isTooSoon } from '@/services/booking/booking-policy';
+import { toMinutes } from '@/services/booking/slot-math';
+import { googleBusyForRange } from '@/services/integrations/google-busy.service';
 import { signAppointmentToken } from '@/lib/public/appointment-token';
 import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
 import { cancelAppointment, createAppointment } from '@/repositories/wp/appointments.write';
@@ -319,6 +321,34 @@ export async function createPublicAppointment(
     // Release the hold: it is stale, and keeping it would block the guest from picking
     // another time for the rest of the TTL.
     slotHoldService.consume(input.holdKey);
+    throw new SlotConflictError('Slot no longer available');
+  }
+
+  // The professional's own calendar, if they have connected one. Checked here as
+  // well as in the slot readers because hiding a slot is not enforcing it: a caller
+  // can post straight to this service, and a booking page loaded an hour ago is
+  // offering a list that has since gone stale.
+  //
+  // googleBusyForRange fails open — every failure inside it returns no blocks —
+  // so a Google outage cannot stop a practice taking bookings.
+  const googleBusy = await googleBusyForRange({
+    professionalId: input.professionalId,
+    from: input.date,
+    to: input.date,
+    timeZone: doctor.timezone ?? undefined,
+  });
+  const startMinute = toMinutes(startTime);
+  const endMinute = toMinutes(endTime);
+  // Half-open, like every other overlap here: a booking ending exactly when a block
+  // starts is still fine.
+  const blocked = (googleBusy[input.date] ?? []).some(
+    (b) => b.start < endMinute && b.end > startMinute,
+  );
+  if (blocked) {
+    slotHoldService.consume(input.holdKey);
+    // Deliberately the same error and the same wording as an appointment clash. The
+    // patient does not need to know — and should not be told — that the
+    // professional has a personal commitment at that hour.
     throw new SlotConflictError('Slot no longer available');
   }
 
