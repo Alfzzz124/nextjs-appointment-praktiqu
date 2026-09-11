@@ -6,7 +6,7 @@
 // the WRONG slots being blocked rather than an error — nothing fails loudly, the
 // page just quietly lies.
 
-import { toZonedTime } from 'date-fns-tz';
+import { toTimezone } from '@/lib/time';
 import type { BlockedRange } from '@/services/booking/slot-math';
 
 /** A stretch Google reports as busy. UTC instants, as the API returns them. */
@@ -19,10 +19,10 @@ const MINUTES_PER_DAY = 1440;
 
 /** `YYYY-MM-DD` and minutes-past-midnight for an instant, in the given zone. */
 function inZone(instant: Date, timeZone: string): { date: string; minutes: number } {
-  // toZonedTime returns a Date whose LOCAL getters read as the wall clock in
+  // toTimezone returns a Date whose LOCAL getters read as the wall clock in
   // `timeZone`. It is only ever read through those getters here — the instant it
   // nominally represents is meaningless and must not be used for arithmetic.
-  const z = toZonedTime(instant, timeZone);
+  const z = toTimezone(instant, timeZone);
   const p = (n: number) => String(n).padStart(2, '0');
   return {
     date: `${z.getFullYear()}-${p(z.getMonth() + 1)}-${p(z.getDate())}`,

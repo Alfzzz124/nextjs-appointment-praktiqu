@@ -330,7 +330,7 @@ export async function getPublicSlotsForRange(opts: {
     opts.clinicId,
   );
   if (!resolved) return null;
-  const { mapping } = resolved;
+  const { doctor, mapping } = resolved;
 
   const doctorId = BigInt(opts.professionalId);
   const clinicId = BigInt(mapping.clinicId);
@@ -338,9 +338,16 @@ export async function getPublicSlotsForRange(opts: {
 
   const [sessions, blockedByDate] = await Promise.all([
     listClinicSessions({ clinicId, doctorId }),
-    // One collector owns off days, bookings and — from Phase 2 — Google Calendar
-    // busy blocks, so this page and the staff calendar cannot disagree.
-    collectBlockedRanges({ doctorId: opts.professionalId, from: opts.from, to: opts.to }),
+    // One collector owns off days, bookings and Google Calendar busy blocks, so
+    // this page and the staff calendar cannot disagree. The timezone is the
+    // professional's own: Google answers in UTC instants, and everything else
+    // here is local wall-clock.
+    collectBlockedRanges({
+      doctorId: opts.professionalId,
+      from: opts.from,
+      to: opts.to,
+      timeZone: doctor.timezone ?? undefined,
+    }),
   ]);
 
   return eachDate(opts.from, opts.to).map((date) => {

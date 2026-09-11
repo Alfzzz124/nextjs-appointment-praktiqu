@@ -29,6 +29,7 @@ import {
 } from '@/repositories/wp/appointments.repo';
 import { isOffOn, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { blockedRangesFor, eachDate, type BlockedRange } from '@/services/booking/slot-math';
+import { googleBusyForRange } from '@/services/integrations/google-busy.service';
 
 /**
  * `paginate` in repositories/wp/wp-user.ts clamps perPage to 100 whatever is asked
@@ -100,23 +101,47 @@ export async function collectBlockedRanges(opts: {
   /** Inclusive `YYYY-MM-DD` range. */
   from: string;
   to: string;
+  /**
+   * The professional's own timezone, for reading Google's UTC instants back into
+   * local wall-clock minutes. Both callers already have the doctor row loaded, so
+   * passing `doctor.timezone` costs nothing; omitted, it falls back to the
+   * practice default.
+   */
+  timeZone?: string;
 }): Promise<Record<string, BlockedRange[] | null>> {
   const doctorId = BigInt(opts.doctorId);
 
-  const [offDays, appointments] = await Promise.all([
+  const [offDays, appointments, googleBusy] = await Promise.all([
     listDoctorOffDays(doctorId, { from: opts.from, to: opts.to }),
     // ACTIVE_STATUSES rather than "not cancelled": CHECK_OUT is a finished visit and
     // no longer occupies its slot.
     listAllAppointmentsInRange(doctorId, opts.from, opts.to),
+    // Fails open on its own: every failure inside returns {}, because a Google
+    // outage must not stop a practice taking bookings.
+    googleBusyForRange({
+      professionalId: opts.doctorId,
+      from: opts.from,
+      to: opts.to,
+      timeZone: opts.timeZone,
+    }),
   ]);
 
   const byDate: Record<string, BlockedRange[] | null> = {};
 
   for (const date of eachDate(opts.from, opts.to)) {
-    byDate[date] = blockedRangesFor({
+    const ranges = blockedRangesFor({
       offDays: offDays.filter((o) => isOffOn(o, date)),
       appointments: appointments.filter((a) => a.startDate === date),
     });
+
+    // `null` is a full-day closure and already says everything; appending to it
+    // would turn "closed" back into "open with some blocks".
+    if (ranges !== null) {
+      const busy = googleBusy[date];
+      if (busy) ranges.push(...busy);
+    }
+
+    byDate[date] = ranges;
   }
 
   return byDate;

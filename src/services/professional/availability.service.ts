@@ -283,10 +283,16 @@ export async function generateSlots(
   });
   if (windows.length === 0) return [];
 
-  // Off days and bookings both come from the shared collector, so this path and the
-  // public one cannot disagree about what blocks a day — and Phase 2's Google
-  // Calendar busy blocks arrive here without touching this function.
-  const blockedByDate = await collectBlockedRanges({ doctorId, from: date, to: date });
+  // Off days, bookings and Google Calendar busy blocks all come from the shared
+  // collector, so this path and the public one cannot disagree about what blocks a
+  // day. The timezone is the professional's own: Google answers in UTC instants
+  // while everything else here is local wall-clock.
+  const blockedByDate = await collectBlockedRanges({
+    doctorId,
+    from: date,
+    to: date,
+    timeZone: doctor.timezone ?? undefined,
+  });
 
   // null means a full-day closure, which ends it here. An empty array means the
   // day is open with nothing blocked — the two must not be conflated.

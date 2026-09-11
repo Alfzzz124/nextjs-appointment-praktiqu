@@ -45,8 +45,14 @@ describe('refreshAccessToken', () => {
 
   it('never puts the client secret in the error it throws', async () => {
     const fetchImpl = json({ error: 'invalid_client' }, 401);
-    const err = await refreshAccessToken(CREDS, fetchImpl).catch((e) => e as Error);
-    expect(err.message).not.toContain('secret');
+    let message = '';
+    try {
+      await refreshAccessToken(CREDS, fetchImpl);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).not.toBe('');
+    expect(message).not.toContain('secret');
   });
 });
 
