@@ -26,7 +26,7 @@ vi.mock('@/repositories/wp/patients.repo', () => ({
 vi.mock('@/lib/wp-endpoint', () => ({ fetchMedia: vi.fn() }));
 
 import {
-  emailMedReport, attachmentName, renderReportEmailHtml, MAX_ATTACHMENT_BYTES,
+  emailMedReport, attachmentName, renderReportEmailHtml, renderReportEmailText, MAX_ATTACHMENT_BYTES,
 } from '@/services/billing/report-email.service';
 import { getMedReport } from '@/services/billing/patient-medical-report.service';
 import { findPatientById } from '@/repositories/wp/patients.repo';
@@ -116,6 +116,11 @@ describe('emailMedReport', () => {
     expect(getMedReport).not.toHaveBeenCalled();
   });
 
+  it('rejects a whitespace-only recipient before touching the report', async () => {
+    await expect(emailMedReport(5, '   ')).rejects.toMatchObject({ httpStatus: 400 });
+    expect(getMedReport).not.toHaveBeenCalled();
+  });
+
   it('turns a refused send into a 502 rather than reporting success', async () => {
     (sendEmail as any).mockResolvedValueOnce({ ok: false, error: 'domain not verified' });
 
@@ -161,6 +166,40 @@ describe('the email body', () => {
 
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('escapes markup in the report name and the clinic name too', () => {
+    const html = renderReportEmailHtml({
+      clientName: 'Budi Santoso',
+      reportName: '<b>Hasil</b>',
+      clinicName: '<i>Klinik</i>',
+    });
+
+    expect(html).not.toContain('<b>Hasil</b>');
+    expect(html).toContain('&lt;b&gt;Hasil&lt;/b&gt;');
+    expect(html).not.toContain('<i>Klinik</i>');
+    expect(html).toContain('&lt;i&gt;Klinik&lt;/i&gt;');
+  });
+});
+
+describe('renderReportEmailText', () => {
+  it('addresses the client in the psychology register, not the medical one', () => {
+    const text = renderReportEmailText({
+      clientName: 'Budi Santoso', reportName: 'Hasil asesmen awal', clinicName: 'Klinik Tenang',
+    });
+
+    expect(text).toContain('Budi Santoso');
+    expect(text).toContain('Hasil asesmen awal');
+    expect(text).toContain('Klinik Tenang');
+    expect(text).not.toMatch(/\b(pasien|dokter|medis)\b/i);
+  });
+
+  it('falls back to the generic greeting, report name and no clinic clause when all copy is null', () => {
+    const text = renderReportEmailText({ clientName: null, reportName: null, clinicName: null });
+
+    expect(text).toContain('Halo Bapak/Ibu,');
+    expect(text).toContain('Terlampir laporan sesi Anda.');
+    expect(text).not.toMatch(/\b(pasien|dokter|medis)\b/i);
   });
 });
 

@@ -121,7 +121,7 @@ export async function emailMedReport(
   to: string,
   scope: MedReportScope | null = null,
 ): Promise<true> {
-  if (!to) throw new KcError('Recipient email is required', 400);
+  if (!to || !to.trim()) throw new KcError('Recipient email is required', 400);
 
   // Scope + existence, before a single byte is fetched or sent.
   const report = await getMedReport(id, scope);
