@@ -6723,11 +6723,12 @@ paths:
         `{status,message,data}` envelope; errors do use the envelope.
       responses:
         '200':
-          description: Success
+          description: The file
           content:
-            application/json:
+            application/octet-stream:
               schema:
-                $ref: '#/components/schemas/KcEnvelope'
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
