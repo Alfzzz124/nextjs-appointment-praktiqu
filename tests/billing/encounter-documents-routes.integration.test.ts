@@ -49,6 +49,7 @@ vi.mock('@/lib/db', () => {
 import { prisma } from '@/lib/db';
 import { GET as documentsGET, POST as documentsPOST } from '@/app/api/v1/encounters/[id]/documents/route';
 import { GET as reportContentGET } from '@/app/api/v1/patient-medical-reports/[id]/content/route';
+import { GET as reportPrintGET } from '@/app/api/v1/patient-medical-reports/[id]/print/route';
 import { GET as attachmentGET } from '@/app/api/v1/sessions/[id]/attachments/[mediaId]/content/route';
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
@@ -377,5 +378,92 @@ describe('POST /encounters/:id/documents', () => {
       { params: { id: '1' } } as any,
     );
     expect(res.status).toBe(403);
+  });
+});
+
+/**
+ * `/print` serves the same bytes as `/content`. These tests are not a copy of the
+ * `/content` suite for its own sake: they pin that the print route actually goes
+ * through the shared helper, so the inline/attachment protection cannot be lost
+ * by someone later giving `/print` its own streaming code — which is exactly what
+ * KiviCare Pro's own controller does, inline for every type.
+ */
+describe('GET /patient-medical-reports/:id/print', () => {
+  const realFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (prisma.user.findUnique as any).mockResolvedValue({ wpUserId: 9000001n });
+    (prisma.$queryRawUnsafe as any).mockResolvedValue([]);
+    process.env.WORDPRESS_SERVICE_TOKEN = 'test-token';
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('rejects a request with no token (401)', async () => {
+    const res = await reportPrintGET(
+      new NextRequest('http://localhost/api/v1/patient-medical-reports/1/print'),
+      { params: { id: '1' } } as any,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('no longer answers 501', async () => {
+    const res = await reportPrintGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/print'),
+      { params: { id: '1' } } as any,
+    );
+    expect(res.status).not.toBe(501);
+  });
+
+  it('streams the document bytes', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Laporan sesi 3', patient_id: 9000001, upload_report: '42', date: new Date('2026-01-01') },
+    ]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response('PDF-BYTES', { status: 200, headers: { 'content-type': 'application/pdf' } }),
+    ) as any;
+
+    const res = await reportPrintGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/print'),
+      { params: { id: '1' } } as any,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('application/pdf');
+    expect(await res.text()).toBe('PDF-BYTES');
+  });
+
+  it('returns a clean 404 when the report has no numeric file id', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Laporan sesi 3', patient_id: 9000001, upload_report: null, date: new Date('2026-01-01') },
+    ]);
+
+    const res = await reportPrintGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/print'),
+      { params: { id: '1' } } as any,
+    );
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).message).toBe('Document has no file');
+  });
+
+  it('serves a declared text/html as attachment, not inline', async () => {
+    (prisma.$queryRawUnsafe as any).mockResolvedValueOnce([
+      { id: 1, name: 'Laporan sesi 3', patient_id: 9000001, upload_report: '42', date: new Date('2026-01-01') },
+    ]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response('<script>x</script>', { status: 200, headers: { 'content-type': 'text/html' } }),
+    ) as any;
+
+    const res = await reportPrintGET(
+      reqWith(await token('SUPER_ADMIN'), 'http://localhost/api/v1/patient-medical-reports/1/print'),
+      { params: { id: '1' } } as any,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Disposition')).toMatch(/^attachment;/);
   });
 });

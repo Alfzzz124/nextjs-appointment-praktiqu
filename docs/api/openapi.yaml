@@ -6719,16 +6719,16 @@ paths:
       description: |-
         **Capability:** `patient_report_read`
 
-        **Response envelope:** KC `{status,message,data}`
-
-        _May return 501 (stub / not wired)._
+        Streams the uploaded document. Returns the file bytes, not the KC
+        `{status,message,data}` envelope; errors do use the envelope.
       responses:
         '200':
-          description: Success
+          description: The file
           content:
-            application/json:
+            application/octet-stream:
               schema:
-                $ref: '#/components/schemas/KcEnvelope'
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -6750,11 +6750,13 @@ paths:
       summary: Send Email (POST) — patient medical reports
       operationId: post_api_v1_patient_medical_reports_id_send_email
       description: |-
-        **Capability:** `patient_report_manage`
+        **Capability:** `patient_report_manage` — staff only; CLIENT is not in
+        this capability and cannot email their own report.
 
         **Response envelope:** KC `{status,message,data}`
 
-        _May return 501 (stub / not wired)._
+        Body may carry `to` (string) to redirect the copy, e.g. to a referring
+        psychologist. Without it the report goes to the client's own address.
       requestBody:
         required: true
         content:
