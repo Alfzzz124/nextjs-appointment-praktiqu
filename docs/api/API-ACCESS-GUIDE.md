@@ -466,7 +466,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `GET` | `/api/v1/patient-medical-reports/{id}/file` | `patient_report_read` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/content` | `patient_report_read` |
 | `GET` | `/api/v1/patient-medical-reports/{id}/print` | `patient_report_read` |
-| `POST` | `/api/v1/patient-medical-reports/{id}/send-email` | `patient_report_manage` · _stub 501_ |
+| `POST` | `/api/v1/patient-medical-reports/{id}/send-email` | `patient_report_manage` |
 
 ### `practices` (17)
 
