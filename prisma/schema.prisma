@@ -956,6 +956,57 @@ model Tax {
 // PAYMENTS
 // ============================================
 
+/// One professional's Google Calendar connection.
+///
+/// Read-only and one-way: we ask Google when they are busy, we never write their
+/// PraktiQU appointments into their calendar. The granted scope is
+/// `calendar.freebusy`, which returns opaque busy intervals and no event content --
+/// a psychologist's personal calendar plausibly holds other clients' names.
+model GoogleCalendarConnection {
+  id String @id @default(cuid())
+
+  /// `wp_users.ID` of the professional -- the same value generateSlots takes as
+  /// doctorId. Unique: one Google account per professional.
+  professionalId BigInt @unique @db.UnsignedBigInt
+
+  /// Shown in settings so they can see WHICH Google account is linked. People have
+  /// several, and picking the wrong one is the likeliest setup mistake.
+  googleAccountEmail String @db.VarChar(255)
+
+  /// AES-256-GCM, never the raw token. NULL once revoked: the row survives so the
+  /// person can see it and reconnect, but it holds no credential.
+  refreshTokenEncrypted String? @db.Text
+
+  /// Recorded so a later scope change is detectable rather than silently assumed.
+  scopeGranted String @db.Text
+
+  /// Which calendars to read. Defaults to `["primary"]`. Google's generated
+  /// holiday and birthday calendars are excluded server-side, not merely left
+  /// unticked in the UI -- a picker only protects the people who use the picker.
+  calendarIds Json
+
+  /// 'active' | 'revoked' | 'error'.
+  ///
+  /// `revoked` is NOT an error: while the Google app is in Testing, authorisations
+  /// expire every 7 days, so every connected professional lands here weekly with
+  /// nothing wrong. `error` means our side failed -- and it always carries
+  /// lastErrorMessage, because "something went wrong" gives nobody a next step.
+  status String @default("active") @db.VarChar(16)
+
+  /// When the current connection was established. Distinct from createdAt, which
+  /// reconnecting after a revocation would answer wrongly.
+  connectedAt      DateTime
+  lastCheckedAt    DateTime?
+  lastErrorAt      DateTime?
+  lastErrorMessage String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([status])
+  @@map("google_calendar_connections")
+}
+
 /// A client-supplied Idempotency-Key for public booking.
 ///
 /// The gateway gives up at ~8s while the write carries on, so the caller cannot
