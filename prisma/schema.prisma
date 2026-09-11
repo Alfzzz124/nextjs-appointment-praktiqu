@@ -956,6 +956,28 @@ model Tax {
 // PAYMENTS
 // ============================================
 
+/// A client-supplied Idempotency-Key for public booking.
+///
+/// The gateway gives up at ~8s while the write carries on, so the caller cannot
+/// tell a lost booking from a lost response. Replaying the same key returns the
+/// same appointment instead of creating a second one.
+model BookingIdempotencyKey {
+  /// The Idempotency-Key header, verbatim. Primary key rather than a plain index:
+  /// two concurrent attempts race to INSERT and exactly one wins, which is how
+  /// the in-flight attempt is detected at all.
+  key           String    @id @db.VarChar(191)
+  /// SHA-256 of the canonicalised request body, so a key reused for a *different*
+  /// booking is refused rather than silently answered with the wrong appointment.
+  fingerprint   String    @db.Char(64)
+  /// NULL while an attempt is in flight. Set once the booking succeeded.
+  appointmentId Int?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([createdAt])
+  @@map("booking_idempotency_keys")
+}
+
 model PaymentOrder {
   id             String    @id @default(cuid())
   source         String // 'public' | 'session'
