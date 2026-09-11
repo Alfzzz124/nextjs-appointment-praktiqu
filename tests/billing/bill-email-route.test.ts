@@ -5,7 +5,14 @@ import { prisma } from '@/lib/db';
 import { assertTestDb, seedClinicAdmin, seedEncounter, seedPatient, cleanup } from './fixtures';
 import { createBill } from '@/services/billing/bill.service';
 
-vi.mock('@/lib/email', () => ({ sendEmail: vi.fn().mockResolvedValue({ ok: true, messageId: 'm1' }) }));
+// Only the send is stubbed. The rest of the module stays real on purpose: the route's
+// recipient guard is `isSingleEmailAddress` from here, and a wholesale factory mock
+// would replace it with `undefined` — the tests below would then pass on a TypeError
+// rather than on the guard doing its job.
+vi.mock('@/lib/email', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/email')>()),
+  sendEmail: vi.fn().mockResolvedValue({ ok: true, messageId: 'm1' }),
+}));
 vi.mock('puppeteer', () => ({ default: { launch: vi.fn().mockResolvedValue({
   newPage: vi.fn().mockResolvedValue({ setContent: vi.fn(), pdf: vi.fn().mockResolvedValue(Buffer.from('PDF')) }),
   close: vi.fn(),
@@ -150,5 +157,67 @@ describe('POST /bills/:id/email', () => {
     );
     expect(res.status).toBe(400);
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `typeof rawTo === 'string'` blocks only the array shape of a fan-out. A comma- or
+   * semicolon-joined list is one string value, and whether it becomes one recipient or
+   * several is decided by how the mail provider parses the `to` field — a property this
+   * route should not inherit from a third party. These four pin the string-shaped form
+   * shut, including the case where the address comes from `wp_users` rather than the body.
+   */
+  it('refuses a comma-joined "to" with 400 and sends nothing', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC}`);
+    const res = await emailPost(
+      reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, { to: 'a@example.test,b@example.test' }),
+      { params: { id: String(billId) } } as any,
+    );
+    expect(res.status).toBe(400);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('refuses a semicolon-joined "to" with 400 and sends nothing', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC}`);
+    const res = await emailPost(
+      reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, { to: 'a@example.test;b@example.test' }),
+      { params: { id: String(billId) } } as any,
+    );
+    expect(res.status).toBe(400);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('accepts a plus-tagged address and sends the bill to it', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC}`);
+    const res = await emailPost(
+      reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, { to: 'accountant+invoices@clinic.test' }),
+      { params: { id: String(billId) } } as any,
+    );
+    expect(res.status).toBe(200);
+    // Reached `emailBill` and came out the far side at the mail boundary unchanged —
+    // the guard must not cost legitimate resends to a tagged address.
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'accountant+invoices@clinic.test' }));
+  });
+
+  it('refuses (400) when the patient\'s own stored address is malformed', async () => {
+    // Nothing validates what `wp_users` holds, and with no `to` in the body that row IS
+    // the recipient — so the guard has to sit after the fallback, not before it.
+    await prisma.kcUser.update({
+      where: { id: BigInt(PATIENT) },
+      data: { userEmail: 'a@example.test,b@example.test' },
+    });
+    try {
+      const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC}`);
+      const res = await emailPost(
+        reqWith(jwt, `http://localhost/api/v1/bills/${billId}/email`, {}),
+        { params: { id: String(billId) } } as any,
+      );
+      expect(res.status).toBe(400);
+      expect(sendEmail).not.toHaveBeenCalled();
+    } finally {
+      await prisma.kcUser.update({
+        where: { id: BigInt(PATIENT) },
+        data: { userEmail: PATIENT_EMAIL },
+      });
+    }
   });
 });

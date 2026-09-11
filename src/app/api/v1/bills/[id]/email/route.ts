@@ -6,6 +6,7 @@ import { resolveKcActor } from '@/services/billing/kc-actor';
 import { emailBill } from '@/services/billing/bill-document.service';
 import { getBill } from '@/services/billing/bill.service';
 import { findPatientById } from '@/repositories/wp/patients.repo';
+import { isSingleEmailAddress } from '@/lib/email';
 
 export const runtime = 'nodejs';
 
@@ -25,7 +26,9 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
     const rawTo: unknown = actor.role === 'CLIENT' ? '' : (body?.to ?? '');
     // The mail provider accepts an array of recipients, so an unvalidated `to` widens
     // "resend to one address of the staff caller's choosing" into "fan this invoice
-    // out to an arbitrary list" — not what this override is meant to allow.
+    // out to an arbitrary list" — not what this override is meant to allow. An array
+    // is only the obvious shape of that: the `isSingleEmailAddress` check below closes
+    // the string-shaped form, which this `typeof` guard cannot see.
     if (rawTo !== '' && typeof rawTo !== 'string') return kcFail('to must be a string', 400);
     let to: string = rawTo as string;
     if (!to) {
@@ -38,6 +41,13 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
       to = patient?.email ?? '';
     }
     if (!to) return kcFail('No recipient email available for this bill', 400);
+    // A `typeof` check alone lets a comma- or semicolon-joined string through — still
+    // one string, but multiple recipients once the mail provider parses it. Whether it
+    // fans out is Resend's parsing rule, not a property this route should borrow.
+    // Placed after the fallback so it covers both an explicitly-supplied `to` and one
+    // read out of `wp_users`: a malformed stored address is the same risk arriving by a
+    // different path. Distinct from the 400 above, which means "no address at all".
+    if (!isSingleEmailAddress(to)) return kcFail('to must be a single email address', 400);
     await emailBill(Number(params.id), to, scope);
     return kcOk(true, 'Bill sent successfully');
   }),
