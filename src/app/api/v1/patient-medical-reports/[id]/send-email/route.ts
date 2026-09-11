@@ -16,6 +16,7 @@ import { resolveKcActor } from '@/services/billing/kc-actor';
 import { medReportScopeFor } from '@/services/billing/med-report-scope';
 import { getMedReport } from '@/services/billing/patient-medical-report.service';
 import { emailMedReport } from '@/services/billing/report-email.service';
+import { isSingleEmailAddress } from '@/lib/email';
 import { findPatientById } from '@/repositories/wp/patients.repo';
 
 export const runtime = 'nodejs';
@@ -49,6 +50,13 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
       to = patient?.email ?? '';
     }
     if (!to) return kcFail('No recipient email available for this report', 400);
+
+    // A `typeof` check alone lets a comma- or semicolon-joined string through —
+    // still one string, but multiple recipients once the mail provider parses
+    // it. Applies to both an explicitly-supplied `to` and one resolved from the
+    // client's own row: a malformed stored address is the same fan-out risk
+    // arriving by a different route.
+    if (!isSingleEmailAddress(to)) return kcFail('to must be a single email address', 400);
 
     await emailMedReport(Number(params.id), to, scope);
     return kcOk(true, 'Report sent successfully');

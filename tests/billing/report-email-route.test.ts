@@ -108,6 +108,58 @@ describe('POST /patient-medical-reports/:id/send-email — the recipient', () =>
     expect(emailMedReport).not.toHaveBeenCalled();
   });
 
+  it('refuses a comma-joined `to` (400) and sends nothing', async () => {
+    // Still `typeof 'string'`, but two recipients once a mail provider parses it.
+    const res = await sendEmailPOST(
+      post(await token('CLINIC_ADMIN'), { to: 'a@example.test,b@example.test' }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(emailMedReport).not.toHaveBeenCalled();
+  });
+
+  it('refuses a semicolon-joined `to` (400) and sends nothing', async () => {
+    const res = await sendEmailPOST(
+      post(await token('CLINIC_ADMIN'), { to: 'a@example.test;b@example.test' }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(emailMedReport).not.toHaveBeenCalled();
+  });
+
+  it('refuses a `to` with surrounding whitespace (400)', async () => {
+    const res = await sendEmailPOST(
+      post(await token('CLINIC_ADMIN'), { to: ' budi@example.test ' }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(emailMedReport).not.toHaveBeenCalled();
+  });
+
+  it('accepts a plus-tagged address', async () => {
+    const res = await sendEmailPOST(
+      post(await token('CLINIC_ADMIN'), { to: 'budi+laporan@example.test' }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(emailMedReport).toHaveBeenCalledWith(5, 'budi+laporan@example.test', expect.anything());
+  });
+
+  it('refuses (400) when the client\'s own stored address is malformed', async () => {
+    (findPatientById as any).mockResolvedValueOnce({
+      id: 9000002n, email: 'not-an-address', displayName: 'Budi Santoso', clinicId: 3n,
+    });
+
+    const res = await sendEmailPOST(post(await token('CLINIC_ADMIN'), {}), ctx);
+
+    expect(res.status).toBe(400);
+    expect(emailMedReport).not.toHaveBeenCalled();
+  });
+
   it('refuses (400) when the client has no address on file', async () => {
     (findPatientById as any).mockResolvedValueOnce({
       id: 9000002n, email: '', displayName: 'Budi Santoso', clinicId: 3n,

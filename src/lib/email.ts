@@ -91,6 +91,29 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 }
 
+/**
+ * Conservative "is this one address" check — not RFC 5322. It exists because
+ * `to` fields (here and at the Resend boundary) accept a bare string with no
+ * further validation, and a comma- or semicolon-joined list of addresses is
+ * still `typeof 'string'`. Anywhere a single recipient is a security
+ * invariant (e.g. redirecting a clinical document), a plain `typeof` check
+ * is not enough — this is. Whitespace is rejected everywhere (including
+ * padding) because it too can separate addresses in some mail tooling, and a
+ * padded address is not one we should send to.
+ */
+export function isSingleEmailAddress(value: string): boolean {
+  if (/[,;\s]/.test(value)) return false;
+  const at = value.indexOf('@');
+  if (at <= 0 || at !== value.lastIndexOf('@')) return false;
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (!local) return false;
+  if (!domain || domain.startsWith('.') || domain.endsWith('.')) return false;
+  if (!domain.includes('.')) return false;
+  const labels = domain.split('.');
+  return labels.every((label) => label.length > 0 && !/^-|-$/.test(label));
+}
+
 /** Build a password-reset email. */
 export function buildPasswordResetEmail(input: {
   appUrl: string;
