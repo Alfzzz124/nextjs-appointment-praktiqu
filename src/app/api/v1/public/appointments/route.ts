@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   createPublicAppointment,
+  getPublicAppointmentById,
   createPublicAppointmentSchema,
   AppointmentInsertError,
   EmailConflictError,
@@ -19,6 +20,12 @@ import {
   notFound,
   serviceUnavailable,
 } from '@/lib/problem-details';
+import {
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  releaseIdempotencyKey,
+  fingerprintOf,
+} from '@/services/public/booking-idempotency.service';
 import { isTransientBackendFailure, TRANSIENT_RETRY_AFTER_SECONDS } from '@/lib/transient-failure';
 import { withRetry } from '@/lib/retry';
 
@@ -50,14 +57,70 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: { 'Retry-After': String(retryAfter) } });
   }
 
+  /* --------------------------------------------------------------------------- *
+   * Idempotency. Optional: a caller that sends no key behaves exactly as before.
+   *
+   * With a key, a caller whose POST times out can simply send the same request
+   * again. Without one the only recourse is to guess from /slots whether the
+   * booking landed, and a slot can vanish for reasons that have nothing to do with
+   * this booking — its time passed, or (once calendar sync ships) the professional
+   * blocked it in Google.
+   * --------------------------------------------------------------------------- */
+  const idempotencyKey = req.headers.get('Idempotency-Key')?.trim() || null;
+
+  if (idempotencyKey) {
+    const claim = await claimIdempotencyKey(idempotencyKey, fingerprintOf(parsed.data));
+
+    if (claim.kind === 'replay') {
+      const existing = await getPublicAppointmentById(claim.appointmentId);
+      if (!existing) {
+        // The key records a booking that has since been deleted. Re-creating it
+        // silently would be worse than saying so.
+        const p = notFound(
+          'appointment_gone',
+          'The booking this request already created no longer exists.',
+        );
+        return NextResponse.json(p, { status: p.status });
+      }
+      // 200, not 201: this request created nothing.
+      limiter.recordSuccess(key);
+      return NextResponse.json({ data: existing }, { status: 200 });
+    }
+
+    if (claim.kind === 'in_progress') {
+      // The first attempt is still running. Not charged against the lockout — the
+      // caller is doing exactly what it was told to do.
+      const p = conflict(
+        'booking_in_progress',
+        'An attempt with this Idempotency-Key is still running. Retry in a moment.',
+      );
+      return NextResponse.json(p, { status: p.status, headers: { 'Retry-After': '2' } });
+    }
+
+    if (claim.kind === 'fingerprint_mismatch') {
+      const p = validationError(
+        'idempotency_key_reused',
+        'This Idempotency-Key was used for a different booking. Use a new key.',
+      );
+      return NextResponse.json(p, { status: p.status });
+    }
+  }
+
   try {
     // Replayed on its own when the attempt provably wrote nothing — a full connection
     // pool is not something to make the guest press a button about. Only
     // `isRetrySafeFailure` gets replayed; the write is not idempotent.
     const appointment = await withRetry(() => createPublicAppointment(parsed.data));
+    if (idempotencyKey) await completeIdempotencyKey(idempotencyKey, appointment.id);
     limiter.recordSuccess(key);
     return NextResponse.json({ data: appointment }, { status: 201 });
   } catch (err) {
+    // Hand the key back so an honest retry can claim it. This rests on the same
+    // assumption `withRetry` already makes: a throwing createPublicAppointment
+    // wrote nothing. Holding the key instead would deny the retry outright, which
+    // is the failure this whole mechanism exists to remove.
+    if (idempotencyKey) await releaseIdempotencyKey(idempotencyKey);
+
     /* ------------------------------------------------------------------------- *
      * Not the guest's fault. Answered ahead of `recordFailure`, because advising
      * a retry while charging it against a 30-attempt lockout contradicts the
