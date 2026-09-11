@@ -27,6 +27,11 @@ import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
 import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
 import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service';
 import { buildDaySlots, eachDate, toMinutes } from '@/services/booking/slot-math';
+import {
+  MIN_BOOKING_NOTICE_MINUTES,
+  isTooSoon,
+  localDate,
+} from '@/services/booking/booking-policy';
 
 export interface PublicClinic {
   id: number;
@@ -284,7 +289,7 @@ export async function getPublicSlots(opts: {
   );
 
   return slots
-    .filter((s) => !isPast(s.date, s.startTime, now))
+    .filter((s) => !isTooSoon(s.date, s.startTime, now, MIN_BOOKING_NOTICE_MINUTES))
     .map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime }));
 }
 
@@ -297,37 +302,6 @@ export interface PublicDaySlots {
  * Local calendar date as `YYYY-MM-DD`. Never via `toISOString()`, which names the
  * previous day on any server running ahead of UTC.
  */
-function localDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
-}
-
-/** Minutes past local midnight for an instant, the basis the slot maths uses. */
-function localMinutes(d: Date): number {
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-/**
- * Drop slots that have already started.
- *
- * Public only, and deliberately so. A patient is choosing a future appointment, so a
- * slot whose start has passed is never a valid choice. The authenticated staff path
- * (`generateSlots`) must NOT do this: a receptionist recording a walk-in that
- * happened this morning has a legitimate reason to pick a past slot, and hiding
- * those would silently break that workflow.
- *
- * Compared in local clinic time, like everything else here — the slot times are
- * local wall-clock strings and `now` is read through local getters, so no UTC
- * conversion enters the arithmetic. A slot is past when its START is at or before
- * `now`, matching the guard the retired slot generator carried.
- */
-function isPast(date: string, startTime: string, now: Date): boolean {
-  const today = localDate(now);
-  if (date < today) return true;
-  if (date > today) return false;
-  return toMinutes(startTime) <= localMinutes(now);
-}
 
 /**
  * Bookable slots for one professional and service across a date range.
@@ -393,7 +367,7 @@ export async function getPublicSlotsForRange(opts: {
     return {
       date,
       slots: slots
-        .filter((s) => !isPast(date, s.startTime, now))
+        .filter((s) => !isTooSoon(date, s.startTime, now, MIN_BOOKING_NOTICE_MINUTES))
         .map((s) => ({ date, startTime: s.startTime, endTime: s.endTime })),
     };
   });
@@ -463,7 +437,7 @@ export interface PublicBookingConfig {
 export function getPublicBookingConfig(): PublicBookingConfig {
   return {
     slotHoldTtlMs: SLOT_HOLD_TTL_MS,
-    minBookingNoticeMinutes: 60,
+    minBookingNoticeMinutes: MIN_BOOKING_NOTICE_MINUTES,
     maxAdvanceDays: 60,
   };
 }

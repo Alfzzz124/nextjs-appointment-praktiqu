@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
+import { isTooSoon } from '@/services/booking/booking-policy';
 import { signAppointmentToken } from '@/lib/public/appointment-token';
 import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
 import { cancelAppointment, createAppointment } from '@/repositories/wp/appointments.write';
@@ -67,6 +68,17 @@ export class ServiceNotFoundError extends Error {
 }
 
 /** Raised when the requested slot conflicts with an existing appointment. */
+/**
+ * Raised when the slot is real and free, but too close to now.
+ *
+ * Separate from SlotConflictError because the advice differs: a conflict means pick
+ * another slot, this means pick a later one — or ring the practice, which can still
+ * take a same-hour booking through the staff path.
+ */
+export class BookingTooSoonError extends Error {
+  readonly code = 'BOOKING_TOO_SOON';
+}
+
 export class SlotConflictError extends Error {
   readonly code = 'SLOT_CONFLICT';
 }
@@ -263,6 +275,13 @@ export async function createPublicAppointment(
 ): Promise<CreatedAppointment> {
   const hold = slotHoldService.get(input.holdKey);
   if (!hold) throw new HoldExpiredError('Slot hold expired');
+
+  // Checked here as well as in the readers, because hiding a slot is not enforcing
+  // it: a caller can post straight to this service, and a patient whose page loaded
+  // an hour ago is choosing from a list that has since gone stale.
+  if (isTooSoon(input.date, input.startTime, new Date())) {
+    throw new BookingTooSoonError('That time is too soon to book online');
+  }
 
   const doctor = await findDoctorById(BigInt(input.professionalId));
   if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) {

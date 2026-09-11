@@ -9,6 +9,7 @@ import {
   ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
+  BookingTooSoonError,
   UpstreamWriteError,
 } from '@/services/public/public-booking.service';
 import { createRateLimiter, tupleKey } from '@/lib/rate-limit';
@@ -198,6 +199,16 @@ export async function POST(req: NextRequest) {
     if (err instanceof HoldExpiredError) {
       const p = conflict('hold_expired', 'Slot no longer available — please select another time');
       return NextResponse.json(p, { status: 410 });
+    }
+    // Distinct from slot_conflict: the slot is free, it is the timing that fails, so
+    // the advice is "pick a later one" rather than "pick another". Practices can
+    // still take a same-hour booking over the phone, which is worth saying.
+    if (err instanceof BookingTooSoonError) {
+      const p = conflict(
+        'booking_too_soon',
+        'That time is too close to book online — please choose a later slot, or call the practice.',
+      );
+      return NextResponse.json(p, { status: p.status });
     }
     if (err instanceof SlotConflictError) {
       const p = conflict('slot_conflict', 'Slot no longer available — please select another time');

@@ -122,17 +122,33 @@ describe('getPublicSlots — slots already past', () => {
    * deliberately keeps past slots: a receptionist recording this morning's walk-in has
    * to be able to select one — pinned by the last test in this block.)
    */
-  it('hides the slots of today that have already started', async () => {
+  it('keeps the slots that are far enough ahead, and hides the rest', async () => {
+    // 08:59 with a 60-minute notice: 09:00 is one minute away and 10:00 is
+    // an hour and a minute, so only the two later slots survive.
+    const slots = await getPublicSlots({
+      professionalId: DOCTOR_ID,
+      serviceId: SERVICE_ID,
+      date: MONDAY,
+      now: new Date('2026-08-31T08:59:00'),
+    });
+    expect(slots?.map((s) => s.startTime)).toEqual(['10:00:00', '11:00:00']);
+  });
+
+  it('hides a slot that starts sooner than the minimum notice allows', async () => {
+    // 10:15 with a 60-minute notice: 11:00 is only 45 minutes off. Nothing is
+    // bookable today, even though 11:00 has not started yet.
     const slots = await getPublicSlots({
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
       now: new Date('2026-08-31T10:15:00'),
     });
-    expect(slots?.map((s) => s.startTime)).toEqual(['11:00:00']);
+    expect(slots?.map((s) => s.startTime)).toEqual([]);
   });
 
-  it('treats a slot starting exactly now as past', async () => {
+  it('keeps a slot sitting exactly on the notice boundary', async () => {
+    // 10:00 + 60 minutes lands exactly on 11:00. The boundary stays bookable,
+    // matching how a slot ending exactly when a block starts stays bookable.
     const slots = await getPublicSlots({
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
@@ -142,15 +158,19 @@ describe('getPublicSlots — slots already past', () => {
     expect(slots?.map((s) => s.startTime)).toEqual(['11:00:00']);
   });
 
-  it('keeps a slot that has not started yet', async () => {
+  it('does not reach across midnight into the previous day', async () => {
+    // A notice window measured in minutes-of-day alone would compare 23:30
+    // against tomorrow's 09:00 and call it too soon. It is nine and a half
+    // hours away.
     const slots = await getPublicSlots({
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T08:59:00'),
+      now: new Date('2026-08-30T23:30:00'),
     });
     expect(slots?.map((s) => s.startTime)).toEqual(['09:00:00', '10:00:00', '11:00:00']);
   });
+
 
   it('returns [] — not null — for a date wholly in the past: open, nothing left', async () => {
     const slots = await getPublicSlots({

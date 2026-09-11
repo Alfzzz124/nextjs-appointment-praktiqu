@@ -56,6 +56,7 @@ import {
   ServiceNotFoundError,
   SlotConflictError,
   UpstreamWriteError,
+  BookingTooSoonError,
 } from '@/services/public/public-booking.service';
 
 const DOCTOR = 29;
@@ -64,10 +65,24 @@ const CLINIC = 3;
 const PATIENT = 461;
 const APPOINTMENT = 5150;
 
+/**
+ * Tomorrow, in local clinic time.
+ *
+ * Pinned relative to today rather than hard-coded. The literal this replaces,
+ * `2026-07-15`, had quietly slipped into the past, so every booking in this suite
+ * was exercising a date no patient could actually choose — and it would have hidden
+ * the minimum-notice rule the moment that rule arrived.
+ */
+function tomorrow(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const INPUT = {
   professionalId: DOCTOR,
   serviceId: SERVICE,
-  date: '2026-07-15',
+  date: tomorrow(),
   startTime: '10:00',
   clientName: 'Budi Test',
   clientEmail: 'budi@test.local',
@@ -75,21 +90,31 @@ const INPUT = {
   holdKey: '',
 };
 
-function makeHold() {
+function makeHold(date = INPUT.date, startTime = INPUT.startTime) {
   const key = slotHoldService.buildKey(
     String(INPUT.professionalId),
     String(INPUT.serviceId),
-    INPUT.date,
-    INPUT.startTime,
+    date,
+    startTime,
   );
   slotHoldService.create({
     professionalId: String(INPUT.professionalId),
     serviceId: String(INPUT.serviceId),
-    date: INPUT.date,
-    startTime: INPUT.startTime,
+    date,
+    startTime,
     key,
   });
   return key;
+}
+
+/** A local `YYYY-MM-DD` / `HH:MM` pair `minutes` from now. */
+function slotIn(minutes: number): { date: string; startTime: string } {
+  const t = new Date(Date.now() + minutes * 60_000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return {
+    date: `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`,
+    startTime: `${p(t.getHours())}:${p(t.getMinutes())}`,
+  };
 }
 
 function primeHappyPath() {
@@ -217,6 +242,26 @@ describe('createPublicAppointment', () => {
     await expect(
       createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
     ).rejects.toBeInstanceOf(ServiceNotFoundError);
+  });
+
+  it('refuses a booking closer than the minimum notice', async () => {
+    // Hiding these slots in the readers is not enough on its own: a caller can post
+    // straight to this service, and a patient whose page loaded an hour ago is
+    // holding a list that has since gone stale.
+    const { date, startTime } = slotIn(20);
+    const holdKey = makeHold(date, startTime);
+    await expect(
+      createPublicAppointment({ ...INPUT, date, startTime, holdKey }),
+    ).rejects.toBeInstanceOf(BookingTooSoonError);
+    expect(vi.mocked(createAppointment)).not.toHaveBeenCalled();
+  });
+
+  it('accepts a booking sitting exactly on the notice boundary', async () => {
+    const { date, startTime } = slotIn(61);
+    const holdKey = makeHold(date, startTime);
+    await expect(
+      createPublicAppointment({ ...INPUT, date, startTime, holdKey }),
+    ).resolves.toBeTruthy();
   });
 
   it('throws SlotConflictError and releases the hold when the slot is taken', async () => {

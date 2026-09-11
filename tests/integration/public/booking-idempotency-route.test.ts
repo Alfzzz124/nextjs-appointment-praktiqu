@@ -21,6 +21,7 @@ vi.mock('@/services/public/public-booking.service', () => ({
   ProfessionalNotFoundError: class ProfessionalNotFoundError extends Error {},
   ServiceNotFoundError: class ServiceNotFoundError extends Error {},
   SlotConflictError: class SlotConflictError extends Error {},
+  BookingTooSoonError: class BookingTooSoonError extends Error {},
   UpstreamWriteError: class UpstreamWriteError extends Error {
     upstreamStatus = 400;
     operation = 'test';
@@ -122,5 +123,16 @@ describe('with an Idempotency-Key', () => {
     const res = await POST(req('k1'));
     expect(res.status).toBe(404);
     expect(booking.createPublicAppointment).not.toHaveBeenCalled();
+  });
+
+  it('maps a too-soon booking to 409 rather than a 500', async () => {
+    const { BookingTooSoonError } = booking as unknown as { BookingTooSoonError: new () => Error };
+    (booking.createPublicAppointment as any).mockRejectedValue(new BookingTooSoonError());
+    const res = await POST(req('k1'));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ title: expect.anything() });
+    // The key must come back: the slot is fine, the timing was not, so a later
+    // attempt with the same key is legitimate.
+    expect(idem.releaseIdempotencyKey).toHaveBeenCalledWith('k1');
   });
 });
