@@ -6719,9 +6719,8 @@ paths:
       description: |-
         **Capability:** `patient_report_read`
 
-        **Response envelope:** KC `{status,message,data}`
-
-        _May return 501 (stub / not wired)._
+        Streams the uploaded document. Returns the file bytes, not the KC
+        `{status,message,data}` envelope; errors do use the envelope.
       responses:
         '200':
           description: Success
