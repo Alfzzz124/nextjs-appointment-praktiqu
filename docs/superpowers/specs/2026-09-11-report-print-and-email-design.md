@@ -95,9 +95,21 @@ kliniknya tidak bernama, subjeknya menjadi `Laporan sesi Anda`.
 
 ### Penerima: klien, dengan penimpaan untuk staf
 
-Body boleh memuat `to`. Bila pemanggil berperan `CLIENT`, field itu diabaikan sepenuhnya
-dan laporan selalu dikirim ke alamat klien itu sendiri; peran staf boleh menimpanya,
-misalnya untuk mengirim ke psikolog rujukan.
+Body boleh memuat `to`. Peran staf boleh menimpanya, misalnya untuk mengirim ke
+psikolog rujukan. Bila pemanggil berperan `CLIENT`, field itu diabaikan sepenuhnya dan
+laporan selalu dikirim ke alamat klien itu sendiri.
+
+**Koreksi 2026-09-11, ditemukan saat menulis rencana implementasi.** Aturan `CLIENT` di
+atas hari ini tidak pernah tercapai: endpoint ini dijaga `patient_report_manage`, dan
+peta kapabilitas di `kc-permissions.ts:56` tidak memuat `CLIENT` sama sekali. Jadi klien
+mendapat 403 di gerbang kapabilitas, sebelum baris penerima mana pun dijalankan — klien
+tidak bisa mengirimkan laporannya sendiri lewat email, hanya staf yang bisa
+mengirimkannya kepada mereka.
+
+Kapabilitasnya tetap `patient_report_manage`, karena itulah yang sudah tertulis di
+`openapi.yaml` dan `API-ACCESS-GUIDE.md`. Penjagaan `CLIENT` tetap ditulis di kode
+sebagai lapis kedua: bila suatu hari `CLIENT` ditambahkan ke kapabilitas itu, mereka
+tidak ikut mendapat hak memilih alamat penerima tanpa ada yang menyadarinya.
 
 Ini mengikuti `/api/v1/bills/[id]/email` persis, termasuk penjagaannya: `to` yang bukan
 string ditolak 400, karena penyedia email menerima array penerima dan sebuah `to` yang
@@ -144,9 +156,8 @@ Route:
 
 `send-email`:
 
-- `CLIENT` **tidak dapat** menimpa penerima: `to` di body diabaikan dan email tetap
-  menuju alamat klien itu sendiri.
-- Peran staf dapat menimpanya.
+- `CLIENT` ditolak 403 di gerbang kapabilitas, dan `sendEmail` tidak pernah dipanggil.
+- Peran staf dapat menimpa penerima.
 - `to` yang bukan string ditolak 400.
 - Klien tanpa alamat email ditolak 400, dan `sendEmail` tidak pernah dipanggil.
 - Berkas di atas 15 MB ditolak 413 dan `sendEmail` tidak pernah dipanggil.
