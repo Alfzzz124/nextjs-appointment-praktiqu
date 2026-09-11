@@ -956,6 +956,30 @@ model Tax {
 // PAYMENTS
 // ============================================
 
+/// A cached Google free/busy answer for one professional on one local date.
+///
+/// Without it every render of a booking page for a connected professional costs two
+/// round trips to Google. Keyed per DATE rather than per requested range: the
+/// booking page asks for a fortnight and the slots API for a single day, and
+/// range-keyed rows would never share a hit between them.
+model GoogleBusyCache {
+  id             String   @id @default(cuid())
+  professionalId BigInt   @db.UnsignedBigInt
+  /// Local calendar date in the practice timezone, not UTC.
+  date           DateTime @db.Date
+  /// The zone `busy` was converted in. A changed timezone makes the row a miss
+  /// rather than silently wrong minutes.
+  timeZone       String   @db.VarChar(64)
+  /// `[{ start, end }]` in minutes past local midnight. Holds no event content --
+  /// freebusy returns none and none is derived.
+  busy           Json
+  fetchedAt      DateTime
+
+  @@unique([professionalId, date])
+  @@index([fetchedAt])
+  @@map("google_busy_cache")
+}
+
 /// One professional's Google Calendar connection.
 ///
 /// Read-only and one-way: we ask Google when they are busy, we never write their

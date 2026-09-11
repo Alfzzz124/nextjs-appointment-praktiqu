@@ -336,6 +336,10 @@ export async function createPublicAppointment(
     from: input.date,
     to: input.date,
     timeZone: doctor.timezone ?? undefined,
+    // Straight to Google, not the cache. This runs once per booking rather than
+    // once per page render, and it is the last check before a patient's time is
+    // committed — a minute-old answer is cheap enough to avoid here.
+    cache: false,
   });
   const startMinute = toMinutes(startTime);
   const endMinute = toMinutes(endTime);
