@@ -71,11 +71,22 @@ function normaliseUrl(path: string): string {
   return `${base}/wp-json/praktiqu/v1${path}`;
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+/**
+ * Run `request` under a deadline.
+ *
+ * Takes a factory rather than a promise: the signal has to reach `fetch`, and a
+ * promise handed in from the caller has already been started without one. An
+ * earlier version aborted a controller it never passed on, so every deadline in
+ * this module was inert and a hung WordPress held the request open indefinitely.
+ */
+async function withTimeout<T>(
+  request: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    return await promise;
+    return await request(ctrl.signal);
   } finally {
     clearTimeout(t);
   }
@@ -91,12 +102,14 @@ export async function wpAuthenticate(email: string, password: string): Promise<W
   let res: Response;
   try {
     res = await withTimeout(
-      fetch(normaliseUrl('/authenticate'), {
-        method: 'POST',
-        headers: buildHeaders(),
-        body: JSON.stringify({ email, password }),
-        cache: 'no-store',
-      }),
+      (signal) =>
+        fetch(normaliseUrl('/authenticate'), {
+          method: 'POST',
+          headers: buildHeaders(),
+          body: JSON.stringify({ email, password }),
+          cache: 'no-store',
+          signal,
+        }),
       5000,
     );
   } catch {
@@ -132,7 +145,13 @@ export async function wpGetUser(wpUserId: number | bigint): Promise<WpAuthSucces
   if (!WP_TOKEN) return null;
   try {
     const res = await withTimeout(
-      fetch(normaliseUrl(`/users/${wpUserId}`), { method: 'GET', headers: buildHeaders(), cache: 'no-store' }),
+      (signal) =>
+        fetch(normaliseUrl(`/users/${wpUserId}`), {
+          method: 'GET',
+          headers: buildHeaders(),
+          cache: 'no-store',
+          signal,
+        }),
       5000,
     );
     if (!res.ok) return null;
@@ -149,12 +168,14 @@ export async function wpLookupByEmail(email: string): Promise<WpAuthSuccess | nu
   if (!WP_TOKEN) return null;
   try {
     const res = await withTimeout(
-      fetch(normaliseUrl('/users/lookup'), {
-        method: 'POST',
-        headers: buildHeaders(),
-        body: JSON.stringify({ email }),
-        cache: 'no-store',
-      }),
+      (signal) =>
+        fetch(normaliseUrl('/users/lookup'), {
+          method: 'POST',
+          headers: buildHeaders(),
+          body: JSON.stringify({ email }),
+          cache: 'no-store',
+          signal,
+        }),
       5000,
     );
     if (!res.ok) return null;
@@ -174,12 +195,14 @@ export async function wpChangePassword(
   if (!WP_TOKEN) return { ok: false, error: 'service_unavailable' };
   try {
     const res = await withTimeout(
-      fetch(normaliseUrl(`/users/${wpUserId}/change-password`), {
-        method: 'POST',
-        headers: buildHeaders(),
-        body: JSON.stringify({ password: newPassword }),
-        cache: 'no-store',
-      }),
+      (signal) =>
+        fetch(normaliseUrl(`/users/${wpUserId}/change-password`), {
+          method: 'POST',
+          headers: buildHeaders(),
+          body: JSON.stringify({ password: newPassword }),
+          cache: 'no-store',
+          signal,
+        }),
       5000,
     );
     if (res.ok) return { ok: true };
@@ -195,7 +218,13 @@ export async function wpHealth(): Promise<boolean> {
   if (!WP_TOKEN) return false;
   try {
     const res = await withTimeout(
-      fetch(normaliseUrl('/health'), { method: 'GET', headers: buildHeaders(), cache: 'no-store' }),
+      (signal) =>
+        fetch(normaliseUrl('/health'), {
+          method: 'GET',
+          headers: buildHeaders(),
+          cache: 'no-store',
+          signal,
+        }),
       3000,
     );
     return res.ok;
