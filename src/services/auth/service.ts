@@ -15,11 +15,11 @@ import {
   verifyAccessToken,
   type AccessTokenClaims,
 } from '@/lib/auth/jwt';
-import { toUserUpsertData, wpAuthenticate, wpChangePassword, wpGetUser, wpLookupByEmail, type WpAuthSuccess } from '@/lib/auth/wp-auth';
+import { toUserUpsertData, wpAuthenticate, wpChangePassword, wpGetUser, wpLookupByEmail, type WpAuthSuccess, type WpAuthError } from '@/lib/auth/wp-auth';
 import { WP_ROLES } from '@/lib/auth/role-mapping';
 import { createPatient } from '@/repositories/wp/patients.write';
 import { WpEndpointError } from '@/lib/wp-endpoint';
-import { audit } from '@/services/audit';
+import { audit, type LoginFailureMeta } from '@/services/audit';
 import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey, type RateLimiter, type RateLimitVerdict } from '@/lib/rate-limit';
 
 // ─── Errors ──────────────────────────────────────────────────────────────
@@ -163,9 +163,20 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   const email = normaliseEmail(input.email);
   const key = tupleKey(input.ip, email);
 
-  // Pre-check rate limit
+  // Pre-check rate limit. Record it: an attempt turned away here never reaches
+  // WordPress, and leaving it unaudited hid whole lockouts from the audit log.
   const pre = getRateLimiter().check(key);
   if (pre.kind !== 'allow') {
+    await audit.loginFailure(
+      {
+        attemptedEmail: email,
+        timestamp: new Date().toISOString(),
+        ip: input.ip,
+        userAgent: input.userAgent,
+        reason: 'rate_limited',
+      },
+      { ip: input.ip, userAgent: input.userAgent },
+    );
     throw rateLimitToError(pre);
   }
 
@@ -178,12 +189,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
         timestamp: new Date().toISOString(),
         ip: input.ip,
         userAgent: input.userAgent,
-        reason:
-          wp.error.code === 'invalid_credentials'
-            ? 'invalid_credentials'
-            : wp.error.code === 'blocked'
-              ? 'locked'
-              : 'invalid_credentials',
+        reason: wpErrorToAuditReason(wp.error.code),
       },
       { ip: input.ip, userAgent: input.userAgent },
     );
@@ -800,6 +806,28 @@ export async function markUserDeleted(userId: string): Promise<void> {
 }
 
 // ─── Map rate-limit verdict → AuthError ──────────────────────────────────
+
+/**
+ * Translate a WP auth failure into the audited reason.
+ *
+ * This used to collapse everything except `blocked` into `invalid_credentials`,
+ * which made a WordPress outage indistinguishable from a mistyped password in
+ * the audit log — the one place that distinction has to survive.
+ */
+function wpErrorToAuditReason(code: WpAuthError['code']): LoginFailureMeta['reason'] {
+  switch (code) {
+    case 'blocked':
+      return 'locked';
+    case 'inactive':
+      return 'inactive';
+    case 'network_error':
+      return 'network_error';
+    case 'service_unavailable':
+      return 'service_unavailable';
+    case 'invalid_credentials':
+      return 'invalid_credentials';
+  }
+}
 
 function rateLimitToError(v: RateLimitVerdict): AuthError {
   if (v.kind === 'lockout') return new RateLimitedError(v.retryAfterMs);

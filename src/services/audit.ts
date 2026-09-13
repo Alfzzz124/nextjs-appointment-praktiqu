@@ -53,7 +53,14 @@ export interface LoginFailureMeta {
   timestamp: string;
   ip: string;
   userAgent: string;
-  reason: 'invalid_credentials' | 'inactive' | 'locked' | 'wp_reported';
+  reason:
+    | 'invalid_credentials'
+    | 'inactive'
+    | 'locked'
+    | 'wp_reported'
+    | 'network_error'
+    | 'service_unavailable'
+    | 'rate_limited';
 }
 export interface LogoutMeta {
   userId: string;
