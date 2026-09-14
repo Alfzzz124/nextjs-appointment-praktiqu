@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kebijakan Privasi — PraktiQu</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root { --teks:#1E2236; --redup:#5A6076; --garis:#E3E6EF; --aksen:#425FAD; }
+  * { box-sizing:border-box }
+  body { margin:0; background:#fff; color:var(--teks);
+         font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:48px 22px 90px }
+  h1 { font-size:30px; line-height:1.25; letter-spacing:-.01em; margin:0 0 6px }
+  h2 { font-size:19px; margin:38px 0 10px; letter-spacing:-.005em }
+  h3 { font-size:16px; margin:24px 0 6px }
+  p, li { color:var(--redup) }
+  a { color:var(--aksen) }
+  .sub { color:var(--redup); font-size:14.5px; margin:0 0 34px }
+  .kotak { border:1px solid var(--garis); border-left:3px solid var(--aksen);
+           border-radius:10px; padding:16px 18px; margin:22px 0; background:#FAFBFD }
+  .kotak p { margin:0; color:var(--teks); font-size:15px }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:15px }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--garis); vertical-align:top }
+  th { color:var(--teks); font-weight:600; width:38% }
+  td { color:var(--redup) }
+  code { background:#F3F5FA; padding:2px 6px; border-radius:5px; font-size:13.5px; color:var(--teks) }
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--garis);
+           color:var(--redup); font-size:13.5px }
+  .en { font-size:14.5px; color:var(--teks) }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Kebijakan Privasi</h1>
+  <p class="sub">PraktiQu · Berlaku sejak 14 September 2026</p>
+
+  <p>Dokumen ini menjelaskan data apa yang PraktiQu kumpulkan, untuk apa dipakai, dan bagaimana
+     Anda mengendalikannya. Bagian yang paling sering ditanyakan — sinkronisasi Google
+     Calendar — dijelaskan lengkap di bawah, termasuk apa yang <em>tidak</em> kami akses.</p>
+
+  <h2>1. Siapa kami</h2>
+  <p>PraktiQu adalah layanan penjadwalan dan pencatatan praktik untuk psikolog dan klinik di
+     Indonesia. Kami mengelola data janji temu antara praktisi dan kliennya.</p>
+
+  <h2>2. Sinkronisasi Google Calendar</h2>
+  <p>Psikolog dapat menghubungkan Google Calendar pribadinya agar jam yang sudah terisi di sana
+     berhenti ditawarkan sebagai slot kepada pasien. Fitur ini <strong>opsional</strong> dan
+     hanya aktif bila psikolognya sendiri yang menyambungkannya.</p>
+
+  <div class="kotak">
+    <p><strong>Kami hanya melihat kapan Anda sibuk — bukan sedang apa.</strong> Izin yang kami
+       minta secara teknis tidak memungkinkan kami membaca isi kalender Anda.</p>
+  </div>
+
+  <h3>Izin yang kami minta</h3>
+  <table>
+    <tr>
+      <th><code>calendar.freebusy</code></th>
+      <td>Mengembalikan <em>rentang waktu</em> sibuk saja — tanpa judul acara, tanpa keterangan,
+          tanpa lokasi, tanpa nama peserta. Inilah izin tersempit yang Google sediakan untuk
+          keperluan ini.</td>
+    </tr>
+    <tr>
+      <th><code>openid</code>, <code>email</code></th>
+      <td>Menampilkan <em>akun Google mana</em> yang tersambung, agar Anda tahu sambungannya
+          benar. Tidak dipakai untuk hal lain.</td>
+    </tr>
+  </table>
+
+  <h3>Yang tidak kami lakukan</h3>
+  <ul>
+    <li>Kami <strong>tidak membaca</strong> judul, deskripsi, lokasi, lampiran, atau daftar
+        peserta acara Anda — izin yang kami pegang tidak memberikan akses itu.</li>
+    <li>Kami <strong>tidak pernah menulis, mengubah, atau menghapus</strong> apa pun di kalender
+        Anda. Sinkronisasi ini satu arah: kami membaca, tidak menulis.</li>
+    <li>Kami <strong>tidak menjual</strong> data Anda, tidak memakainya untuk iklan, dan tidak
+        memakainya untuk melatih model kecerdasan buatan.</li>
+    <li>Kami tidak membagikan data kalender Anda kepada pasien, klinik, maupun pihak ketiga.
+        Yang pasien lihat hanyalah bahwa sebuah slot tidak tersedia — tanpa alasan apa pun.</li>
+  </ul>
+
+  <h3>Apa yang kami simpan, dan berapa lama</h3>
+  <table>
+    <tr>
+      <th>Token akses Google</th>
+      <td>Disimpan dalam bentuk terenkripsi (AES-256-GCM) agar kami dapat menanyakan ketersediaan
+          Anda secara berkala. Dihapus saat Anda memutus sambungan.</td>
+    </tr>
+    <tr>
+      <th>Alamat email akun Google</th>
+      <td>Ditampilkan di halaman pengaturan Anda. Dihapus saat Anda memutus sambungan.</td>
+    </tr>
+    <tr>
+      <th>Rentang waktu sibuk</th>
+      <td>Disimpan sementara sebagai pasangan jam mulai dan selesai — tanpa isi acara — agar
+          halaman jadwal tidak perlu menghubungi Google berulang kali. Disegarkan tiap menit
+          dan dihapus saat Anda memutus sambungan.</td>
+    </tr>
+  </table>
+
+  <h3>Menghentikan dan menghapusnya</h3>
+  <p>Buka halaman pengaturan sinkronisasi di dashboard PraktiQu dan tekan
+     <strong>Putuskan sambungan</strong>. Token dan seluruh rentang waktu yang tersimpan akan
+     dihapus saat itu juga. Anda juga dapat mencabut akses kami langsung dari
+     <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.</p>
+
+  <h3>Limited Use</h3>
+  <p class="en">PraktiQu's use and transfer of information received from Google APIs to any other
+     app will adhere to the
+     <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google
+     API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+  <h2>3. Data lain yang kami kelola</h2>
+  <p>Di luar integrasi Google, PraktiQu menyimpan data yang diperlukan untuk menjalankan layanan
+     penjadwalan: identitas akun praktisi dan staf klinik, serta data janji temu yang dibuat
+     pasien (nama, email, nomor telepon, layanan yang dipilih, dan waktunya). Data ini hanya
+     dapat diakses oleh praktisi dan klinik yang bersangkutan, dan dipakai semata-mata untuk
+     menjalankan dan mencatat layanan tersebut.</p>
+
+  <h2>4. Hak Anda</h2>
+  <p>Anda berhak meminta salinan data Anda, meminta perbaikan bila ada yang keliru, dan meminta
+     penghapusan. Hubungi kami melalui kanal di bawah, dan sebutkan akun yang dimaksud.</p>
+
+  <h2>5. Perubahan</h2>
+  <p>Bila kebijakan ini berubah, tanggal berlaku di atas akan diperbarui. Perubahan yang
+     memengaruhi cara kami menangani data Google akan kami sampaikan di halaman pengaturan
+     sinkronisasi sebelum berlaku.</p>
+
+  <h2>6. Hubungi kami</h2>
+  <p>WhatsApp: <a href="https://wa.me/6281219486430" rel="noopener">+62 812-1948-6430</a></p>
+
+  <footer>© 2026 PraktiQu · <a href="https://praktiqu.com/">praktiqu.com</a></footer>
+</div>
+</body>
+</html>
