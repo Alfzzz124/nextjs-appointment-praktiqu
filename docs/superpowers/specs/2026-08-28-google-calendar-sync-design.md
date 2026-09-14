@@ -334,6 +334,106 @@ blocking everything at the end.
   approved "warn, never auto-cancel" decision and is not ported unless that decision is
   revisited deliberately.
 
+## Front-end feedback, and what it changed
+
+The Laravel front-end replied on 2026-08-31 (`docs/handover/2026-08-31-frontend-reply-slot-and-google-sync.md`).
+They applied every point of the shipped half within a day, wrote no Part B code as
+asked, and came back with six requests. All six are work on this side. Recorded here
+with the decision taken, so none of them is quietly lost.
+
+### Our change broke their timeout recovery, and they found it
+
+Worth stating first, because it shapes two of the decisions below.
+
+They recover from a timed-out `POST /public/appointments` by asking `/slots` whether
+the slot is still offered: still there means nothing took it, safe to retry; gone
+means they probably took it themselves, do not retry. Hiding past slots added a third
+reason a slot can vanish. On the last bookable hour of the day the patient would
+press Book, time out, see the slot gone because its time had passed, and be told the
+booking "might have gone through", forbidden from retrying, and sent to phone the
+practice about an appointment that did not exist.
+
+They fixed it on their side. The lesson for this design is that **Google Calendar
+adds a fourth reason**, indistinguishable from the others through `/slots`.
+
+### The six requests
+
+| # | Request | Decision |
+|---|---|---|
+| 1 | An endpoint answering "does this appointment exist", to replace their guessing | **Done, in a better shape** — see below |
+| 2 | Exclude Google's holiday/birthday calendars in the backend, not only their picker | **Accepted** — see below |
+| 3 | `lastErrorMessage` must be populated whenever `status` is `error` | **Accepted** — see below |
+| 4 | Say which tenant's settings page the OAuth callback returns to | **Decided** — see below |
+| 5 | `connectedAt` on the status response | **Accepted.** Added to the B3 shape. Their reason is sound: the first question a practice asks about a misbehaving sync is "since when", and `lastCheckedAt` does not answer it |
+| 6 | Tell them when `minBookingNoticeMinutes` is enforced, so they can drop their client filter | **Done** — enforced on both the readers and the write path |
+
+### 1 — idempotency keys, not a lookup endpoint
+
+They asked for a lookup. Their own words were that they wanted to "throw the whole
+guessing heuristic away", and a lookup does not quite get there: if another patient
+took the slot, an appointment exists but is not theirs, so they still have to match on
+identity and still have to guess.
+
+`POST /public/appointments` now accepts an `Idempotency-Key` header instead. Replaying
+the same key returns the same appointment rather than creating a second one, so after
+a timeout they simply send the request again. No heuristic survives, and the fourth
+reason Google adds never matters.
+
+This asks them to change too — they must generate and resend a key — so it is a
+proposal, not an imposition. Shipped optional: a caller that sends no key behaves
+exactly as before.
+
+### 2 — the calendar exclusion belongs on both sides
+
+Accepted, and their argument is the right one: a picker only protects the
+professionals who go through the picker. If `calendarIds` can be set any other way, or
+if the server-side default were ever to include everything, one "Budi's birthday"
+entry erases a whole day of slots and the professional loses a day's income without
+knowing why.
+
+So the exclusion is a server-side rule, not a UI default. The earlier wording in this
+document put it ambiguously between the two layers; this settles it. Protection that
+exists only in the presentation layer is not protection.
+
+### 3 — `error` without a message cannot be rendered
+
+Accepted. The earlier shape allowed `lastErrorMessage: null` on `status: "error"`,
+which leaves them able to show only "something went wrong" — a sentence that gives
+neither the professional nor practice staff a next step.
+
+On `status: "error"` the field is **required and non-empty**. Where the underlying
+cause has no sensible lay wording, it carries a stable machine-readable code they can
+map to their own Indonesian copy. They said they prefer the code, so prefer the code.
+
+### 4 — multi-tenant redirect: `returnUrl`, with an allowlist
+
+They are multi-tenant; their settings URL differs per tenant, so a redirect target
+hard-coded here would land people in the wrong one.
+
+Decided: **they send `returnUrl` when requesting the auth URL, and we store it in the
+OAuth state.** Their preference, and the alternative — deriving it from the
+professional's tenant — puts knowledge of their routing in our code, where it would
+rot.
+
+**The allowlist is not optional.** A redirect target accepted as given is an open
+redirect, in a health application, on a flow that carries an OAuth code. `returnUrl`
+is validated against a configured set of permitted origins and paths, and a
+non-matching value is refused outright rather than falling back to a default —
+a silent fallback would make the misconfiguration invisible.
+
+Their proposed result convention is adopted as-is, since they have no existing one and
+this is a reasonable shape: one parameter with a closed set of values
+(`?gcal=ok|denied|error`), and any failure detail in a second, optional parameter
+(`&reason=token_exchange_failed`) so the first stays switchable.
+
+### What this adds to the write-path gap already recorded
+
+This document already notes that the write path does not consult Google busy times, so
+blocking a slot in the UI would not prevent a booking through hold-and-confirm. The
+front-end reply sharpens why that matters: they cannot tell the reasons a slot vanished
+apart, and each one has opposite consequences for the patient. Closing the write path
+is therefore not only correctness for us — it is what lets them stop guessing.
+
 ## Open questions
 
 None blocking. Two to revisit with real usage:
@@ -341,7 +441,11 @@ None blocking. Two to revisit with real usage:
 1. Whether the 60-second cache TTL is the right trade between freshness and latency.
 2. Whether the all-day exclusion rule holds up, or whether professionals genuinely want
    all-day events to block their day.
-3. How many professionals are connected to KiviCare's integration today
+3. Whether `minBookingNoticeMinutes` should be per-practice rather than the single
+   60-minute constant it is now. Enforced as a constant because that is what the
+   config already promised; a practice that wants a different window has no way to
+   say so yet.
+4. How many professionals are connected to KiviCare's integration today
    (`kc_google_calendar_token` in `wp_usermeta`). This sizes the re-consent communication.
    Unanswered so far: Docker is unreachable from this WSL distro, so the local database could
    not be queried. Needs Docker Desktop WSL integration, or a read-only query on staging.

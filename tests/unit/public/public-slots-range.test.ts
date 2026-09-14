@@ -200,15 +200,16 @@ describe('getPublicSlotsForRange — slots already past', () => {
    * never a valid choice. (The staff reader deliberately keeps them: a receptionist
    * recording this morning's walk-in has to be able to select one.)
    */
-  it('hides the slots of today that have already started', async () => {
+  it('hides a slot closer than the minimum notice, even if it has not started', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
       now: new Date('2026-08-31T10:15:00'),
     });
-    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['11:00:00']);
+    // 11:00 is 45 minutes off, inside the 60-minute notice window.
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual([]);
   });
 
-  it('treats a slot starting exactly now as past', async () => {
+  it('keeps a slot sitting exactly on the notice boundary', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
       now: new Date('2026-08-31T10:00:00'),
@@ -216,14 +217,13 @@ describe('getPublicSlotsForRange — slots already past', () => {
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['11:00:00']);
   });
 
-  it('keeps a slot that has not started yet', async () => {
+  it('keeps the slots that are far enough ahead', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
       now: new Date('2026-08-31T08:59:00'),
     });
-    expect(days?.[0].slots.map((s) => s.startTime)).toEqual([
-      '09:00:00', '10:00:00', '11:00:00',
-    ]);
+    // 09:00 is a minute away; 10:00 is an hour and a minute.
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['10:00:00', '11:00:00']);
   });
 
   it('empties a day that is wholly in the past, without closing later days', async () => {

@@ -10,11 +10,14 @@
  * Repositories are mocked: writes go out over the plugin's REST layer, which is not
  * reachable from a unit test. The repositories themselves have DB-backed coverage.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 vi.mock('@/repositories/wp/doctors.repo', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/repositories/wp/doctors.repo')>()),
   findDoctorById: vi.fn(),
+}));
+vi.mock('@/services/integrations/google-busy.service', () => ({
+  googleBusyForRange: vi.fn(async () => ({})),
 }));
 vi.mock('@/repositories/wp/services.repo', () => ({
   listServicesForDoctor: vi.fn(),
@@ -56,6 +59,7 @@ import {
   ServiceNotFoundError,
   SlotConflictError,
   UpstreamWriteError,
+  BookingTooSoonError,
 } from '@/services/public/public-booking.service';
 
 const DOCTOR = 29;
@@ -64,10 +68,24 @@ const CLINIC = 3;
 const PATIENT = 461;
 const APPOINTMENT = 5150;
 
+/**
+ * Tomorrow, in local clinic time.
+ *
+ * Pinned relative to today rather than hard-coded. The literal this replaces,
+ * `2026-07-15`, had quietly slipped into the past, so every booking in this suite
+ * was exercising a date no patient could actually choose — and it would have hidden
+ * the minimum-notice rule the moment that rule arrived.
+ */
+function tomorrow(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const INPUT = {
   professionalId: DOCTOR,
   serviceId: SERVICE,
-  date: '2026-07-15',
+  date: tomorrow(),
   startTime: '10:00',
   clientName: 'Budi Test',
   clientEmail: 'budi@test.local',
@@ -75,21 +93,31 @@ const INPUT = {
   holdKey: '',
 };
 
-function makeHold() {
+function makeHold(date = INPUT.date, startTime = INPUT.startTime) {
   const key = slotHoldService.buildKey(
     String(INPUT.professionalId),
     String(INPUT.serviceId),
-    INPUT.date,
-    INPUT.startTime,
+    date,
+    startTime,
   );
   slotHoldService.create({
     professionalId: String(INPUT.professionalId),
     serviceId: String(INPUT.serviceId),
-    date: INPUT.date,
-    startTime: INPUT.startTime,
+    date,
+    startTime,
     key,
   });
   return key;
+}
+
+/** A local `YYYY-MM-DD` / `HH:MM` pair `minutes` from now. */
+function slotIn(minutes: number): { date: string; startTime: string } {
+  const t = new Date(Date.now() + minutes * 60_000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return {
+    date: `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`,
+    startTime: `${p(t.getHours())}:${p(t.getMinutes())}`,
+  };
 }
 
 function primeHappyPath() {
@@ -217,6 +245,61 @@ describe('createPublicAppointment', () => {
     await expect(
       createPublicAppointment({ ...INPUT, holdKey: makeHold() }),
     ).rejects.toBeInstanceOf(ServiceNotFoundError);
+  });
+
+  it('refuses a booking closer than the minimum notice', async () => {
+    // Hiding these slots in the readers is not enough on its own: a caller can post
+    // straight to this service, and a patient whose page loaded an hour ago is
+    // holding a list that has since gone stale.
+    const { date, startTime } = slotIn(20);
+    const holdKey = makeHold(date, startTime);
+    await expect(
+      createPublicAppointment({ ...INPUT, date, startTime, holdKey }),
+    ).rejects.toBeInstanceOf(BookingTooSoonError);
+    expect(vi.mocked(createAppointment)).not.toHaveBeenCalled();
+  });
+
+  it('accepts a booking sitting exactly on the notice boundary', async () => {
+    const { date, startTime } = slotIn(61);
+    const holdKey = makeHold(date, startTime);
+    await expect(
+      createPublicAppointment({ ...INPUT, date, startTime, holdKey }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('refuses a slot the professional has blocked in Google Calendar', async () => {
+    // Hiding it in the readers is not enough: a caller can post straight here, and
+    // a page loaded an hour ago is offering a list that has since gone stale.
+    const { googleBusyForRange } = await import('@/services/integrations/google-busy.service');
+    (googleBusyForRange as Mock).mockResolvedValue({
+      // The booking is 10:00-11:00 local; this covers 10:30-11:30.
+      [INPUT.date]: [{ start: 630, end: 690 }],
+    });
+    const holdKey = makeHold();
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
+      SlotConflictError,
+    );
+    // The hold is stale either way; keeping it would block the guest from picking
+    // another time for the rest of its TTL.
+    expect(slotHoldService.get(holdKey)).toBeNull();
+  });
+
+  it('allows a booking that ends exactly when a Google block starts', async () => {
+    const { googleBusyForRange } = await import('@/services/integrations/google-busy.service');
+    (googleBusyForRange as Mock).mockResolvedValue({ [INPUT.date]: [{ start: 660, end: 720 }] });
+    const holdKey = makeHold();
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).resolves.toBeTruthy();
+  });
+
+  it('books anyway when Google cannot be reached', async () => {
+    // googleBusyForRange fails open and returns {}. A Google outage must not stop a
+    // practice taking bookings; the design accepts the occasional double-offer and
+    // handles it by warning the professional.
+    const { googleBusyForRange } = await import('@/services/integrations/google-busy.service');
+    (googleBusyForRange as Mock).mockResolvedValue({});
+    const holdKey = makeHold();
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).resolves.toBeTruthy();
   });
 
   it('throws SlotConflictError and releases the hold when the slot is taken', async () => {

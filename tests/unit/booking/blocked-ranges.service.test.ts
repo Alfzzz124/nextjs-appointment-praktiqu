@@ -1,5 +1,5 @@
 // tests/unit/booking/blocked-ranges.service.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 // Only the two repositories the collector fetches from. `isOffOn` is given its real
 // behaviour below rather than a stub, because "which off day covers which date" is
@@ -12,10 +12,14 @@ vi.mock('@/repositories/wp/appointments.repo', () => ({
   ACTIVE_STATUSES: [1, 2, 4],
   listAppointments: vi.fn(),
 }));
+vi.mock('@/services/integrations/google-busy.service', () => ({
+  googleBusyForRange: vi.fn(async () => ({})),
+}));
 
 import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service';
 import * as offDays from '@/repositories/wp/off-days.repo';
 import * as appts from '@/repositories/wp/appointments.repo';
+import * as google from '@/services/integrations/google-busy.service';
 
 const DOCTOR_ID = 7;
 const MON = '2026-08-31';
@@ -149,5 +153,46 @@ describe('collectBlockedRanges', () => {
     expect(calls).toBeGreaterThan(1);
     expect(calls).toBeLessThanOrEqual(100);
     expect(byDate[MON]).not.toBeNull();
+  });
+});
+
+describe('Google Calendar busy times', () => {
+  it('adds them to the day alongside off days and appointments', async () => {
+    (offDays.listDoctorOffDays as Mock).mockResolvedValue([]);
+    (offDays.isOffOn as Mock).mockReturnValue(false);
+    (appts.listAppointments as Mock).mockResolvedValue({ items: [], total: 0, perPage: 100 });
+    (google.googleBusyForRange as Mock).mockResolvedValue({
+      '2026-09-20': [{ start: 600, end: 660 }],
+    });
+
+    const out = await collectBlockedRanges({ doctorId: 7, from: '2026-09-20', to: '2026-09-20' });
+    expect(out['2026-09-20']).toEqual([{ start: 600, end: 660 }]);
+  });
+
+  it('keeps a day closed rather than reopening it with Google blocks', async () => {
+    // `null` means a full-day off day, which already says everything. Appending
+    // to it would turn "closed" back into "open with some blocks".
+    (offDays.listDoctorOffDays as Mock).mockResolvedValue([{ timeSpecific: false }]);
+    (offDays.isOffOn as Mock).mockReturnValue(true);
+    (appts.listAppointments as Mock).mockResolvedValue({ items: [], total: 0, perPage: 100 });
+    (google.googleBusyForRange as Mock).mockResolvedValue({
+      '2026-09-20': [{ start: 600, end: 660 }],
+    });
+
+    const out = await collectBlockedRanges({ doctorId: 7, from: '2026-09-20', to: '2026-09-20' });
+    expect(out['2026-09-20']).toBeNull();
+  });
+
+  it('passes the professional timezone through, since Google answers in UTC', async () => {
+    (offDays.listDoctorOffDays as Mock).mockResolvedValue([]);
+    (offDays.isOffOn as Mock).mockReturnValue(false);
+    (appts.listAppointments as Mock).mockResolvedValue({ items: [], total: 0, perPage: 100 });
+
+    await collectBlockedRanges({
+      doctorId: 7, from: '2026-09-20', to: '2026-09-20', timeZone: 'Asia/Makassar',
+    });
+    expect(google.googleBusyForRange).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalId: 7, timeZone: 'Asia/Makassar' }),
+    );
   });
 });
