@@ -61,8 +61,18 @@ export function buildDaySlots(input: {
   const { windows, blocked, durationMinutes } = input;
   const slots: DaySlot[] = [];
 
+  // Nilai nol atau negatif diperlakukan sebagai "tidak ada penimpaan", bukan
+  // sebagai ukuran slot. `duration = 0` pada sebuah mapping layanan adalah data
+  // yang tidak bermakna, bukan instruksi — dan `??` hanya jatuh ke cadangan bila
+  // null, sehingga 0 yang tersimpan dulu bertahan sebagai ukuran slot lalu
+  // diam-diam menghasilkan nol slot. Gejalanya halaman booking yang kosong, tanpa
+  // satu pun petunjuk di layar maupun di log. Dua dari 250 mapping hidup punya itu.
+  const override = durationMinutes !== undefined && durationMinutes > 0 ? durationMinutes : undefined;
+
   for (const w of windows) {
-    const duration = durationMinutes ?? w.slotDurationMinutes;
+    const duration = override ?? w.slotDurationMinutes;
+    // Jendela yang memang tidak punya ukuran slot terpakai sama sekali benar-benar
+    // tidak bisa dipesan, dan itu berbeda dari penimpaan yang tidak bermakna.
     if (duration <= 0) continue;
 
     const windowStart = toMinutes(w.startTime);

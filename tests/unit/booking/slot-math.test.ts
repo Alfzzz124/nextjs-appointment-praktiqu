@@ -50,6 +50,36 @@ describe('buildDaySlots', () => {
     expect(slots).toEqual([]);
   });
 
+  it('treats a zero service duration as no override, not as zero-length slots', () => {
+    // `duration = 0` on a service mapping is meaningless data, not an instruction.
+    // `??` only falls back on null, so a stored 0 used to survive as the slot size
+    // and silently emitted nothing — a booking page that was simply empty, with
+    // nothing on screen or in the logs to say why. Two of 250 live mappings had it.
+    expect(buildDaySlots({ windows: [nineToTwelve], blocked: [], durationMinutes: 0 })).toEqual([
+      { startTime: '09:00:00', endTime: '10:00:00' },
+      { startTime: '10:00:00', endTime: '11:00:00' },
+      { startTime: '11:00:00', endTime: '12:00:00' },
+    ]);
+  });
+
+  it('treats a negative service duration the same way', () => {
+    expect(
+      buildDaySlots({ windows: [nineToTwelve], blocked: [], durationMinutes: -30 }).length,
+    ).toBe(3);
+  });
+
+  it('still emits nothing when the window itself has no usable slot size', () => {
+    // Berbeda: di sini memang tidak ada ukuran slot yang bisa dipakai sama sekali,
+    // jadi hari itu benar-benar tidak bisa dipesan.
+    expect(
+      buildDaySlots({
+        windows: [{ startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 0 }],
+        blocked: [],
+        durationMinutes: 0,
+      }),
+    ).toEqual([]);
+  });
+
   it('skips a window whose duration is not positive', () => {
     const slots = buildDaySlots({
       windows: [{ startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 0 }],
