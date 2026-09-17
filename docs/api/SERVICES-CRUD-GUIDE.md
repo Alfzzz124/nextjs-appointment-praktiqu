@@ -468,5 +468,8 @@ memvalidasi request-nya saat runtime** (`npm run openapi`), jadi ia tidak bisa m
 kode. Kalau panduan ini dan spesifikasi itu berbeda, percayai spesifikasinya dan perbaiki
 panduan ini.
 
+Untuk yang mengerjakan dashboard, ada panduan terpisah berisi perubahan konkret yang perlu
+dilakukan di sisi Laravel: [`SERVICES-FRONTEND-GUIDE.md`](SERVICES-FRONTEND-GUIDE.md).
+
 Desain dan alasan di balik keputusannya:
 [`docs/superpowers/specs/2026-08-30-services-crud-design.md`](../superpowers/specs/2026-08-30-services-crud-design.md).
