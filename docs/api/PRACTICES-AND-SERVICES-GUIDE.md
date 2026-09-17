@@ -16,17 +16,17 @@ sebagian besar `docs/api/openapi.yaml` masih hand-maintained (lihat §9).
 Entitasnya sama (`wp_kc_clinics`), namanya saja yang beda. `/kivicare/v1/clinics` itu
 milik plugin WordPress dan tidak dibahas di sini.
 
-**Kedua: "services" di sini artinya penugasan dokter↔service, bukan katalog service.**
+**Kedua: "services" di bagian §5 artinya penugasan dokter↔service, bukan katalog service.**
 
 | Yang kamu mau | Endpoint | Tabel |
 |---|---|---|
-| Lihat/atur service yang ditawarkan seorang dokter | `/api/v1/professionals/{id}/services` | `wp_kc_service_doctor_mapping` |
-| Bikin/edit service baru di katalog | **tidak ada** | `wp_kc_services` |
+| Lihat service yang ditawarkan seorang dokter | `GET /api/v1/professionals/{id}/services` (§5.1) | `wp_kc_service_doctor_mapping` |
+| **Bikin / ubah / pensiunkan service** | **`/api/v1/services`** — lihat [`SERVICES-CRUD-GUIDE.md`](SERVICES-CRUD-GUIDE.md) | `wp_kc_services` + mapping |
 
-Katalog service belum punya endpoint CRUD. Satu-satunya jalur tulis ke `wp_kc_services`
-di kode kita adalah importer ([`import/adapters/services.ts`](../../src/services/billing/import/adapters/services.ts))
-dan pembuatan service ad-hoc dari bill service. Untuk bikin service baru secara normal,
-masih lewat admin KiviCare.
+> **Diperbarui 17 Sep 2026.** Versi lama panduan ini menulis "katalog service belum punya
+> endpoint CRUD" dan menyuruh lewat admin KiviCare. Itu **sudah tidak berlaku** sejak
+> `/api/v1/services` ada (30 Agu 2026). Semua endpoint **tulis** di §5 kini dipensiunkan dan
+> menjawab `410` — yang dibaca (§5.1, §5.6) tetap hidup.
 
 ---
 
@@ -74,8 +74,12 @@ Pakai `accessToken` sebagai `Authorization: Bearer <token>`.
 | `POST /practices/{id}/change-admin` | ✅ | ❌ | ❌ | ❌ |
 | `/practices/bulk/*`, `/practices/export` | ✅ | ❌ | ❌ | ❌ |
 | `GET /professionals/{id}/services` | ✅ | 🔸 se-klinik | 🔸 diri sendiri | 🔸 se-klinik |
-| `POST/DELETE /professionals/{id}/services` | ✅ | 🔸 se-klinik | ❌ | ❌ |
-| `/professionals/{id}/services/bulk/*`, `/export` | ✅ | ⚠️ tanpa cek klinik | ❌ | ❌ |
+| `GET /professionals/{id}/services/export` | ✅ | ⚠️ tanpa cek klinik | ❌ | ❌ |
+| `POST/DELETE /professionals/{id}/services` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
+| `/professionals/{id}/services/bulk/*` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
+| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | baca saja | baca saja |
+
+⛔ = dipensiunkan, menjawab `410 Gone` tanpa memeriksa token sama sekali.
 
 🔸 = dibatasi scope. Untuk `/professionals/*`, scope klinik diambil dari
 `wp_kc_doctor_clinic_mappings` — **bukan** dari `practiceId` di JWT (field itu cuid
@@ -342,6 +346,23 @@ hasilnya — dan di sini filternya benar-benar bekerja dua arah, beda dengan §4
 `{id}` di semua path ini adalah **`wp_users.ID` dokter** (= `wpUserId`), bukan cuid.
 Segmen non-numerik ditolak 400 sebelum menyentuh database.
 
+> ## ⛔ Semua endpoint TULIS di bagian ini dipensiunkan (17 Sep 2026)
+>
+> `POST` (§5.2), `DELETE` (§5.3), `bulk/delete` (§5.4), dan `bulk/status` (§5.5) sekarang
+> menjawab **`410 Gone`** dan menunjuk penggantinya. Pakai `/api/v1/services` —
+> lihat [`SERVICES-CRUD-GUIDE.md`](SERVICES-CRUD-GUIDE.md).
+>
+> **Yang dibaca tetap hidup:** §5.1 (`GET`) dan §5.6 (`export`) tidak berubah.
+>
+> Alasannya bukan kerapian. Keempatnya menulis ke `wp_kc_service_doctor_mapping`, tabel yang
+> sama dengan `/api/v1/services`, tapi dengan aturan berbeda: tanpa pemeriksaan janji temu
+> mendatang, dan `DELETE`-nya **tanpa filter klinik** — satu klik mematikan layanan itu di
+> setiap klinik tempat psikolog tersebut bekerja, termasuk klinik yang adminnya tidak punya
+> hak apa pun atasnya.
+>
+> Penghapusan fisik dijadwalkan **1 Desember 2026**. Sampai saat itu setiap panggilan
+> membalas `410` dengan header `Sunset` dan `Link: rel="successor-version"`.
+
 ### 5.1 `GET /api/v1/professionals/{id}/services`
 
 ```bash
@@ -375,7 +396,13 @@ Yang penting dari bentuk ini:
   dokter tersebut (lihat `wp_kc_clinic_sessions`).
 - `serviceName` memakai alias khusus dokter kalau ada, jatuh ke nama katalog kalau tidak.
 
-### 5.2 `POST /api/v1/professionals/{id}/services` — assign
+### 5.2 `POST /api/v1/professionals/{id}/services` — ⛔ DIPENSIUNKAN (410)
+
+> Pakai `POST /api/v1/services`. Kirim nama dan `categoryId` yang sama dengan layanan yang
+> sudah ada — baris katalognya dipakai ulang, jadi efeknya sama dengan "assign", ditambah
+> bisa mengatur harga dan durasi sekaligus.
+
+<details><summary>Perilaku lama (arsip)</summary>
 
 ```bash
 curl -X POST https://staging2.praktiqu.com/api/v1/professionals/204/services \
@@ -401,7 +428,13 @@ Perilaku yang perlu diantisipasi:
   layer mendukungnya, tapi route-nya tidak meneruskan ketiganya, jadi baris baru memakai
   default. Ubah lewat admin KiviCare atau SQL.
 
-### 5.3 `DELETE /api/v1/professionals/{id}/services?serviceId=...` — unassign
+</details>
+
+### 5.3 `DELETE /api/v1/professionals/{id}/services?serviceId=...` — ⛔ DIPENSIUNKAN (410)
+
+> Pakai `DELETE /api/v1/services/{id}`, dengan `{id}` = id baris penawaran.
+
+<details><summary>Perilaku lama (arsip)</summary>
 
 ```bash
 curl -X DELETE "https://staging2.praktiqu.com/api/v1/professionals/204/services?serviceId=12" \
@@ -414,12 +447,24 @@ Balas `{"ok": true}`. **Ini soft flip (`status = 0`), bukan DELETE row** — app
 lama merujuk baris mapping ini untuk harga dan durasinya; menghapusnya akan mencabut
 keduanya dari booking historis. Mapping tidak ditemukan → 404.
 
-### 5.4 `POST /api/v1/professionals/{id}/services/bulk/delete`
+</details>
+
+### 5.4 `POST /api/v1/professionals/{id}/services/bulk/delete` — ⛔ DIPENSIUNKAN (410)
+
+> Panggil `DELETE /api/v1/services/{id}` per baris.
+
+<details><summary>Perilaku lama (arsip)</summary>
 
 Body `{"serviceIds": [12, 13, 14]}` → `{"updated": 3}`. Isinya **service id**, dan sama
 seperti §5.3 ini soft flip.
 
-### 5.5 `POST /api/v1/professionals/{id}/services/bulk/status`
+</details>
+
+### 5.5 `POST /api/v1/professionals/{id}/services/bulk/status` — ⛔ DIPENSIUNKAN (410)
+
+> Pakai `PUT /api/v1/services/{id}` dengan `{ "status": 0 }` atau `{ "status": 1 }`.
+
+<details><summary>Perilaku lama (arsip)</summary>
 
 ```bash
 curl -X POST https://staging2.praktiqu.com/api/v1/professionals/204/services/bulk/status \
@@ -434,6 +479,8 @@ curl -X POST https://staging2.praktiqu.com/api/v1/professionals/204/services/bul
 
 `status`: `"inactive"` atau `"0"` → nonaktif; **nilai lain apa pun** → aktif. Balas
 `{"updated": n}`.
+
+</details>
 
 ### 5.6 `GET /api/v1/professionals/{id}/services/export`
 

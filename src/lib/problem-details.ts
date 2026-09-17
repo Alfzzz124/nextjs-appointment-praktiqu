@@ -107,6 +107,24 @@ export function conflict(code: string, detail?: string, instance?: string): Prob
   });
 }
 
+/**
+ * 410 — the endpoint existed and was deliberately retired.
+ *
+ * Distinct from 404 on purpose: 404 says "never heard of it", 410 says "it was here, it is
+ * gone, and this is where to go instead". Pair it with `retiredEndpointHeaders` so the
+ * replacement and the removal date travel in the headers too.
+ */
+export function gone(code: string, detail?: string, instance?: string): ProblemDetails {
+  return problem({
+    type: problemUri('gone'),
+    title: 'Gone',
+    status: 410,
+    code,
+    detail,
+    instance,
+  });
+}
+
 /** 422 — validation error. */
 export function validationError(code: string, detail?: string, instance?: string, fields?: Record<string, string[]>): ProblemDetails {
   return problem({
