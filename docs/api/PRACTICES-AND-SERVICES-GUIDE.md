@@ -342,6 +342,15 @@ hasilnya — dan di sini filternya benar-benar bekerja dua arah, beda dengan §4
 `{id}` di semua path ini adalah **`wp_users.ID` dokter** (= `wpUserId`), bukan cuid.
 Segmen non-numerik ditolak 400 sebelum menyentuh database.
 
+> **Endpoint di bagian ini hanya menugaskan layanan yang sudah ada.** Untuk membuat,
+> mengubah, atau mempensiunkan layanannya sendiri, pakai `/api/v1/services` —
+> lihat [`SERVICES-CRUD-GUIDE.md`](SERVICES-CRUD-GUIDE.md).
+>
+> ⚠️ `DELETE` di §5.3, `bulk/delete` di §5.4, dan `bulk/status` di §5.5 menonaktifkan baris
+> yang sama seperti `DELETE /api/v1/services/{id}`, **tanpa** cek janji temu mendatang yang
+> dilakukan endpoint itu. Jadi ketiganya bisa meninggalkan booking yang menyebut layanan yang
+> sudah tidak ditawarkan psikolognya.
+
 ### 5.1 `GET /api/v1/professionals/{id}/services`
 
 ```bash
