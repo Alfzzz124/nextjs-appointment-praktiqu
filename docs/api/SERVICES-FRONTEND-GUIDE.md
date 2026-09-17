@@ -7,6 +7,16 @@ endpoint lengkapnya di [`SERVICES-CRUD-GUIDE.md`](SERVICES-CRUD-GUIDE.md); dokum
 Diverifikasi 17 September 2026 terhadap `raakanaka/laravel-praktiqu` @ `f6386be` dan API di
 staging2.
 
+> ## ✅ Sudah dikerjakan
+>
+> Seluruh isi panduan ini sudah diimplementasikan di branch
+> **`fix/services-field-names-and-duration-step`** pada `raakanaka/laravel-praktiqu`
+> (commit `f67a0bb`), termasuk bug input durasi. 434/434 test FE lolos.
+>
+> Dokumen ini dipertahankan sebagai penjelasan **kenapa** tiap perubahan dibuat — berguna
+> saat me-review PR-nya, dan saat ada yang bertanya-tanya kenapa kategori tidak boleh
+> diketik bebas.
+
 ---
 
 ## 0. Yang paling mendesak: form Tambah Layanan saat ini selalu gagal
