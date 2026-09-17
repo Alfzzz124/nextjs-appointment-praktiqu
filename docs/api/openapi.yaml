@@ -8307,7 +8307,8 @@ paths:
         - professionals
       summary: Services (DELETE) — professionals
       operationId: delete_api_v1_professionals_id_services
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      deprecated: true
+      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `DELETE /api/v1/services/{id}`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
       parameters:
         - name: serviceId
           in: query
@@ -8357,7 +8358,8 @@ paths:
         - professionals
       summary: Services (POST) — professionals
       operationId: post_api_v1_professionals_id_services
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      deprecated: true
+      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `POST /api/v1/services`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
       parameters:
         - name: serviceId
           in: query
@@ -8397,7 +8399,8 @@ paths:
         - professionals
       summary: Delete (POST) — professionals
       operationId: post_api_v1_professionals_id_services_bulk_delete
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      deprecated: true
+      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `DELETE /api/v1/services/{id}`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
       requestBody:
         required: true
         content:
@@ -8431,7 +8434,8 @@ paths:
         - professionals
       summary: Status (POST) — professionals
       operationId: post_api_v1_professionals_id_services_bulk_status
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      deprecated: true
+      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `PUT /api/v1/services/{id}`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
       requestBody:
         required: true
         content:

@@ -1,25 +1,18 @@
 /**
- * GET /api/v1/professionals/[id]/services — list assigned services
- * POST /api/v1/professionals/[id]/services — assign service
- * DELETE /api/v1/professionals/[id]/services — unassign service
+ * GET /api/v1/professionals/[id]/services — list assigned services. Still live.
  *
- * T051: service assignment endpoints (US5)
- * T052: ACTIVE service filter
- * T053: no duplicate assignment
+ * POST and DELETE are RETIRED and answer 410 — see `retired-endpoints.ts` for why, and
+ * for the removal date. Writing to `wp_kc_service_doctor_mapping` is `/api/v1/services`'s
+ * job now; two writers disagreeing about the rules is what this closes.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
-import { forbidden, notFound, validationError, conflict } from '@/lib/problem-details';
-import {
-  listAssignedServices,
-  assignService,
-  unassignService,
-  isServiceAssignmentError,
-} from '@/services/professional/service-assignment.service';
+import { forbidden, notFound } from '@/lib/problem-details';
+import { listAssignedServices } from '@/services/professional/service-assignment.service';
+import { assignRetired, unassignRetired } from '@/services/professional/retired-endpoints';
 import type { Actor } from '@/lib/auth';
 import {
-  canEdit,
   canView,
   invalidIdResponse,
   parseProfessionalId,
@@ -63,105 +56,16 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
 });
 
 // ============================================
-// POST /api/v1/professionals/:id/services — assign service
+// POST /api/v1/professionals/:id/services — RETIRED
 // ============================================
+//
+// No auth check on purpose: the endpoint is gone for everyone, so who is asking does not
+// change the answer. Returning 401 first would imply that a better token would work.
 
-export const POST = withAuth(async (req: NextRequest, ctx: RouteParams) => {
-  const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const id = parseProfessionalId(ctx.params.id);
-  if (id === null) return invalidIdResponse();
-
-  // SUPER_ADMIN and CLINIC_ADMIN can assign (US5)
-  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
-    return NextResponse.json(forbidden('Only Super Admin and Clinic Admin can assign services'), { status: 403 });
-  }
-
-  const { getProfessional } = await import('@/services/professional/professional.service');
-  const professional = await getProfessional(id);
-
-  const scope = await scopeFor(actor, id);
-  if (!scope) {
-    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
-  }
-  if (!canEdit(scope, actor.role)) {
-    return NextResponse.json(
-      forbidden('Cannot assign services to a professional outside your clinic'),
-      { status: 403 },
-    );
-  }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(validationError('invalid_json', 'Request body must be valid JSON'), { status: 400 });
-  }
-
-  const parsedBody = body as { serviceId?: number | string; clinicId?: number };
-  if (!parsedBody?.serviceId) {
-    return NextResponse.json(validationError('missing_service_id', 'serviceId is required'), { status: 422 });
-  }
-
-  try {
-    const result = await assignService(id, Number(parsedBody.serviceId), Number(parsedBody.clinicId ?? scope.kc.clinicId ?? 0), actor.id);
-    return NextResponse.json({ id: result.id, professionalId: id, serviceId: parsedBody.serviceId }, { status: 201 });
-  } catch (err) {
-    if (isServiceAssignmentError(err)) {
-      if (err._tag === 'validation') {
-        return NextResponse.json(validationError('validation_failed', 'Invalid service data', undefined, err.errors), { status: 422 });
-      }
-      if (err._tag === 'not_found') {
-        return NextResponse.json(notFound('service_not_found', 'Service not found'), { status: 404 });
-      }
-      if (err._tag === 'conflict') {
-        return NextResponse.json(conflict(err.code, err.message), { status: 409 });
-      }
-    }
-    throw err;
-  }
-});
+export const POST = async () => assignRetired();
 
 // ============================================
-// DELETE /api/v1/professionals/:id/services?serviceId=...
+// DELETE /api/v1/professionals/:id/services — RETIRED
 // ============================================
 
-export const DELETE = withAuth(async (req: NextRequest, ctx: RouteParams) => {
-  const { actor } = ctx as { actor: Actor; params: RouteParams['params'] };
-  const id = parseProfessionalId(ctx.params.id);
-  if (id === null) return invalidIdResponse();
-  const { searchParams } = req.nextUrl;
-  const serviceId = searchParams.get('serviceId');
-
-  if (!serviceId) {
-    return NextResponse.json(validationError('missing_service_id', 'serviceId query param required'), { status: 400 });
-  }
-
-  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
-    return NextResponse.json(forbidden('Only Super Admin and Clinic Admin can unassign services'), { status: 403 });
-  }
-
-  const scope = await scopeFor(actor, id);
-  if (!scope) {
-    return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
-  }
-  // Clinic scoping now comes from wp_kc_doctor_clinic_mappings rather than the JWT's
-  // practiceId, which was a cuid from the retired shadow schema.
-  if (!canEdit(scope, actor.role)) {
-    return NextResponse.json(
-      forbidden('Cannot unassign services from a professional outside your clinic'),
-      { status: 403 },
-    );
-  }
-
-  try {
-    await unassignService(id, Number(serviceId), actor.id);
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (isServiceAssignmentError(err)) {
-      if (err._tag === 'not_found') {
-        return NextResponse.json(notFound('assignment_not_found', 'Service assignment not found'), { status: 404 });
-      }
-    }
-    throw err;
-  }
-});
+export const DELETE = async () => unassignRetired();

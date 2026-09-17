@@ -36,6 +36,10 @@ import { POST as bulkDeletePost } from '@/app/api/v1/professionals/[id]/services
 import { POST as bulkStatusPost } from '@/app/api/v1/professionals/[id]/services/bulk/status/route';
 import { GET as exportGet } from '@/app/api/v1/professionals/[id]/services/export/route';
 import { getActor } from '@/lib/auth';
+import {
+  bulkDeleteDoctorServices,
+  bulkSetDoctorServiceStatus,
+} from '@/services/professional/service-assignment.service';
 
 // Numeric wp_users.ID since professionals moved to WordPress (D2). The routes now
 // reject a non-numeric id with 400 before reaching the service.
@@ -49,45 +53,46 @@ function makeReq(method: string, url: string, body?: unknown): NextRequest {
   });
 }
 
-describe('POST /professionals/[id]/services/bulk/delete', () => {
-  it('returns 200 with count on success', async () => {
-    const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/delete`, {
-      serviceIds: [101, 102, 103],
-    });
-    const res = await bulkDeletePost(req, { params: { id: PROF_ID } });
-    expect(res.status).toBe(200);
+describe('the retired write endpoints', () => {
+  // These four used to write to wp_kc_service_doctor_mapping without the
+  // upcoming-appointment check /api/v1/services enforces, and without a clinic filter --
+  // so DELETE switched a service off at EVERY clinic the psychologist works at. They now
+  // answer 410. See src/services/professional/retired-endpoints.ts.
+
+  it('bulk/delete answers 410 and points at the replacement', async () => {
+    const res = await bulkDeletePost();
+
+    expect(res.status).toBe(410);
     const body = await res.json();
-    expect(body).toMatchObject({ updated: 3 });
+    expect(body.code).toBe('endpoint_retired');
+    expect(body.replacement).toBe('DELETE /api/v1/services/{id}');
+    expect(bulkDeleteDoctorServices).not.toHaveBeenCalled();
   });
 
-  it('returns 403 for non-admin role', async () => {
-    vi.mocked(getActor).mockResolvedValueOnce({ id: 'user-2', role: 'RECEPTIONIST', practiceId: 'p-1' } as never);
-    const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/delete`, {
-      serviceIds: [101],
-    });
-    const res = await bulkDeletePost(req, { params: { id: PROF_ID } });
-    expect(res.status).toBe(403);
-  });
-});
+  it('bulk/status answers 410', async () => {
+    const res = await bulkStatusPost();
 
-describe('POST /professionals/[id]/services/bulk/status', () => {
-  it('returns 200 with count on success', async () => {
-    const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/status`, {
-      serviceIds: [101, 102],
-      status: 'active',
-    });
-    const res = await bulkStatusPost(req, { params: { id: PROF_ID } });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toMatchObject({ updated: 2 });
+    expect(res.status).toBe(410);
+    expect((await res.json()).replacement).toBe('PUT /api/v1/services/{id}');
+    expect(bulkSetDoctorServiceStatus).not.toHaveBeenCalled();
   });
 
-  it('returns 422 when serviceIds missing', async () => {
-    const req = makeReq('POST', `http://localhost/api/v1/professionals/${PROF_ID}/services/bulk/status`, {
-      status: 'active',
-    });
-    const res = await bulkStatusPost(req, { params: { id: PROF_ID } });
-    expect(res.status).toBe(422);
+  it('carries the headers a client can notice without reading the body', async () => {
+    const res = await bulkDeletePost();
+
+    expect(res.headers.get('Deprecation')).toBe('true');
+    expect(res.headers.get('Sunset')).toBeTruthy();
+    expect(res.headers.get('Link')).toContain('rel="successor-version"');
+  });
+
+  it('never consults auth — the endpoint is gone for everyone', async () => {
+    // Deliberate: checking the token first would answer 401 to an unauthenticated caller,
+    // implying a better token might work. It would not; the endpoint is gone.
+    vi.mocked(getActor).mockClear();
+
+    expect((await bulkDeletePost()).status).toBe(410);
+    expect((await bulkStatusPost()).status).toBe(410);
+    expect(getActor).not.toHaveBeenCalled();
   });
 });
 

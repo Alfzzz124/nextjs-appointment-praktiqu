@@ -348,16 +348,24 @@ benar-benar memakai slot: `BOOKED`, `PENDING`, `CHECK_IN`.
 
 ## 10. Yang perlu diwaspadai
 
-### ⚠️ Gerbang janji temu bisa dilewati lewat endpoint lama
+### ✅ Endpoint ini satu-satunya jalur tulis (sejak 17 Sep 2026)
 
-`DELETE /api/v1/professionals/{id}/services?serviceId=...`, `.../bulk/delete`, dan
-`.../bulk/status` menonaktifkan **baris yang sama** tanpa cek janji temu sama sekali.
+Dulu ada tiga endpoint lain yang menonaktifkan **baris yang sama** tanpa cek janji temu:
+`DELETE /professionals/{id}/services?serviceId=`, `.../bulk/delete`, dan `.../bulk/status`.
+Yang `DELETE` bahkan tidak punya filter klinik — ia mematikan layanan di **setiap klinik**
+tempat psikolog itu bekerja.
 
-Artinya admin yang ditolak `409` di sini bisa tetap mempensiunkan layanannya lewat jalur itu,
-dan meninggalkan booking yang menyebut layanan yang sudah tidak ditawarkan psikolognya.
+Ketiganya, plus `POST` (assign), sekarang menjawab **`410 Gone`** dan menunjuk penggantinya.
+Jadi jaminan di §9 sekarang mutlak: tidak ada jalan lain untuk mempensiunkan penawaran tanpa
+melewati pemeriksaan janji temu.
 
-**Status per 17 September 2026: masih terbuka.** Selama jalur lama masih dipakai frontend,
-jaminan di §9 hanya berlaku kalau dashboard memakai endpoint ini secara eksklusif.
+Penghapusan fisiknya dijadwalkan **1 Desember 2026** (`SUNSET` di
+[`retired-endpoints.ts`](../../src/services/professional/retired-endpoints.ts)). Sampai saat
+itu setiap panggilan membalas `410` dengan header `Deprecation`, `Sunset`, dan
+`Link: rel="successor-version"`.
+
+**Yang dibaca tetap hidup:** `GET /professionals/{id}/services` dan `.../services/export`
+tidak berubah.
 
 ### Tidak ada field "jumlah klien"
 
