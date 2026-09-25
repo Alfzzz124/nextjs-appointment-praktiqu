@@ -19,27 +19,37 @@ export async function resolveKcActor(actor: Actor): Promise<KcActor> {
   }
   const wpUserId = user.wpUserId;
 
+  const clinicId = await resolveClinicId(actor.role, wpUserId);
+  return { actor, wpUserId, clinicId };
+}
+
+/**
+ * The clinic an actor works in, by role. PROFESSIONAL and CLINIC_ADMIN read their first
+ * doctor-clinic mapping (a clinic admin falls back to the clinic they own); RECEPTIONIST
+ * reads the receptionist mapping. Anyone else has none.
+ */
+export async function resolveClinicId(role: Actor['role'], wpUserId: bigint): Promise<bigint | null> {
   let clinicId: bigint | null = null;
-  if (actor.role === 'PROFESSIONAL' || actor.role === 'CLINIC_ADMIN') {
+  if (role === 'PROFESSIONAL' || role === 'CLINIC_ADMIN') {
     const mapping = await prisma.kcDoctorClinicMapping.findFirst({
       where: { doctorId: wpUserId },
       select: { clinicId: true },
     });
     clinicId = mapping?.clinicId ?? null;
     // Fallback for clinic admins who own a clinic but have no doctor mapping.
-    if (clinicId === null && actor.role === 'CLINIC_ADMIN') {
+    if (clinicId === null && role === 'CLINIC_ADMIN') {
       const owned = await prisma.kcClinic.findFirst({
         where: { clinicAdminId: wpUserId },
         select: { id: true },
       });
       clinicId = owned?.id ?? null;
     }
-  } else if (actor.role === 'RECEPTIONIST') {
+  } else if (role === 'RECEPTIONIST') {
     const mapping = await prisma.kcReceptionistClinicMapping.findFirst({
       where: { receptionistId: wpUserId },
       select: { clinicId: true },
     });
     clinicId = mapping?.clinicId ?? null;
   }
-  return { actor, wpUserId, clinicId };
+  return clinicId;
 }

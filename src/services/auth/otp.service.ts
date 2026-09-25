@@ -23,7 +23,7 @@ import {
   hashOtpCode,
 } from '@/lib/auth/otp';
 import { toUserUpsertData, wpLookupByEmail } from '@/lib/auth/wp-auth';
-import { ensureUserFromWordPress, normaliseEmail } from '@/services/auth/service';
+import { ensureUserFromWordPress, normaliseEmail, scopeClinicId } from '@/services/auth/service';
 import { audit } from '@/services/audit';
 import {
   AuthError,
@@ -236,6 +236,7 @@ export async function verifyOtp(input: VerifyOtpInput): Promise<VerifyOtpResult>
       displayName: user.displayName,
       role: user.role,
       wpUserId: user.wpUserId,
+      clinicId: await scopeClinicId(user.role, user.wpUserId),
     },
     ...tokens,
   };
