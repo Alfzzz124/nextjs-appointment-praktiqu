@@ -20,7 +20,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     // The repository filters on active/inactive rather than an arbitrary status
     // integer, since wp_kc_clinics only has the two.
-    const result = await listPractices({ page, limit, includeInactive: status !== 1 });
+    const result = await listPractices({ page, limit, includeInactive: status !== 1 }, gate.actor);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     await logging.error('listPractices failed', err, { path: '/api/v1/practices' });

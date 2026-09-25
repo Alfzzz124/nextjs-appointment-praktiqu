@@ -45,6 +45,11 @@ export type ListClinicsQuery = {
   search?: string;
   /** Inactive clinics are excluded unless explicitly requested. */
   includeInactive?: boolean;
+  /**
+   * Restrict to these clinic ids — an access-control boundary, so an empty array means
+   * "no clinics" and returns nothing, never everything.
+   */
+  ids?: bigint[];
 };
 
 export type PaginatedClinics = {
@@ -151,6 +156,7 @@ export async function listClinics(query: ListClinicsQuery): Promise<PaginatedCli
 
   const where: Record<string, unknown> = {};
   if (!query.includeInactive) where.status = STATUS_ACTIVE;
+  if (query.ids !== undefined) where.id = { in: query.ids };
 
   const search = query.search?.trim();
   if (search) {
