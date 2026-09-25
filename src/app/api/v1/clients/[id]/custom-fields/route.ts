@@ -7,15 +7,32 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/route-guards';
+import type { Actor } from '@/lib/auth';
 import {
   CustomFieldService,
   CustomFieldError,
   customFieldBulkValuesSchema,
 } from '@/services/custom-fields/service';
+import { assertClientAccess, ClientServiceError } from '@/services/client/client.service';
 
 const service = new CustomFieldService();
 
 export const dynamic = 'force-dynamic';
+
+async function accessDenied(actor: Actor, clientId: number): Promise<NextResponse | null> {
+  try {
+    await assertClientAccess(actor, clientId);
+    return null;
+  } catch (err) {
+    if (err instanceof ClientServiceError) {
+      return NextResponse.json(
+        { type: 'about:blank', title: err.message, status: err.status, code: err.code },
+        { status: err.status },
+      );
+    }
+    throw err;
+  }
+}
 
 /** GET /api/v1/clients/:id/custom-fields */
 export async function GET(
@@ -34,6 +51,11 @@ export async function GET(
       { status: 404 },
     );
   }
+
+  // The same visibility rule as GET /clients/:id — without it any signed-in account,
+  // a patient's included, could read or overwrite any other patient's fields.
+  const denied = await accessDenied(gate.actor, entityId);
+  if (denied) return denied;
 
   try {
     const result = await service.getValuesWithFields('client', entityId);
@@ -66,6 +88,11 @@ export async function PUT(
       { status: 404 },
     );
   }
+
+  // The same visibility rule as GET /clients/:id — without it any signed-in account,
+  // a patient's included, could read or overwrite any other patient's fields.
+  const denied = await accessDenied(gate.actor, entityId);
+  if (denied) return denied;
 
   try {
     const body = await req.json();
