@@ -139,6 +139,8 @@ export interface SessionListFilters {
   limit?: number;
   professionalId?: number;
   clientId?: number;
+  /** Clinic filter — narrows the actor's scope, never widens it. */
+  practiceId?: number;
   status?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -380,6 +382,8 @@ export async function listSessions(
   };
 
   // A professional or client sees only their own rows, whatever the query asks for.
+  // `practiceId` is ignored for them too: the FE derives it from a psychologist's first
+  // clinic mapping, so honouring it would hide their sessions at any other clinic.
   if (actor.role === 'PROFESSIONAL') {
     query.professionalId = Number(kc.wpUserId);
   } else if (actor.role === 'CLIENT') {
@@ -387,6 +391,11 @@ export async function listSessions(
   } else {
     const clinic = actorClinic(kc);
     if (clinic !== null) query.clinicId = clinic;
+    // A scoped actor asking for another clinic gets nothing rather than a 403, the same
+    // answer as asking for a professional who is not theirs.
+    if (filters.practiceId !== undefined) {
+      query.clinicId = clinic === null || clinic === filters.practiceId ? filters.practiceId : -1;
+    }
     if (filters.professionalId !== undefined) query.professionalId = filters.professionalId;
     if (filters.clientId !== undefined) query.clientId = filters.clientId;
   }
