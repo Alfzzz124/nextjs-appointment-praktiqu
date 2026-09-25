@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getClientIp } from '@/lib/client-ip';
 import { z } from 'zod';
 import { createHash, randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/db';
@@ -41,10 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
 
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    '0.0.0.0';
+  const ip = getClientIp(req.headers);
   const userAgent = req.headers.get('user-agent') ?? 'unknown';
 
   // Look up the user by email so we can generate the reset link

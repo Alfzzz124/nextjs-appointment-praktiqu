@@ -10,6 +10,7 @@
  */
 
 import { NextRequest } from 'next/server';
+import { clientIpOrNull } from '@/lib/client-ip';
 import { getActor, AuthError } from '@/lib/auth';
 import { resolveKcActor } from '@/services/billing/kc-actor';
 import { SessionNoteAccessError, type SessionNoteActor } from '@/services/session-notes/service';
@@ -52,7 +53,7 @@ export async function callerFromHeaders(
     userId: actor.id,
     wpUserId: Number(kc.wpUserId),
     role: actor.role as SessionNoteActor['role'],
-    ip: req.headers.get('x-forwarded-for') ?? null,
+    ip: clientIpOrNull(req.headers),
     userAgent: req.headers.get('user-agent') ?? null,
     requestId: req.headers.get('x-request-id') ?? null,
     clinicId: kc.clinicId === null ? null : Number(kc.clinicId),

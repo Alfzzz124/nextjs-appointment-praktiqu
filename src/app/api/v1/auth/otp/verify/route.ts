@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getClientIp } from '@/lib/client-ip';
 import { z } from 'zod';
 import { verifyOtp } from '@/services/auth/otp.service';
 import {
@@ -51,10 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
 
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    '0.0.0.0';
+  const ip = getClientIp(req.headers);
   const userAgent = req.headers.get('user-agent') ?? 'unknown';
   const email = parsed.data.email.trim().toLowerCase();
 

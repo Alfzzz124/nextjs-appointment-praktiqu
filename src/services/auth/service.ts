@@ -8,6 +8,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Prisma, RefreshTokenStatus, UserRole, WebhookEventName } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { resolveClinicId } from '@/services/billing/kc-actor';
+import { getClientIp } from '@/lib/client-ip';
 import {
   issueAccessToken,
   issueRefreshToken,
@@ -123,16 +124,6 @@ function ensureUserActive(user: { status: number }, email: string): void {
   }
 }
 
-function getClientIp(headers: Headers | Record<string, string | undefined>): string {
-  if (headers instanceof Headers) {
-    return (
-      headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      headers.get('x-real-ip') ??
-      '0.0.0.0'
-    );
-  }
-  return headers['x-forwarded-for']?.split(',')[0]?.trim() ?? headers['x-real-ip'] ?? '0.0.0.0';
-}
 
 // ─── Login ───────────────────────────────────────────────────────────────
 
