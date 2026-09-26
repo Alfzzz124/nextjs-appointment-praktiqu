@@ -22,7 +22,7 @@ import { WP_ROLES } from '@/lib/auth/role-mapping';
 import { createPatient } from '@/repositories/wp/patients.write';
 import { WpEndpointError } from '@/lib/wp-endpoint';
 import { audit, type LoginFailureMeta } from '@/services/audit';
-import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey, type RateLimiter, type RateLimitVerdict } from '@/lib/rate-limit';
+import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, SUBJECT_RATE_LIMIT_CONFIG, subjectKey, tupleKey, worstVerdict, type RateLimiter, type RateLimitVerdict } from '@/lib/rate-limit';
 
 // ─── Errors ──────────────────────────────────────────────────────────────
 
@@ -93,9 +93,19 @@ function getRateLimiter(): RateLimiter {
   return _rateLimiter;
 }
 
+/** The address-only layer beside `(ip, email)` — see `subjectKey`. */
+let _subjectLimiter: RateLimiter | null = null;
+function getSubjectLimiter(): RateLimiter {
+  if (!_subjectLimiter) {
+    _subjectLimiter = createRateLimiter({ config: SUBJECT_RATE_LIMIT_CONFIG });
+  }
+  return _subjectLimiter;
+}
+
 /** Reset the rate limiter — test-only hook. */
 export function _resetRateLimiterForTests(): void {
   _rateLimiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT_CONFIG });
+  _subjectLimiter = createRateLimiter({ config: SUBJECT_RATE_LIMIT_CONFIG });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -156,10 +166,11 @@ export interface LoginResult {
 export async function login(input: LoginInput): Promise<LoginResult> {
   const email = normaliseEmail(input.email);
   const key = tupleKey(input.ip, email);
+  const subject = subjectKey(email);
 
   // Pre-check rate limit. Record it: an attempt turned away here never reaches
   // WordPress, and leaving it unaudited hid whole lockouts from the audit log.
-  const pre = getRateLimiter().check(key);
+  const pre = worstVerdict(getRateLimiter().check(key), getSubjectLimiter().check(subject));
   if (pre.kind !== 'allow') {
     await audit.loginFailure(
       {
@@ -176,7 +187,10 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 
   const wp = await wpAuthenticate(email, input.password);
   if (!wp.ok) {
-    const post = getRateLimiter().recordFailure(key);
+    const post = worstVerdict(
+      getRateLimiter().recordFailure(key),
+      getSubjectLimiter().recordFailure(subject),
+    );
     await audit.loginFailure(
       {
         attemptedEmail: email,
@@ -209,6 +223,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   // Issue tokens.
   const tokens = await issueTokensForUser(user, input.ip, input.userAgent);
   getRateLimiter().recordSuccess(key);
+  getSubjectLimiter().recordSuccess(subject);
 
   await audit.loginSuccess(
     {

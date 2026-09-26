@@ -11,7 +11,8 @@ const mockLimiter = {
   recordFailure: vi.fn(),
   recordSuccess: vi.fn(),
 };
-vi.mock('@/lib/rate-limit', () => ({
+vi.mock('@/lib/rate-limit', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/rate-limit')>()),
   createRateLimiter: vi.fn(() => mockLimiter),
   DEFAULT_RATE_LIMIT_CONFIG: {},
   tupleKey: vi.fn((a: string, b: string) => `${a}:${b}`),

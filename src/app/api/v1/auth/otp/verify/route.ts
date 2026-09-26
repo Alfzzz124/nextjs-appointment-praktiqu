@@ -18,7 +18,14 @@ import {
   problem,
   problemHeaders,
 } from '@/lib/problem-details';
-import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/rate-limit';
+import {
+  createRateLimiter,
+  DEFAULT_RATE_LIMIT_CONFIG,
+  SUBJECT_RATE_LIMIT_CONFIG,
+  subjectKey,
+  tupleKey,
+  worstVerdict,
+} from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +38,8 @@ const PROBLEM_BASE = process.env.PROBLEM_TYPE_BASE ?? 'https://praktiqu.example.
 /** Guessing protection on top of the per-code attempt counter: the counter stops a single
  *  code being brute-forced, this stops an attacker cycling through fresh codes. */
 const limiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT_CONFIG });
+/** Per address, whatever the IP — see `subjectKey`. */
+const subjectLimiter = createRateLimiter({ config: SUBJECT_RATE_LIMIT_CONFIG });
 
 const BodySchema = z.object({
   email: z.string().email(),
@@ -57,7 +66,8 @@ export async function POST(req: NextRequest) {
   const email = parsed.data.email.trim().toLowerCase();
 
   const key = tupleKey(ip, email);
-  const verdict = limiter.check(key);
+  const subject = subjectKey(email);
+  const verdict = worstVerdict(limiter.check(key), subjectLimiter.check(subject));
   // Refuse anything that is not an explicit allow rather than enumerating verdict kinds:
   // acting only on 'lockout' would leave failed attempts between progressiveAfter and
   // lockoutAfter completely unthrottled, which is exactly the cycling this limiter exists
@@ -72,6 +82,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = await verifyOtp({ email, code: parsed.data.code, ip, userAgent });
     limiter.recordSuccess(key);
+    subjectLimiter.recordSuccess(subject);
 
     // `wpUserId` is a Prisma BigInt, which JSON.stringify cannot serialise — WP user ids
     // are always small integers, so a plain number is safe.
@@ -88,6 +99,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     limiter.recordFailure(key);
+    subjectLimiter.recordFailure(subject);
 
     const code = (err as { code?: string }).code ?? 'unknown';
     const status = (err as { status?: number }).status ?? 500;
