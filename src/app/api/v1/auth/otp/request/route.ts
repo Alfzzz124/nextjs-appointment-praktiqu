@@ -8,10 +8,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getClientIp } from '@/lib/client-ip';
 import { z } from 'zod';
 import { requestOtp } from '@/services/auth/otp.service';
 import { badRequest, tooManyRequests, problemHeaders } from '@/lib/problem-details';
-import { createRateLimiter, tupleKey } from '@/lib/rate-limit';
+import { createRateLimiter, subjectKey, tupleKey, worstVerdict } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,11 @@ const limiter = createRateLimiter({
   },
 });
 
+/** Ten sends per address per quarter hour, whatever the IP — see `subjectKey`. */
+const subjectLimiter = createRateLimiter({
+  config: { windowMs: 15 * 60_000, progressiveAfter: 10, progressiveDelayMs: 0, lockoutAfter: 10, lockoutMs: 15 * 60_000 },
+});
+
 const BodySchema = z.object({ email: z.string().email() });
 
 export async function POST(req: NextRequest) {
@@ -49,15 +55,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
 
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    '0.0.0.0';
+  const ip = getClientIp(req.headers);
   const userAgent = req.headers.get('user-agent') ?? 'unknown';
   const email = parsed.data.email.trim().toLowerCase();
 
   const key = tupleKey(ip, email);
-  const verdict = limiter.check(key);
+  const subject = subjectKey(email);
+  const verdict = worstVerdict(limiter.check(key), subjectLimiter.check(subject));
   // Refuse anything that is not an explicit allow rather than enumerating verdict kinds:
   // acting only on 'lockout' would silently stop rate-limiting the moment progressiveAfter
   // and lockoutAfter diverge (today they're both 5, so 'progressive_delay' never surfaces).
@@ -68,6 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
   limiter.recordFailure(key);
+  subjectLimiter.recordFailure(subject);
 
   const { retryAfterSeconds } = await requestOtp({ email, ip, userAgent });
 

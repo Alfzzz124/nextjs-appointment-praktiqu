@@ -18,7 +18,7 @@ import { ACTIVE_STATUSES, APPOINTMENT_STATUS } from '@/repositories/wp/appointme
  * the active set plus CHECK_OUT, not `ACTIVE_STATUSES` alone (CHECK_OUT is a finished
  * visit and does not block a slot, hence its absence there).
  */
-const QUALIFYING_STATUSES = [...ACTIVE_STATUSES, APPOINTMENT_STATUS.CHECK_OUT];
+export const QUALIFYING_STATUSES: readonly number[] = [...ACTIVE_STATUSES, APPOINTMENT_STATUS.CHECK_OUT];
 
 /**
  * Check whether a professional may access a client record.

@@ -100,6 +100,18 @@ describe('listSessionsQuerySchema', () => {
   it('rejects limit < 1', () => {
     expect(() => listSessionsQuerySchema.parse({ limit: 0 })).toThrow();
   });
+
+  it('accepts practiceId — the Laravel FE sends it on every staff dashboard load', () => {
+    expect(listSessionsQuerySchema.parse({ practiceId: '42', limit: '100' }).practiceId).toBe(42);
+  });
+
+  it('rejects a non-numeric practiceId', () => {
+    expect(() => listSessionsQuerySchema.parse({ practiceId: 'abc' })).toThrow();
+  });
+
+  it('still rejects unknown keys', () => {
+    expect(() => listSessionsQuerySchema.parse({ nope: '1' })).toThrow();
+  });
 });
 
 describe('calendarQuerySchema', () => {

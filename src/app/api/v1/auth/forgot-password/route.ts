@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getClientIp } from '@/lib/client-ip';
 import { z } from 'zod';
 import { createHash, randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/db';
@@ -11,7 +12,7 @@ import { ensureUserFromWordPress } from '@/services/auth/service';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { sendEmail, buildPasswordResetEmail } from '@/lib/email';
 import { badRequest, tooManyRequests, problemHeaders } from '@/lib/problem-details';
-import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/rate-limit';
+import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, subjectKey, tupleKey, worstVerdict } from '@/lib/rate-limit';
 
 /**
  * Without this, anyone could mail a stranger's inbox on demand — and since each request
@@ -19,6 +20,14 @@ import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey } from '@/lib/ra
  * victim is trying to use.
  */
 const limiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT_CONFIG });
+
+/**
+ * Per address, whatever the IP. Five sends a quarter hour is plenty for someone who lost
+ * a password and useless for flooding their inbox. See `subjectKey`.
+ */
+const subjectLimiter = createRateLimiter({
+  config: { windowMs: 15 * 60_000, progressiveAfter: 5, progressiveDelayMs: 0, lockoutAfter: 5, lockoutMs: 15 * 60_000 },
+});
 
 const BodySchema = z.object({
   email: z.string().email(),
@@ -41,19 +50,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
 
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    '0.0.0.0';
+  const ip = getClientIp(req.headers);
   const userAgent = req.headers.get('user-agent') ?? 'unknown';
 
   // Look up the user by email so we can generate the reset link
   const email = parsed.data.email.trim().toLowerCase();
 
   const key = tupleKey(ip, email);
-  const verdict = limiter.check(key);
-  if (verdict.kind === 'lockout') {
-    const retryAfter = Math.ceil(verdict.retryAfterMs / 1000);
+  const subject = subjectKey(email);
+  const verdict = worstVerdict(limiter.check(key), subjectLimiter.check(subject));
+  if (verdict.kind !== 'allow') {
+    const retryAfter = Math.ceil((verdict.kind === 'lockout' ? verdict.retryAfterMs : verdict.delayMs) / 1000);
     const p = tooManyRequests('rate_limited', retryAfter, 'Too many reset requests', '/api/v1/auth/forgot-password');
     return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
   }
@@ -93,12 +100,13 @@ export async function POST(req: NextRequest) {
       text: emailContent.text,
       template: 'password-reset',
     });
-    limiter.recordSuccess(key);
-  } else {
-    // An unknown address is what probing looks like, so it counts against the limiter —
-    // which is invisible to the caller, since the response below never varies.
-    limiter.recordFailure(key);
   }
+  // Every request counts, sent or not. This used to call recordSuccess after a send,
+  // which wiped the counter each time — so a registered address, the one worth
+  // flooding, was never limited at all. Counting both cases alike also keeps lockout
+  // behaviour identical for known and unknown addresses, so it leaks nothing.
+  limiter.recordFailure(key);
+  subjectLimiter.recordFailure(subject);
 
   // Always return 200 to prevent email enumeration.
   return NextResponse.json({ message: 'If that email exists, a reset link has been sent.' }, { status: 200 });

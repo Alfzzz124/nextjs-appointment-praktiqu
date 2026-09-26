@@ -121,6 +121,41 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
 }
 
 /** Build a rate-limit key for `(ip, email)`. */
+/**
+ * Key for the address-only layer. Every `(ip, email)` limiter on an auth route has one
+ * beside it, because the IP half cannot be trusted: without a vouched IP (see
+ * src/lib/client-ip.ts) it is the first X-Forwarded-For entry, which a direct caller
+ * sets to anything. Rotating it gave each guess a fresh tuple and so an unlimited
+ * number of guesses against one account. This layer ignores the IP, so it holds however
+ * the IP is forged; its thresholds are looser so that genuine users behind one address
+ * are not locked out by it first.
+ */
+export function subjectKey(email: string | null): string {
+  return `*|${(email ?? '').toLowerCase().trim()}`;
+}
+
+/** The stricter of two verdicts: lockout > progressive delay > allow, longest wait wins. */
+export function worstVerdict(a: RateLimitVerdict, b: RateLimitVerdict): RateLimitVerdict {
+  const rank = (v: RateLimitVerdict) => (v.kind === 'lockout' ? 2 : v.kind === 'progressive_delay' ? 1 : 0);
+  const wait = (v: RateLimitVerdict) =>
+    v.kind === 'lockout' ? v.retryAfterMs : v.kind === 'progressive_delay' ? v.delayMs : 0;
+  if (rank(a) !== rank(b)) return rank(a) > rank(b) ? a : b;
+  return wait(a) >= wait(b) ? a : b;
+}
+
+/**
+ * Looser thresholds for the address-only layer: 30 failures in 15 minutes, then 15
+ * minutes locked. Three times the per-tuple limit, so it only bites when the tuple layer
+ * is being dodged.
+ */
+export const SUBJECT_RATE_LIMIT_CONFIG: RateLimitConfig = {
+  windowMs: 15 * 60_000,
+  progressiveAfter: 30,
+  progressiveDelayMs: 0,
+  lockoutAfter: 30,
+  lockoutMs: 15 * 60_000,
+};
+
 export function tupleKey(ip: string, email: string | null): string {
   return `${ip}|${(email ?? '').toLowerCase().trim()}`;
 }

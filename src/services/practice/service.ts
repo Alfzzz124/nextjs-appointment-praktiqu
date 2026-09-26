@@ -159,14 +159,27 @@ export interface ListOptions {
   includeInactive?: boolean;
 }
 
+/**
+ * Pass `actor` from any route: a CLINIC_ADMIN then sees only their own clinic, the
+ * rule `assertPracticeInScope` already applies to `/practices/:id`. Without it the list
+ * returned every clinic, which the Laravel FE rightly flagged as out-of-scope data and
+ * so hid every clinic admin's statistics behind a warning banner.
+ */
 export async function listPractices(
   options: ListOptions = {},
+  actor?: Actor,
 ): Promise<{ data: PracticeDTO[]; total: number }> {
+  let ids: bigint[] | undefined;
+  if (actor && actor.role !== 'SUPER_ADMIN') {
+    const kc = await resolveKcActor(actor);
+    ids = kc.clinicId === null ? [] : [kc.clinicId];
+  }
   const { items, total } = await listClinicRows({
     page: options.page ?? 1,
     perPage: options.limit ?? 20,
     search: options.search,
     includeInactive: options.includeInactive,
+    ids,
   });
   return { data: items.map(toPracticeDTO), total };
 }

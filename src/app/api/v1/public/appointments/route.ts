@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { clientIpOrNull } from '@/lib/client-ip';
 import {
   createPublicAppointment,
   getPublicAppointmentById,
@@ -35,11 +36,7 @@ export const dynamic = 'force-dynamic';
 const limiter = createRateLimiter({ config: { lockoutAfter: 30, windowMs: 15 * 60_000 } });
 
 function clientIp(req: NextRequest): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'unknown'
-  );
+  return clientIpOrNull(req.headers) ?? 'unknown';
 }
 
 export async function POST(req: NextRequest) {

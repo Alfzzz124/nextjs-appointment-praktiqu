@@ -26,8 +26,10 @@ import {
   findPatientById,
   listPatients,
   type ClientStatus,
+  type ListPatientsQuery,
   type WpPatient,
 } from '@/repositories/wp/patients.repo';
+import { QUALIFYING_STATUSES } from '@/services/client/access-control';
 import { createPatient, updatePatient } from '@/repositories/wp/patients.write';
 import { WpEndpointError } from '@/lib/wp-endpoint';
 import { type CreateClientInput, type ListClientsQuery, type UpdateClientInput } from './validation';
@@ -149,12 +151,25 @@ function visibleClinics(kc: KcActor): bigint[] | undefined {
   return kc.clinicId === null ? [] : [kc.clinicId];
 }
 
+/**
+ * The list scope for an actor. A PROFESSIONAL is scoped to the patients they have
+ * actually seen (BR-10.01), not to their clinic: the clinic scope handed a psychologist
+ * every patient of every colleague, and — since `resolveKcActor` picks only their first
+ * clinic mapping — hid their own patients at any second clinic.
+ */
+function listScope(kc: KcActor): Pick<ListPatientsQuery, 'clinicIds' | 'seenByDoctor'> {
+  if (kc.actor.role === 'PROFESSIONAL') {
+    return { seenByDoctor: { doctorId: kc.wpUserId, statuses: QUALIFYING_STATUSES } };
+  }
+  return { clinicIds: visibleClinics(kc) };
+}
+
 async function loadForActor(kc: KcActor, id: number): Promise<WpPatient> {
   const patient = await findPatientById(BigInt(id));
   if (!patient) {
     throw new ClientServiceError('Client not found', { status: 404, code: 'not_found' });
   }
-  enforceClientReadAccess(kc, patient);
+  await enforceClientReadAccess(kc, patient);
   return patient;
 }
 
@@ -162,7 +177,7 @@ async function loadForActor(kc: KcActor, id: number): Promise<WpPatient> {
 /* Access control                                                      */
 /* ------------------------------------------------------------------ */
 
-export function enforceClientReadAccess(kc: KcActor, patient: WpPatient): void {
+export async function enforceClientReadAccess(kc: KcActor, patient: WpPatient): Promise<void> {
   const { role } = kc.actor;
 
   if (role === 'SUPER_ADMIN') return;
@@ -176,7 +191,26 @@ export function enforceClientReadAccess(kc: KcActor, patient: WpPatient): void {
     return;
   }
 
-  if (role === 'CLINIC_ADMIN' || role === 'RECEPTIONIST' || role === 'PROFESSIONAL') {
+  if (role === 'PROFESSIONAL') {
+    // BR-10.01 — the same rule the list applies, so a record hidden from the list
+    // cannot be opened by guessing its id.
+    const seen = await prisma.kcAppointment.count({
+      where: {
+        doctorId: kc.wpUserId,
+        patientId: patient.id,
+        status: { in: [...QUALIFYING_STATUSES] },
+      },
+    });
+    if (seen === 0) {
+      throw new ClientServiceError('Forbidden: not one of your clients', {
+        status: 403,
+        code: 'forbidden',
+      });
+    }
+    return;
+  }
+
+  if (role === 'CLINIC_ADMIN' || role === 'RECEPTIONIST') {
     if (kc.clinicId === null || patient.clinicId !== kc.clinicId) {
       throw new ClientServiceError('Forbidden: client is not in your clinic', {
         status: 403,
@@ -272,6 +306,16 @@ export async function getClient(args: GetClientArgs): Promise<ClientDetail> {
   return { ...toClient(patient), sessionCount: await sessionCountFor(patient.id) };
 }
 
+/**
+ * Throws `ClientServiceError` (404/403) unless the actor may see this client. For
+ * sub-resources such as custom fields, which hang off a client id but do not load the
+ * client themselves.
+ */
+export async function assertClientAccess(actor: Actor, id: number): Promise<void> {
+  const kc = await resolveKcActor(actor);
+  await loadForActor(kc, id);
+}
+
 export interface ListClientsArgs {
   actor: Actor;
   query: ListClientsQuery;
@@ -285,7 +329,7 @@ export async function listClients(args: ListClientsArgs): Promise<PaginatedRespo
     page: query.page,
     perPage: query.limit,
     search: query.search,
-    clinicIds: visibleClinics(kc),
+    ...listScope(kc),
     statuses: query.status ? [query.status as ClientStatus] : undefined,
   });
 

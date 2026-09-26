@@ -69,6 +69,12 @@ export const listSessionsQuerySchema = z
     clientId: z.string().optional(),
     professionalId: z.string().optional(),
     serviceId: z.string().optional(),
+    /**
+     * Clinic filter. It can only NARROW the actor's own scope (see listSessions). The
+     * Laravel FE sends it on every staff dashboard load; rejecting it as an unknown key
+     * 422'd the whole list, so every clinic admin saw "no appointments".
+     */
+    practiceId: z.coerce.number().int().positive().optional(),
     dateFrom: isoDate.optional(),
     dateTo: isoDate.optional(),
   })

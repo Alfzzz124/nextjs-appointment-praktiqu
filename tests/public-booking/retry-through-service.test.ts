@@ -58,10 +58,20 @@ const CLINIC = 4;
 const PATIENT = 911;
 const APPOINTMENT = 6001;
 
+/**
+ * A date safely past the minimum booking lead time, computed rather than written down.
+ * This used to be the literal '2026-09-20'; once that day passed, every booking in the
+ * suite was refused as `booking_too_soon` before the retry logic under test ever ran.
+ */
+function daysFromNowInJakarta(days: number): string {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d);
+}
+
 const BASE = {
   professionalId: DOCTOR,
   serviceId: SERVICE,
-  date: '2026-09-20',
+  date: daysFromNowInJakarta(30),
   startTime: '10:00',
   clientName: 'Rafiq Adha',
   clientEmail: 'rafiqadha2001@gmail.com',

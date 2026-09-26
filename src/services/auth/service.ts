@@ -7,6 +7,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Prisma, RefreshTokenStatus, UserRole, WebhookEventName } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { resolveClinicId } from '@/services/billing/kc-actor';
+import { getClientIp } from '@/lib/client-ip';
 import {
   issueAccessToken,
   issueRefreshToken,
@@ -20,7 +22,7 @@ import { WP_ROLES } from '@/lib/auth/role-mapping';
 import { createPatient } from '@/repositories/wp/patients.write';
 import { WpEndpointError } from '@/lib/wp-endpoint';
 import { audit, type LoginFailureMeta } from '@/services/audit';
-import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, tupleKey, type RateLimiter, type RateLimitVerdict } from '@/lib/rate-limit';
+import { createRateLimiter, DEFAULT_RATE_LIMIT_CONFIG, SUBJECT_RATE_LIMIT_CONFIG, subjectKey, tupleKey, worstVerdict, type RateLimiter, type RateLimitVerdict } from '@/lib/rate-limit';
 
 // ─── Errors ──────────────────────────────────────────────────────────────
 
@@ -91,9 +93,19 @@ function getRateLimiter(): RateLimiter {
   return _rateLimiter;
 }
 
+/** The address-only layer beside `(ip, email)` — see `subjectKey`. */
+let _subjectLimiter: RateLimiter | null = null;
+function getSubjectLimiter(): RateLimiter {
+  if (!_subjectLimiter) {
+    _subjectLimiter = createRateLimiter({ config: SUBJECT_RATE_LIMIT_CONFIG });
+  }
+  return _subjectLimiter;
+}
+
 /** Reset the rate limiter — test-only hook. */
 export function _resetRateLimiterForTests(): void {
   _rateLimiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT_CONFIG });
+  _subjectLimiter = createRateLimiter({ config: SUBJECT_RATE_LIMIT_CONFIG });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -122,16 +134,6 @@ function ensureUserActive(user: { status: number }, email: string): void {
   }
 }
 
-function getClientIp(headers: Headers | Record<string, string | undefined>): string {
-  if (headers instanceof Headers) {
-    return (
-      headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      headers.get('x-real-ip') ??
-      '0.0.0.0'
-    );
-  }
-  return headers['x-forwarded-for']?.split(',')[0]?.trim() ?? headers['x-real-ip'] ?? '0.0.0.0';
-}
 
 // ─── Login ───────────────────────────────────────────────────────────────
 
@@ -152,6 +154,8 @@ export interface LoginResult {
     displayName: string;
     role: UserRole;
     wpUserId: bigint | null;
+    /** See `scopeClinicId`. */
+    clinicId: number | null;
   };
   accessToken: string;
   accessTokenExpiresAt: Date;
@@ -162,10 +166,11 @@ export interface LoginResult {
 export async function login(input: LoginInput): Promise<LoginResult> {
   const email = normaliseEmail(input.email);
   const key = tupleKey(input.ip, email);
+  const subject = subjectKey(email);
 
   // Pre-check rate limit. Record it: an attempt turned away here never reaches
   // WordPress, and leaving it unaudited hid whole lockouts from the audit log.
-  const pre = getRateLimiter().check(key);
+  const pre = worstVerdict(getRateLimiter().check(key), getSubjectLimiter().check(subject));
   if (pre.kind !== 'allow') {
     await audit.loginFailure(
       {
@@ -182,7 +187,10 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 
   const wp = await wpAuthenticate(email, input.password);
   if (!wp.ok) {
-    const post = getRateLimiter().recordFailure(key);
+    const post = worstVerdict(
+      getRateLimiter().recordFailure(key),
+      getSubjectLimiter().recordFailure(subject),
+    );
     await audit.loginFailure(
       {
         attemptedEmail: email,
@@ -215,6 +223,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   // Issue tokens.
   const tokens = await issueTokensForUser(user, input.ip, input.userAgent);
   getRateLimiter().recordSuccess(key);
+  getSubjectLimiter().recordSuccess(subject);
 
   await audit.loginSuccess(
     {
@@ -237,9 +246,26 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       displayName: user.displayName,
       role: user.role,
       wpUserId: user.wpUserId,
+      clinicId: await scopeClinicId(user.role, user.wpUserId),
     },
     ...tokens,
   };
+}
+
+/**
+ * The clinic a single-clinic staff role is bound to, for clients that scope by it.
+ *
+ * Only CLINIC_ADMIN and RECEPTIONIST get one. Without it the Laravel FE guessed an
+ * admin's clinic by sweeping /practices for a matching email (which stopped at the
+ * first page) and never found a receptionist's at all, so their dashboards came up
+ * empty. A PROFESSIONAL deliberately gets `null`: they can work at several clinics,
+ * and the FE treats this value as a clinic override (schedule saves, service lists),
+ * so a first-mapping guess would lock them out of every clinic but one.
+ */
+export async function scopeClinicId(role: UserRole, wpUserId: bigint | null): Promise<number | null> {
+  if (wpUserId === null || (role !== 'CLINIC_ADMIN' && role !== 'RECEPTIONIST')) return null;
+  const clinicId = await resolveClinicId(role, wpUserId);
+  return clinicId === null ? null : Number(clinicId);
 }
 
 // ─── Token issuance (shared) ────────────────────────────────────────────
@@ -426,6 +452,7 @@ export async function getMeFromAccessToken(accessToken: string) {
     displayName: user.displayName,
     role: user.role,
     wpUserId: user.wpUserId,
+    clinicId: await scopeClinicId(user.role, user.wpUserId),
     emailVerified: user.emailVerified,
   };
 }
@@ -724,6 +751,7 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
       displayName: user.displayName,
       role: user.role,
       wpUserId: user.wpUserId,
+      clinicId: await scopeClinicId(user.role, user.wpUserId),
     },
     ...tokens,
   };

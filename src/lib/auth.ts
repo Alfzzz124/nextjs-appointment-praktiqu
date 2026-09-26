@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { clientIpOrNull } from '@/lib/client-ip';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -65,7 +66,7 @@ export function withAuth<T>(
       const actor = await getActor(req);
       return await handler(req, {
         actor,
-        ip: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? null,
+        ip: clientIpOrNull(req.headers),
         userAgent: req.headers.get('user-agent') ?? null,
         params: (((ctx as any)?.params) ?? {}) as T,
       });

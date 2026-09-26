@@ -113,6 +113,12 @@ export type ListPatientsQuery = {
    * no status meta at all — those created directly in KiviCare.
    */
   statuses?: readonly ClientStatus[];
+  /**
+   * Restrict to patients this doctor (`wp_users.ID`) has at least one appointment with
+   * in one of `seenStatuses`. Like `clinicIds`, an access-control boundary: it is how a
+   * PROFESSIONAL sees only their own clients (BR-10.01) instead of the whole clinic.
+   */
+  seenByDoctor?: { doctorId: bigint; statuses: readonly number[] };
 };
 
 export type PaginatedPatients = {
@@ -261,6 +267,21 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
         : '';
       where.push(`(m_${CLIENT_STATUS_META_KEY}.meta_value IN (${placeholders}) ${nullIsActive})`);
       args.push(...query.statuses);
+    }
+  }
+
+  if (query.seenByDoctor !== undefined) {
+    const { doctorId, statuses } = query.seenByDoctor;
+    if (statuses.length === 0) {
+      where.push('1 = 0');
+    } else {
+      where.push(`EXISTS (
+        SELECT 1 FROM wp_kc_appointments a
+        WHERE a.patient_id = u.ID
+          AND a.doctor_id = ?
+          AND a.status IN (${statuses.map(() => '?').join(',')})
+      )`);
+      args.push(doctorId, ...statuses);
     }
   }
 
