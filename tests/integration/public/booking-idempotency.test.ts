@@ -14,6 +14,7 @@ import {
   completeIdempotencyKey,
   releaseIdempotencyKey,
   fingerprintOf,
+  bookingFingerprintOf,
 } from '@/services/public/booking-idempotency.service';
 
 const KEY = 'test-idem-0001';
@@ -84,5 +85,21 @@ describe('fingerprintOf', () => {
 
   it('differs when a value differs', () => {
     expect(fingerprintOf({ a: 1 })).not.toBe(fingerprintOf({ a: 2 }));
+  });
+});
+
+describe('bookingFingerprintOf', () => {
+  const booking = { professionalId: 7, serviceId: 3, date: '2026-09-20', startTime: '09:00', clientEmail: 'a@b.c' };
+
+  it('ignores holdKey — a retry after a timeout takes a fresh hold and must still replay', () => {
+    expect(bookingFingerprintOf({ ...booking, holdKey: 'hold-1' })).toBe(
+      bookingFingerprintOf({ ...booking, holdKey: 'hold-2' }),
+    );
+  });
+
+  it('still tells different bookings apart', () => {
+    expect(bookingFingerprintOf({ ...booking, holdKey: 'h' })).not.toBe(
+      bookingFingerprintOf({ ...booking, startTime: '10:00', holdKey: 'h' }),
+    );
   });
 });
