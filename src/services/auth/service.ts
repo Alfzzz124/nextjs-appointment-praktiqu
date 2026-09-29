@@ -9,6 +9,7 @@ import { Prisma, RefreshTokenStatus, UserRole, WebhookEventName } from '@prisma/
 import { prisma } from '@/lib/db';
 import { resolveClinicId } from '@/services/billing/kc-actor';
 import { getClientIp } from '@/lib/client-ip';
+import { findWpAccountStatus } from '@/repositories/wp/account-status.repo';
 import {
   issueAccessToken,
   issueRefreshToken,
@@ -354,6 +355,28 @@ export async function refresh(input: RefreshInput): Promise<RefreshResult> {
   const user = await prisma.user.findUnique({ where: { id: row.userId } });
   if (!user) throw new TokenRevokedError();
   ensureUserActive(user, user.email);
+
+  // `users.status` is only synced at login, so re-read the account's WordPress status
+  // here — otherwise a deactivated account keeps refreshing forever. See
+  // findWpAccountStatus. Everything the user holds is revoked, not just this token.
+  if (user.wpUserId !== null) {
+    const wpStatus = await findWpAccountStatus(user.wpUserId);
+    if (wpStatus !== 'active') {
+      await prisma.user.update({ where: { id: user.id }, data: { status: 0 } });
+      await prisma.refreshToken.updateMany({
+        where: { userId: user.id, status: RefreshTokenStatus.ACTIVE },
+        data: { status: RefreshTokenStatus.REVOKED, revokedAt: new Date() },
+      });
+      await audit.tokenRevoke({
+        userId: user.id,
+        timestamp: new Date().toISOString(),
+        ip: input.ip,
+        refreshTokenId: row.id,
+        reason: 'account_inactive',
+      });
+      throw new InactiveUserError();
+    }
+  }
 
   // Rotate: mark old as revoked, issue a new one in the same family.
   const issued = await issueTokensForUser(user, input.ip, input.userAgent, row.familyId);

@@ -196,6 +196,8 @@ describe('createPublicAppointment', () => {
     expect(result.service).toBe('Konseling Individu');
     expect(result.professionalName).toBe('Dewi Santoso');
     expect(verifyAppointmentIdToken(result.token)).toBe(APPOINTMENT);
+    // The clinic the service mapping put it in — a personal-link booking has no other way to know.
+    expect(result.clinicId).toBe(CLINIC);
 
     const args = vi.mocked(createAppointment).mock.calls[0][0];
     expect(args.doctorId).toBe(DOCTOR);

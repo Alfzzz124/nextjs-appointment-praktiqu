@@ -119,6 +119,11 @@ export type ListPatientsQuery = {
    * PROFESSIONAL sees only their own clients (BR-10.01) instead of the whole clinic.
    */
   seenByDoctor?: { doctorId: bigint; statuses: readonly number[] };
+  /**
+   * Registration order. `u.ID` is WordPress's insert order, so it doubles as "joined
+   * when". Defaults to oldest-first, which is what every caller got before this existed.
+   */
+  order?: 'asc' | 'desc';
 };
 
 export type PaginatedPatients = {
@@ -303,7 +308,7 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
        FROM wp_users AS u
        ${metaJoins(META_KEYS)}
       WHERE ${whereSql}
-      ORDER BY u.ID ASC
+      ORDER BY u.ID ${query.order === 'desc' ? 'DESC' : 'ASC'}
       LIMIT ? OFFSET ?`,
     ...args,
     perPage,

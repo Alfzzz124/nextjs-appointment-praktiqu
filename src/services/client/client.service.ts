@@ -331,6 +331,7 @@ export async function listClients(args: ListClientsArgs): Promise<PaginatedRespo
     search: query.search,
     ...listScope(kc),
     statuses: query.status ? [query.status as ClientStatus] : undefined,
+    order: query.sort === 'newest' ? 'desc' : 'asc',
   });
 
   const counts = await sessionCountsFor(items.map((p) => p.id));
@@ -342,6 +343,7 @@ export async function listClients(args: ListClientsArgs): Promise<PaginatedRespo
     email: p.email,
     mobileNumber: p.mobileNumber,
     status: p.status,
+    clinicId: p.clinicId === null ? null : Number(p.clinicId),
     sessionCount: counts.get(p.id.toString()) ?? 0,
     createdAt: p.registeredAt,
   }));

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { signAppointmentToken } from '@/lib/public/appointment-token';
 import { clientIpOrNull } from '@/lib/client-ip';
 import {
   createPublicAppointment,
@@ -80,9 +81,18 @@ export async function POST(req: NextRequest) {
         );
         return NextResponse.json(p, { status: p.status });
       }
-      // 200, not 201: this request created nothing.
+      // 200, not 201: this request created nothing. The token rides along exactly as
+      // on the first response: without it a caller whose first POST timed out has
+      // the booking but can neither pay for it nor look it up — which is the very
+      // case this mechanism exists for, and why the Laravel FE could not adopt it
+      // (2026-09-25 FE audit, API-13 / BK-13). It is an HMAC of the id, so re-signing
+      // reproduces the original; the replay already required this key AND a body
+      // with the same fingerprint.
       limiter.recordSuccess(key);
-      return NextResponse.json({ data: existing }, { status: 200 });
+      return NextResponse.json(
+        { data: { ...existing, token: signAppointmentToken(existing.id) } },
+        { status: 200 },
+      );
     }
 
     if (claim.kind === 'in_progress') {

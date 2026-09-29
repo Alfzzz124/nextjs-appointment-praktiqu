@@ -136,6 +136,12 @@ export const listClientsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().min(1).max(100).optional(),
   status: clientStatusSchema.optional(),
+  /**
+   * `newest` lists the most recently registered first. Without it a dashboard that
+   * loads one page of 100 only ever saw the 100 OLDEST clients, so anyone who signed
+   * up recently was invisible (2026-09-25 FE audit, DD-2). Default stays `oldest`.
+   */
+  sort: z.enum(['newest', 'oldest']).default('oldest'),
 });
 export type ListClientsQuery = z.infer<typeof listClientsQuerySchema>;
 

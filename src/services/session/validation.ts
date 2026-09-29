@@ -101,11 +101,26 @@ export const statusUpdateSchema = z
 export type StatusUpdateBody = z.infer<typeof statusUpdateSchema>;
 
 /** Helper: validate that `dateTo >= dateFrom` when both present. */
+/**
+ * A reversed range is the caller's mistake, so it must answer 422. It was a plain
+ * `Error`, which the route's catch-all turned into a 500 — a server fault in the logs
+ * for what is a typo in a date picker. The route already maps any error carrying
+ * `code` + `status` to that status.
+ */
+export class DateRangeError extends Error {
+  readonly code = 'invalid_date_range';
+  readonly status = 422;
+  constructor() {
+    super('dateFrom must be on or before dateTo');
+    this.name = 'DateRangeError';
+  }
+}
+
 export function assertDateRange(query: {
   dateFrom?: string;
   dateTo?: string;
 }): void {
   if (query.dateFrom && query.dateTo && query.dateFrom > query.dateTo) {
-    throw new Error('dateFrom must be on or before dateTo');
+    throw new DateRangeError();
   }
 }

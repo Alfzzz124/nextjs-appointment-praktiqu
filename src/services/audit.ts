@@ -80,7 +80,7 @@ export interface TokenRevokeMeta {
   timestamp: string;
   ip: string;
   refreshTokenId: string;
-  reason: 'logout' | 'password_change' | 'family_replay' | 'webhook' | 'admin';
+  reason: 'logout' | 'password_change' | 'family_replay' | 'webhook' | 'admin' | 'account_inactive';
 }
 export interface PasswordChangeMeta {
   userId: string;

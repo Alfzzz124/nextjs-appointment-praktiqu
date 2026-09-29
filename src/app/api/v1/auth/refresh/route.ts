@@ -44,6 +44,13 @@ export async function POST(req: NextRequest) {
       const p = unauthorized(code, 'Token expired or revoked', '/api/v1/auth/refresh');
       return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
     }
+    // A deactivated account: refresh() has already revoked every token it held, so the
+    // session is over — say so with 401 like any dead token. This used to fall through
+    // to the 503 below, which clients read as "backend down, retry" rather than "sign in".
+    if (code === 'inactive') {
+      const p = unauthorized('inactive', 'Account is inactive', '/api/v1/auth/refresh');
+      return NextResponse.json(p, { status: p.status, headers: problemHeaders(p) });
+    }
     // eslint-disable-next-line no-console
     console.error('[auth/refresh] error:', err);
     const p = serviceUnavailable('internal_error', 'An unexpected error occurred', '/api/v1/auth/refresh');

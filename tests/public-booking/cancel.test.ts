@@ -75,6 +75,7 @@ describe('getPublicAppointmentById', () => {
       service: 'Consultation',
       professionalName: 'Dr. Smith',
       clientName: 'Jane Doe',
+      clinicId: 3,
     });
   });
 
