@@ -143,4 +143,14 @@ describe('assertDateRange', () => {
   it('throws when dateFrom > dateTo', () => {
     expect(() => assertDateRange({ dateFrom: '2026-06-30', dateTo: '2026-06-01' })).toThrow();
   });
+
+  it('throws a 422-shaped error, not a bare Error the route would turn into a 500', () => {
+    let caught: unknown;
+    try {
+      assertDateRange({ dateFrom: '2026-06-30', dateTo: '2026-06-01' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toMatchObject({ code: 'invalid_date_range', status: 422 });
+  });
 });
