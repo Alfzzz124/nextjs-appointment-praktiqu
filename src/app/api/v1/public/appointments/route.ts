@@ -27,7 +27,7 @@ import {
   claimIdempotencyKey,
   completeIdempotencyKey,
   releaseIdempotencyKey,
-  fingerprintOf,
+  bookingFingerprintOf,
 } from '@/services/public/booking-idempotency.service';
 import { isTransientBackendFailure, TRANSIENT_RETRY_AFTER_SECONDS } from '@/lib/transient-failure';
 import { withRetry } from '@/lib/retry';
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   const idempotencyKey = req.headers.get('Idempotency-Key')?.trim() || null;
 
   if (idempotencyKey) {
-    const claim = await claimIdempotencyKey(idempotencyKey, fingerprintOf(parsed.data));
+    const claim = await claimIdempotencyKey(idempotencyKey, bookingFingerprintOf(parsed.data));
 
     if (claim.kind === 'replay') {
       const existing = await getPublicAppointmentById(claim.appointmentId);

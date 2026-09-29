@@ -32,7 +32,7 @@ vi.mock('@/services/public/booking-idempotency.service', () => ({
   claimIdempotencyKey: vi.fn(),
   completeIdempotencyKey: vi.fn(),
   releaseIdempotencyKey: vi.fn(),
-  fingerprintOf: vi.fn(() => 'fp'),
+  bookingFingerprintOf: vi.fn(() => 'fp'),
 }));
 
 import { POST } from '@/app/api/v1/public/appointments/route';
