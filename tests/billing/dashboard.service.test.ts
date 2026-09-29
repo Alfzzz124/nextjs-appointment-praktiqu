@@ -28,6 +28,9 @@ describe('dashboard.service', () => {
       await seedBill({ id: 9_000_600, clinicId: CLINIC, actualAmount: '100.00', createdAt: '2026-07-10 12:00:00' });
       await seedBill({ id: 9_000_601, clinicId: CLINIC, actualAmount: '200.00', createdAt: '2026-08-10 12:00:00' });
 
+      // One in-scope UNPAID bill: billed, but not revenue.
+      await seedBill({ id: 9_000_603, clinicId: CLINIC, actualAmount: '50.00', createdAt: '2026-08-12 12:00:00', paymentStatus: 'unpaid' });
+
       // One out-of-scope bill (different clinic) that must NOT count.
       await seedBill({ id: 9_000_602, clinicId: CLINIC + 999, actualAmount: '999.00', createdAt: '2026-07-15 12:00:00' });
     });
@@ -38,8 +41,11 @@ describe('dashboard.service', () => {
       expect(stats.appointments).toBe(3);
       expect(stats.active_appointments).toBe(2);
       expect(stats.patients).toBe(2);
-      expect(stats.bills).toBe(2);
+      expect(stats.bills).toBe(3);
+      expect(stats.paid_bills).toBe(2);
+      // Revenue is money received: the unpaid 50.00 is billed, not earned.
       expect(stats.revenue).toBe(300);
+      expect(stats.billed).toBe(350);
     });
 
     it('getTopProfessionals returns scoped rows', async () => {
@@ -70,6 +76,7 @@ describe('dashboard.service', () => {
       const { chart } = await getRevenueChart(params, scopeClinic);
       const total = chart.reduce((sum, c) => sum + c.revenue, 0);
       expect(total).toBe(300);
+      expect(chart.reduce((sum, c) => sum + c.billed, 0)).toBe(350);
       expect(chart.some((c) => c.bucket === '2026-07')).toBe(true);
       expect(chart.some((c) => c.bucket === '2026-08')).toBe(true);
     });

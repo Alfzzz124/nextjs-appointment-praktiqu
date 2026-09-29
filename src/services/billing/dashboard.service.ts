@@ -35,8 +35,15 @@ export async function getStatistics(p: DashboardParams, scope: DashboardScope | 
   if (p.dateTo) { dateB.push('b.created_at <= ?'); dateArgsB.push(p.dateTo + ' 23:59:59'); }
   const billWhere = [b.sql, ...dateB].join(' AND ');
   const billJoin = b.joinEnc ? 'LEFT JOIN wp_kc_patient_encounters e ON b.encounter_id = e.id' : '';
+  // `revenue` is money actually received — paid bills only. It used to sum every bill,
+  // unpaid included, while the Reports page counted paid only, so the two disagreed and
+  // the dashboard overstated takings; the Laravel FE had to relabel the card "Total
+  // Tagihan" (2026-09-25 audit, DD-8/API-14). The all-bills figure is kept as `billed`.
   const billRows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT COUNT(*) AS bills, COALESCE(SUM(CAST(b.actual_amount AS DECIMAL(15,2))), 0) AS revenue
+    `SELECT COUNT(*) AS bills,
+            SUM(CASE WHEN b.payment_status = 'paid' THEN 1 ELSE 0 END) AS paid_bills,
+            COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN CAST(b.actual_amount AS DECIMAL(15,2)) ELSE 0 END), 0) AS revenue,
+            COALESCE(SUM(CAST(b.actual_amount AS DECIMAL(15,2))), 0) AS billed
      FROM wp_kc_bills b ${billJoin} WHERE ${billWhere}`, ...b.args, ...dateArgsB);
 
   return {
@@ -44,7 +51,9 @@ export async function getStatistics(p: DashboardParams, scope: DashboardScope | 
     appointments: Number(apptRows[0]?.total ?? 0),
     active_appointments: Number(apptRows[0]?.active ?? 0),
     bills: Number(billRows[0]?.bills ?? 0),
+    paid_bills: Number(billRows[0]?.paid_bills ?? 0),
     revenue: Number(billRows[0]?.revenue ?? 0),
+    billed: Number(billRows[0]?.billed ?? 0),
   };
 }
 
@@ -88,7 +97,10 @@ export async function getRevenueChart(p: DashboardParams, scope: DashboardScope 
   if (p.dateTo) { dates.push('b.created_at <= ?'); dargs.push(p.dateTo + ' 23:59:59'); }
   const where = [b.sql, ...dates].join(' AND ');
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT DATE_FORMAT(b.created_at, '${fmt}') AS bucket, COALESCE(SUM(CAST(b.actual_amount AS DECIMAL(15,2))), 0) AS revenue
+    // Paid only, like getStatistics().revenue; `billed` carries the all-bills line.
+    `SELECT DATE_FORMAT(b.created_at, '${fmt}') AS bucket,
+            COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN CAST(b.actual_amount AS DECIMAL(15,2)) ELSE 0 END), 0) AS revenue,
+            COALESCE(SUM(CAST(b.actual_amount AS DECIMAL(15,2))), 0) AS billed
      FROM wp_kc_bills b ${join} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`, ...b.args, ...dargs);
-  return { chart: rows.map((r) => ({ bucket: r.bucket, revenue: Number(r.revenue) })) };
+  return { chart: rows.map((r) => ({ bucket: r.bucket, revenue: Number(r.revenue), billed: Number(r.billed) })) };
 }

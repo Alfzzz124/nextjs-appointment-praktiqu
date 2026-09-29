@@ -293,6 +293,7 @@ export async function seedAppointment(data: Partial<{
  */
 export async function seedBill(data: Partial<{
   id: number; clinicId: number; encounterId: number; actualAmount: string; createdAt: string;
+  paymentStatus: 'paid' | 'unpaid';
 }>) {
   assertTestDb();
   const id = data.id ?? TEST_MARKER + 600;
@@ -304,7 +305,7 @@ export async function seedBill(data: Partial<{
     data.encounterId ?? TEST_MARKER + 500,
     data.actualAmount ?? '100.00',
     1,
-    'paid',
+    data.paymentStatus ?? 'paid',
     data.createdAt ?? '2026-07-10 12:00:00',
     data.clinicId ?? TEST_MARKER + 1,
   );
