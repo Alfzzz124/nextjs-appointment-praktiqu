@@ -87,6 +87,20 @@ describe('with an Idempotency-Key', () => {
     expect(await res.json()).toMatchObject({ data: { id: 99 } });
   });
 
+  it('hands back the same token the first response carried', async () => {
+    // Without it a caller whose first POST timed out holds a booking it can neither
+    // pay for nor look up — the exact case replays exist for.
+    const { verifyAppointmentToken } = await import('@/lib/public/appointment-token');
+    (idem.claimIdempotencyKey as any).mockResolvedValue({ kind: 'replay', appointmentId: 99 });
+    const { token: _omitted, ...view } = APPT; // the lookup view carries no token
+    (booking.getPublicAppointmentById as any).mockResolvedValue(view);
+
+    const res = await POST(req('k1'));
+    const body = (await res.json()) as { data: { token?: string } };
+    expect(body.data.token).toBeTruthy();
+    expect(verifyAppointmentToken(body.data.token!)).toBe('99');
+  });
+
   it('answers 409 with Retry-After while another attempt holds the key', async () => {
     (idem.claimIdempotencyKey as any).mockResolvedValue({ kind: 'in_progress' });
     const res = await POST(req('k1'));
