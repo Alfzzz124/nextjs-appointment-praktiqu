@@ -55,6 +55,11 @@ export interface ClientListItem {
   email: string;
   mobileNumber: string | null;
   status: ClientStatus;
+  /**
+   * The patient's first clinic mapping (KiviCare can map one patient to several).
+   * Lets list screens show a Klinik column without a request per row.
+   */
+  clinicId: number | null;
   sessionCount: number;
   createdAt: Date;
 }

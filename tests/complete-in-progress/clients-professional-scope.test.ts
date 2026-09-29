@@ -164,6 +164,30 @@ describe('listClients — PROFESSIONAL scope', () => {
   });
 });
 
+describe('listClients — sort and clinicId', () => {
+  const ids = (page: { data: Array<{ id: number }> }) => page.data.map((c) => c.id);
+
+  it('lists newest-registered first with sort=newest', async () => {
+    const page = await listClients({ actor: clinicAdmin, query: { page: 1, limit: 100, sort: 'newest' } as never });
+    expect(ids(page)).toEqual([CANCELLED_ONLY, COLLEAGUES, SEEN]);
+  });
+
+  it('keeps oldest-first as the default, as every caller got before', async () => {
+    const page = await listClients({ actor: clinicAdmin, query: { page: 1, limit: 100 } as never });
+    expect(ids(page)).toEqual([SEEN, COLLEAGUES, CANCELLED_ONLY]);
+  });
+
+  it('puts the first page on the newest clients, not the oldest', async () => {
+    const page = await listClients({ actor: clinicAdmin, query: { page: 1, limit: 1, sort: 'newest' } as never });
+    expect(ids(page)).toEqual([CANCELLED_ONLY]);
+  });
+
+  it('carries each client’s clinicId', async () => {
+    const page = await listClients({ actor: clinicAdmin, query: { page: 1, limit: 100 } as never });
+    expect(page.data.every((c) => c.clinicId === Number(CLINIC))).toBe(true);
+  });
+});
+
 describe('getClient — PROFESSIONAL scope', () => {
   it('opens a client the professional has seen', async () => {
     const client = await getClient({ actor: professional, id: SEEN });
