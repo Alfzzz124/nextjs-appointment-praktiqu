@@ -160,6 +160,13 @@ export interface CreatedAppointment {
   service: string;
   professionalName: string;
   clientName: string;
+  /**
+   * The clinic the booking landed in. The backend picks it from the service mapping,
+   * so a guest booking through a psychologist's personal link could not otherwise
+   * tell its clinic — the Laravel FE stored `clinic_id` null for those, and clinic
+   * admins never saw them (2026-09-25 FE audit, BK-14).
+   */
+  clinicId: number;
   token: string;
 }
 
@@ -392,6 +399,7 @@ export async function createPublicAppointment(
     service: service.nameAlias ?? service.name,
     professionalName,
     clientName: input.clientName,
+    clinicId,
     token: signAppointmentToken(created.id),
   };
 }
@@ -408,6 +416,8 @@ export interface PublicAppointmentView {
   service: string;
   professionalName: string;
   clientName: string;
+  /** See CreatedAppointment.clinicId. */
+  clinicId: number;
 }
 
 export class AppointmentNotFoundError extends Error {
@@ -442,6 +452,7 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
     service: await serviceNameFor(row.serviceIds),
     professionalName: row.professionalName,
     clientName: row.clientName,
+    clinicId: row.clinicId,
   };
 }
 
