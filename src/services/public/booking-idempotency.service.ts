@@ -32,6 +32,21 @@ export function fingerprintOf(input: unknown): string {
   return createHash('sha256').update(canonical(input)).digest('hex');
 }
 
+/**
+ * Fingerprint of a public booking request — what makes two requests "the same booking".
+ *
+ * `holdKey` is left out. It is a ticket for the slot, not part of the booking: a caller
+ * retrying after a timeout takes a FRESH hold first (the old one may have expired or
+ * been consumed by the very write that timed out). Fingerprinting it made exactly that
+ * retry — the one this mechanism exists for — answer 422 idempotency_key_reused
+ * instead of replaying the booking that had landed. Everything that identifies the
+ * booking (who, with whom, which service, when) still counts.
+ */
+export function bookingFingerprintOf(input: Record<string, unknown>): string {
+  const { holdKey: _ticket, ...booking } = input;
+  return fingerprintOf(booking);
+}
+
 function canonical(v: unknown): string {
   if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
