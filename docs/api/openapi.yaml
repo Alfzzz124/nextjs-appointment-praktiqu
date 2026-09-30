@@ -9011,6 +9011,74 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
       security: []
+  /api/v1/public/professionals/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: WordPress user id of the professional (`wp_users.ID`), plain digits.
+        schema:
+          type: integer
+    get:
+      tags:
+        - public
+      summary: Get one active professional
+      operationId: get_api_v1_public_professionals_id
+      description: >-
+        One ACTIVE professional as `{ data }`, in exactly the shape of one `items` entry of
+        `GET /api/v1/public/professionals` (same `fullName`). Unlike that directory, which
+        returns only the 50 lowest ids, this finds any professional.
+
+
+        404 for an unknown, non-ACTIVE or non-positive-integer id.
+
+
+        **Response envelope:** standard / RFC-7807 problem+json
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security: []
+  /api/v1/public/professionals/by-slug/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        description: >-
+          Personal-link slug. Normalised with the front end's slugify before matching:
+          ASCII-only lowercase, every run outside `[a-z0-9]` becomes `-`, dashes trimmed.
+        schema:
+          type: string
+    get:
+      tags:
+        - public
+      summary: Resolve a personal link to its professional
+      operationId: get_api_v1_public_professionals_by_slug_slug
+      description: >-
+        The ACTIVE professional whose slugified `fullName` equals the (normalised) slug, as
+        `{ data }` in the same shape as `GET /api/v1/public/professionals/{id}`. Searches
+        every active professional. When several names slugify alike, the lowest id wins.
+
+
+        404 when nothing matches or the slug normalises to nothing.
+
+
+        **Response envelope:** standard / RFC-7807 problem+json
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security: []
   /api/v1/public/professionals/{id}/services:
     parameters:
       - name: id

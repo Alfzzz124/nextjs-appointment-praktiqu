@@ -205,6 +205,55 @@ export async function findDoctorById(id: bigint): Promise<WpDoctor | null> {
   return rows.length > 0 ? toDoctor(rows[0]) : null;
 }
 
+/** The fields a doctor's display name is assembled from, plus the status gate. */
+export type WpDoctorName = Pick<
+  WpDoctor,
+  'id' | 'email' | 'displayName' | 'firstName' | 'lastName' | 'status'
+>;
+
+const NAME_META_KEYS = ['first_name', 'last_name', PROFESSIONAL_STATUS_META_KEY] as const;
+
+type NameRow = {
+  ID: bigint | number;
+  user_email: string;
+  display_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  praktiqu_professional_status: string | null;
+};
+
+/**
+ * Every doctor's name fields and status, lowest id first. Unpaginated.
+ *
+ * For lookups that must consider every doctor to find one — `listDoctors` pages at 100
+ * and drags `basic_data` and five more meta joins along per row. Deliberately omits
+ * `user_registered`: nothing here needs it, and WordPress's zero-date default is exactly
+ * the kind of value that fails a whole result set rather than one row.
+ *
+ * Status goes through the same `toProfessionalStatus` as `findDoctorById`, so a caller
+ * filtering on it agrees with a follow-up read by id.
+ */
+export async function listDoctorNames(): Promise<WpDoctorName[]> {
+  const rows = await prisma.$queryRawUnsafe<NameRow[]>(
+    `SELECT u.ID, u.user_email, u.display_name,
+            ${metaSelects(NAME_META_KEYS)}
+       FROM wp_users AS u
+       ${metaJoins(NAME_META_KEYS)}
+      WHERE ${HAS_ROLE_SQL}
+      ORDER BY u.ID ASC`,
+    ...ROLE_ARGS,
+  );
+
+  return rows.map((row) => ({
+    id: BigInt(row.ID),
+    email: row.user_email,
+    displayName: row.display_name,
+    firstName: str(row.first_name),
+    lastName: str(row.last_name),
+    status: toProfessionalStatus(row.praktiqu_professional_status),
+  }));
+}
+
 export async function listDoctors(query: ListDoctorsQuery): Promise<PaginatedDoctors> {
   const { page, perPage, offset } = paginate(query.page, query.perPage);
 
