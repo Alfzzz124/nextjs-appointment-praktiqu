@@ -31,6 +31,7 @@ import {
 } from '@/services/public/booking-idempotency.service';
 import { isTransientBackendFailure, TRANSIENT_RETRY_AFTER_SECONDS } from '@/lib/transient-failure';
 import { withRetry } from '@/lib/retry';
+import { isStaffRequest, scheduleUnpaidBookingCancel } from '@/services/public/unpaid-booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,6 +122,13 @@ export async function POST(req: NextRequest) {
     const appointment = await withRetry(() => createPublicAppointment(parsed.data));
     if (idempotencyKey) await completeIdempotencyKey(idempotencyKey, appointment.id);
     limiter.recordSuccess(key);
+    // A guest who never reaches checkout would otherwise hold this slot forever: the
+    // only other release is the payment auto-cancel, scheduled when a payment starts.
+    // Staff bookings are exempt; they are marked paid by hand later. Neither call
+    // throws, which matters here: the booking exists, and the catch below would answer
+    // 500 and free the Idempotency-Key for a retry that books twice. Only a request that
+    // created something gets here, so a replay does not schedule a second release.
+    if (!(await isStaffRequest(req))) await scheduleUnpaidBookingCancel(appointment.id);
     return NextResponse.json({ data: appointment }, { status: 201 });
   } catch (err) {
     // Hand the key back so an honest retry can claim it. This rests on the same

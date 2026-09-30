@@ -52,6 +52,39 @@ export async function getActor(req: NextRequest): Promise<Actor> {
   }
 }
 
+/**
+ * The actor behind a request on a route that does NOT require one, or null.
+ *
+ * For public routes that treat a signed-in caller differently without turning a guest
+ * away. It never throws: a missing, malformed or forged bearer is simply "nobody",
+ * which is how the route already treats every guest.
+ *
+ * `expiredGraceSeconds` accepts a token whose `exp` passed up to that long ago. The
+ * signature is still verified in full, so the identity is one we issued; only its
+ * freshness is relaxed. Use it only where the answer grants nothing (deciding what NOT
+ * to do to a booking, say) and never to authorise anything.
+ */
+export async function optionalActor(
+  req: NextRequest,
+  opts: { expiredGraceSeconds?: number } = {},
+): Promise<Actor | null> {
+  const header = req.headers.get('authorization');
+  if (!header?.startsWith('Bearer ')) return null;
+  try {
+    const { payload } = await jwtVerify(header.slice('Bearer '.length), JWT_SECRET, {
+      clockTolerance: opts.expiredGraceSeconds ?? 0,
+    });
+    if (!payload.sub) return null;
+    return {
+      id: payload.sub as string,
+      role: (payload.role as Actor['role']) ?? 'CLIENT',
+      practiceId: (payload.practiceId as string | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Convenience wrapper for Next.js route handlers. */
 export function withAuth<T>(
   handler: (req: NextRequest, ctx: AuthContext & { params: T }) => Promise<NextResponse>,

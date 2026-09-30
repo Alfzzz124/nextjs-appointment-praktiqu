@@ -13,6 +13,10 @@ import { processWebhook } from '@/lib/jobs/webhook-handler';
 // satu-satunya yang membuat handler terdaftar. JANGAN hapus sebagai "impor tak terpakai" —
 // tests/unit/session/reminder-registration.test.ts menjaga ini.
 import '@/services/session/reminder-handler';
+// Same reason, for `booking.unpaid_cancel`. Without it an abandoned guest booking is
+// never released and its slot stays blocked; tests/unit/public/unpaid-booking-registration.test.ts
+// guards this import.
+import '@/services/public/unpaid-booking';
 
 export const dynamic = 'force-dynamic';
 
