@@ -205,6 +205,23 @@ export async function findDoctorById(id: bigint): Promise<WpDoctor | null> {
   return rows.length > 0 ? toDoctor(rows[0]) : null;
 }
 
+/**
+ * Clinics a doctor is mapped to (`wp_kc_doctor_clinic_mappings`), lowest id first.
+ *
+ * Selects `clinic_id` alone. KiviCare fills `created_at` in its mapping tables with
+ * `0000-00-00` zero-dates, and Prisma fails the whole query on one, so reading the row
+ * would 500 the endpoint for every doctor carrying such a mapping. The table has no
+ * unique constraint either, so a pairing can repeat; each clinic is reported once.
+ */
+export async function listDoctorClinicIds(doctorId: bigint): Promise<bigint[]> {
+  const rows = await prisma.kcDoctorClinicMapping.findMany({
+    where: { doctorId },
+    select: { clinicId: true },
+    orderBy: { clinicId: 'asc' },
+  });
+  return [...new Set(rows.map((r) => r.clinicId))];
+}
+
 /** The fields a doctor's display name is assembled from, plus the status gate. */
 export type WpDoctorName = Pick<
   WpDoctor,

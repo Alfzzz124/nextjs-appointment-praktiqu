@@ -8074,7 +8074,12 @@ paths:
         - professionals
       summary: Get professionals by id
       operationId: get_api_v1_professionals_id
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        The professional, plus `clinicIds: number[]` — every clinic they are mapped to
+        (`wp_kc_doctor_clinic_mappings`), lowest first, `[]` for none.
+
+
+        **Response envelope:** standard / RFC-7807 problem+json
       responses:
         '200':
           description: Success
