@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.6.7
+Stable tag: 1.6.8
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -53,6 +53,13 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.6.8 =
+* Security (SEC-9): POST /authenticate checks the password BEFORE the
+  account status. A wrong password for an inactive or blocked account now
+  answers 401 invalid_credentials like any other wrong password, instead of
+  403 inactive, which let anyone learn an account was deactivated without
+  knowing its password. Only a correct password reveals the inactive state.
 
 = 1.6.7 =
 * New job hook praktiqu_booking_unpaid_cancel. PraktiQU schedules it when a
