@@ -22,7 +22,8 @@ export type JobHook =
   | 'praktiqu_session_auto_complete'
   | 'praktiqu_session_send_reminder'
   | 'praktiqu_log_purge'
-  | 'praktiqu_payment_auto_cancel';
+  | 'praktiqu_payment_auto_cancel'
+  | 'praktiqu_booking_unpaid_cancel';
 
 /** Cancel a previously enqueued job by hook + matcher args. */
 export interface CancelJobOptions {

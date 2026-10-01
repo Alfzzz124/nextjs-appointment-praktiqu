@@ -14,6 +14,8 @@
  *   - praktiqu_session_auto_complete   — session CHECK_OUT → COMPLETED after 24h
  *   - praktiqu_session_send_reminder   — T-24h or T-1h reminder trigger
  *   - praktiqu_log_purge              — daily log retention purge
+ *   - praktiqu_payment_auto_cancel    — cancel a WC order whose payment window expired
+ *   - praktiqu_booking_unpaid_cancel  — release a guest booking nobody started paying for
  *
  * Action Scheduler is a soft dependency. If WooCommerce / Action Scheduler
  * is not active, the enqueue endpoint returns 503 and the job is dropped
@@ -53,6 +55,7 @@ final class Jobs
         add_action('praktiqu_session_send_reminder', [$this, 'handle_session_send_reminder'], 10, 2);
         add_action('praktiqu_log_purge', [$this, 'handle_log_purge'], 10, 0);
         add_action('praktiqu_payment_auto_cancel', [$this, 'handle_payment_auto_cancel'], 10, 1);
+        add_action('praktiqu_booking_unpaid_cancel', [$this, 'handle_booking_unpaid_cancel'], 10, 1);
 
         // Daily purge schedule (registers a recurring AS event on activation).
         // The actual schedule registration lives in Plugin::on_activation.
@@ -76,6 +79,7 @@ final class Jobs
             'praktiqu_session_send_reminder',
             'praktiqu_log_purge',
             'praktiqu_payment_auto_cancel',
+            'praktiqu_booking_unpaid_cancel',
         ];
         if (!in_array($hook, $allowed, true)) {
             return false;
@@ -159,6 +163,26 @@ final class Jobs
         // here, or a single auto-cancel fires two webhooks (see the comment on
         // on_order_status_changed() for the bug this used to cause).
         $this->payments->cancel_order($wcOrderId);
+    }
+
+    /**
+     * Release a guest booking that nobody went on to pay for.
+     *
+     * PraktiQU schedules this when POST /public/appointments creates a PENDING
+     * booking. A PENDING booking blocks its slot, and until a payment starts
+     * nothing else would ever release it (praktiqu_payment_auto_cancel is only
+     * scheduled once there is a WC order to cancel).
+     *
+     * Args: [appointmentId (int)]. We only notify PraktiQU. It re-reads the
+     * booking and its payment orders and decides there, so a booking that was
+     * paid, confirmed or cancelled in the meantime is left alone and this
+     * handler needs no guard of its own.
+     */
+    public function handle_booking_unpaid_cancel(int $appointment_id): void
+    {
+        $this->jobs_webhook->send('booking.unpaid_cancel', [
+            'appointmentId' => $appointment_id,
+        ]);
     }
 
     /**
