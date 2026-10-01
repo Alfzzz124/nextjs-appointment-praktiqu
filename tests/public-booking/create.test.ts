@@ -249,6 +249,56 @@ describe('createPublicAppointment', () => {
     ).rejects.toBeInstanceOf(ServiceNotFoundError);
   });
 
+  describe('when the caller names a clinic', () => {
+    // A professional who works at two clinics offers the same catalogue service at
+    // both. Without `clinicId` the first mapping wins — the staff manual-booking form
+    // sent its clinic, and it was silently dropped by the schema.
+    const OTHER_CLINIC = 5;
+
+    beforeEach(() => {
+      const mapping = (clinicId: number) => ({
+        mappingId: BigInt(10 + clinicId),
+        serviceId: BigInt(SERVICE),
+        doctorId: BigInt(DOCTOR),
+        clinicId: BigInt(clinicId),
+        name: 'Konseling Individu',
+        type: 'KONSELING',
+        charges: '350000',
+        durationMinutes: 60,
+        isPublic: true,
+        isActive: true,
+        telemedService: null,
+        nameAlias: null,
+      });
+      vi.mocked(listServicesForDoctor).mockImplementation(async (opts) =>
+        [mapping(CLINIC), mapping(OTHER_CLINIC)].filter(
+          (m) => opts.clinicId === undefined || m.clinicId === opts.clinicId,
+        ),
+      );
+    });
+
+    it('books into that clinic, not the first mapping found', async () => {
+      await createPublicAppointment({ ...INPUT, clinicId: OTHER_CLINIC, holdKey: makeHold() });
+
+      expect(vi.mocked(listServicesForDoctor).mock.calls[0][0].clinicId).toBe(BigInt(OTHER_CLINIC));
+      expect(vi.mocked(createAppointment).mock.calls[0][0].clinicId).toBe(OTHER_CLINIC);
+    });
+
+    it('refuses a service the professional does not offer at that clinic', async () => {
+      await expect(
+        createPublicAppointment({ ...INPUT, clinicId: 99, holdKey: makeHold() }),
+      ).rejects.toBeInstanceOf(ServiceNotFoundError);
+      expect(createAppointment).not.toHaveBeenCalled();
+    });
+
+    it('still lets the mapping decide when no clinic is named', async () => {
+      await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+      expect(vi.mocked(listServicesForDoctor).mock.calls[0][0].clinicId).toBeUndefined();
+      expect(vi.mocked(createAppointment).mock.calls[0][0].clinicId).toBe(CLINIC);
+    });
+  });
+
   it('refuses a booking closer than the minimum notice', async () => {
     // Hiding these slots in the readers is not enough on its own: a caller can post
     // straight to this service, and a patient whose page loaded an hour ago is
@@ -483,6 +533,18 @@ describe('createPublicAppointmentSchema', () => {
     });
     expect(parsed.professionalId).toBe(29);
     expect(parsed.serviceId).toBe(7);
+  });
+
+  it('keeps the clinic a form posts, as a number', () => {
+    // z.object strips unknown keys: before clinicId was declared, it vanished here.
+    const parsed = createPublicAppointmentSchema.parse({ ...INPUT, clinicId: '5', holdKey: 'k' });
+    expect(parsed.clinicId).toBe(5);
+  });
+
+  it('refuses a non-numeric clinic instead of ignoring it', () => {
+    expect(
+      createPublicAppointmentSchema.safeParse({ ...INPUT, clinicId: 'abc', holdKey: 'k' }).success,
+    ).toBe(false);
   });
 
   it('refuses a non-numeric id instead of coercing it to NaN', () => {

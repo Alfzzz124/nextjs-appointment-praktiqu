@@ -8670,13 +8670,25 @@ paths:
         - public
       summary: Appointments (POST) — public
       operationId: post_api_v1_public_appointments
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: |-
+        **Response envelope:** standard / RFC-7807 problem+json
+
+        `clinicId` (optional, positive integer) books into that clinic of the
+        professional. Without it, the clinic is the one on the first matching
+        doctor↔service mapping. A service the professional does not offer at the
+        named clinic is refused as `Service not found for this professional at
+        this clinic`. It never adds a clinic the professional is not mapped to.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              properties:
+                clinicId:
+                  type: integer
+                  minimum: 1
+                  description: Optional. Which of the professional's clinics to book into.
       responses:
         '201':
           description: Success
@@ -9003,7 +9015,10 @@ paths:
             type: integer
       responses:
         '200':
-          description: Success
+          description: |-
+            Every active professional that matches, under `items`. The list is not
+            paginated: it used to stop at 50, which hid a clinic's 51st
+            professional from the staff booking form.
           content:
             application/json:
               schema:
@@ -9025,6 +9040,14 @@ paths:
       summary: Services (GET) — professionals
       operationId: get_api_v1_public_professionals_id_services
       description: '**Response envelope:** standard / RFC-7807 problem+json'
+      parameters:
+        - name: clinicId
+          in: query
+          required: false
+          description: Only the services this professional offers at this clinic.
+          schema:
+            type: integer
+            minimum: 1
       responses:
         '200':
           description: Success
@@ -9032,6 +9055,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StandardResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
       security: []

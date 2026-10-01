@@ -103,6 +103,52 @@ describe('GET /api/v1/public/professionals', () => {
     expect(body.items[0].nextAvailable).toBeNull();
   });
 
+  describe('beyond the first page', () => {
+    // The list used to stop at 50. Staff forms fill their psikolog dropdown from
+    // `?clinicId=`, so the 51st professional of a clinic could not be booked at all,
+    // and the unfiltered list hid everyone past id 339 from personal links.
+    function paged(total: number) {
+      return async (q: { page: number; perPage: number }) => {
+        const from = (q.page - 1) * q.perPage + 1;
+        const to = Math.min(q.page * q.perPage, total);
+        const items = [];
+        for (let id = from; id <= to; id += 1) items.push(doctor({ id: BigInt(id) }));
+        return { items: items as never, total, page: q.page, perPage: q.perPage };
+      };
+    }
+
+    it('returns every professional, not just the first 50', async () => {
+      vi.mocked(listDoctors).mockImplementation(paged(230));
+
+      const body = await (
+        await GET(makeReq('http://localhost/api/v1/public/professionals?clinicId=4'))
+      ).json();
+
+      expect(body.items).toHaveLength(230);
+      expect(body.items[229].id).toBe(230);
+      const calls = vi.mocked(listDoctors).mock.calls.map(([q]) => q);
+      expect(calls.map((q) => q.page)).toEqual([1, 2, 3]);
+      // The clinic filter rides on every page, not only the first.
+      expect(calls.every((q) => q.clinicIds?.[0] === 4n)).toBe(true);
+      // Schedules for the whole list in one query, not one per page.
+      expect(listClinicSessions).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops at an empty page even when the total claims more', async () => {
+      // A total counted before rows were deleted must not spin the loop.
+      vi.mocked(listDoctors).mockImplementation(async (q) =>
+        q.page === 1
+          ? { ...(await paged(100)(q)), total: 500 }
+          : { items: [], total: 500, page: q.page, perPage: q.perPage },
+      );
+
+      const body = await (await GET(makeReq('http://localhost/api/v1/public/professionals'))).json();
+
+      expect(body.items).toHaveLength(100);
+      expect(listDoctors).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('rejects a non-numeric clinicId instead of querying NaN', async () => {
     const res = await GET(makeReq('http://localhost/api/v1/public/professionals?clinicId=abc'));
     expect(res.status).toBe(400);
