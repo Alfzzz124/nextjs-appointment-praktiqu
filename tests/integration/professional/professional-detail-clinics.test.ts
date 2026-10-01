@@ -105,13 +105,18 @@ beforeAll(async () => {
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET @praktiqu_saved_sql_mode = @@SESSION.sql_mode`);
     await tx.$executeRawUnsafe(`SET SESSION sql_mode = ''`);
-    await tx.$executeRawUnsafe(
-      `INSERT INTO wp_kc_doctor_clinic_mappings (doctor_id, clinic_id, created_at)
-       VALUES (?, ?, '0000-00-00 00:00:00')`,
-      DOCTOR,
-      CLINIC_A,
-    );
-    await tx.$executeRawUnsafe(`SET SESSION sql_mode = @praktiqu_saved_sql_mode`);
+    try {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_kc_doctor_clinic_mappings (doctor_id, clinic_id, created_at)
+         VALUES (?, ?, '0000-00-00 00:00:00')`,
+        DOCTOR,
+        CLINIC_A,
+      );
+    } finally {
+      // A rollback does not reset session variables: restore even when the INSERT
+      // throws, or the pooled connection goes back with strict mode off.
+      await tx.$executeRawUnsafe(`SET SESSION sql_mode = @praktiqu_saved_sql_mode`);
+    }
   });
 });
 
