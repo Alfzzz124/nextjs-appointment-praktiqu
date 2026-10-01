@@ -65,7 +65,17 @@ async function bearer(
 }
 
 let n = 0;
-function post(opts: { authorization?: string; idempotencyKey?: string } = {}): Promise<Response> {
+/**
+ * The route schedules the release AFTER answering (it does not make the guest wait on a
+ * WordPress round trip), so give that background work a moment before asserting on it.
+ */
+async function post(opts: { authorization?: string; idempotencyKey?: string } = {}): Promise<Response> {
+  const res = await postNow(opts);
+  await new Promise((r) => setTimeout(r, 50));
+  return res;
+}
+
+function postNow(opts: { authorization?: string; idempotencyKey?: string } = {}): Promise<Response> {
   n += 1;
   const headers: Record<string, string> = {
     'content-type': 'application/json',
@@ -195,6 +205,14 @@ describe('POST /public/appointments — release of an unpaid booking', () => {
 
     expect(res.status).toBe(200);
     expect(releaseCalls()).toHaveLength(0);
+  });
+
+  it('answers before the release is scheduled — the guest does not wait on WordPress', async () => {
+    let release!: () => void;
+    jobsClient.jobs.enqueue.mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+    const res = await postNow();
+    expect(res.status).toBe(201);
+    release?.();
   });
 
   it('schedules nothing when the booking itself fails', async () => {

@@ -128,7 +128,14 @@ export async function POST(req: NextRequest) {
     // throws, which matters here: the booking exists, and the catch below would answer
     // 500 and free the Idempotency-Key for a retry that books twice. Only a request that
     // created something gets here, so a replay does not schedule a second release.
-    if (!(await isStaffRequest(req))) await scheduleUnpaidBookingCancel(appointment.id);
+    //
+    // Not awaited: scheduling is a WordPress round trip (an Action Scheduler insert) on
+    // an endpoint that already takes seconds, and the guest gains nothing by waiting for
+    // it. The app runs as a long-lived Node server, so the promise completes after the
+    // response; both calls catch and log their own failures.
+    void (async () => {
+      if (!(await isStaffRequest(req))) await scheduleUnpaidBookingCancel(appointment.id);
+    })().catch((err) => console.error('[public/appointments] unpaid-release scheduling failed', err));
     return NextResponse.json({ data: appointment }, { status: 201 });
   } catch (err) {
     // Hand the key back so an honest retry can claim it. This rests on the same
