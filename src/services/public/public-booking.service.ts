@@ -52,6 +52,11 @@ export const createPublicAppointmentSchema = z.object({
   clientMobile: z.string().min(1).max(32),
   notes: z.string().max(1000).optional(),
   holdKey: z.string().min(1),
+  // Optional: which of the professional's clinics to book into. Staff manual booking
+  // sends its own clinic; the public pages send none and let the service mapping
+  // decide. Declared so it survives parsing — z.object strips unknown keys, and an
+  // undeclared clinicId used to vanish here without a word.
+  clinicId: z.coerce.number().int().positive().optional(),
 });
 export type CreatePublicAppointmentInput = z.infer<typeof createPublicAppointmentSchema>;
 
@@ -301,15 +306,22 @@ export async function createPublicAppointment(
   // enforces the same constraint, so a guessed service id cannot book a private service.
   const offered = await listServicesForDoctor({
     doctorId: BigInt(input.professionalId),
+    clinicId: input.clinicId !== undefined ? BigInt(input.clinicId) : undefined,
     publicOnly: true,
   });
   const service = offered.find((s) => Number(s.serviceId) === input.serviceId && s.isActive);
   if (!service) {
-    throw new ServiceNotFoundError('Service not found for this professional');
+    throw new ServiceNotFoundError(
+      input.clinicId !== undefined
+        ? 'Service not found for this professional at this clinic'
+        : 'Service not found for this professional',
+    );
   }
 
   // The clinic comes from the doctor↔service mapping rather than the doctor: a doctor
   // may work at several clinics, and the service they were booked for says which.
+  // A caller-named clinic narrows the mappings above, so it can only pick one of the
+  // professional's real clinics, never add one.
   const clinicId = Number(service.clinicId);
   if (!clinicId) {
     throw new AppointmentInsertError('Professional is not attached to a practice');
