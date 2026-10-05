@@ -18,6 +18,7 @@ import { z } from 'zod';
 import {
   PROFESSIONAL_STATUS,
   findDoctorById,
+  listDoctorClinicIds,
   listDoctors,
   type ProfessionalStatus,
   type ProfessionalType,
@@ -73,6 +74,16 @@ export interface Professional {
   contactNumber: string | null;
   timezone: string | null;
   createdAt: Date;
+}
+
+/** The single-professional read: everything in `Professional`, plus clinic membership. */
+export interface ProfessionalDetail extends Professional {
+  /**
+   * Clinics the professional is mapped to (`wp_kc_doctor_clinic_mappings`), lowest first.
+   * POST /professionals answers only `{ id }`, so this is how a caller confirms which
+   * clinic a newly created professional actually landed in.
+   */
+  clinicIds: number[];
 }
 
 export type ServiceError =
@@ -188,16 +199,19 @@ export async function createProfessional(
 /* Read                                                                */
 /* ------------------------------------------------------------------ */
 
-export async function getProfessional(id: number): Promise<Professional | null> {
+export async function getProfessional(id: number): Promise<ProfessionalDetail | null> {
   const doctor = await findDoctorById(BigInt(id));
-  return doctor ? toProfessional(doctor) : null;
+  if (!doctor) return null;
+
+  const clinicIds = await listDoctorClinicIds(doctor.id);
+  return { ...toProfessional(doctor), clinicIds: clinicIds.map(Number) };
 }
 
 /**
  * Self-service lookup. The JWT subject is a cuid in the auth mirror, so callers must
  * resolve it to a WordPress id (via `resolveKcActor`) before calling this.
  */
-export async function getProfessionalByWpUserId(wpUserId: number): Promise<Professional | null> {
+export async function getProfessionalByWpUserId(wpUserId: number): Promise<ProfessionalDetail | null> {
   return getProfessional(wpUserId);
 }
 

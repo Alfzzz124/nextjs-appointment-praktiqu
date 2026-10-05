@@ -93,12 +93,26 @@ export async function POST(req: NextRequest) {
       resetToken: rawToken,
       ttlMinutes: Math.ceil(RESET_TTL / 60),
     });
-    await sendEmail({
+    // Not awaited. Only a registered address gets mail, so waiting on the send made the
+    // answer for a registered address slower than for an unknown one, by a whole round
+    // trip to the mail provider. That is a timing oracle for the very enumeration the
+    // uniform 200 below exists to prevent.
+    //
+    // Next 14.2 has no after(). This app runs as a long-lived Node server (server.js),
+    // so the promise outlives the response. It gets its own catch because nothing is
+    // left to fail once the response is gone, and an unhandled rejection would reach the
+    // process. sendEmail already reports a failed delivery through
+    // audit.emailDeliveryFailed; this only catches what escapes it. A worker recycled
+    // mid-send loses that one email, and the user can simply ask again.
+    const userId = user.id;
+    void sendEmail({
       to: user.email,
       subject: emailContent.subject,
       html: emailContent.html,
       text: emailContent.text,
       template: 'password-reset',
+    }).catch((err: unknown) => {
+      console.error('[auth/forgot-password] background reset email failed', { userId, err });
     });
   }
   // Every request counts, sent or not. This used to call recordSuccess after a send,

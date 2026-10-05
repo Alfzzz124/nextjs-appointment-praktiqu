@@ -19,9 +19,11 @@ import { listServicesForDoctor, type WpDoctorService } from '@/repositories/wp/s
 import {
   PROFESSIONAL_STATUS,
   findDoctorById,
+  listDoctorNames,
   listDoctors,
   type WpDoctor,
 } from '@/repositories/wp/doctors.repo';
+import { slugifyName } from '@/lib/public/professional-slug';
 import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
 import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
@@ -108,6 +110,9 @@ const DIRECTORY_MAX_PAGES = 50;
  * a clinic's 51st professional could not be booked at all. The repository caps a page
  * at 100, so the whole list is read page by page. The loop stops at the reported total,
  * at an empty page, or at the brake — whichever comes first.
+ *
+ * Still a directory, not a lookup: to find ONE professional use `getPublicProfessional`
+ * or `findPublicProfessionalBySlug`, which build the full entry only for the match.
  */
 export async function listPublicProfessionals(
   opts: { specialty?: string; clinicId?: number } = {},
@@ -148,15 +153,78 @@ export async function listPublicProfessionals(
   }
 
   const today = new Date();
-  return doctors.map((d) => ({
+  return doctors.map((d) => toPublicProfessional(d, byDoctor.get(d.id.toString()) ?? [], today));
+}
+
+/**
+ * The name a professional is listed under — and therefore the one the FE slugifies into
+ * their personal link. Shared by the directory and both single-professional lookups so
+ * the three cannot drift: a link built from the list must resolve to the same person.
+ */
+function publicFullName(
+  d: Pick<WpDoctor, 'firstName' | 'lastName' | 'displayName' | 'email'>,
+): string {
+  return [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.displayName || d.email;
+}
+
+function toPublicProfessional(
+  d: WpDoctor,
+  sessions: Array<{ day: string | null; startTime: string | null }>,
+  today: Date,
+): PublicProfessional {
+  return {
     id: Number(d.id),
-    fullName:
-      [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.displayName || d.email,
+    fullName: publicFullName(d),
     professionalType: d.professionalType,
     biography: d.description,
     specialties: d.specialties,
-    nextAvailable: nextAvailableFor(byDoctor.get(d.id.toString()) ?? [], today),
-  }));
+    nextAvailable: nextAvailableFor(sessions, today),
+  };
+}
+
+/**
+ * One active professional, in exactly the shape of a directory entry.
+ *
+ * The directory is capped at 50, lowest ids first, so it cannot be how a caller finds a
+ * particular professional. The Laravel FE did exactly that for personal links, and every
+ * professional past the 50th — including every newly registered one — was a 404.
+ *
+ * `null` for an unknown or non-ACTIVE professional, so the route can 404.
+ */
+export async function getPublicProfessional(
+  professionalId: number,
+): Promise<PublicProfessional | null> {
+  const doctor = await findDoctorById(BigInt(professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
+
+  const sessions = await listClinicSessions({ doctorId: doctor.id });
+  return toPublicProfessional(doctor, sessions, new Date());
+}
+
+/**
+ * The active professional whose personal-link slug this is.
+ *
+ * The match rule is the FE's own: its slugify applied to the `fullName` the directory
+ * returns. The incoming slug is normalised the same way, so a hand-typed capital or a
+ * trailing dash still resolves, and one that normalises to nothing is simply not found.
+ *
+ * Every active doctor is considered, not the directory's 50 — that cap is the bug this
+ * replaces. Only name fields are read for the scan; the full entry (clinic sessions,
+ * `nextAvailable`) is built once, for the match. Two names can slugify alike: the
+ * lowest id wins, which is what the FE's `first()` over the id-ascending directory
+ * picked, so an existing link keeps pointing at the same person.
+ */
+export async function findPublicProfessionalBySlug(
+  slug: string,
+): Promise<PublicProfessional | null> {
+  const wanted = slugifyName(slug);
+  if (wanted === '') return null;
+
+  // listDoctorNames is id-ascending, so find() yields the lowest id among the matches.
+  const match = (await listDoctorNames()).find(
+    (d) => d.status === PROFESSIONAL_STATUS.ACTIVE && slugifyName(publicFullName(d)) === wanted,
+  );
+  return match ? getPublicProfessional(Number(match.id)) : null;
 }
 
 function nextAvailableFor(
