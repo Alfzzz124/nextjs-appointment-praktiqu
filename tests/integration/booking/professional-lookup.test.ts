@@ -188,10 +188,13 @@ async function expectNotFound(res: Response) {
 }
 
 describe('the bug these endpoints exist for', () => {
-  it('TARGET is past the directory’s 50, so the FE’s scan could never find it', async () => {
-    const body = await (await listGET(req(''))).json();
-    expect(body.items).toHaveLength(50);
-    expect(await listEntry(TARGET)).toBeUndefined();
+  // The directory used to stop at 50, which hid TARGET from the FE's scan. #23 made the
+  // directory read every page, so the scan would now find it too — but a personal link
+  // should not cost a full directory build (sessions for every professional) per page
+  // view. The single lookups below are what the FE calls; this pins that they agree
+  // with the directory for a professional past the old cap.
+  it('TARGET sits past the old 50 cap and is in the directory now', async () => {
+    expect(await listEntry(TARGET)).toBeDefined();
   });
 });
 

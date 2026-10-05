@@ -97,22 +97,38 @@ export interface PublicProfessional {
 /** How far ahead `nextAvailable` looks before giving up. */
 const NEXT_AVAILABLE_HORIZON_DAYS = 14;
 
+/** `listDoctors` clamps perPage to 100; ask for exactly that. */
+const DIRECTORY_PAGE_SIZE = 100;
+
+/** Emergency brake: 5,000 professionals, far beyond the roster that exists. */
+const DIRECTORY_MAX_PAGES = 50;
+
 /**
- * Active professionals for the public directory.
+ * Every active professional, optionally of one clinic or specialty.
  *
- * Capped at 50, as before — this is a browse page, not an export. Never search it for
- * one professional: use `getPublicProfessional` or `findPublicProfessionalBySlug`.
+ * Used to stop at 50. Staff forms fill their psikolog dropdown from `?clinicId=`, so
+ * a clinic's 51st professional could not be booked at all. The repository caps a page
+ * at 100, so the whole list is read page by page. The loop stops at the reported total,
+ * at an empty page, or at the brake — whichever comes first.
+ *
+ * Still a directory, not a lookup: to find ONE professional use `getPublicProfessional`
+ * or `findPublicProfessionalBySlug`, which build the full entry only for the match.
  */
 export async function listPublicProfessionals(
   opts: { specialty?: string; clinicId?: number } = {},
 ): Promise<PublicProfessional[]> {
-  const { items } = await listDoctors({
-    page: 1,
-    perPage: 50,
-    statuses: [PROFESSIONAL_STATUS.ACTIVE],
-    specialty: opts.specialty,
-    clinicIds: opts.clinicId !== undefined ? [BigInt(opts.clinicId)] : undefined,
-  });
+  const items: WpDoctor[] = [];
+  for (let page = 1; page <= DIRECTORY_MAX_PAGES; page += 1) {
+    const res = await listDoctors({
+      page,
+      perPage: DIRECTORY_PAGE_SIZE,
+      statuses: [PROFESSIONAL_STATUS.ACTIVE],
+      specialty: opts.specialty,
+      clinicIds: opts.clinicId !== undefined ? [BigInt(opts.clinicId)] : undefined,
+    });
+    items.push(...res.items);
+    if (res.items.length === 0 || items.length >= res.total) break;
+  }
 
   // The repository's specialty filter is a LIKE over the whole basic_data blob and can
   // over-match; re-check against the decoded list so the answer is exact.
@@ -121,7 +137,7 @@ export async function listPublicProfessionals(
     ? items.filter((d) => d.specialties.some((s) => s.toLowerCase() === specialty))
     : items;
 
-  // One query for the whole page. Per-doctor lookups here were 50 round-trips.
+  // One query for the whole list. Per-doctor lookups here were one round-trip each.
   const sessions =
     doctors.length === 0
       ? []
