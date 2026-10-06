@@ -1,5 +1,5 @@
 import { calculateTax } from '@/services/billing/bill.service';
-import type { BillDetail } from '@/services/billing/bill.service';
+import type { BillDetail, BillScope } from '@/services/billing/bill.service';
 import { toNum } from '@/lib/kc-num';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -532,10 +532,19 @@ export async function checkSessionPaymentStatus(billId: string): Promise<Payment
   };
 }
 
+/**
+ * `scope` is the caller's bill row scope (`billScopeFor`; null = SUPER_ADMIN). It is
+ * checked by loading the bill first, before the existing-order shortcut — that branch
+ * answers with the order's status and amount, so checking only on the create path
+ * would still disclose another clinic's payment. Out of scope is a 404 from getBill.
+ */
 export async function ensureSessionPayment(
   billId: string,
   method: PaymentMethod = 'xendit',
+  scope: BillScope | null = null,
 ): Promise<{ checkoutUrl: string | null; status: PaymentStatus; expectedAmount: number; chargedAmount: number; chargedCurrency: string }> {
+  const bill = await getBill(Number(billId), scope);
+
   const existing = await getPaymentOrderByBill(billId);
   if (existing) {
     const reconciled = await reconcileIfStale(existing);
@@ -550,7 +559,6 @@ export async function ensureSessionPayment(
     // failed/expired/cancelled — fall through and create a fresh order.
   }
 
-  const bill = await getBill(Number(billId));
   const { expectedAmount, items, taxes } = computeSessionAmountFromBill(bill);
   const patientUser = await prisma.kcUser.findUnique({
     where: { id: BigInt(bill.patient.id) },
