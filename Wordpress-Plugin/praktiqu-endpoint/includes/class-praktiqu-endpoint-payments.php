@@ -33,10 +33,19 @@ final class Payments
      *
      * @param array $input {
      *   source: 'public'|'session', appointmentId?: string, billId?: string,
-     *   encounterId?: string, customerEmail: string,
+     *   encounterId?: string, customerEmail: string, method?: 'xendit'|'paypal'|'card',
      *   items: array<{name:string,price:number}>, taxes: array<{name:string,amount:number}>,
+     *   charge?: array{currency:'USD', items: array<{name:string,amount:string}>,
+     *            taxes: array<{name:string,amount:string}>, fee?: array{name:string,amount:string},
+     *            total: string, snapshot: array{clinicId:int, fxRate:string, markupPercent:string,
+     *            fixedFeeIdr:string, source: array<string,string>}},
      *   returnUrl: string, cancelUrl: string
      * }
+     *
+     * `charge` (paypal/card only, 2026-10-06 international clinic design §4) carries the USD
+     * lines Next.js already computed; the order is built from them as given. Without it,
+     * paypal/card fall back to the legacy global-rate conversion, kept only for the deploy
+     * transition and removed in the next plugin release.
      */
     public function create_order(array $input): array|\WP_Error
     {
@@ -51,6 +60,44 @@ final class Payments
                 sprintf('Unknown payment method "%s"', $method),
                 ['status' => 400]
             );
+        }
+
+        // A validated `charge`, or null for xendit and for the legacy paypal/card path.
+        // Everything here runs before wc_create_order(), so a rejected charge, like an
+        // unknown method, creates no WooCommerce order at all. A null `charge` that reaches
+        // this method counts as absent. Over REST it never does: the route declares
+        // `charge` as type 'object', so WordPress answers `"charge": null` with its own 400
+        // rest_invalid_param first. Next.js never sends null (it omits `charge`).
+        $charge = null;
+        if (($input['charge'] ?? null) !== null) {
+            if ($method === 'xendit') {
+                return new \WP_Error('invalid_charge', 'charge is only accepted for paypal or card', ['status' => 400]);
+            }
+            if (!is_array($input['charge'])) {
+                return new \WP_Error('invalid_charge', 'charge must be an object', ['status' => 400]);
+            }
+            $checked = ChargeValidator::validate(
+                $input['charge'],
+                (array) ($input['items'] ?? []),
+                (array) ($input['taxes'] ?? [])
+            );
+            if (!$checked['ok']) {
+                return new \WP_Error('invalid_charge', $checked['message'], ['status' => 400]);
+            }
+
+            // Defence in depth against a Next.js bug, not against a compromised caller:
+            // whoever holds the service token is trusted with the amounts. A missing or
+            // undecodable option counts as not international.
+            $clinic_id = (int) $checked['snapshot']['clinicId'];
+            $settings  = ClinicPaymentSettings::get($clinic_id);
+            if ($settings === null || ($settings['international'] ?? null) !== true) {
+                return new \WP_Error(
+                    'clinic_not_international',
+                    sprintf('Clinic %d is not an international clinic', $clinic_id),
+                    ['status' => 409]
+                );
+            }
+            $charge = $checked;
         }
 
         // PayPal has no IDR (verified against the PPCP plugin's own supported list),
@@ -68,7 +115,13 @@ final class Payments
         $is_foreign = ($method === 'paypal' || $method === 'card');
         $rate       = 0.0;
         $markup     = 0.0;
-        if ($is_foreign) {
+        if ($charge !== null) {
+            // Only recorded (meta + the effective fxRate below); the amounts themselves
+            // come finished in the charge lines. ChargeValidator range-checked both, so the
+            // markup is within [0, 100] and the fxRate denominator is >= 1.
+            $rate   = (float) $charge['snapshot']['fxRate'];
+            $markup = (float) $charge['snapshot']['markupPercent'];
+        } elseif ($is_foreign) {
             $rate = (float) get_option('praktiqu_endpoint_paypal_idr_rate', '0');
             if ($rate <= 0) {
                 return new \WP_Error(
@@ -130,38 +183,37 @@ final class Payments
         // >= 1 — no divide-by-zero guard needed.
         $fx_rate = $is_foreign ? $rate / (1 + $markup / 100) : null;
 
-        foreach ((array) ($input['items'] ?? []) as $item) {
-            $price = (float) ($item['price'] ?? 0);
-            if ($is_foreign) {
-                $price = Money::idr_to_foreign($price, $rate, $markup);
+        if ($charge !== null) {
+            // The USD lines exactly as Next.js computed them, from integer cents.
+            foreach ($charge['items'] as $line) {
+                $this->add_product_line($order, $line['name'], ChargeValidator::cents_to_string($line['cents']));
             }
-            $product = new \WC_Product_Simple();
-            $product->set_name((string) ($item['name'] ?? 'Service'));
-            $product->set_status('publish');
-            $product->set_price((string) $price);
-            $product->set_regular_price((string) $price);
-            $product->set_virtual(true);
-            $product->set_sold_individually(true);
-            $product->set_catalog_visibility('hidden');
-            $product->set_manage_stock(false);
-            $product->set_stock_status('instock');
-            $product_id = $product->save();
-            $order->add_product(wc_get_product($product_id), 1);
-        }
+            foreach ($charge['taxes'] as $line) {
+                $this->add_fee_line($order, $line['name'], ChargeValidator::cents_to_string($line['cents']));
+            }
+            if ($charge['fee'] !== null) {
+                // The fixed fee: its own line, already converted without the markup.
+                $this->add_fee_line($order, $charge['fee']['name'], ChargeValidator::cents_to_string($charge['fee']['cents']));
+            }
+        } else {
+            foreach ((array) ($input['items'] ?? []) as $item) {
+                $price = (float) ($item['price'] ?? 0);
+                if ($is_foreign) {
+                    $price = Money::idr_to_foreign($price, $rate, $markup);
+                }
+                $this->add_product_line($order, (string) ($item['name'] ?? 'Service'), (string) $price);
+            }
 
-        foreach ((array) ($input['taxes'] ?? []) as $tax) {
-            $amount = (float) ($tax['amount'] ?? 0);
-            if ($amount <= 0) {
-                continue;
+            foreach ((array) ($input['taxes'] ?? []) as $tax) {
+                $amount = (float) ($tax['amount'] ?? 0);
+                if ($amount <= 0) {
+                    continue;
+                }
+                if ($is_foreign) {
+                    $amount = Money::idr_to_foreign($amount, $rate, $markup);
+                }
+                $this->add_fee_line($order, (string) ($tax['name'] ?? 'Tax'), (string) $amount);
             }
-            if ($is_foreign) {
-                $amount = Money::idr_to_foreign($amount, $rate, $markup);
-            }
-            $fee = new \WC_Order_Item_Fee();
-            $fee->set_name((string) ($tax['name'] ?? 'Tax'));
-            $fee->set_amount((string) $amount);
-            $fee->set_total((string) $amount);
-            $order->add_item($fee);
         }
 
         $order->set_billing_email((string) ($input['customerEmail'] ?? ''));
@@ -189,6 +241,13 @@ final class Payments
             // different figures; do not "fix" one to match the other.
             $order->update_meta_data('praktiqu_fx_rate', (string) $rate);
             $order->update_meta_data('praktiqu_markup_percent', (string) $markup);
+        }
+        if ($charge !== null) {
+            // The values this charge was priced with, so a later settings change can never
+            // rewrite history. praktiqu_fx_source records where each came from.
+            $order->update_meta_data('praktiqu_clinic_id', (string) $charge['snapshot']['clinicId']);
+            $order->update_meta_data('praktiqu_fixed_fee_idr', (string) $charge['snapshot']['fixedFeeIdr']);
+            $order->update_meta_data('praktiqu_fx_source', (string) wp_json_encode($charge['snapshot']['source']));
         }
         if (!empty($input['appointmentId'])) {
             $order->update_meta_data('praktiqu_appointment_id', (string) $input['appointmentId']);
@@ -229,6 +288,34 @@ final class Payments
         } finally {
             if ($is_foreign) {
                 remove_filter('wc_get_price_decimals', $decimals_filter);
+            }
+        }
+
+        // The charge's total check, before any gateway call (spec §4 step 4). It only checks
+        // that WooCommerce kept the amounts it was given — e.g. it did not add its own tax
+        // rates — it does not recompute the conversion. On a mismatch PayPal is never
+        // contacted. The cancel fires payment.expired, which Next.js answers with 404
+        // "Unknown order" because it writes no payment_orders row for a failed start.
+        if ($charge !== null) {
+            $order_cents = (int) round((float) $order->get_total() * 100);
+            if ($order_cents !== $charge['total_cents']) {
+                $order->update_status(
+                    'cancelled',
+                    sprintf(
+                        'PraktiQU: charge_mismatch, WooCommerce total %s USD but charge.total %s USD',
+                        ChargeValidator::cents_to_string($order_cents),
+                        ChargeValidator::cents_to_string($charge['total_cents'])
+                    )
+                );
+                return new \WP_Error(
+                    'charge_mismatch',
+                    sprintf(
+                        'WooCommerce order total %s USD differs from charge.total %s USD',
+                        ChargeValidator::cents_to_string($order_cents),
+                        ChargeValidator::cents_to_string($charge['total_cents'])
+                    ),
+                    ['status' => 502]
+                );
             }
         }
 
@@ -346,6 +433,37 @@ final class Payments
             'chargedCurrency' => $charge_currency,
             'fxRate'          => $fx_rate,
         ];
+    }
+
+    /**
+     * One order line as a hidden virtual product (KiviCare `create_wc_direct_order` pattern).
+     */
+    private function add_product_line(\WC_Order $order, string $name, string $price): void
+    {
+        $product = new \WC_Product_Simple();
+        $product->set_name($name);
+        $product->set_status('publish');
+        $product->set_price($price);
+        $product->set_regular_price($price);
+        $product->set_virtual(true);
+        $product->set_sold_individually(true);
+        $product->set_catalog_visibility('hidden');
+        $product->set_manage_stock(false);
+        $product->set_stock_status('instock');
+        $product_id = $product->save();
+        $order->add_product(wc_get_product($product_id), 1);
+    }
+
+    /**
+     * One tax (or the international fixed fee) as a WC_Order_Item_Fee.
+     */
+    private function add_fee_line(\WC_Order $order, string $name, string $amount): void
+    {
+        $fee = new \WC_Order_Item_Fee();
+        $fee->set_name($name);
+        $fee->set_amount($amount);
+        $fee->set_total($amount);
+        $order->add_item($fee);
     }
 
     /**

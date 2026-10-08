@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.6.8
+Stable tag: 1.7.0
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -54,6 +54,28 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.7.0 =
+* International clinics. New GET|PUT /clinics/{id}/payment-settings stores one
+  clinic's flag, FX rate, markup and fixed fee as a JSON string in the
+  praktiqu_endpoint_clinic_{id}_payment option (autoload off). PUT answers 404
+  clinic_not_found, 400 invalid_settings, 422 fx_rate_required or 500
+  save_failed.
+* POST /payments/order accepts an optional `charge` object for paypal/card:
+  the USD lines PraktiQU already computed. The order is built from them as
+  given, after checking the shape (400 invalid_charge) and that the clinic is
+  international (409 clinic_not_international). If the WooCommerce total
+  differs from charge.total the order is cancelled before PayPal is contacted
+  (502 charge_mismatch). New order meta: praktiqu_clinic_id,
+  praktiqu_fixed_fee_idr, praktiqu_fx_source. Without `charge` the old global
+  rate path still runs; it is kept only for the deploy transition.
+* The wp-admin FX rate and markup are now the global defaults, and the rate
+  must be from 1,000 to 100,000 rupiah per 1 USD, written with digits only.
+* Uninstall also removes every per-clinic payment option.
+* Requires WooCommerce -> Settings -> General -> "Enable tax rates and
+  calculations" OFF. With it on, WooCommerce adds its own tax to every
+  charged order, the total no longer matches charge.total, and each such
+  order is cancelled with charge_mismatch.
 
 = 1.6.8 =
 * Security (SEC-9): POST /authenticate checks the password BEFORE the

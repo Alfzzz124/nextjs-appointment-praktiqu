@@ -340,6 +340,15 @@ final class REST_Controller
             'methods'             => \WP_REST_Server::CREATABLE,
             'callback'            => [$this, 'handle_create_payment_order'],
             'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                // Only `charge` is declared (2026-10-06 international clinic design §4), as
+                // 'object' -- the jobs-route incident above was 'array' vs 'object' -- and
+                // with no nested `properties`: every nested check is done by
+                // ChargeValidator in create_order() and fails as our own 400 invalid_charge,
+                // never WP's generic rest_invalid_param. The legacy keys (items, taxes,
+                // method, ...) stay undeclared so their loose handling does not change.
+                'charge' => ['type' => 'object', 'required' => false],
+            ],
         ]);
 
         // GET /praktiqu/v1/payments/order/{id} — verify-fallback order status
