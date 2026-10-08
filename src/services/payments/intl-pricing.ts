@@ -52,9 +52,21 @@ export function isUsableRate(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v) && v >= RATE_MIN && v <= RATE_MAX && hasAtMostTwoDecimals(v);
 }
 
-/** At most two decimals, tolerant of binary float noise (10.15 * 100 = 1014.9999…). */
+/**
+ * A usable markup is a finite number from 0 to 100 inclusive with at most 2 decimals —
+ * the one definition for the stored clinic markup and the global markup alike.
+ */
+export function isUsableMarkup(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MARKUP_MAX && hasAtMostTwoDecimals(v);
+}
+
+/**
+ * Exact: the shortest decimal text of the number (`String(10.15)` is "10.15", so binary
+ * float noise never shows) must have at most 2 decimals. No tolerance — 16500.000000001
+ * is not a 2-decimal rate.
+ */
 function hasAtMostTwoDecimals(n: number): boolean {
-  return Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+  return new Decimal(String(n)).decimalPlaces() <= 2;
 }
 
 function invalidField(detail: string): ParsedOption {
@@ -96,11 +108,10 @@ export function parseStoredOption(raw: string | null | undefined): ParsedOption 
   }
 
   const markup = o.markup_percent ?? null;
-  if (markup !== null) {
-    if (typeof markup !== 'number' || !Number.isFinite(markup) || markup < 0 || markup > MARKUP_MAX) {
-      return invalidField('markup_percent must be a number from 0 to 100 or null');
-    }
-    if (!hasAtMostTwoDecimals(markup)) return invalidField('markup_percent has more than 2 decimals');
+  if (markup !== null && !isUsableMarkup(markup)) {
+    // Only the wording differs: a number in range that is rejected has too many decimals.
+    const inRange = typeof markup === 'number' && markup >= 0 && markup <= MARKUP_MAX;
+    return invalidField(inRange ? 'markup_percent has more than 2 decimals' : 'markup_percent must be a number from 0 to 100 or null');
   }
 
   const fee = o.fixed_fee_idr ?? null;
@@ -132,20 +143,42 @@ export function parseStoredOption(raw: string | null | undefined): ParsedOption 
 export interface GlobalDefaults {
   fxRate: number | null;
   markupPercent: number | null;
+  /**
+   * The raw text of a global option that was set (non-empty) but could not be parsed.
+   * Its number above is then null, but it is NOT "not set": `resolveSettings` fails closed
+   * on it instead of falling back to 0% markup or no rate.
+   */
+  invalid?: { fxRate?: string; markupPercent?: string };
 }
 
-/** WordPress stores option values as text. Empty or non-numeric means "not set". */
-function parseOptionNumber(raw: string | null): number | null {
-  if (raw === null || raw === undefined) return null;
+/**
+ * WordPress stores option values as text. Empty, whitespace or null means "not set"
+ * (`value: null`, no `invalid`). Non-empty text that is not a plain decimal ("1e1", ".5",
+ * "+10", "10.", "16,500", "abc") gives `value: null` and the trimmed text in `invalid`.
+ */
+function parseOptionNumber(raw: string | null): { value: number | null; invalid?: string } {
+  if (raw === null || raw === undefined) return { value: null };
   const text = raw.trim();
-  if (!/^-?\d+(\.\d+)?$/.test(text)) return null;
-  const n = Number(text);
-  return Number.isFinite(n) ? n : null;
+  if (text === '') return { value: null };
+  if (/^-?\d+(\.\d+)?$/.test(text)) {
+    const n = Number(text);
+    if (Number.isFinite(n)) return { value: n };
+  }
+  return { value: null, invalid: text };
 }
 
 /** The two global options, parsed. Range is NOT checked here — `resolveSettings` does. */
 export function parseGlobalDefaults(rateRaw: string | null, markupRaw: string | null): GlobalDefaults {
-  return { fxRate: parseOptionNumber(rateRaw), markupPercent: parseOptionNumber(markupRaw) };
+  const rate = parseOptionNumber(rateRaw);
+  const markup = parseOptionNumber(markupRaw);
+  const defaults: GlobalDefaults = { fxRate: rate.value, markupPercent: markup.value };
+  if (rate.invalid !== undefined || markup.invalid !== undefined) {
+    defaults.invalid = {
+      ...(rate.invalid !== undefined ? { fxRate: rate.invalid } : {}),
+      ...(markup.invalid !== undefined ? { markupPercent: markup.invalid } : {}),
+    };
+  }
+  return defaults;
 }
 
 export interface ClinicPaymentSettings {
@@ -210,16 +243,20 @@ export function resolveSettings(clinicId: number, parsed: ParsedOption, globals:
     if (international) problems.push(msg);
   };
 
-  // Markup: clinic, else a valid global, else 0. An out-of-range global that would be
-  // used voids the rate (rule 3) rather than being clamped.
+  // Markup: clinic, else a valid global, else 0. A global that would be used but is
+  // unusable — out of range, too many decimals, or text that did not parse at all —
+  // voids the rate (rule 3) rather than being clamped or read as 0%.
   let markupPercent = new Decimal(0);
   let markupSource: ValueSource = 'default';
   let markupBroken = false;
   if (stored.markupPercent !== null) {
     markupPercent = dec(stored.markupPercent);
     markupSource = 'clinic';
+  } else if (globals.invalid?.markupPercent !== undefined) {
+    markupBroken = true;
+    report(`global markup "${globals.invalid.markupPercent}" is not a number; clinic ${clinicId} has no usable rate`);
   } else if (globals.markupPercent !== null) {
-    if (globals.markupPercent >= 0 && globals.markupPercent <= MARKUP_MAX && hasAtMostTwoDecimals(globals.markupPercent)) {
+    if (isUsableMarkup(globals.markupPercent)) {
       markupPercent = dec(globals.markupPercent);
       markupSource = 'global';
     } else {
@@ -236,7 +273,9 @@ export function resolveSettings(clinicId: number, parsed: ParsedOption, globals:
     rateSource = 'clinic';
   } else {
     if (stored.fxRate !== null) report(`clinic ${clinicId} fx_rate ${stored.fxRate} is outside 1000–100000 or has more than 2 decimals; ignored`);
-    if (isUsableRate(globals.fxRate)) {
+    if (globals.invalid?.fxRate !== undefined) {
+      report(`global fx rate "${globals.invalid.fxRate}" is not a number; ignored`);
+    } else if (isUsableRate(globals.fxRate)) {
       rate = dec(globals.fxRate);
       rateSource = 'global';
     } else if (globals.fxRate !== null) {

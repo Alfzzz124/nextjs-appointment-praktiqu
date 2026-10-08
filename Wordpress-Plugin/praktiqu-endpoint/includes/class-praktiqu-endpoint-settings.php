@@ -204,6 +204,12 @@ final class Settings
      * last changed — mirrors sanitize_fx_rate()'s behaviour, but 0 is a
      * valid, meaningful value here (it means "no markup"), unlike the rate.
      *
+     * Only trim()med text that ClinicPaymentSettings::is_usable_markup()
+     * accepts is stored: digits with at most 2 decimals, 0 to 100. is_numeric()
+     * is not the rule — it passes "1e1", ".5", "+10" and "10.", which Next.js
+     * cannot parse (it then refuses USD payments for every clinic that uses
+     * the global markup) or reads as a different number.
+     *
      * A value above 100 is far more likely a typo (e.g. an extra digit)
      * than an intended 100%+ surcharge, so it's rejected like any other bad
      * input.
@@ -219,11 +225,11 @@ final class Settings
     {
         $current = (string) get_option('praktiqu_endpoint_paypal_markup_percent', '');
         $trimmed = trim($value);
-        if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed < 0 || (float) $trimmed > 100) {
+        if (!ClinicPaymentSettings::is_usable_markup($trimmed)) {
             add_settings_error(
                 'praktiqu_endpoint_paypal_markup_percent',
                 'praktiqu_invalid_markup_percent',
-                __('Global default Foreign Patient Markup was not updated: it must be a number between 0 and 100. The previous value was kept.', 'praktiqu-endpoint')
+                __('Global default Foreign Patient Markup was not updated: it must be a number written with digits only, from 0 to 100, at most 2 decimals, such as 10 or 12.5. The previous value was kept.', 'praktiqu-endpoint')
             );
             return $current;
         }

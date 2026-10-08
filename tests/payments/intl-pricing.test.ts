@@ -12,6 +12,7 @@ import {
   amountToCents,
   buildUsdQuote,
   gateUsdPayment,
+  isUsableMarkup,
   isUsableRate,
   notInternational,
   parseGlobalDefaults,
@@ -217,6 +218,68 @@ describe('resolveSettings — rate validation on read', () => {
     expect(d.problems.join(' ')).toContain('global markup 10.125');
   });
 
+  it.each(['1e1', '.5', '+10', '10.', 'abc'])(
+    'a global markup %j that cannot be parsed voids the rate like an out-of-range one (rule 3), never 0%%',
+    (bad) => {
+      const s = resolveSettings(4, parseStoredOption(option({ fx_rate: 18_000 })), parseGlobalDefaults(null, bad));
+      expect(s.international).toBe(true);
+      expect(s.rate).toBeNull();
+      expect(s.source.fxRate).toBeNull();
+      expect(s.methods).toEqual(XENDIT_ONLY);
+      expect(s.problems).toHaveLength(1);
+      expect(s.problems[0]).toContain(`"${bad}"`);
+      expect(s.problems[0]).toContain('clinic 4 has no usable rate');
+    },
+  );
+
+  it('an unparseable global markup makes the USD gate say rate_missing, not not_allowed', () => {
+    const s = resolveSettings(4, parseStoredOption(option({ fx_rate: 18_000 })), {
+      fxRate: null,
+      markupPercent: null,
+      invalid: { markupPercent: '1e1' },
+    });
+    expect(s.rate).toBeNull();
+    expect(s.methods).toEqual(XENDIT_ONLY);
+    expect(s.problems.join(' ')).toContain('1e1');
+    expect(gateUsdPayment([{ name: 'Svc', price: 200_000 }], [], s)).toEqual({ ok: false, reason: 'rate_missing' });
+  });
+
+  it('an unparseable global markup is harmless when the clinic has its own markup', () => {
+    const s = resolveSettings(4, parseStoredOption(option({ fx_rate: 18_000, markup_percent: 10 })), parseGlobalDefaults(null, '1e1'));
+    expect(s.rate!.toString()).toBe('18000');
+    expect(s.source.markupPercent).toBe('clinic');
+    expect(s.problems).toEqual([]);
+  });
+
+  it('an unparseable global markup is reported for a flagged clinic only', () => {
+    const s = resolveSettings(4, parseStoredOption(option({ international: false, fx_rate: 18_000 })), parseGlobalDefaults(null, '1e1'));
+    expect(s.methods).toEqual(XENDIT_ONLY);
+    expect(s.problems).toEqual([]);
+  });
+
+  it('an unparseable global rate that would be used leaves no rate (rule 3) and logs the raw text', () => {
+    const s = resolveSettings(4, parseStoredOption(option({})), parseGlobalDefaults('16,500', null));
+    expect(s.international).toBe(true);
+    expect(s.rate).toBeNull();
+    expect(s.source.fxRate).toBeNull();
+    expect(s.methods).toEqual(XENDIT_ONLY);
+    expect(s.problems).toHaveLength(1);
+    expect(s.problems[0]).toContain('"16,500"');
+    expect(gateUsdPayment([{ name: 'Svc', price: 200_000 }], [], s)).toEqual({ ok: false, reason: 'rate_missing' });
+  });
+
+  it('an unparseable global rate is harmless when the clinic has a usable rate of its own', () => {
+    const s = resolveSettings(4, parseStoredOption(option({ fx_rate: 18_000 })), parseGlobalDefaults('16,500', null));
+    expect(s.rate!.toString()).toBe('18000');
+    expect(s.source.fxRate).toBe('clinic');
+    expect(s.problems).toEqual([]);
+  });
+
+  it('an unparseable global rate is not reported for a clinic that is not flagged', () => {
+    const s = resolveSettings(4, parseStoredOption(option({ international: false })), parseGlobalDefaults('16,500', null));
+    expect(s.problems).toEqual([]);
+  });
+
   it('a global markup of 150 is harmless when the clinic has its own markup', () => {
     const s = resolveSettings(4, parseStoredOption(option({ fx_rate: 18_000, markup_percent: 10 })), { fxRate: null, markupPercent: 150 });
     expect(s.rate!.toString()).toBe('18000');
@@ -329,9 +392,33 @@ describe('parseGlobalDefaults', () => {
     expect(parseGlobalDefaults(' 16500.50 ', '0')).toEqual({ fxRate: 16_500.5, markupPercent: 0 });
   });
 
-  it('reads empty, missing and non-numeric values as null', () => {
+  it('reads empty, whitespace and missing values as "not set": null, and no invalid marker', () => {
     expect(parseGlobalDefaults('', null)).toEqual({ fxRate: null, markupPercent: null });
-    expect(parseGlobalDefaults('abc', '10%')).toEqual({ fxRate: null, markupPercent: null });
+    expect(parseGlobalDefaults('', '  ')).toEqual({ fxRate: null, markupPercent: null });
+    expect(parseGlobalDefaults(null, null)).toEqual({ fxRate: null, markupPercent: null });
+    expect(parseGlobalDefaults('', '  ')).not.toHaveProperty('invalid');
+    expect(parseGlobalDefaults(null, null)).not.toHaveProperty('invalid');
+  });
+
+  it('reads a non-empty value it cannot parse as null AND records the raw text in invalid', () => {
+    expect(parseGlobalDefaults('16,500', '1e1')).toEqual({
+      fxRate: null,
+      markupPercent: null,
+      invalid: { fxRate: '16,500', markupPercent: '1e1' },
+    });
+    expect(parseGlobalDefaults('abc', '10%')).toEqual({
+      fxRate: null,
+      markupPercent: null,
+      invalid: { fxRate: 'abc', markupPercent: '10%' },
+    });
+  });
+
+  it.each(['1e1', '.5', '+10', '10.', 'abc', '1,5'])('marks the markup %j invalid, and leaves a good rate alone', (bad) => {
+    expect(parseGlobalDefaults('16500', bad)).toEqual({ fxRate: 16_500, markupPercent: null, invalid: { markupPercent: bad } });
+  });
+
+  it('marks only the side that is bad, and keeps the trimmed text', () => {
+    expect(parseGlobalDefaults(' 16,500 ', '10')).toEqual({ fxRate: null, markupPercent: 10, invalid: { fxRate: '16,500' } });
   });
 
   it('keeps an out-of-range number so resolveSettings can report it', () => {
@@ -350,8 +437,28 @@ describe('isUsableRate', () => {
     [Number.NaN, false],
     ['16500', false],
     [null, false],
+    [16_500.000000001, false],
   ])('%s -> %s', (v, expected) => {
     expect(isUsableRate(v)).toBe(expected);
+  });
+});
+
+describe('isUsableMarkup', () => {
+  it.each([
+    [0, true],
+    [100, true],
+    [4.4, true],
+    [10.15, true],
+    [100.01, false],
+    [-1, false],
+    [10.125, false],
+    [10.000000001, false],
+    [Number.NaN, false],
+    [Number.POSITIVE_INFINITY, false],
+    ['10', false],
+    [null, false],
+  ])('%s -> %s', (v, expected) => {
+    expect(isUsableMarkup(v)).toBe(expected);
   });
 });
 
