@@ -231,7 +231,13 @@ export async function markExpired(wcOrderId: number): Promise<PaymentOrder | nul
 // avoids dead exported code (YAGNI).
 
 import { signAppointmentToken } from '@/lib/public/appointment-token';
-import { createWcOrder, getWcOrderStatus, type PaymentMethod } from '@/lib/wp-endpoint';
+import {
+  createWcOrder,
+  getWcOrderStatus,
+  type CreateWcOrderResult,
+  type PaymentMethod,
+  type WcCharge,
+} from '@/lib/wp-endpoint';
 import { jobs } from '@/lib/jobs/client';
 import { getBill } from '@/services/billing/bill.service';
 import { logging } from '@/lib/logging';
@@ -241,6 +247,21 @@ import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { syncSessionReminders } from '@/services/session/reminder-schedule';
+import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
+import {
+  amountToCents,
+  gateUsdPayment,
+  notInternational,
+  toCharge,
+  type ClinicPaymentSettings,
+  type UsdQuote,
+} from '@/services/payments/intl-pricing';
+import {
+  ChargeMismatchError,
+  DiscountNotSupportedError,
+  PaymentMethodNotAllowedError,
+  PaypalRateMissingError,
+} from '@/services/payments/payment-errors';
 
 export class AppointmentNotFoundError extends Error {}
 export class AppointmentNotPendingError extends Error {}
@@ -281,6 +302,77 @@ export function chargedView(order: PaymentOrder): { chargedAmount: number; charg
   };
 }
 
+/** A USD order's quote and the `charge` built from it. */
+interface UsdCharge {
+  quote: UsdQuote;
+  charge: WcCharge;
+}
+
+/**
+ * The payment gate for paypal/card (spec §2), run before any WooCommerce order exists.
+ * The settings read itself may throw PaymentSettingsUnavailableError (503, retryable).
+ */
+function gateUsdCharge(items: PaymentLineItem[], taxes: PaymentTaxLine[], settings: ClinicPaymentSettings): UsdCharge {
+  const gate = gateUsdPayment(items, taxes, settings);
+  if (gate.ok === false) {
+    if (gate.reason === 'rate_missing') {
+      throw new PaypalRateMissingError(`Clinic ${settings.clinicId} is international but has no usable FX rate`);
+    }
+    throw new PaymentMethodNotAllowedError(`Clinic ${settings.clinicId} does not take USD payment for this order`);
+  }
+  return { quote: gate.quote, charge: toCharge(gate.quote) };
+}
+
+/**
+ * Backstop for version skew: an older plugin ignores `charge` and converts on its own.
+ * If what WooCommerce will charge differs from the quote, cancel that order now (the
+ * existing auto-cancel job — there is no direct cancel route) and write NO
+ * payment_orders row: a row would let the resulting payment.expired cancel the
+ * appointment, and a retry would then hit payment_already_initiated.
+ */
+async function assertChargedAsQuoted(wcOrder: CreateWcOrderResult, quote: UsdQuote): Promise<void> {
+  if (amountToCents(wcOrder.chargedAmount ?? -1) === quote.totalCents) return;
+  // Recorded before anything else: this is a mis-priced order being thrown away, and
+  // nobody would otherwise know it happened (the route maps the error to a plain 502).
+  await logging.error('Charged amount differs from the USD quote — WooCommerce order cancelled', undefined, {
+    metadata: {
+      wcOrderId: wcOrder.orderId,
+      chargedAmount: wcOrder.chargedAmount,
+      chargedCurrency: wcOrder.chargedCurrency,
+      quotedTotalUsd: quote.totalUsd,
+    },
+  });
+  // Defensive only: jobs.enqueue (src/lib/jobs/client.ts) swallows its own failures
+  // today, so this catch is not expected to run. It stays so a future client that does
+  // reject still ends in ChargeMismatchError rather than a bare 500.
+  try {
+    await jobs.enqueue({
+      hook: 'praktiqu_payment_auto_cancel',
+      runAt: new Date(),
+      args: { wcOrderId: wcOrder.orderId },
+    });
+  } catch (err) {
+    await logging.error('Could not enqueue the cancel for a mis-charged WooCommerce order', err, {
+      metadata: { wcOrderId: wcOrder.orderId },
+    });
+  }
+  throw new ChargeMismatchError(
+    `WooCommerce order ${wcOrder.orderId} charges ${wcOrder.chargedAmount} ${wcOrder.chargedCurrency}, quoted ${quote.totalUsd} USD`,
+  );
+}
+
+/**
+ * The staff-bill gate. Discounts are not supported in USD: the WooCommerce lines are the
+ * bill's gross service and tax lines while expectedAmount is the net total, so a USD
+ * quote of a discounted bill would overcharge without any error. A clinic id of 0 or
+ * null is not international.
+ */
+async function gateSessionUsdCharge(bill: BillDetail, items: PaymentLineItem[], taxes: PaymentTaxLine[]): Promise<UsdCharge> {
+  if (bill.discount > 0) throw new DiscountNotSupportedError(`Bill ${bill.id} has a discount; pay it with Xendit`);
+  const settings = bill.clinic?.id ? await resolveClinicPayment(bill.clinic.id) : notInternational(0);
+  return gateUsdCharge(items, taxes, settings);
+}
+
 export async function initiatePublicPayment(
   appointmentId: number,
   method: PaymentMethod = 'xendit',
@@ -315,6 +407,9 @@ export async function initiatePublicPayment(
     doctorId: appt.professionalId,
   });
 
+  const usd: UsdCharge | null =
+    method === 'xendit' ? null : gateUsdCharge(items, taxes, await resolveClinicPayment(appt.clinicId));
+
   const token = signAppointmentToken(appointmentId);
   const wcOrder = await createWcOrder({
     source: 'public',
@@ -326,17 +421,19 @@ export async function initiatePublicPayment(
     returnUrl: `${getPublicAppUrl()}/book/payment/success?appt=${token}`,
     cancelUrl: `${getPublicAppUrl()}/book/payment/cancel?appt=${token}`,
     method,
+    ...(usd ? { charge: usd.charge } : {}),
   });
+  if (usd) await assertChargedAsQuoted(wcOrder, usd.quote);
 
   await createPaymentOrder({
     source: 'public',
     appointmentId: orderKey,
     wcOrderId: wcOrder.orderId,
-    expectedAmount,
+    expectedAmount: usd ? usd.quote.expectedIdr : expectedAmount,
     gateway: method,
     chargedAmount: wcOrder.chargedAmount,
     chargedCurrency: wcOrder.chargedCurrency,
-    fxRate: wcOrder.fxRate,
+    fxRate: usd ? Number(usd.quote.effectiveFxRate) : wcOrder.fxRate,
   });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',
@@ -560,6 +657,7 @@ export async function ensureSessionPayment(
   }
 
   const { expectedAmount, items, taxes } = computeSessionAmountFromBill(bill);
+  const usd: UsdCharge | null = method === 'xendit' ? null : await gateSessionUsdCharge(bill, items, taxes);
   const patientUser = await prisma.kcUser.findUnique({
     where: { id: BigInt(bill.patient.id) },
     select: { displayName: true, userEmail: true },
@@ -576,7 +674,9 @@ export async function ensureSessionPayment(
     returnUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-success`,
     cancelUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-cancel`,
     method,
+    ...(usd ? { charge: usd.charge } : {}),
   });
+  if (usd) await assertChargedAsQuoted(wcOrder, usd.quote);
 
   await createPaymentOrder({
     source: 'session',
@@ -587,7 +687,7 @@ export async function ensureSessionPayment(
     gateway: method,
     chargedAmount: wcOrder.chargedAmount,
     chargedCurrency: wcOrder.chargedCurrency,
-    fxRate: wcOrder.fxRate,
+    fxRate: usd ? Number(usd.quote.effectiveFxRate) : wcOrder.fxRate,
   });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',
