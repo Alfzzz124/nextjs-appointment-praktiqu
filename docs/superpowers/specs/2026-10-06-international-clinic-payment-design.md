@@ -461,7 +461,11 @@ where `'array'` was declared instead of `'object'`.
 - Every money amount is a string matching `^\d+\.\d{2}$`.
 - `snapshot.clinicId` is a JSON integer. The other snapshot numbers are decimal strings.
 - `fee` is left out when there is no fee, and `charge` is left out for Xendit. Neither is ever
-  sent as `null`, but the plugin treats a null `fee` or `charge` as absent.
+  sent as `null`.
+  - A null `fee` inside `charge` counts as no fee.
+  - A null `charge` is rejected by WordPress's own args check: 400 `rest_invalid_param`, which
+    Next.js maps to 502 `payment_start_failed`. Treating it as absent would send a PayPal order
+    down the legacy global-rate path and skip the clinic gate, so rejecting it is deliberate.
 
 **When `charge` is present**, the method must be `paypal` or `card`; otherwise the plugin
 returns 400 `invalid_charge`. Then:
