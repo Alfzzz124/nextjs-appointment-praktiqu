@@ -5,6 +5,7 @@
  */
 
 import type { AllowedMime } from '@/services/uploads/validate-upload';
+import type { ChargeSnapshot } from '@/services/payments/intl-pricing';
 import { toNum } from '@/lib/kc-num';
 
 export interface PaymentOrderItem {
@@ -33,6 +34,23 @@ export interface CreateWcOrderInput {
   cancelUrl: string;
   /** Omitted means 'xendit' — the plugin applies the same default. */
   method?: PaymentMethod;
+  /** The finished USD lines for paypal/card (spec §4). Omitted for xendit — never null. */
+  charge?: WcCharge;
+}
+
+/**
+ * The USD charge the plugin builds the WooCommerce order from. Every amount is a
+ * 2-decimal string (`^\d+\.\d{2}$`): the plugin converts it to cents from the string,
+ * never through a float.
+ */
+export interface WcCharge {
+  currency: 'USD';
+  items: { name: string; amount: string }[];
+  taxes: { name: string; amount: string }[];
+  /** Omitted when there is no fixed fee — never null. */
+  fee?: { name: string; amount: string };
+  total: string;
+  snapshot: ChargeSnapshot;
 }
 
 export interface CreateWcOrderResult {
@@ -62,9 +80,26 @@ const WP_PAYMENTS_BASE = `${WP_ENDPOINT}/wp-json/praktiqu/v1/payments`;
 const WP_MEDIA_URL = `${WP_ENDPOINT}/wp-json/praktiqu/v1/media`;
 
 export class WpEndpointError extends Error {
-  constructor(message: string, public status: number) {
+  /** `code` is WordPress's own error code (`charge_mismatch`, `gateway_missing`, …) when the body had one. */
+  constructor(message: string, public status: number, public code?: string) {
     super(message);
     this.name = 'WpEndpointError';
+  }
+}
+
+/**
+ * WordPress reports errors as `{ code, message, data: { status } }`. Returns what it
+ * can; a PHP fatal or an HTML error page yields nothing.
+ */
+function parseWpErrorBody(raw: string): { code?: string; message?: string } {
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      code: typeof parsed?.code === 'string' ? parsed.code : undefined,
+      message: typeof parsed?.message === 'string' ? parsed.message : undefined,
+    };
+  } catch {
+    return {};
   }
 }
 
@@ -150,14 +185,9 @@ export async function wpRequestJson<T>(
   const raw = await res.text();
 
   if (!res.ok) {
-    let message = raw || res.statusText;
-    try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed?.message === 'string') message = parsed.message;
-    } catch {
-      // Not JSON — a PHP fatal or an HTML error page. Keep the raw text.
-    }
-    throw new WpEndpointError(`${path} failed ${res.status}: ${message}`, res.status);
+    // A body that is not JSON (a PHP fatal, an HTML error page) keeps its raw text.
+    const { code, message } = parseWpErrorBody(raw);
+    throw new WpEndpointError(`${path} failed ${res.status}: ${message ?? (raw || res.statusText)}`, res.status, code);
   }
 
   try {
@@ -175,7 +205,7 @@ export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWc
   }, '/payments/order');
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new WpEndpointError(`WC order create failed ${res.status}: ${text}`, res.status);
+    throw new WpEndpointError(`WC order create failed ${res.status}: ${text}`, res.status, parseWpErrorBody(text).code);
   }
   let data: any;
   try {
@@ -217,6 +247,26 @@ export async function getWcOrderStatus(orderId: number): Promise<WcOrderStatus> 
     amount: data.amount,
     currency: typeof data.currency === 'string' ? data.currency : 'IDR',
   };
+}
+
+/* ------------------------------------------------ clinic payment settings --- */
+
+/** The plugin's PUT body — the option's storage keys (spec §1). `updated_at` is stamped by the plugin. */
+export interface ClinicPaymentSettingsWire {
+  international: boolean;
+  fx_rate: number | null;
+  markup_percent: number | null;
+  fixed_fee_idr: number | null;
+  updated_by: number | null;
+}
+
+/**
+ * Write one clinic's payment option through the plugin, so WordPress's object cache
+ * stays consistent. Errors arrive as WpEndpointError with the plugin's `code`
+ * (`clinic_not_found`, `invalid_settings`, `fx_rate_required`, `save_failed`).
+ */
+export async function putClinicPaymentSettings(clinicId: number, body: ClinicPaymentSettingsWire): Promise<void> {
+  await wpRequestJson<unknown>(`/clinics/${clinicId}/payment-settings`, { method: 'PUT', body });
 }
 
 /* ---------------------------------------------------------------- media --- */

@@ -14,7 +14,7 @@
  * cent — Rp 90,000 at 16,500 with 10% gives 601 cents instead of 600.
  */
 import { Prisma } from '@prisma/client';
-import type { PaymentMethod } from '@/lib/wp-endpoint';
+import type { PaymentMethod, WcCharge } from '@/lib/wp-endpoint';
 import type { PaymentLineItem, PaymentTaxLine } from '@/services/payments/payment.service';
 
 const Decimal = Prisma.Decimal;
@@ -431,6 +431,19 @@ export function toUsdView(quote: UsdQuote | null): PublicUsdView | null {
     taxes: quote.lines.filter((l) => l.kind === 'tax').map((l) => ({ name: l.name, amount: l.usd })),
     fee: fee ? fee.usd : null,
     total: quote.totalUsd,
+  };
+}
+
+/** The `charge` sent to the plugin. `fee` is left out, never null, when there is no fee line. */
+export function toCharge(quote: UsdQuote): WcCharge {
+  const fee = quote.lines.find((l) => l.kind === 'fee');
+  return {
+    currency: 'USD',
+    items: quote.lines.filter((l) => l.kind === 'item').map((l) => ({ name: l.name, amount: l.usd })),
+    taxes: quote.lines.filter((l) => l.kind === 'tax').map((l) => ({ name: l.name, amount: l.usd })),
+    ...(fee ? { fee: { name: fee.name, amount: fee.usd } } : {}),
+    total: quote.totalUsd,
+    snapshot: quote.snapshot,
   };
 }
 

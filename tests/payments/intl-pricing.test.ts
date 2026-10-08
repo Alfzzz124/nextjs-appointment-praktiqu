@@ -18,6 +18,7 @@ import {
   parseGlobalDefaults,
   parseStoredOption,
   resolveSettings,
+  toCharge,
   toUsdView,
   type GlobalDefaults,
 } from '@/services/payments/intl-pricing';
@@ -516,5 +517,25 @@ describe('amountToCents', () => {
     expect(amountToCents(13.62)).toBe(1362);
     expect(amountToCents(0.29)).toBe(29);
     expect(amountToCents(55)).toBe(5500);
+  });
+});
+
+describe('toCharge', () => {
+  it('turns the worked example into the plugin wire format', () => {
+    const quote = buildUsdQuote([{ name: 'Konsultasi', price: 200_000 }], [{ name: 'PPN', amount: 22_000 }], intl(18_000, 10, 25_000))!;
+    expect(toCharge(quote)).toEqual({
+      currency: 'USD',
+      items: [{ name: 'Konsultasi', amount: '12.23' }],
+      taxes: [{ name: 'PPN', amount: '1.35' }],
+      fee: { name: INTL_FEE_LINE_NAME, amount: '1.39' },
+      total: '14.97',
+      snapshot: quote.snapshot,
+    });
+  });
+
+  it('leaves fee out entirely (not null) when there is no fee line', () => {
+    const charge = toCharge(buildUsdQuote([{ name: 'Svc', price: 200_000 }], [], intl(18_000, 10))!);
+    expect(charge).not.toHaveProperty('fee');
+    expect(charge.total).toBe('12.23');
   });
 });
