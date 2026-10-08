@@ -10,7 +10,7 @@
  * lines to sum to the total exactly. Floats are never summed or compared.
  *
  * Pure — no WordPress, no WooCommerce — so tests/test-charge-validator.php runs it in a
- * bare PHP container. It uses ClinicPaymentSettings' pure range constants for the snapshot.
+ * bare PHP container. It uses ClinicPaymentSettings' pure is_usable_* helpers for the snapshot.
  *
  * @package PraktiQU\Endpoint
  */
@@ -68,7 +68,7 @@ final class ChargeValidator
         }
 
         $charge_items = $charge['items'] ?? null;
-        if (!is_array($charge_items) || !array_is_list($charge_items)) {
+        if (!is_array($charge_items) || $charge_items !== array_values($charge_items)) {
             return self::fail('charge.items must be an array');
         }
         if (count($charge_items) !== count($items)) {
@@ -76,7 +76,7 @@ final class ChargeValidator
         }
 
         $charge_taxes = $charge['taxes'] ?? null;
-        if (!is_array($charge_taxes) || !array_is_list($charge_taxes)) {
+        if (!is_array($charge_taxes) || $charge_taxes !== array_values($charge_taxes)) {
             return self::fail('charge.taxes must be an array');
         }
         // The same `<= 0` skip create_order() applies to rupiah taxes.
@@ -125,6 +125,12 @@ final class ChargeValidator
                 return self::fail('charge.fee.amount must be greater than 0');
             }
             $sum += $fee['cents'];
+        }
+
+        // PHP turns an overflowing int sum into a float. cents_to_string() takes an int, so
+        // stop here with the normal failure rather than let a TypeError escape.
+        if (!is_int($sum)) {
+            return self::fail('charge amounts are too large');
         }
 
         $total_cents = self::to_cents($charge['total'] ?? null);
@@ -188,15 +194,13 @@ final class ChargeValidator
             return 'charge.snapshot.clinicId must be a positive integer';
         }
         if (!ClinicPaymentSettings::is_usable_rate($snapshot['fxRate'] ?? null)) {
-            return 'charge.snapshot.fxRate must be a number from 1000 to 100000';
+            return 'charge.snapshot.fxRate must be a number from 1000 to 100000 with at most 2 decimals';
         }
-        $markup = $snapshot['markupPercent'] ?? null;
-        if (!is_numeric($markup) || (float) $markup < 0 || (float) $markup > ClinicPaymentSettings::MARKUP_MAX) {
-            return 'charge.snapshot.markupPercent must be a number from 0 to 100';
+        if (!ClinicPaymentSettings::is_usable_markup($snapshot['markupPercent'] ?? null)) {
+            return 'charge.snapshot.markupPercent must be a number from 0 to 100 with at most 2 decimals';
         }
-        $fee = $snapshot['fixedFeeIdr'] ?? null;
-        if (!is_numeric($fee) || (float) $fee < 0 || (float) $fee > ClinicPaymentSettings::FEE_MAX) {
-            return 'charge.snapshot.fixedFeeIdr must be a number from 0 to 10000000';
+        if (!ClinicPaymentSettings::is_usable_fee($snapshot['fixedFeeIdr'] ?? null)) {
+            return 'charge.snapshot.fixedFeeIdr must be an integer from 0 to 10000000';
         }
         $source = $snapshot['source'] ?? null;
         if (!is_array($source)) {

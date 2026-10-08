@@ -113,6 +113,8 @@ $with_tax = worked_charge([
 check('one paid tax; a Rp 0 tax is skipped in the count',
     verdict(V::validate($with_tax, $rupiah_items, [['name' => 'PPN', 'amount' => 20000], ['name' => 'Nol', 'amount' => 0]])), 'ok');
 check('markup 1.1 as a decimal string', verdict(V::validate(worked_charge(['snapshot' => array_merge(worked_charge()['snapshot'], ['markupPercent' => '1.1'])]), $rupiah_items, [])), 'ok');
+check('markup "4.4" with fee "25000"', verdict(V::validate(worked_charge(['snapshot' => array_merge(worked_charge()['snapshot'], ['markupPercent' => '4.4', 'fixedFeeIdr' => '25000'])]), $rupiah_items, [])), 'ok');
+check('fxRate "16500.25" (2 decimals)', verdict(V::validate(worked_charge(['snapshot' => array_merge(worked_charge()['snapshot'], ['fxRate' => '16500.25'])]), $rupiah_items, [])), 'ok');
 
 echo "\nChargeValidator::validate rejects\n";
 check('currency IDR', verdict(V::validate(worked_charge(['currency' => 'IDR']), $rupiah_items, [])), 'charge.currency must be "USD"');
@@ -146,13 +148,33 @@ check('clinicId as a string', verdict(V::validate(worked_charge(['snapshot' => a
 check('clinicId 0', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['clinicId' => 0])]), $rupiah_items, [])),
     'charge.snapshot.clinicId must be a positive integer');
 check('fxRate 16.5', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['fxRate' => '16.5'])]), $rupiah_items, [])),
-    'charge.snapshot.fxRate must be a number from 1000 to 100000');
+    'charge.snapshot.fxRate must be a number from 1000 to 100000 with at most 2 decimals');
+check('fxRate "16500.123" (3 decimals)', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['fxRate' => '16500.123'])]), $rupiah_items, [])),
+    'charge.snapshot.fxRate must be a number from 1000 to 100000 with at most 2 decimals');
 check('markupPercent 150', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['markupPercent' => '150'])]), $rupiah_items, [])),
-    'charge.snapshot.markupPercent must be a number from 0 to 100');
+    'charge.snapshot.markupPercent must be a number from 0 to 100 with at most 2 decimals');
+check('markupPercent "10.123" (3 decimals)', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['markupPercent' => '10.123'])]), $rupiah_items, [])),
+    'charge.snapshot.markupPercent must be a number from 0 to 100 with at most 2 decimals');
+check('markupPercent "1e1" (exponent notation)', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['markupPercent' => '1e1'])]), $rupiah_items, [])),
+    'charge.snapshot.markupPercent must be a number from 0 to 100 with at most 2 decimals');
+check('markupPercent " 10" (leading space)', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['markupPercent' => ' 10'])]), $rupiah_items, [])),
+    'charge.snapshot.markupPercent must be a number from 0 to 100 with at most 2 decimals');
 check('fixedFeeIdr missing', verdict(V::validate(worked_charge(['snapshot' => array_diff_key($snap, ['fixedFeeIdr' => true])]), $rupiah_items, [])),
-    'charge.snapshot.fixedFeeIdr must be a number from 0 to 10000000');
+    'charge.snapshot.fixedFeeIdr must be an integer from 0 to 10000000');
+check('fixedFeeIdr "25000.5" (decimals)', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['fixedFeeIdr' => '25000.5'])]), $rupiah_items, [])),
+    'charge.snapshot.fixedFeeIdr must be an integer from 0 to 10000000');
+check('fixedFeeIdr "2.5e4" (exponent notation)', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['fixedFeeIdr' => '2.5e4'])]), $rupiah_items, [])),
+    'charge.snapshot.fixedFeeIdr must be an integer from 0 to 10000000');
 check('an unknown source', verdict(V::validate(worked_charge(['snapshot' => array_merge($snap, ['source' => ['fxRate' => 'clinic', 'markupPercent' => 'guess', 'fixedFeeIdr' => 'clinic']])]), $rupiah_items, [])),
     'charge.snapshot.source.markupPercent must be one of clinic, global, default');
+
+// 100 lines of the largest accepted amount sum to more than PHP_INT_MAX cents. Without a guard
+// the sum silently turns into a float and cents_to_string() throws a TypeError (a fatal under
+// strict_types) instead of the validator returning its normal failure.
+$huge_lines = array_fill(0, 100, ['name' => 'Besar', 'amount' => '999999999999999.99']);
+$huge_rupiah = array_fill(0, 100, ['name' => 'Besar', 'price' => 1]);
+$huge = V::validate(worked_charge(['items' => $huge_lines, 'fee' => null, 'total' => '1.00']), $huge_rupiah, []);
+check('line cents past PHP_INT_MAX fail cleanly', verdict($huge), 'charge amounts are too large');
 
 echo "\n";
 if ($failures > 0) {

@@ -75,6 +75,48 @@ final class ClinicPaymentSettings
     }
 
     /**
+     * A markup is usable when it is 0..MARKUP_MAX with at most 2 decimals (the same limit
+     * validate() puts on a clinic's markup_percent). Next.js writes it into the charge
+     * snapshot as a canonical decimal string, so a string is NOT trim()med: surrounding
+     * whitespace means the value did not come from Next.js and is rejected. is_numeric() is
+     * not used: it passes "1e1", ".5" and "10.123", none of which a canonical value can be.
+     */
+    public static function is_usable_markup(mixed $v): bool
+    {
+        if (is_string($v)) {
+            if (preg_match('/^\d+(\.\d{1,2})?$/D', $v) !== 1) {
+                return false;
+            }
+            $markup = (float) $v;
+        } elseif (is_int($v) || is_float($v)) {
+            if (!self::has_at_most_2_decimals($v)) {
+                return false;
+            }
+            $markup = (float) $v;
+        } else {
+            return false;
+        }
+        return $markup >= 0 && $markup <= self::MARKUP_MAX;
+    }
+
+    /**
+     * A fee is usable when it is a whole rupiah amount, 0..FEE_MAX (the same rule validate()
+     * puts on a clinic's fixed_fee_idr). It is an int, or a string of plain digits: no
+     * whitespace, no decimals, no exponent. A float is never accepted, even a whole one.
+     */
+    public static function is_usable_fee(mixed $v): bool
+    {
+        if (is_string($v)) {
+            if (preg_match('/^\d+$/D', $v) !== 1) {
+                return false;
+            }
+            // Compared as a float so a string too long for an int is just "too big", not a wrap.
+            return (float) $v <= self::FEE_MAX;
+        }
+        return is_int($v) && $v >= 0 && $v <= self::FEE_MAX;
+    }
+
+    /**
      * Validate a PUT body (storage keys) against the §1 rules.
      *
      * Every key is required: a PUT replaces the clinic's whole object, so a missing key
