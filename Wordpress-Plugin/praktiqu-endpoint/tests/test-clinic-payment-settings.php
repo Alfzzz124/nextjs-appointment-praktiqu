@@ -131,6 +131,10 @@ namespace {
     check('"1.8e4" (exponent notation)', S::is_usable_rate('1.8e4'), false);
     check('"18000." (trailing dot)', S::is_usable_rate('18000.'), false);
     check('" 18000 " (trimmed, as Next.js trims)', S::is_usable_rate(' 18000 '), true);
+    // A usable rate has at most 2 decimals, the same limit validate() puts on a clinic's fx_rate.
+    check('"16500.12" (2 decimals)', S::is_usable_rate('16500.12'), true);
+    check('"16500.123" (3 decimals)', S::is_usable_rate('16500.123'), false);
+    check('16500.123 (float, 3 decimals)', S::is_usable_rate(16500.123), false);
 
     echo "\nClinicPaymentSettings::validate accepts\n";
     $ok = S::validate(body(), '');

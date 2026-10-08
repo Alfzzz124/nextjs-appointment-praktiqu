@@ -170,8 +170,9 @@ final class Settings
      * "16.500" read as 16.5. It also protects the legacy no-`charge` path of
      * Payments::create_order() while it still exists (1.7.0 transition).
      * is_usable_rate() also refuses text Next.js would read as "not set"
-     * ("1.8e4", "18000."), so wp-admin never shows a saved rate that the
-     * payment gate treats as missing.
+     * ("1.8e4", "18000.") and a rate with more than 2 decimals ("16500.123"),
+     * so wp-admin never shows a saved rate that the payment gate treats as
+     * missing.
      *
      * A rejected value keeps the stored one: a blank or malformed submission
      * must not zero the rate, because Payments::create_order() treats a
@@ -188,7 +189,7 @@ final class Settings
             add_settings_error(
                 'praktiqu_endpoint_paypal_idr_rate',
                 'praktiqu_invalid_fx_rate',
-                __('Global default PayPal FX Rate was not updated: it must be a number from 1000 to 100000 (rupiah per 1 USD), written with digits only, such as 16500 or 16500.50. The previous value was kept.', 'praktiqu-endpoint')
+                __('Global default PayPal FX Rate was not updated: it must be a number from 1000 to 100000 (rupiah per 1 USD), written with digits only and at most 2 decimals, such as 16500 or 16500.50. The previous value was kept.', 'praktiqu-endpoint')
             );
             return $current;
         }

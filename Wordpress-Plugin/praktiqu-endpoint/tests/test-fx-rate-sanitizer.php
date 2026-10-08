@@ -83,6 +83,7 @@ check('blank', submit(''), ['18000', ['praktiqu_invalid_fx_rate']]);
 check('not a number', submit('abc'), ['18000', ['praktiqu_invalid_fx_rate']]);
 check('1.8e4 (is_numeric, but Next.js reads it as unset)', submit('1.8e4'), ['18000', ['praktiqu_invalid_fx_rate']]);
 check('18000. (trailing dot)', submit('18000.'), ['18000', ['praktiqu_invalid_fx_rate']]);
+check('16500.123 (more than 2 decimals)', submit('16500.123'), ['18000', ['praktiqu_invalid_fx_rate']]);
 
 echo "\nSettings::sanitize_fx_rate stamps a real change only\n";
 submit('16500');

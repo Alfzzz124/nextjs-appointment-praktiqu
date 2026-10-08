@@ -43,8 +43,11 @@ final class ClinicPaymentSettings
     }
 
     /**
-     * A rate is usable when it is numeric and within RATE_MIN..RATE_MAX. The range rejects
-     * an inverted or mistyped entry, such as 0.00006, or "16.500" read as 16.5.
+     * A rate is usable when it is numeric, within RATE_MIN..RATE_MAX, and has at most 2
+     * decimals (the same limit validate() puts on a clinic's fx_rate, and the one Next.js
+     * applies when it reads the rate back). The range rejects an inverted or mistyped
+     * entry, such as 0.00006, or "16.500" read as 16.5; the decimal limit rejects
+     * "16500.123", which Next.js would refuse and leave PayPal silently unavailable.
      *
      * "Numeric" is an int/float, or a string that is plain decimal text after trim() — the
      * exact text Next.js accepts for the global option (parseOptionNumber in
@@ -56,11 +59,14 @@ final class ClinicPaymentSettings
     {
         if (is_string($v)) {
             $text = trim($v);
-            if (preg_match('/^\d+(\.\d+)?$/D', $text) !== 1) {
+            if (preg_match('/^\d+(\.\d{1,2})?$/D', $text) !== 1) {
                 return false;
             }
             $rate = (float) $text;
         } elseif (is_int($v) || is_float($v)) {
+            if (!self::has_at_most_2_decimals($v)) {
+                return false;
+            }
             $rate = (float) $v;
         } else {
             return false;
