@@ -30,6 +30,7 @@ require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-jobs.php
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-jobs-webhook.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-money.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-clinic-payment-settings.php';
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-charge-validator.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-payments.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-media.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-patients.php';
