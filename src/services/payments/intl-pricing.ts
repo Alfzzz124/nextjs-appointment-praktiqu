@@ -63,9 +63,10 @@ export function isUsableMarkup(v: unknown): v is number {
 /**
  * Exact: the shortest decimal text of the number (`String(10.15)` is "10.15", so binary
  * float noise never shows) must have at most 2 decimals. No tolerance — 16500.000000001
- * is not a 2-decimal rate.
+ * is not a 2-decimal rate. Exported for the settings write path, which applies the same
+ * rule to its input.
  */
-function hasAtMostTwoDecimals(n: number): boolean {
+export function hasAtMostTwoDecimals(n: number): boolean {
   return new Decimal(String(n)).decimalPlaces() <= 2;
 }
 
