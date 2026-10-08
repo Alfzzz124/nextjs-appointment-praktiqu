@@ -9,6 +9,7 @@
  * so for the same settings the displayed and charged USD figures match.
  */
 import type { PaymentMethod } from '@/lib/wp-endpoint';
+import { logging } from '@/lib/logging';
 import { computePublicAmount } from '@/services/payments/payment.service';
 import {
   XENDIT_ONLY,
@@ -40,4 +41,26 @@ export async function rowPaymentFor(
   const quote = buildUsdQuote(items, taxes, settings);
   if (quote === null) return { paymentMethods: [...XENDIT_ONLY], usd: null };
   return { paymentMethods: [...settings.methods], usd: toUsdView(quote) };
+}
+
+/**
+ * Display variant: never throws. A failed tax read is logged and the row shows rupiah
+ * and Xendit only — the same fail-closed answer as a failed settings read (spec §1
+ * rule 5). Used where the row is shown, never where it is charged: a booking that is
+ * already written must not answer an error because its USD preview could not be built.
+ */
+export async function rowPaymentForDisplay(
+  args: { clinicId: number; doctorId: number; serviceId: number; name: string; price: number | string },
+  settings: ClinicPaymentSettings,
+): Promise<RowPayment> {
+  try {
+    return await rowPaymentFor(args, settings);
+  } catch (err) {
+    await logging.error('USD price unavailable — showing rupiah and Xendit only', err, {
+      resource: 'clinic',
+      resourceId: String(args.clinicId),
+      metadata: { doctorId: args.doctorId, serviceId: args.serviceId },
+    });
+    return { paymentMethods: [...XENDIT_ONLY], usd: null };
+  }
 }

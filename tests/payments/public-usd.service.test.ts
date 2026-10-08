@@ -1,5 +1,5 @@
 /**
- * rowPaymentFor — the `paymentMethods` + `usd` fields of a public row.
+ * rowPaymentFor / rowPaymentForDisplay — the `paymentMethods` + `usd` fields of a public row.
  *
  * calculateTax is mocked (as in payment-service.test.ts) so computePublicAmount stays a
  * fast unit; the settings are built with the real pure module.
@@ -9,8 +9,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/services/billing/bill.service', () => ({
   calculateTax: vi.fn(),
 }));
+vi.mock('@/lib/logging', () => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
-import { rowPaymentFor } from '@/services/payments/public-usd.service';
+import { rowPaymentFor, rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { logging } from '@/lib/logging';
 import { notInternational, parseStoredOption, resolveSettings } from '@/services/payments/intl-pricing';
 import { calculateTax } from '@/services/billing/bill.service';
 
@@ -75,5 +85,30 @@ describe('rowPaymentFor', () => {
     const result = await rowPaymentFor({ ...ROW, price: 0 }, flagged({ fx_rate: 18000, fixed_fee_idr: 25000 }));
 
     expect(result).toEqual({ paymentMethods: ['xendit'], usd: null });
+  });
+});
+
+describe('rowPaymentForDisplay', () => {
+  it('answers what rowPaymentFor answers', async () => {
+    const result = await rowPaymentForDisplay(ROW, flagged({ fx_rate: 18000, markup_percent: 10, fixed_fee_idr: 25000 }));
+
+    expect(result).toEqual({
+      paymentMethods: ['xendit', 'paypal', 'card'],
+      usd: { price: '12.23', taxes: [], fee: '1.39', total: '13.62' },
+    });
+  });
+
+  it('shows rupiah and Xendit only, and logs, when the tax read fails', async () => {
+    const dbDown = new Error('Too many connections');
+    calculateTaxMock.mockRejectedValue(dbDown);
+
+    const result = await rowPaymentForDisplay(ROW, flagged({ fx_rate: 18000 }));
+
+    expect(result).toEqual({ paymentMethods: ['xendit'], usd: null });
+    expect(logging.error).toHaveBeenCalledWith('USD price unavailable — showing rupiah and Xendit only', dbDown, {
+      resource: 'clinic',
+      resourceId: '4',
+      metadata: { doctorId: 29, serviceId: 7 },
+    });
   });
 });
