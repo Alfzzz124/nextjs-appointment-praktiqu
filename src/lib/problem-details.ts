@@ -156,6 +156,18 @@ export function tooManyRequests(
   });
 }
 
+/** 502 — an upstream (WordPress / WooCommerce) answered, but not usefully. */
+export function badGateway(code: string, detail?: string, instance?: string): ProblemDetails {
+  return problem({
+    type: problemUri('bad-gateway'),
+    title: 'Bad Gateway',
+    status: 502,
+    code,
+    detail,
+    instance,
+  });
+}
+
 /** 503 — service unavailable. */
 export function serviceUnavailable(code = 'service_unavailable', detail?: string, instance?: string): ProblemDetails {
   return problem({

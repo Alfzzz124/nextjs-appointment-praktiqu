@@ -8959,6 +8959,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            `payment_method_not_allowed` — `paypal` or `card` on a clinic that is not
+            international, or on a free order. Offer the row's `paymentMethods` instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            `charge_mismatch` (the order total differed from the quote; no order is kept, retry),
+            `payment_gateway_rejected`, or `payment_start_failed`. The WordPress message is never returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            `paypal_rate_missing` or `payment_method_unavailable` (configuration — pay with Xendit; no
+            Retry-After), `payment_settings_unavailable` (settings read failed — retry), or
+            `payment_unavailable` (WordPress/WooCommerce unreachable — retry).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security: []
   /api/v1/public/practices:
     get:
@@ -12193,7 +12224,7 @@ paths:
                 required:
                   - data
         '400':
-          description: Missing billId, or an underlying KcError (e.g. bill not found)
+          description: Missing billId (`invalid_input`)
           content:
             application/json:
               schema:
@@ -12201,7 +12232,49 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: >-
+            Role not allowed, or `payment_method_not_allowed` — `paypal` or `card` on a clinic that
+            is not international, or on a free bill.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Bill not found (`not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            `discount_not_supported` — `paypal` or `card` on a bill with a discount. Use Xendit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected error (`internal_error`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            `charge_mismatch` (the order total differed from the quote; no order is kept, retry),
+            `payment_gateway_rejected`, or `payment_start_failed`. The WordPress message is never returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            `paypal_rate_missing` or `payment_method_unavailable` (configuration — no Retry-After),
+            `payment_settings_unavailable` (settings read failed — retry), or `payment_unavailable`
+            (WordPress/WooCommerce unreachable — retry).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security:
         - bearerAuth: []
   /api/v1/sessions/payment-webhook:
@@ -12787,6 +12860,9 @@ components:
           type: string
         status:
           type: integer
+        code:
+          type: string
+          description: App-specific error code. Clients branch on this, never on status alone.
         detail:
           type: string
     ValidationProblem:

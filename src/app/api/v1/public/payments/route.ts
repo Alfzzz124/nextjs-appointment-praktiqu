@@ -9,6 +9,7 @@ import {
 } from '@/services/payments/payment.service';
 import { badRequest, notFound, conflict } from '@/lib/problem-details';
 import type { PaymentMethod } from '@/lib/wp-endpoint';
+import { paymentErrorProblem } from '@/services/payments/payment-errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const p = conflict('payment_already_initiated', 'Payment already initiated — check status instead');
       return NextResponse.json(p, { status: p.status });
     }
+    const paymentProblem = paymentErrorProblem(err);
+    if (paymentProblem) return NextResponse.json(paymentProblem, { status: paymentProblem.status });
     console.error('[public/payments] unexpected error:', err);
     return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
   }
