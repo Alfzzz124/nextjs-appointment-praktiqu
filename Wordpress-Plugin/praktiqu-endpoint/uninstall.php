@@ -2,7 +2,8 @@
 /**
  * Uninstall handler for PraktiQU Endpoint.
  *
- * Removes all plugin options. The service token (PRAKTIQU_SERVICE_TOKEN
+ * Removes all plugin options, including every per-clinic
+ * `praktiqu_endpoint_clinic_{id}_payment` row. The service token (PRAKTIQU_SERVICE_TOKEN
  * constant in wp-config.php) is NOT removed — the user must clean that up
  * manually if they want to revoke access.
  *
@@ -25,3 +26,16 @@ delete_option('praktiqu_endpoint_paypal_idr_rate_updated');
 delete_option('praktiqu_endpoint_paypal_markup_percent');
 delete_option('praktiqu_endpoint_paypal_markup_percent_updated');
 delete_transient('praktiqu_endpoint_activation_notice');
+
+// One praktiqu_endpoint_clinic_{id}_payment row per clinic (ClinicPaymentSettings). The
+// names are collected with $wpdb and removed through delete_option() so an object cache
+// drops them too. esc_like() escapes the underscores, which LIKE would otherwise treat as
+// single-character wildcards.
+global $wpdb;
+$praktiqu_clinic_payment_options = $wpdb->get_col($wpdb->prepare(
+    "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+    $wpdb->esc_like('praktiqu_endpoint_clinic_') . '%' . $wpdb->esc_like('_payment')
+));
+foreach ((array) $praktiqu_clinic_payment_options as $praktiqu_option_name) {
+    delete_option((string) $praktiqu_option_name);
+}

@@ -161,8 +161,17 @@ final class Settings
     }
 
     /**
-     * Keep the FX rate a positive number, and stamp when it last changed so a
-     * stale rate is visible on the settings screen rather than silent.
+     * Keep the global default FX rate a usable rate — 1,000 to 100,000 rupiah
+     * per 1 USD, the same range ClinicPaymentSettings applies to a clinic's own
+     * rate — and stamp when it last changed so a stale rate is visible on the
+     * settings screen rather than silent.
+     *
+     * The range rejects an inverted or mistyped entry, such as 0.00006, or
+     * "16.500" read as 16.5. It also protects the legacy no-`charge` path of
+     * Payments::create_order() while it still exists (1.7.0 transition).
+     * is_usable_rate() also refuses text Next.js would read as "not set"
+     * ("1.8e4", "18000."), so wp-admin never shows a saved rate that the
+     * payment gate treats as missing.
      *
      * A rejected value keeps the stored one: a blank or malformed submission
      * must not zero the rate, because Payments::create_order() treats a
@@ -175,11 +184,11 @@ final class Settings
     {
         $current = (string) get_option('praktiqu_endpoint_paypal_idr_rate', '');
         $trimmed = trim($value);
-        if ($trimmed === '' || !is_numeric($trimmed) || (float) $trimmed <= 0) {
+        if (!ClinicPaymentSettings::is_usable_rate($trimmed)) {
             add_settings_error(
                 'praktiqu_endpoint_paypal_idr_rate',
                 'praktiqu_invalid_fx_rate',
-                __('PayPal FX Rate was not updated: it must be a number greater than 0. The previous value was kept.', 'praktiqu-endpoint')
+                __('Global default PayPal FX Rate was not updated: it must be a number from 1000 to 100000 (rupiah per 1 USD), written with digits only, such as 16500 or 16500.50. The previous value was kept.', 'praktiqu-endpoint')
             );
             return $current;
         }
@@ -213,7 +222,7 @@ final class Settings
             add_settings_error(
                 'praktiqu_endpoint_paypal_markup_percent',
                 'praktiqu_invalid_markup_percent',
-                __('Foreign Patient Markup was not updated: it must be a number between 0 and 100. The previous value was kept.', 'praktiqu-endpoint')
+                __('Global default Foreign Patient Markup was not updated: it must be a number between 0 and 100. The previous value was kept.', 'praktiqu-endpoint')
             );
             return $current;
         }
@@ -371,7 +380,7 @@ final class Settings
                     </tr>
                     <tr>
                         <th scope="row">
-                            <label for="praktiqu_endpoint_paypal_idr_rate"><?php esc_html_e('PayPal FX Rate (IDR per 1 USD)', 'praktiqu-endpoint'); ?></label>
+                            <label for="praktiqu_endpoint_paypal_idr_rate"><?php esc_html_e('Global default PayPal FX Rate (IDR per 1 USD)', 'praktiqu-endpoint'); ?></label>
                         </th>
                         <td>
                             <input
@@ -383,7 +392,7 @@ final class Settings
                                 placeholder="18000"
                             />
                             <p class="description">
-                                <?php esc_html_e('PayPal does not support IDR, so PayPal and card orders are charged in USD. This should be the honest market rate — keep it tracking the real exchange rate, not adjusted to change what a patient pays. To charge foreign patients more (or less), use the Foreign Patient Markup field below instead.', 'praktiqu-endpoint'); ?>
+                                <?php esc_html_e('PayPal does not support IDR, so PayPal and card orders are charged in USD. Only an International clinic accepts them. Each International clinic can set its own rate from the PraktiQU dashboard; this global default is used for a clinic that leaves its rate empty. It must be from 1000 to 100000. This should be the honest market rate — keep it tracking the real exchange rate, not adjusted to change what a patient pays. To charge foreign patients more (or less), use the markup field below instead.', 'praktiqu-endpoint'); ?>
                                 <?php
                                 $rate_updated = (string) get_option('praktiqu_endpoint_paypal_idr_rate_updated', '');
                                 if ($rate_updated !== '') {
@@ -399,7 +408,7 @@ final class Settings
                     </tr>
                     <tr>
                         <th scope="row">
-                            <label for="praktiqu_endpoint_paypal_markup_percent"><?php esc_html_e('Foreign Patient Markup (%)', 'praktiqu-endpoint'); ?></label>
+                            <label for="praktiqu_endpoint_paypal_markup_percent"><?php esc_html_e('Global default Foreign Patient Markup (%)', 'praktiqu-endpoint'); ?></label>
                         </th>
                         <td>
                             <input
@@ -411,7 +420,7 @@ final class Settings
                                 placeholder="0"
                             />
                             <p class="description">
-                                <?php esc_html_e('Extra percentage added on top of the converted amount, for foreign patients. The FX rate above should stay the honest market rate; put the business markup here. At rate 18000 and markup 10%, a Rp 200.000 service is charged $12.23.', 'praktiqu-endpoint'); ?>
+                                <?php esc_html_e('Extra percentage added on top of the converted amount, for foreign patients. Used for an International clinic that leaves its own markup empty. The FX rate above should stay the honest market rate; put the business markup here. At rate 18000 and markup 10%, a Rp 200.000 service is charged $12.23.', 'praktiqu-endpoint'); ?>
                                 <?php
                                 $markup_updated = (string) get_option('praktiqu_endpoint_paypal_markup_percent_updated', '');
                                 if ($markup_updated !== '') {
@@ -486,6 +495,7 @@ final class Settings
                 <li><code>GET  /health</code> — liveness probe</li>
                 <li><code>POST /payments/order</code> — create a WooCommerce order for an appointment/bill</li>
                 <li><code>GET  /payments/order/{id}</code> — read WooCommerce order status</li>
+                <li><code>GET|PUT /clinics/{id}/payment-settings</code> — one clinic's international payment settings</li>
             </ul>
         </div>
         <?php

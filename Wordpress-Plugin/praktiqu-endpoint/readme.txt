@@ -27,6 +27,7 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * `GET  /health` — liveness probe
 * `POST /payments/order` — create a WooCommerce order for an appointment or bill
 * `GET  /payments/order/{id}` — read WooCommerce order status
+* `GET|PUT /clinics/{id}/payment-settings` — one clinic's international payment settings
 
 == Configuration ==
 
