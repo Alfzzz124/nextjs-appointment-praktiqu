@@ -414,6 +414,20 @@ check('... with the validator message', $result instanceof WP_Error ? $result->g
 check('... and no order was created', last_order(), null);
 check('charge as a string -> 400 invalid_charge', error_of(run(input(['charge' => 'USD 14.85']), $international)), [400, 'invalid_charge']);
 
+// WordPress core skips a null param (sanitize_params / has_valid_params), so a JSON
+// `"charge": null` reaches create_order() with the key present. It must not fall into the
+// legacy global-rate path, which skips the clinic International gate.
+echo "\ncreate_order rejects a present-but-null charge, whatever the method\n";
+$result = run(input(['charge' => null]), $international);
+check('charge null with paypal -> 400 invalid_charge', error_of($result), [400, 'invalid_charge']);
+check('... with the plugin message', $result instanceof WP_Error ? $result->get_error_message() : null, 'charge must be an object when present');
+check('... and no order was created', last_order(), null);
+check('... and PayPal was never contacted', $GLOBALS['__gateway']->calls, 0);
+check('charge null with paypal on a non-international clinic -> still 400, not the legacy path', error_of(run(input(['charge' => null]), null)), [400, 'invalid_charge']);
+check('... and no order was created', last_order(), null);
+check('charge null with xendit -> 400 invalid_charge', error_of(run(input(['method' => 'xendit', 'charge' => null]), $international)), [400, 'invalid_charge']);
+check('... and no order was created', last_order(), null);
+
 echo "\ncreate_order defence in depth: the clinic option must say international\n";
 check('option missing -> 409 clinic_not_international', error_of(run(input(), null)), [409, 'clinic_not_international']);
 check('... and no order was created', last_order(), null);
@@ -463,7 +477,6 @@ check('legacy paypal order succeeds without a clinic option', is_array($result) 
 check('legacy item converted with Money (rate 18000, markup 10)', $order?->product_lines, [['Konsultasi', '12.23']]);
 check('legacy tax converted with Money', $order?->fee_lines, [['PPN', '1.23']]);
 check('legacy writes no clinic meta', array_key_exists('praktiqu_clinic_id', $order?->meta ?? []), false);
-check('a null charge reaching create_order() counts as absent', is_array(run(input(['charge' => null]), null)) ? 'ok' : 'error', 'ok');
 $xendit = input(['method' => 'xendit']);
 unset($xendit['charge']);
 $GLOBALS['__gateway']->id = 'xendit_invoice';

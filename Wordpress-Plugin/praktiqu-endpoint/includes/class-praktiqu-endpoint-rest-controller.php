@@ -345,8 +345,11 @@ final class REST_Controller
                 // 'object' -- the jobs-route incident above was 'array' vs 'object' -- and
                 // with no nested `properties`: every nested check is done by
                 // ChargeValidator in create_order() and fails as our own 400 invalid_charge,
-                // never WP's generic rest_invalid_param. The legacy keys (items, taxes,
-                // method, ...) stay undeclared so their loose handling does not change.
+                // never WP's generic rest_invalid_param. Core skips null params, so a JSON
+                // `"charge": null` is NOT rejected by this schema: create_order() rejects a
+                // present-but-null `charge` itself (400 invalid_charge), and only an absent
+                // key is the legacy/xendit path. The legacy keys (items, taxes, method, ...)
+                // stay undeclared so their loose handling does not change.
                 'charge' => ['type' => 'object', 'required' => false],
             ],
         ]);

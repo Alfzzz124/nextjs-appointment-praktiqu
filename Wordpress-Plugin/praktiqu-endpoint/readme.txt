@@ -68,7 +68,9 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
   differs from charge.total the order is cancelled before PayPal is contacted
   (502 charge_mismatch). New order meta: praktiqu_clinic_id,
   praktiqu_fixed_fee_idr, praktiqu_fx_source. Without `charge` the old global
-  rate path still runs; it is kept only for the deploy transition.
+  rate path still runs; it is kept only for the deploy transition. A
+  present-but-null `charge` is rejected with 400 invalid_charge (WordPress
+  core treats a null param as absent, so the plugin checks it itself).
 * The wp-admin FX rate and markup are now the global defaults, and the rate
   must be from 1,000 to 100,000 rupiah per 1 USD, written with digits only.
 * Uninstall also removes every per-clinic payment option.

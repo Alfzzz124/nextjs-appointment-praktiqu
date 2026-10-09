@@ -64,10 +64,17 @@ final class Payments
 
         // A validated `charge`, or null for xendit and for the legacy paypal/card path.
         // Everything here runs before wc_create_order(), so a rejected charge, like an
-        // unknown method, creates no WooCommerce order at all. A null `charge` that reaches
-        // this method counts as absent. Over REST it never does: the route declares
-        // `charge` as type 'object', so WordPress answers `"charge": null` with its own 400
-        // rest_invalid_param first. Next.js never sends null (it omits `charge`).
+        // unknown method, creates no WooCommerce order at all.
+        //
+        // WordPress core does not reject a JSON `"charge": null` on this route: it skips
+        // null params when it sanitizes and validates the route args, so the null reaches
+        // this method with the key present. It must not count as absent, because an absent
+        // `charge` takes the legacy global-rate path, which skips the clinic International
+        // gate. So the plugin rejects a present-but-null `charge` itself, for every method.
+        // An ABSENT key stays the legacy/xendit path (Next.js omits `charge` there).
+        if (array_key_exists('charge', $input) && $input['charge'] === null) {
+            return new \WP_Error('invalid_charge', 'charge must be an object when present', ['status' => 400]);
+        }
         $charge = null;
         if (($input['charge'] ?? null) !== null) {
             if ($method === 'xendit') {
