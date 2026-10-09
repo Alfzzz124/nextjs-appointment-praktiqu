@@ -782,6 +782,7 @@ soon as it is flagged, if PPCP is live.
 - **A rare one-cent difference from the old plugin path.** With a 2-decimal rate or markup,
   when the fractional cent is below 5e-7, the plugin's `round(…, 6)` rounds down and the new
   function charges one cent more. The golden vectors are unaffected.
+- **Clinic admins control their own rate, markup and fee (accepted risk, user decision 2026-10-09).** A `CLINIC_ADMIN` could set, for example, rate 100,000 and markup 0, so the USD collected is far below the rupiah recorded as owed (`praktiqu_expected_idr`), and could enable PayPal for their clinic once PPCP is live. The 1,000–100,000 range only catches typos. The user chose to keep decision 6 as is; every change is audited (`clinic.payment_settings.updated`, with the actor and before/after values), which is the control for now.
 - **One PayPal merchant for all clinics.** The flag decides whether PayPal is offered, not who
   receives the money.
 - **Still unproven against real PayPal:** live capture → webhook → BOOKED, and the tax-line
