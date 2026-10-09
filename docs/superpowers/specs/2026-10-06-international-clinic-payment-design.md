@@ -463,9 +463,12 @@ where `'array'` was declared instead of `'object'`.
 - `fee` is left out when there is no fee, and `charge` is left out for Xendit. Neither is ever
   sent as `null`.
   - A null `fee` inside `charge` counts as no fee.
-  - A null `charge` is rejected by WordPress's own args check: 400 `rest_invalid_param`, which
-    Next.js maps to 502 `payment_start_failed`. Treating it as absent would send a PayPal order
-    down the legacy global-rate path and skip the clinic gate, so rejecting it is deliberate.
+  - The plugin itself rejects a present-but-null `charge` with 400 `invalid_charge`, which
+    Next.js maps to 502 `payment_gateway_rejected`. WordPress core treats a null param as
+    absent (it skips null args when it sanitizes and validates), so relying on the args schema
+    would let a null `charge` fall into the legacy global-rate path and skip the clinic gate.
+    Rejecting it in `create_order()` is deliberate; only an absent `charge` key is the
+    legacy/xendit path.
 
 **When `charge` is present**, the method must be `paypal` or `card`; otherwise the plugin
 returns 400 `invalid_charge`. Then:

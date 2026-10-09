@@ -47,15 +47,21 @@ Ask the user before each query.
    ```
 
    Each must be empty or plain digits with at most 2 decimals: the rate within 1,000–100,000
-   (rupiah per 1 USD), the markup within 0–100. `1e1`, `.5`, `+10`, `10.`, `16,500` and
-   `16500.123` are all unusable. Next.js never reads a value that is set but unusable as "not
-   set": an unusable global rate is ignored (a flagged clinic without its own rate then
+   (rupiah per 1 USD), the markup within 0–100. Anything else is unusable, and Next.js never
+   reads a value that is set but unusable as "not set". It is logged either way, but it shows
+   up in two ways:
+   - Text that is not a plain decimal (`1e1`, `.5`, `+10`, `10.`, `16,500`) appears in the
+     settings view as `globalDefaults.invalid`.
+   - A plain decimal that is out of range or has too many decimals (a rate of `16500.123`, a
+     markup of `150`) appears in `globalDefaults` as an ordinary number with no `invalid`
+     key; the only sign is that `effective.fxRate` is null for a clinic that depends on it.
+
+   The effect: an unusable global rate is ignored (a flagged clinic without its own rate then
    answers 503 `paypal_rate_missing`), and an unusable global markup voids the rate of every
    flagged clinic that has no markup of its own, even one with its own rate (the same 503).
-   It is logged, and the settings view shows it in `globalDefaults.invalid`. The 1.7.0
-   sanitizer refuses to save such a value, but one written earlier stays: if the query shows
-   one, correct it in wp-admin before going further (enter `0` for no markup — the form
-   cannot save a blank markup).
+   The 1.7.0 sanitizer refuses to save such a value, but one written earlier stays: if the
+   query shows one, correct it in wp-admin before going further (enter `0` for no markup —
+   the form cannot save a blank markup).
 5. **PayPal rows in flight:**
 
    ```sql
@@ -145,19 +151,27 @@ ssh -o ConnectTimeout=40 praktiqu-hostinger "cd ~/plugin-upload-1.7.0 && find . 
    check-1.4 rate (the form also re-saves the markup — leave it as it was; if the check-1.4
    markup is empty, the markup notice of item 11 appears too and the empty value is kept, which
    is expected). Only if the rate did change, re-enter the check-1.4 value and save again.
-10. `"charge": null` is refused by WordPress itself. The plugin relies on WordPress core
-    answering a `charge` of `null` with its own 400 `rest_invalid_param` (the route declares
-    `charge` as an object), before the plugin's code runs; no unit test can prove that, so
-    check it over HTTP, with the service token, a throwaway appointment id and method `paypal`:
+10. `"charge": null` is refused by the plugin itself. WordPress core treats a null param as
+    absent, so the route's `charge` schema does not catch it; plugin 1.7.0's `create_order()`
+    rejects a present-but-null `charge` with its own 400 `invalid_charge`, before any order
+    exists. The unit test cannot prove that the real HTTP layer delivers the null, so check it
+    over HTTP, with the service token, a throwaway appointment id, method `paypal` and
+    `"items": []`.
+
+    **Run it only while PPCP is in Sandbox, or while the global rate from check 1.4 is
+    empty.** If the check were to fail, the request would take the legacy global-rate path;
+    with Sandbox active or no global rate that can at worst be a 503 `paypal_rate_missing` or a
+    throwaway sandbox order, never a live charge. If PPCP is Live and the global rate is set,
+    skip this item here and run it in §3 right after step 1 instead.
 
     ```bash
     ssh -o ConnectTimeout=40 praktiqu-hostinger 'cd ~/domains/api-appointment.praktiqu.com/public_html && TOKEN=$(php -r "define(\"WP_USE_THEMES\", false); require \"wp-load.php\"; echo PRAKTIQU_SERVICE_TOKEN;") && curl -s -w "\nHTTP %{http_code}\n" -X POST -H "X-PraktiQU-Service-Token: $TOKEN" -H "Content-Type: application/json" --data "{\"source\":\"public\",\"appointmentId\":\"deploy-check-throwaway\",\"method\":\"paypal\",\"customerName\":\"Deploy check\",\"customerEmail\":\"deploy-check@example.com\",\"items\":[],\"taxes\":[],\"returnUrl\":\"https://example.com/\",\"cancelUrl\":\"https://example.com/\",\"charge\":null}" https://api-appointment.praktiqu.com/wp-json/praktiqu/v1/payments/order'
     ```
 
-    → `HTTP 400` with `"code":"rest_invalid_param"`, and no new order under WooCommerce →
-    Orders (note the newest order id before you run it). Any other answer — above all a 201 or
-    a new order — means a null `charge` reaches the plugin's legacy path: stop, cancel any
-    stray order and report it before going on.
+    → `HTTP 400` with `"code":"invalid_charge"` (message `charge must be an object when
+    present`), and no new order under WooCommerce → Orders (note the newest order id before you
+    run it). Any other answer — above all a 201 or a new order — means a null `charge` reaches
+    the plugin's legacy path: stop, cancel any stray order and report it before going on.
 11. The global markup is stored as plain digits only. In Settings → PraktiQU Endpoint type
     `1e1` into **Global default Foreign Patient Markup** and save: the page must show the
     "Global default Foreign Patient Markup was not updated" notice and the field must keep its
@@ -202,7 +216,9 @@ auto-deploys to `terpadu.praktiqu.com`. Never push to `main` directly.
 
 1. **Switch PPCP to sandbox**: WooCommerce → Settings → Payments → PayPal, paste the sandbox
    app's client id and secret, save (the webhook re-registers). Have a sandbox **personal**
-   buyer account and a sandbox card ready.
+   buyer account and a sandbox card ready. **Gate: confirm the PPCP connection tab now reads
+   Sandbox before you flag any clinic in step 2.** If it still says Live, stop. (If 2.1 item 10
+   was skipped because PPCP was Live, run it now.)
 2. **Flag one test clinic** — not one taking real bookings — on
    `/dashboard/klinik/{id}/pembayaran-internasional`: Klinik Internasional on, Kurs 18000,
    Markup 10, Fee flat 25000. The page's example must read **$12.23 + $1.39 = $13.62** and
@@ -232,7 +248,9 @@ auto-deploys to `terpadu.praktiqu.com`. Never push to `main` directly.
 6. **Replay the final webhook (UNILATERAL).** In sandbox the capture stays *pending* with reason
    `UNILATERAL`: PPCP carries the live merchant e-mail into sandbox, PayPal holds the money
    unclaimed, WooCommerce puts the order *on-hold*, and nothing books the appointment. That is
-   expected — replay `payment.completed` by hand, on the server:
+   expected — replay `payment.completed` by hand, on the server.
+
+   **Only while Sandbox is active, only for the sandbox capture id — never for a live order.**
 
    ```bash
    cd ~/domains/endpoint.praktiqu.com/hbuilds/config
@@ -255,7 +273,8 @@ auto-deploys to `terpadu.praktiqu.com`. Never push to `main` directly.
    - [ ] Xendit at the international clinic → **Rp 200.000**: no markup, no fee.
    - [ ] (Optional) staff `POST /api/v1/sessions/payment-verify {"billId":"…","method":"paypal"}`
      on a bill with a discount → **422** `discount_not_supported`.
-9. Switch the test clinic's International off again, unless it is meant to take USD.
+9. Switch International off again for **every** test clinic you flagged during this section,
+   before §4.1 switches PPCP to Live. Real clinics are enabled only later, in §4.2.
 
 ## 4. Back to live, then enable clinics
 

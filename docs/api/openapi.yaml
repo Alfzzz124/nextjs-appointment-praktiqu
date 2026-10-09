@@ -7140,6 +7140,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '500':
+          description: '`internal_error` — an unexpected failure; logged'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '503':
           description: '`payment_settings_unavailable` — the settings could not be read; retry'
           content:

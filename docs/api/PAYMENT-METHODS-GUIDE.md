@@ -64,8 +64,8 @@ picked earlier is not in the booking's `paymentMethods`, reset it before calling
   the patient pays at the new rate; the final amount is always the one on PayPal's own page.
 
 **Book into the row's clinic.** A service id repeats across a professional's clinics. Send the
-selected row's `clinicId` in `POST /public/appointments` and to `/public/booking/slots`;
-otherwise the booking can land in another clinic and be charged differently from what was shown.
+selected row's `clinicId` in `POST /public/appointments` and as the `clinicId` query parameter of
+`GET /api/v1/public/professionals/{id}/slots?clinicId=`; otherwise the booking can land in another clinic and be charged differently from what was shown.
 
 Worked example (rate 18,000, markup 10 %, fee Rp 25,000, service Rp 200,000): the service is
 `ceil(200000 × 110 / 18000)` = 1,223 cents → `12.23`, the fee `ceil(25000 × 100 / 18000)` =
@@ -119,7 +119,7 @@ Branch on `code`, never on the status alone:
 | Status | `code` | Meaning | Show the patient |
 | --- | --- | --- | --- |
 | 403 | `payment_method_not_allowed` | `paypal`/`card` on a clinic that is not international, or on a free booking | "Metode ini tidak tersedia untuk klinik ini", then the valid methods |
-| 503 | `paypal_rate_missing` | International clinic with no usable rate. This includes a global markup or rate that is set but unusable (e.g. `1e1`): it is never read as "not set", it voids the rate and is logged | "PayPal sementara tidak tersedia, silakan pakai Xendit" |
+| 503 | `paypal_rate_missing` | International clinic with no usable rate. This includes a global markup that is set but unusable (e.g. `1e1` or `150`): it is never read as "not set", it voids the rate of every clinic without its own markup (even one with its own rate), and it is logged. An unusable global rate is only ignored: a clinic with its own usable rate still works, one without gets this error | "PayPal sementara tidak tersedia, silakan pakai Xendit" |
 | 503 | `payment_method_unavailable` | The PayPal gateway is not available in WooCommerce | same as above |
 | 503 | `payment_settings_unavailable` | The clinic settings could not be read — retryable | a retry message |
 | 503 | `payment_unavailable` | WordPress/WooCommerce unreachable — retryable | a retry message |
@@ -128,8 +128,8 @@ Branch on `code`, never on the status alone:
 | 422 | `discount_not_supported` | Staff route only: `paypal`/`card` on a bill with a discount | pay that bill with Xendit |
 
 None of these is a 409, so the existing 409 branches (`payment_already_initiated`,
-`appointment_not_pending`) are unaffected. The 503 configuration codes
-(`paypal_rate_missing`, `payment_method_unavailable`) carry no `Retry-After`.
+`appointment_not_pending`) are unaffected. None of the 503 answers above sets a `Retry-After`
+header: "retryable" is guidance for the UI, so retry with your own back-off.
 
 ## Displaying the amount — please read
 
