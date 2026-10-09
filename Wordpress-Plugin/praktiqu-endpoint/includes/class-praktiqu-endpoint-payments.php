@@ -186,6 +186,9 @@ final class Payments
         // gap is the accumulated per-line ceiling remainder, and it accrues to the
         // clinic by design. Do not "fix" one of these two figures to match the
         // other; the gap is expected, not a bug.
+        // The same goes for a charge order with an "International service fee" line:
+        // the fee sits outside expected_idr and outside the markup, so the
+        // reconstruction leaves it out by design.
         // $markup is clamped to >= 0 above, so this denominator is always
         // >= 1 — no divide-by-zero guard needed.
         $fx_rate = $is_foreign ? $rate / (1 + $markup / 100) : null;

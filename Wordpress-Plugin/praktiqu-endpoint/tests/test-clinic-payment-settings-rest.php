@@ -86,6 +86,17 @@ namespace {
 
     $GLOBALS['__praktiqu_test_options']  = [];
     $GLOBALS['__praktiqu_update_broken'] = false;
+    $GLOBALS['__praktiqu_encode_broken'] = false;
+
+    /**
+     * wp_json_encode() as WordPress has it: json_encode() that answers false when it cannot
+     * encode. The flag makes it fail, which is the one way ClinicPaymentSettings::encode()
+     * throws (a RuntimeException) from inside ::save().
+     */
+    function wp_json_encode($value, int $flags = 0, int $depth = 512)
+    {
+        return $GLOBALS['__praktiqu_encode_broken'] ? false : json_encode($value, $flags, $depth);
+    }
 
     function get_option(string $name, $default = false)
     {
@@ -207,6 +218,16 @@ namespace {
     $GLOBALS['__praktiqu_update_broken'] = true;
     check('a failed write -> 500 save_failed', put(7, $body), [500, 'save_failed', null]);
     $GLOBALS['__praktiqu_update_broken'] = false;
+
+    $GLOBALS['__praktiqu_encode_broken'] = true;
+    try {
+        $thrown = put(7, $body);
+    } catch (\Throwable $e) {
+        $thrown = ['uncaught ' . get_class($e), $e->getMessage(), null];
+    }
+    check('save() throwing (encode fails) -> 500 save_failed, not an uncaught exception', $thrown, [500, 'save_failed', null]);
+    check('a throwing save writes no option', array_key_exists('praktiqu_endpoint_clinic_7_payment', $GLOBALS['__praktiqu_test_options']), false);
+    $GLOBALS['__praktiqu_encode_broken'] = false;
 
     echo "\nGET /clinics/{id}/payment-settings\n";
     check('saved clinic', get(4), [200, ['clinicId' => 4, 'settings' => $saved]]);

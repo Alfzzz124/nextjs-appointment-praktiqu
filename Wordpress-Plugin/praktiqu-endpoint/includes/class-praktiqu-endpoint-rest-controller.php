@@ -771,7 +771,14 @@ final class REST_Controller
             );
         }
 
-        if (!ClinicPaymentSettings::save($clinic_id, $checked['data'])) {
+        // save() returns false on a failed write and throws when the JSON encode fails;
+        // both are the same "could not be saved" to the caller.
+        try {
+            $saved = ClinicPaymentSettings::save($clinic_id, $checked['data']);
+        } catch (\Throwable $e) {
+            $saved = false;
+        }
+        if (!$saved) {
             return new \WP_Error(
                 'save_failed',
                 sprintf('Payment settings for clinic %d could not be saved', $clinic_id),
