@@ -331,17 +331,13 @@ function gateUsdCharge(items: PaymentLineItem[], taxes: PaymentTaxLine[], settin
  * appointment, and a retry would then hit payment_already_initiated.
  */
 async function assertChargedAsQuoted(wcOrder: CreateWcOrderResult, quote: UsdQuote): Promise<void> {
-  if (amountToCents(wcOrder.chargedAmount ?? -1) === quote.totalCents) return;
-  // Recorded before anything else: this is a mis-priced order being thrown away, and
-  // nobody would otherwise know it happened (the route maps the error to a plain 502).
-  await logging.error('Charged amount differs from the USD quote — WooCommerce order cancelled', undefined, {
-    metadata: {
-      wcOrderId: wcOrder.orderId,
-      chargedAmount: wcOrder.chargedAmount,
-      chargedCurrency: wcOrder.chargedCurrency,
-      quotedTotalUsd: quote.totalUsd,
-    },
-  });
+  // The currency counts too: a charge of the right number in another currency (an
+  // older plugin falling back to rupiah) is not the quote.
+  const chargedAsQuoted =
+    wcOrder.chargedCurrency === 'USD' && amountToCents(wcOrder.chargedAmount ?? -1) === quote.totalCents;
+  if (chargedAsQuoted) return;
+  // The cancel is scheduled FIRST and the log line comes second, so a failing log
+  // write can never stand between a mis-priced order and its cancellation.
   // Defensive only: jobs.enqueue (src/lib/jobs/client.ts) swallows its own failures
   // today, so this catch is not expected to run. It stays so a future client that does
   // reject still ends in ChargeMismatchError rather than a bare 500.
@@ -356,6 +352,16 @@ async function assertChargedAsQuoted(wcOrder: CreateWcOrderResult, quote: UsdQuo
       metadata: { wcOrderId: wcOrder.orderId },
     });
   }
+  // A mis-priced order is being thrown away and nobody would otherwise know it happened
+  // (the route maps the error to a plain 502).
+  await logging.error('Charged amount differs from the USD quote — WooCommerce order cancel scheduled', undefined, {
+    metadata: {
+      wcOrderId: wcOrder.orderId,
+      chargedAmount: wcOrder.chargedAmount,
+      chargedCurrency: wcOrder.chargedCurrency,
+      quotedTotalUsd: quote.totalUsd,
+    },
+  });
   throw new ChargeMismatchError(
     `WooCommerce order ${wcOrder.orderId} charges ${wcOrder.chargedAmount} ${wcOrder.chargedCurrency}, quoted ${quote.totalUsd} USD`,
   );

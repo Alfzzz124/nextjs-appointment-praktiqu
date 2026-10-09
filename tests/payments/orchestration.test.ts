@@ -704,9 +704,37 @@ describe('initiatePublicPayment — international gate (paypal/card)', () => {
     expect(enqueued.runAt.getTime()).toBeGreaterThanOrEqual(before);
     expect(enqueued.runAt.getTime()).toBeLessThanOrEqual(Date.now());
     expect(logging.logging.error).toHaveBeenCalledWith(
-      'Charged amount differs from the USD quote — WooCommerce order cancelled',
+      'Charged amount differs from the USD quote — WooCommerce order cancel scheduled',
       undefined,
       expect.objectContaining({ metadata: expect.objectContaining({ wcOrderId: 78, quotedTotalUsd: '13.62' }) }),
+    );
+    // The cancel is scheduled BEFORE the log line: a failing log write must never be
+    // able to stop the mis-priced order from being cancelled.
+    expect(jobsClient.jobs.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
+      logging.logging.error.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('treats a charge in another currency as a mismatch even when the amount equals the quote', async () => {
+    db.kcOption.findMany.mockResolvedValue([clinicOption({ fx_rate: 18000, markup_percent: 10, fixed_fee_idr: 25000 })]);
+    // 13.62 is the quoted USD figure by number, but nobody is being billed 13.62 dollars.
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 81, checkoutUrl: 'https://paypal.com/checkout/81',
+      chargedAmount: 13.62, chargedCurrency: 'IDR', fxRate: null,
+    });
+
+    await expect(initiatePublicPayment(APPOINTMENT, 'paypal')).rejects.toThrow(ChargeMismatchError);
+
+    expect(db.paymentOrder.create).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.enqueue).toHaveBeenCalledTimes(1);
+    const enqueued = jobsClient.jobs.enqueue.mock.calls[0][0];
+    expect(enqueued.hook).toBe('praktiqu_payment_auto_cancel');
+    expect(enqueued.args).toEqual({ wcOrderId: 81 });
+    expect(enqueued.runAt.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(logging.logging.error).toHaveBeenCalledWith(
+      'Charged amount differs from the USD quote — WooCommerce order cancel scheduled',
+      undefined,
+      expect.objectContaining({ metadata: expect.objectContaining({ wcOrderId: 81, chargedCurrency: 'IDR' }) }),
     );
   });
 
