@@ -18,6 +18,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-06-international-clinic-payment-design.md` (commit 773316f). Read it before any task.
 
+> **Erratum (2026-10-09, during execution):** text in Tasks A4 and B9 below says WordPress core rejects a JSON `"charge": null` with 400 `rest_invalid_param`. That is wrong — core skips null params, so a null charge would fall into the legacy global-rate path. Commit 010ad5f makes the plugin reject a present-but-null `charge` itself with 400 `invalid_charge`; the spec and runbook were corrected in 4d83cc0. Treat the plan's null-charge text as superseded.
+
 ## Global Constraints
 
 - **Database:** never run `prisma db push`, `prisma migrate dev` or any DDL. `DATABASE_URL` is the WordPress database. This feature adds no table, no column and no Prisma model.
