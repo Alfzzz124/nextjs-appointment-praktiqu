@@ -3,7 +3,7 @@
  * Plugin Name:       PraktiQU Endpoint
  * Plugin URI:        https://praktiqu.local/docs/wordpress-plugin
  * Description:       Multipurpose bridge plugin between the PraktiQU Next.js app (on Cloudflare) and WordPress (on shared hosting). Provides service-to-service REST endpoints for auth, identity, job scheduling, and scheduled background jobs via WooCommerce Action Scheduler.
- * Version:           1.6.8
+ * Version:           1.7.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            PraktiQU Team
@@ -16,7 +16,7 @@
 
 defined('ABSPATH') || exit;
 
-define('PRAKTIQU_ENDPOINT_VERSION', '1.6.8');
+define('PRAKTIQU_ENDPOINT_VERSION', '1.7.0');
 define('PRAKTIQU_ENDPOINT_FILE', __FILE__);
 define('PRAKTIQU_ENDPOINT_PATH', plugin_dir_path(__FILE__));
 define('PRAKTIQU_ENDPOINT_URL', plugin_dir_url(__FILE__));
@@ -29,6 +29,8 @@ require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-hooks.ph
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-jobs.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-jobs-webhook.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-money.php';
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-clinic-payment-settings.php';
+require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-charge-validator.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-payments.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-media.php';
 require_once PRAKTIQU_ENDPOINT_PATH . 'includes/class-praktiqu-endpoint-patients.php';

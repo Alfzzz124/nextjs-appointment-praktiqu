@@ -34,6 +34,17 @@ import {
   isTooSoon,
   localDate,
 } from '@/services/booking/booking-policy';
+import type { PaymentMethod } from '@/lib/wp-endpoint';
+import {
+  resolveClinicPaymentForDisplay,
+  resolveClinicPaymentManyForDisplay,
+} from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import {
+  notInternational,
+  type ClinicPaymentSettings,
+  type PublicUsdView,
+} from '@/services/payments/intl-pricing';
 
 export interface PublicClinic {
   id: number;
@@ -46,9 +57,13 @@ export interface PublicClinic {
   country: string | null;
   postalCode: string | null;
   specialties: string[];
+  /** The stored International flag — the admin badge only. False when the read fails. */
+  international: boolean;
+  /** What a booking at this clinic may be paid with: `['xendit']` unless it takes USD. */
+  paymentMethods: PaymentMethod[];
 }
 
-function toPublicClinic(c: WpClinic): PublicClinic {
+function toPublicClinic(c: WpClinic, payment: ClinicPaymentSettings): PublicClinic {
   return {
     id: Number(c.id),
     name: c.name ?? '',
@@ -60,13 +75,19 @@ function toPublicClinic(c: WpClinic): PublicClinic {
     country: c.country,
     postalCode: c.postalCode,
     specialties: c.specialties,
+    international: payment.international,
+    paymentMethods: [...payment.methods],
   };
 }
 
 /** Active clinics only — an inactive one must not appear on a public booking page. */
 export async function listPublicPractices(): Promise<PublicClinic[]> {
   const { items } = await listClinics({ page: 1, perPage: 100 });
-  return items.map(toPublicClinic).sort((a, b) => a.name.localeCompare(b.name));
+  // One settings read for the whole list; never throws (a failed read is Xendit only).
+  const payment = await resolveClinicPaymentManyForDisplay(items.map((c) => Number(c.id)));
+  return items
+    .map((c) => toPublicClinic(c, payment.get(Number(c.id)) ?? notInternational(Number(c.id))))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getPublicPractice(id: number): Promise<PublicClinic | null> {
@@ -74,7 +95,7 @@ export async function getPublicPractice(id: number): Promise<PublicClinic | null
   // Checked here rather than left to the caller: this endpoint is unauthenticated, so
   // a deactivated clinic must simply not exist to the public.
   if (!clinic || !clinic.isActive) return null;
-  return toPublicClinic(clinic);
+  return toPublicClinic(clinic, await resolveClinicPaymentForDisplay(id));
 }
 
 export interface PublicProfessional {
@@ -255,9 +276,19 @@ function nextAvailableFor(
 export interface PublicService {
   id: number;
   name: string;
+  /** Rupiah, unchanged — the current FE keeps working. */
   price: string;
   durationMinutes: number | null;
   serviceType: string | null;
+  /**
+   * The clinic this row is offered at. A service id repeats across a professional's
+   * clinics, so the booking must be submitted with this id for the charge to match the
+   * USD shown here (spec §5).
+   */
+  clinicId: number;
+  paymentMethods: PaymentMethod[];
+  /** USD figures, only for an international clinic with a usable rate and a non-free row. */
+  usd: PublicUsdView | null;
 }
 
 /**
@@ -282,14 +313,34 @@ export async function getPublicProfessionalServices(
     publicOnly: true,
   });
 
-  return rows.map((s) => ({
-    id: Number(s.serviceId),
-    name: s.nameAlias ?? s.name,
+  // One settings read for every clinic in the list. The USD quote per row is built by
+  // the same computePublicAmount + buildUsdQuote that charges, so shown and charged match.
+  const payment = await resolveClinicPaymentManyForDisplay(rows.map((s) => Number(s.clinicId)));
+
+  // Sequential on purpose: a row of an international clinic runs a tax query, and the
+  // MySQL user is capped at a handful of connections.
+  const services: PublicService[] = [];
+  for (const s of rows) {
+    const clinicId = Number(s.clinicId);
+    const name = s.nameAlias ?? s.name;
     // The doctor's charge, not the catalogue list price — that is what a patient pays.
-    price: s.charges ?? '0',
-    durationMinutes: s.durationMinutes,
-    serviceType: s.type,
-  }));
+    const price = s.charges ?? '0';
+    const { paymentMethods, usd } = await rowPaymentForDisplay(
+      { clinicId, doctorId: professionalId, serviceId: Number(s.serviceId), name, price },
+      payment.get(clinicId) ?? notInternational(clinicId),
+    );
+    services.push({
+      id: Number(s.serviceId),
+      name,
+      price,
+      durationMinutes: s.durationMinutes,
+      serviceType: s.type,
+      clinicId,
+      paymentMethods,
+      usd,
+    });
+  }
+  return services;
 }
 
 export interface PublicSlot {

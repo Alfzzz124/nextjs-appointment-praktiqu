@@ -150,6 +150,13 @@ export interface PracticeDTO {
   logoUrl: string | null;
   status: PracticeStatusValue;
   businessHours: BusinessHours[];
+  /**
+   * The clinic's stored International flag (read only; edited through
+   * `/practices/{id}/payment-settings`). It drives the admin badge and is false when the
+   * settings cannot be read. Clients decide the USD display and the payment methods from
+   * the public `usd` / `paymentMethods` fields, never from this.
+   */
+  international: boolean;
   createdAt: string;
   /**
    * KiviCare's clinics table has no `updated_at`, so this mirrors `createdAt` rather

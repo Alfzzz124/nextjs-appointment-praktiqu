@@ -39,6 +39,12 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
   createAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
 }));
+vi.mock('@/services/payments/clinic-payment.service', () => ({
+  resolveClinicPaymentForDisplay: vi.fn(),
+}));
+vi.mock('@/services/payments/public-usd.service', () => ({
+  rowPaymentForDisplay: vi.fn(),
+}));
 
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
@@ -50,6 +56,9 @@ import { createPatient, updatePatient } from '@/repositories/wp/patients.write';
 import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
 import { createAppointment } from '@/repositories/wp/appointments.write';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
+import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { notInternational, type ClinicPaymentSettings } from '@/services/payments/intl-pricing';
 import {
   createPublicAppointment,
   createPublicAppointmentSchema,
@@ -183,6 +192,8 @@ function primeHappyPath() {
 beforeEach(() => {
   vi.clearAllMocks();
   primeHappyPath();
+  vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(notInternational(CLINIC));
+  vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit'], usd: null });
 });
 
 describe('createPublicAppointment', () => {
@@ -552,5 +563,42 @@ describe('createPublicAppointmentSchema', () => {
     expect(
       createPublicAppointmentSchema.safeParse({ ...INPUT, professionalId: 'pro-cuid-1' }).success,
     ).toBe(false);
+  });
+});
+
+describe('createPublicAppointment — payment fields', () => {
+  it('answers Xendit only and no USD for a clinic that is not international', async () => {
+    const result = await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(result.paymentMethods).toEqual(['xendit']);
+    expect(result.usd).toBeNull();
+  });
+
+  it("prices the booked row like the charge: the booked clinic, the service and the doctor's own price", async () => {
+    const settings: ClinicPaymentSettings = {
+      ...notInternational(CLINIC),
+      international: true,
+      methods: ['xendit', 'paypal', 'card'],
+    };
+    const usd = { price: '21.39', taxes: [], fee: null, total: '21.39' };
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(settings);
+    vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
+
+    const result = await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(resolveClinicPaymentForDisplay).toHaveBeenCalledWith(CLINIC);
+    expect(rowPaymentForDisplay).toHaveBeenCalledWith(
+      { clinicId: CLINIC, doctorId: DOCTOR, serviceId: SERVICE, name: 'Konseling Individu', price: '350000' },
+      settings,
+    );
+    expect(result.paymentMethods).toEqual(['xendit', 'paypal', 'card']);
+    expect(result.usd).toEqual(usd);
+  });
+
+  it('computes them only after the appointment is written', async () => {
+    vi.mocked(createAppointment).mockRejectedValue(new WpEndpointError('/appointments failed 500: down', 500));
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey: makeHold() })).rejects.toBeInstanceOf(UpstreamWriteError);
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
   });
 });

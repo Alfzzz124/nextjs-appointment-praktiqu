@@ -70,7 +70,7 @@ tags:
   - name: patient-medical-reports
     description: Patient Medical Reports endpoints (10 operations)
   - name: practices
-    description: Practices endpoints (17 operations)
+    description: Practices endpoints (19 operations)
   - name: prescriptions
     description: Prescriptions endpoints (7 operations)
   - name: professionals
@@ -6875,7 +6875,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Practice'
+                  total:
+                    type: integer
       security: []
     post:
       tags:
@@ -6953,7 +6960,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                $ref: '#/components/schemas/PracticeResult'
         '404':
           $ref: '#/components/responses/NotFound'
       security: []
@@ -6962,7 +6969,12 @@ paths:
         - practices
       summary: Update practices by id
       operationId: patch_api_v1_practices_id
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        **Response envelope:** standard / RFC-7807 problem+json
+
+
+        `international` is read only here: it is changed through
+        `PUT /api/v1/practices/{id}/payment-settings`.
       requestBody:
         required: false
         content:
@@ -6975,7 +6987,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                $ref: '#/components/schemas/PracticeResult'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
@@ -7086,6 +7098,141 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
       security: []
+  /api/v1/practices/{id}/payment-settings:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: KiviCare clinic id (`wp_kc_clinics.id`).
+        schema:
+          type: integer
+    get:
+      tags:
+        - practices
+      summary: Get a clinic's international payment settings
+      operationId: get_api_v1_practices_id_payment_settings
+      description: >-
+        `SUPER_ADMIN` for any clinic; `CLINIC_ADMIN` for their own clinic only (any other clinic is a 404);
+        every other role is a 403. An id with no `wp_kc_clinics` row is a 404.
+
+
+        `stored` is the clinic's own values (`international: false` and every other field null when nothing
+        is stored). `effective` is what a payment would use, with where each value came from, whatever the
+        flag. `example` converts Rp 200,000 with the effective values whenever a usable rate exists, even
+        before the clinic is flagged, so the form can preview the price; otherwise it is null.
+
+
+        **Response envelope:** `{ data: PaymentSettingsView }` / RFC-7807 problem+json.
+      responses:
+        '200':
+          description: The clinic's settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSettingsResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: '`practice_not_found` — no such clinic, or another clinic than a CLINIC_ADMIN''s own'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: '`internal_error` — an unexpected failure; logged'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: '`payment_settings_unavailable` — the settings could not be read; retry'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    put:
+      tags:
+        - practices
+      summary: Replace a clinic's international payment settings
+      operationId: put_api_v1_practices_id_payment_settings
+      description: >-
+        Same access rules as GET. Replaces the clinic's whole settings object: every key is required, and
+        `null` means "use the global value" for `fxRate` / `markupPercent` and "no fee" for `fixedFeeIdr`.
+        `international: true` needs a usable rate (1,000–100,000 rupiah per 1 USD) from the clinic or from
+        the global WordPress option. The save goes through the praktiqu-endpoint plugin
+        (`PUT /praktiqu/v1/clinics/{id}/payment-settings`) with `updated_by` set from the caller's WordPress
+        link, is audited as `clinic.payment_settings.updated`, and is answered by re-reading the stored
+        option.
+
+
+        **Response envelope:** `{ data: PaymentSettingsView }` / RFC-7807 problem+json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentSettingsInput'
+            example:
+              international: true
+              fxRate: 18000
+              markupPercent: 10
+              fixedFeeIdr: 25000
+      responses:
+        '200':
+          description: Saved; the settings as read back from storage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSettingsResult'
+        '400':
+          description: '`invalid_json` — the body is not JSON'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: '`practice_not_found` — no such clinic, or another clinic than a CLINIC_ADMIN''s own'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            `invalid_input` — the body failed validation; `fields` maps each field (or `body`, for an unknown
+            key or a body that is not an object) to its messages. Also when WordPress's own validation
+            refuses the settings: then `fields.body` is `["WordPress rejected the settings"]` and retrying
+            the same body fails the same way. `fx_rate_required` — `international: true` with no usable rate
+            from the clinic or the global option; `fields.fxRate` says so.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/FieldsProblem'
+        '500':
+          description: '`internal_error` — an unexpected failure; logged'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: '`payment_settings_save_failed` — WordPress failed the save; nothing was audited'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            `payment_settings_unavailable` — the settings could not be read. On PUT this can also come from the
+            read-back AFTER a save that went through, so GET the settings again before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /api/v1/practices/{id}/resend-credentials:
     parameters:
       - name: id
@@ -8693,14 +8840,22 @@ paths:
                 clinicId:
                   type: integer
                   minimum: 1
-                  description: Optional. Which of the professional's clinics to book into.
+                  description: >-
+                    Optional. Which of the professional's clinics to book into. Send the selected service
+                    row's `clinicId`: the USD shown for that row is only what is charged when the booking
+                    lands in that clinic.
       responses:
         '201':
-          description: Success
+          description: >-
+            Booked. `paymentMethods` and `usd` are authoritative for the success screen: offer only those
+            methods. A replay with the same `Idempotency-Key` answers 200 with the same shape.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CreatedAppointment'
         '422':
           $ref: '#/components/responses/ValidationError'
       security: []
@@ -8723,7 +8878,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicAppointmentView'
         '404':
           $ref: '#/components/responses/NotFound'
       security: []
@@ -8959,6 +9117,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            `payment_method_not_allowed` — `paypal` or `card` on a clinic that is not
+            international, or on a free order. Offer the row's `paymentMethods` instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            `charge_mismatch` (the order total differed from the quote; no order is kept, retry),
+            `payment_gateway_rejected`, or `payment_start_failed`. The WordPress message is never returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            `paypal_rate_missing` or `payment_method_unavailable` (configuration — pay with Xendit; no
+            Retry-After), `payment_settings_unavailable` (settings read failed — retry), or
+            `payment_unavailable` (WordPress/WooCommerce unreachable — retry).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security: []
   /api/v1/public/practices:
     get:
@@ -8973,7 +9162,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicClinic'
       security: []
   /api/v1/public/practices/{id}:
     parameters:
@@ -8995,7 +9189,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicClinic'
         '404':
           $ref: '#/components/responses/NotFound'
       security: []
@@ -9112,7 +9309,13 @@ paths:
         - public
       summary: Services (GET) — professionals
       operationId: get_api_v1_public_professionals_id_services
-      description: '**Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        **Response envelope:** standard / RFC-7807 problem+json
+
+
+        One row per doctor↔service mapping, so a service the professional offers at two clinics appears
+        twice, once per `clinicId`. Each row's `usd` comes from the same computation that charges, so it is
+        what PayPal and card charge — provided the booking is submitted with that row's `clinicId`.
       parameters:
         - name: clinicId
           in: query
@@ -9127,7 +9330,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicService'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -12193,7 +12401,7 @@ paths:
                 required:
                   - data
         '400':
-          description: Missing billId, or an underlying KcError (e.g. bill not found)
+          description: Missing billId (`invalid_input`)
           content:
             application/json:
               schema:
@@ -12201,7 +12409,49 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: >-
+            Role not allowed, or `payment_method_not_allowed` — `paypal` or `card` on a clinic that
+            is not international, or on a free bill.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Bill not found (`not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: >-
+            `discount_not_supported` — `paypal` or `card` on a bill with a discount. Use Xendit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected error (`internal_error`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            `charge_mismatch` (the order total differed from the quote; no order is kept, retry),
+            `payment_gateway_rejected`, or `payment_start_failed`. The WordPress message is never returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            `paypal_rate_missing` or `payment_method_unavailable` (configuration — no Retry-After),
+            `payment_settings_unavailable` (settings read failed — retry), or `payment_unavailable`
+            (WordPress/WooCommerce unreachable — retry).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security:
         - bearerAuth: []
   /api/v1/sessions/payment-webhook:
@@ -12787,6 +13037,9 @@ components:
           type: string
         status:
           type: integer
+        code:
+          type: string
+          description: App-specific error code. Clients branch on this, never on status alone.
         detail:
           type: string
     ValidationProblem:
@@ -12882,6 +13135,392 @@ components:
                 was returned instead.
           required:
             - checkoutUrl
+    PaymentMethod:
+      type: string
+      enum:
+        - xendit
+        - paypal
+        - card
+    PublicUsdView:
+      type: object
+      description: >-
+        USD figures of one row or booking, from the same function that builds the charge. Every amount is a
+        2-decimal string. Show these as they are; never convert rupiah in the client.
+      properties:
+        price:
+          type: string
+          pattern: '^\d+\.\d{2}$'
+          example: '12.23'
+          description: The service line, markup included.
+        taxes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              amount:
+                type: string
+                pattern: '^\d+\.\d{2}$'
+            required:
+              - name
+              - amount
+        fee:
+          type: string
+          nullable: true
+          pattern: '^\d+\.\d{2}$'
+          example: '1.39'
+          description: The "International service fee" line (no markup); null when the clinic has no fixed fee.
+        total:
+          type: string
+          pattern: '^\d+\.\d{2}$'
+          example: '13.62'
+      required:
+        - price
+        - taxes
+        - fee
+        - total
+    PaymentSettingsInput:
+      type: object
+      additionalProperties: false
+      description: >-
+        A clinic's international payment settings. Every key is required (a PUT replaces the whole object).
+      properties:
+        international:
+          type: boolean
+          description: Accept PayPal and card, charged in USD.
+        fxRate:
+          type: number
+          nullable: true
+          minimum: 1000
+          maximum: 100000
+          multipleOf: 0.01
+          description: Rupiah per 1 USD. null = use the global rate.
+        markupPercent:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+          multipleOf: 0.01
+          description: Added to every item and tax line. null = use the global markup (else 0).
+        fixedFeeIdr:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 10000000
+          description: >-
+            One "International service fee" line per USD order, in rupiah converted at the rate, without the
+            markup. null or 0 = no fee.
+      required:
+        - international
+        - fxRate
+        - markupPercent
+        - fixedFeeIdr
+    PaymentSettingsView:
+      type: object
+      properties:
+        clinicId:
+          type: integer
+        stored:
+          $ref: '#/components/schemas/PaymentSettingsInput'
+        effective:
+          type: object
+          description: What a payment would use now, resolved whatever the flag. Decimals are strings.
+          properties:
+            international:
+              type: boolean
+            methods:
+              type: array
+              items:
+                $ref: '#/components/schemas/PaymentMethod'
+            fxRate:
+              type: string
+              nullable: true
+              description: >-
+                null when no usable rate resolves: neither the clinic nor the global option has one, or the
+                global markup this clinic would use is set but unusable (see `globalDefaults`), which voids
+                the rate whatever its source.
+            markupPercent:
+              type: string
+            fixedFeeIdr:
+              type: string
+            source:
+              type: object
+              properties:
+                fxRate:
+                  type: string
+                  nullable: true
+                  enum:
+                    - clinic
+                    - global
+                    - default
+                    - null
+                markupPercent:
+                  type: string
+                  enum:
+                    - clinic
+                    - global
+                    - default
+                fixedFeeIdr:
+                  type: string
+                  enum:
+                    - clinic
+                    - global
+                    - default
+        globalDefaults:
+          type: object
+          description: >-
+            The global WordPress rate and markup, for form placeholders. A number here is only what was
+            parsed, not proof that it is usable (rate 1,000–100,000, markup 0–100, at most 2 decimals each).
+          properties:
+            fxRate:
+              type: number
+              nullable: true
+            markupPercent:
+              type: number
+              nullable: true
+            invalid:
+              type: object
+              description: >-
+                Present only when a global option is set (non-empty) but is not a plain decimal, such as `1e1`,
+                `.5`, `+10`, `10.` or `16,500`. Each key holds the option's raw text, and the number above it
+                is then null — which is NOT "not set". A global markup that would apply (the clinic has none of
+                its own) and is unusable voids the rate for that clinic, even a rate of its own, so PayPal and
+                card answer 503 `paypal_rate_missing`. An unusable global rate is ignored, so a clinic without a
+                usable rate of its own has none. It is logged for a flagged clinic. Show the admin a warning to
+                correct the option in WordPress; the plugin's wp-admin form (1.7.0) only saves digits with at
+                most 2 decimals, so this means the value predates it or was written some other way.
+              properties:
+                fxRate:
+                  type: string
+                markupPercent:
+                  type: string
+        example:
+          type: object
+          nullable: true
+          description: Rp 200,000 converted with the effective values; null when no usable rate exists.
+          allOf:
+            - $ref: '#/components/schemas/PublicUsdView'
+            - type: object
+              properties:
+                idr:
+                  type: integer
+                  example: 200000
+        updatedAt:
+          type: string
+          nullable: true
+          format: date-time
+        updatedBy:
+          type: object
+          nullable: true
+          properties:
+            wpUserId:
+              type: integer
+            name:
+              type: string
+      required:
+        - clinicId
+        - stored
+        - effective
+        - globalDefaults
+        - example
+        - updatedAt
+        - updatedBy
+    PaymentSettingsResult:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PaymentSettingsView'
+      required:
+        - data
+    FieldsProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            fields:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+              description: Messages per field; `body` holds an issue that has no field.
+    Practice:
+      type: object
+      description: A practice is a KiviCare clinic (`wp_kc_clinics`).
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true
+        telephoneNo:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        postalCode:
+          type: string
+          nullable: true
+        countryCode:
+          type: string
+          nullable: true
+        countryCallingCode:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          enum:
+            - 0
+            - 1
+        businessHours:
+          type: array
+          items:
+            type: object
+        international:
+          type: boolean
+          description: >-
+            The stored International flag, read only (see `/api/v1/practices/{id}/payment-settings`). For the
+            admin badge; false when the settings cannot be read.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PracticeResult:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Practice'
+    PublicClinic:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true
+        telephoneNo:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        postalCode:
+          type: string
+          nullable: true
+        specialties:
+          type: array
+          items:
+            type: string
+        international:
+          type: boolean
+          description: The stored flag — for a badge only. Decide methods and USD display from `paymentMethods` / `usd`.
+        paymentMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
+          description: '`[xendit]` unless the clinic is international with a usable rate.'
+    PublicService:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The KiviCare service id (repeats across a professional's clinics).
+        name:
+          type: string
+        price:
+          type: string
+          description: Rupiah — the doctor's charge for this service at this clinic.
+        durationMinutes:
+          type: integer
+          nullable: true
+        serviceType:
+          type: string
+          nullable: true
+        clinicId:
+          type: integer
+          description: The clinic this row is offered at. Submit the booking with it.
+        paymentMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
+        usd:
+          type: object
+          nullable: true
+          description: >-
+            Set only when the clinic is international, a usable rate exists and the row's rupiah total is
+            above 0. Show USD as the main figure then, with `price` in rupiah underneath.
+          allOf:
+            - $ref: '#/components/schemas/PublicUsdView'
+    PublicAppointmentView:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+        date:
+          type: string
+        startTime:
+          type: string
+        service:
+          type: string
+        professionalName:
+          type: string
+        clientName:
+          type: string
+        clinicId:
+          type: integer
+        paymentMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
+          description: The methods this booking may be paid with. Authoritative — offer only these.
+        usd:
+          type: object
+          nullable: true
+          description: The booking's USD figures, priced like the charge; null unless USD is offered.
+          allOf:
+            - $ref: '#/components/schemas/PublicUsdView'
+    CreatedAppointment:
+      allOf:
+        - $ref: '#/components/schemas/PublicAppointmentView'
+        - type: object
+          properties:
+            token:
+              type: string
+              description: Signed appointment token for `/public/payments` and `/public/appointments/{token}`.
     UploadValidationProblem:
       description: >-
         RFC-7807 problem, optionally carrying a per-file breakdown. `files` is present when validation

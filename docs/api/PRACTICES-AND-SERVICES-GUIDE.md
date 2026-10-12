@@ -70,6 +70,7 @@ Pakai `accessToken` sebagai `Authorization: Bearer <token>`.
 | `GET/PATCH/DELETE /practices/{id}` | ✅ | ✅ | ❌ | ❌ |
 | `/practices/{id}/settings` | ✅ | ✅ | ❌ | ❌ |
 | `/practices/{id}/holidays` | ✅ | ✅ | ❌ | ❌ |
+| `GET/PUT /practices/{id}/payment-settings` | ✅ | 🔸 kliniknya sendiri | ❌ | ❌ |
 | `GET /practices/{id}/users` | ✅ | ✅ | ❌ | ❌ |
 | `POST /practices/{id}/change-admin` | ✅ | ❌ | ❌ | ❌ |
 | `/practices/bulk/*`, `/practices/export` | ✅ | ❌ | ❌ | ❌ |
@@ -123,6 +124,7 @@ curl https://staging2.praktiqu.com/api/v1/practices?page=1&limit=20 \
       "businessHours": [
         { "dayOfWeek": 1, "open": true, "startTime": "08:00", "endTime": "17:00" }
       ],
+      "international": false,
       "createdAt": "2026-01-10T03:00:00.000Z",
       "updatedAt": "2026-01-10T03:00:00.000Z"
     }
@@ -144,6 +146,9 @@ Catatan yang perlu diketahui sebelum dipakai:
   query param itu.
 - `updatedAt` selalu sama dengan `createdAt`. `wp_kc_clinics` tidak punya kolom
   `updated_at`, dan ini sengaja tidak dikarang.
+- `international` (read only) adalah flag Klinik Internasional yang tersimpan — untuk
+  badge admin saja. Diubah lewat §4.16, bukan lewat PATCH. Nilainya `false` kalau
+  pengaturannya gagal dibaca. Field ini juga ada di §4.3, jawaban §4.4, dan §4.15.
 
 ### 4.2 `POST /api/v1/practices` — ❌ belum ada
 
@@ -339,6 +344,87 @@ Unduhan JSON (`Content-Disposition: attachment; filename="practices-export.json"
 isinya array `PracticeDTO` tanpa pembungkus. Query `?status=0` atau `?status=1` menyaring
 hasilnya — dan di sini filternya benar-benar bekerja dua arah, beda dengan §4.1.
 
+### 4.16 `GET` / `PUT /api/v1/practices/{id}/payment-settings` — pembayaran internasional
+
+Pengaturan **Klinik Internasional**: klinik yang ditandai menerima PayPal & kartu (USD),
+dengan kurs, markup persen, dan fee flat rupiah miliknya sendiri. Klinik lain hanya Xendit.
+
+- **Akses:** SUPER_ADMIN untuk klinik mana pun; CLINIC_ADMIN hanya kliniknya sendiri
+  (klinik lain → **404**, bukan 403); role lain → **403**. Id yang tidak ada di
+  `wp_kc_clinics` → 404, dan PUT-nya tidak pernah sampai ke plugin.
+- **Disimpan** di `wp_options` `praktiqu_endpoint_clinic_{id}_payment` (string JSON), ditulis
+  lewat plugin `PUT /praktiqu/v1/clinics/{id}/payment-settings`. Setiap simpan dicatat di
+  `log_entries` (AUDIT, action `clinic.payment_settings.updated`, berisi `before`/`after`).
+- Sengaja **terpisah** dari §4.6: pengaturan uang butuh jejak audit yang jelas.
+
+`PUT` — semua key **wajib** (PUT mengganti seluruh objek); `null` artinya "pakai nilai
+global" untuk kurs/markup dan "tanpa fee" untuk fee:
+
+```bash
+curl -X PUT https://endpoint.praktiqu.com/api/v1/practices/4/payment-settings \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"international":true,"fxRate":18000,"markupPercent":10,"fixedFeeIdr":25000}'
+```
+
+| Field | Aturan |
+|---|---|
+| `international` | boolean |
+| `fxRate` | `null`, atau 1.000–100.000 **rupiah per 1 USD**, maks 2 desimal |
+| `markupPercent` | `null`, atau 0–100, maks 2 desimal |
+| `fixedFeeIdr` | `null`, atau bilangan bulat 0–10.000.000 |
+| silang | `international: true` butuh kurs yang bisa dipakai — dari klinik atau dari opsi global WordPress |
+
+`GET` dan jawaban `PUT` (PUT membaca ulang opsi yang tersimpan, bukan menggemakan input):
+
+```json
+{
+  "data": {
+    "clinicId": 4,
+    "stored": { "international": true, "fxRate": 18000, "markupPercent": 10, "fixedFeeIdr": 25000 },
+    "effective": {
+      "international": true,
+      "methods": ["xendit", "paypal", "card"],
+      "fxRate": "18000", "markupPercent": "10", "fixedFeeIdr": "25000",
+      "source": { "fxRate": "clinic", "markupPercent": "clinic", "fixedFeeIdr": "clinic" }
+    },
+    "globalDefaults": { "fxRate": 16500, "markupPercent": 5 },
+    "example": { "price": "12.23", "taxes": [], "fee": "1.39", "total": "13.62", "idr": 200000 },
+    "updatedAt": "2026-10-06T08:00:00+00:00",
+    "updatedBy": { "wpUserId": 123, "name": "Dewi Admin" }
+  }
+}
+```
+
+- `stored` = nilai milik klinik; tanpa pengaturan: `international: false`, sisanya `null`.
+- `effective` = yang akan dipakai pembayaran, beserta sumbernya (`clinic` / `global` /
+  `default`), apa pun flag-nya. `fxRate` bisa `null` kalau tidak ada kurs yang bisa dipakai
+  (termasuk saat markup global yang akan dipakai terisi tapi tidak valid, lihat di bawah).
+- `globalDefaults` = kurs & markup global, untuk placeholder form. Angkanya hanya hasil
+  baca, belum tentu bisa dipakai (kurs 1.000–100.000, markup 0–100, maks 2 desimal).
+  Kalau sebuah opsi global **terisi tapi bukan desimal biasa** (mis. `1e1`, `.5`, `+10`),
+  objek ini membawa `invalid` berisi teks mentahnya, misalnya
+  `"globalDefaults": { "fxRate": 16500, "markupPercent": null, "invalid": { "markupPercent": "1e1" } }`.
+  Itu **bukan** "belum diisi": markup global yang tidak valid (dan klinik tidak punya markup
+  sendiri) mengosongkan kurs klinik itu, termasuk kurs miliknya sendiri, sehingga PayPal/kartu
+  menjawab 503 `paypal_rate_missing`; kurs global yang tidak valid diabaikan, jadi klinik tanpa
+  kurs sendiri juga tanpa kurs. Tampilkan peringatan ke admin supaya opsinya dibetulkan di
+  WordPress; `invalid` tidak ada kalau semuanya terbaca.
+- `example` = Rp 200.000 dalam USD dengan nilai efektif; dihitung selama ada kurs, bahkan
+  sebelum klinik ditandai, supaya admin bisa melihat pratinjau. `null` kalau tidak ada kurs.
+- `updatedBy` = `null`, atau nama dari `users.displayName` (cadangan `wp_users.display_name`).
+
+Error (`problem+json` dengan `code`):
+
+| Status | `code` | Kapan |
+|---|---|---|
+| 400 | `invalid_json` | Body bukan JSON |
+| 404 | `practice_not_found` | Klinik tidak ada / di luar scope CLINIC_ADMIN |
+| 422 | `invalid_input` | Gagal validasi; `fields` berisi pesan per field (`body` untuk key tak dikenal). Juga saat validasi WordPress sendiri menolak: `fields.body` = `["WordPress rejected the settings"]`, mengulang body yang sama akan gagal lagi |
+| 422 | `fx_rate_required` | `international: true` tanpa kurs yang bisa dipakai; `fields.fxRate` |
+| 500 | `internal_error` | Kegagalan tak terduga; tercatat di log |
+| 502 | `payment_settings_save_failed` | WordPress gagal menyimpan; tidak ada audit |
+| 503 | `payment_settings_unavailable` | Pengaturan gagal dibaca. Pada PUT bisa juga berarti simpan sudah berhasil tapi baca ulang gagal: GET ulang dulu sebelum mencoba lagi |
+
 ---
 
 ## 5. Endpoints — Services (penugasan dokter)
@@ -503,14 +589,17 @@ Klinik **aktif saja**, diurutkan menurut nama, **dibatasi 100 dan tanpa paginasi
       "id": 1, "name": "PraktiQU Jakarta", "email": "halo@praktiqu.com",
       "telephoneNo": "+62211234567", "address": "Jl. Sudirman No. 1",
       "city": "Jakarta", "state": "DKI Jakarta", "country": "Indonesia",
-      "postalCode": "10220", "specialties": ["Psikologi Klinis"]
+      "postalCode": "10220", "specialties": ["Psikologi Klinis"],
+      "international": false, "paymentMethods": ["xendit"]
     }
   ]
 }
 ```
 
 Field internal seperti `status`, `timezone`, `logoUrl`, dan `businessHours` sengaja tidak
-ikut. Sebagai gantinya ada `specialties`.
+ikut. Sebagai gantinya ada `specialties`. `paymentMethods` adalah metode bayar klinik itu
+(`["xendit"]` kecuali klinik internasional dengan kurs yang bisa dipakai); `international`
+hanya untuk badge — lihat [`PAYMENT-METHODS-GUIDE.md`](PAYMENT-METHODS-GUIDE.md).
 
 ### `GET /api/v1/public/practices/{id}`
 
@@ -523,7 +612,9 @@ klinik itu memang harus tidak ada.
 {
   "data": [
     { "id": 12, "name": "Konsultasi Psikologi", "price": "350000",
-      "durationMinutes": 60, "serviceType": "consultation" }
+      "durationMinutes": 60, "serviceType": "consultation",
+      "clinicId": 4, "paymentMethods": ["xendit", "paypal", "card"],
+      "usd": { "price": "21.39", "taxes": [], "fee": "1.39", "total": "22.78" } }
   ]
 }
 ```
@@ -535,6 +626,12 @@ Beda dari §5.1, dan bedanya penting:
 - `price` adalah tarif si dokter (`charges`), bukan harga katalog — itu yang dibayar
   pasien. Default `"0"` kalau kosong.
 - Dokter nonaktif / tidak ada → 404.
+- **Satu baris per klinik.** Service yang sama di dua klinik muncul dua kali, masing-masing
+  dengan `clinicId`-nya. Booking harus dikirim dengan `clinicId` baris yang dipilih, supaya
+  USD yang ditampilkan sama dengan yang ditagih.
+- `paymentMethods` dan `usd` per baris: `usd` hanya terisi untuk klinik internasional dengan
+  kurs yang bisa dipakai dan harga di atas Rp 0. Semua angka USD berupa string 2 desimal dan
+  dihitung dengan fungsi yang sama dengan penagihan — FE tidak pernah mengonversi sendiri.
 
 ---
 
@@ -631,6 +728,8 @@ di-generate.
 | Logika penugasan service | [`src/services/professional/service-assignment.service.ts`](../../src/services/professional/service-assignment.service.ts) |
 | Scope & RBAC professionals | [`src/services/professional/route-scope.ts`](../../src/services/professional/route-scope.ts) |
 | Katalog publik | [`src/services/public/public-catalog.service.ts`](../../src/services/public/public-catalog.service.ts) |
+| Pembayaran internasional (§4.16) | [`src/app/api/v1/practices/[id]/payment-settings/route.ts`](../../src/app/api/v1/practices/%5Bid%5D/payment-settings/route.ts), [`src/services/practice/payment-settings.service.ts`](../../src/services/practice/payment-settings.service.ts) |
+| Hitungan USD | [`src/services/payments/intl-pricing.ts`](../../src/services/payments/intl-pricing.ts) |
 | Tabel yang dipakai | `wp_kc_clinics`, `wp_kc_clinic_schedule`, `wp_kc_services`, `wp_kc_service_doctor_mapping` |
 
 Dokumen terkait: [`API-ACCESS-GUIDE.md`](API-ACCESS-GUIDE.md) ·

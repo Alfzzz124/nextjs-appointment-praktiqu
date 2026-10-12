@@ -17,7 +17,8 @@
  * everyone but us. See docs/architecture/shadow-tables-audit.md §6 D1.
  */
 import { z } from 'zod';
-import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
+import { logging } from '@/lib/logging';
+import { WpConfigError, WpEndpointError, type PaymentMethod } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { isTooSoon } from '@/services/booking/booking-policy';
 import { toMinutes } from '@/services/booking/slot-math';
@@ -35,6 +36,9 @@ import {
   findSessionById,
   fromKcStatus,
 } from '@/repositories/wp/sessions.repo';
+import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
+import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -172,6 +176,14 @@ export interface CreatedAppointment {
    * admins never saw them (2026-09-25 FE audit, BK-14).
    */
   clinicId: number;
+  /**
+   * How this booking may be paid, and its USD figures (spec §3). Authoritative for the
+   * success screen: computed from the booked clinic, service and the doctor's own price —
+   * the numbers `initiatePublicPayment` charges. `usd` is null unless the clinic is
+   * international with a usable rate and the booking is not free.
+   */
+  paymentMethods: PaymentMethod[];
+  usd: PublicUsdView | null;
   token: string;
 }
 
@@ -403,6 +415,19 @@ export async function createPublicAppointment(
   const professionalName =
     [doctor.firstName, doctor.lastName].filter(Boolean).join(' ').trim() || doctor.displayName;
 
+  // Never throws: the appointment is already written, so a failed read shows rupiah and
+  // Xendit only. A throw here would also make the route's withRetry book a second time.
+  const { paymentMethods, usd } = await rowPaymentForDisplay(
+    {
+      clinicId,
+      doctorId: input.professionalId,
+      serviceId: input.serviceId,
+      name: service.nameAlias ?? service.name,
+      price: service.charges ?? '0',
+    },
+    await resolveClinicPaymentForDisplay(clinicId),
+  );
+
   return {
     id: created.id,
     status: fromKcStatus(created.status),
@@ -412,6 +437,8 @@ export async function createPublicAppointment(
     professionalName,
     clientName: input.clientName,
     clinicId,
+    paymentMethods,
+    usd,
     token: signAppointmentToken(created.id),
   };
 }
@@ -430,6 +457,9 @@ export interface PublicAppointmentView {
   clientName: string;
   /** See CreatedAppointment.clinicId. */
   clinicId: number;
+  /** See CreatedAppointment.paymentMethods. */
+  paymentMethods: PaymentMethod[];
+  usd: PublicUsdView | null;
 }
 
 export class AppointmentNotFoundError extends Error {
@@ -452,9 +482,57 @@ async function serviceNameFor(serviceIds: number[]): Promise<string> {
   return service?.name ?? 'Service';
 }
 
+/**
+ * `paymentMethods` + `usd` for an existing booking, priced exactly as
+ * `initiatePublicPayment` prices it: the doctor's own charge for the booked service at
+ * the booked clinic. A clinic that cannot take PayPal costs no mapping or tax query.
+ */
+async function bookingPayment(booking: {
+  clinicId: number;
+  professionalId: number;
+  serviceIds: number[];
+}): Promise<RowPayment> {
+  const settings = await resolveClinicPaymentForDisplay(booking.clinicId);
+  const serviceId = booking.serviceIds[0];
+  if (!settings.methods.includes('paypal') || serviceId === undefined) {
+    return { paymentMethods: [...XENDIT_ONLY], usd: null };
+  }
+
+  let offered: Awaited<ReturnType<typeof listServicesForDoctor>>;
+  try {
+    offered = await listServicesForDoctor({
+      doctorId: BigInt(booking.professionalId),
+      clinicId: BigInt(booking.clinicId),
+    });
+  } catch (err) {
+    // Display only, like rowPaymentForDisplay: a cancel has already gone through the
+    // plugin by the time toView runs, so a failed read must not answer it with a 500.
+    await logging.error('USD price unavailable — showing rupiah and Xendit only', err, {
+      resource: 'clinic',
+      resourceId: String(booking.clinicId),
+      metadata: { doctorId: booking.professionalId, serviceId },
+    });
+    return { paymentMethods: [...XENDIT_ONLY], usd: null };
+  }
+  const mapping = offered.find((s) => Number(s.serviceId) === serviceId);
+  if (!mapping) return { paymentMethods: [...XENDIT_ONLY], usd: null };
+
+  return rowPaymentForDisplay(
+    {
+      clinicId: booking.clinicId,
+      doctorId: booking.professionalId,
+      serviceId,
+      name: mapping.nameAlias ?? mapping.name,
+      price: mapping.charges ?? '0',
+    },
+    settings,
+  );
+}
+
 async function toView(id: number): Promise<PublicAppointmentView | null> {
   const row = await findSessionById(id);
   if (!row) return null;
+  const { paymentMethods, usd } = await bookingPayment(row);
 
   return {
     id: row.id,
@@ -465,6 +543,8 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
     professionalName: row.professionalName,
     clientName: row.clientName,
     clinicId: row.clinicId,
+    paymentMethods,
+    usd,
   };
 }
 

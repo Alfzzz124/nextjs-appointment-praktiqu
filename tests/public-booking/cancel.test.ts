@@ -19,10 +19,29 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
   cancelAppointment: vi.fn(),
   createAppointment: vi.fn(),
 }));
+vi.mock('@/services/payments/clinic-payment.service', () => ({
+  resolveClinicPaymentForDisplay: vi.fn(),
+}));
+vi.mock('@/services/payments/public-usd.service', () => ({
+  rowPaymentForDisplay: vi.fn(),
+}));
+vi.mock('@/lib/logging', () => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
 import { findSessionById, SESSION_STATUS } from '@/repositories/wp/sessions.repo';
-import { findServiceById } from '@/repositories/wp/services.repo';
+import { findServiceById, listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { cancelAppointment } from '@/repositories/wp/appointments.write';
+import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { notInternational, type ClinicPaymentSettings } from '@/services/payments/intl-pricing';
+import { logging } from '@/lib/logging';
 import {
   cancelPublicAppointment,
   getPublicAppointmentById,
@@ -55,6 +74,7 @@ function row(status: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findServiceById).mockResolvedValue({ id: 7n, name: 'Consultation' } as never);
+  vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(notInternational(3));
 });
 
 describe('getPublicAppointmentById', () => {
@@ -76,6 +96,8 @@ describe('getPublicAppointmentById', () => {
       professionalName: 'Dr. Smith',
       clientName: 'Jane Doe',
       clinicId: 3,
+      paymentMethods: ['xendit'],
+      usd: null,
     });
   });
 
@@ -94,6 +116,72 @@ describe('getPublicAppointmentById', () => {
     const view = await getPublicAppointmentById(APPOINTMENT);
     expect(view!.service).toBe('Service');
     expect(findServiceById).not.toHaveBeenCalled();
+  });
+});
+
+describe('public appointment view — payment fields', () => {
+  const INTL: ClinicPaymentSettings = { ...notInternational(3), international: true, methods: ['xendit', 'paypal', 'card'] };
+
+  it('runs no mapping or tax query for a clinic that cannot take PayPal', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    const view = await getPublicAppointmentById(APPOINTMENT);
+
+    expect(resolveClinicPaymentForDisplay).toHaveBeenCalledWith(3);
+    expect(listServicesForDoctor).not.toHaveBeenCalled();
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
+    expect(view).toMatchObject({ paymentMethods: ['xendit'], usd: null });
+  });
+
+  it("prices an international booking from the doctor's own charge at the booked clinic", async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
+    vi.mocked(listServicesForDoctor).mockResolvedValue([
+      { serviceId: 8n, name: 'Other', nameAlias: null, charges: '1' },
+      { serviceId: 7n, name: 'Consultation', nameAlias: 'Konseling', charges: '350000' },
+    ] as never);
+    const usd = { price: '21.39', taxes: [], fee: null, total: '21.39' };
+    vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
+
+    const view = await getPublicAppointmentById(APPOINTMENT);
+
+    expect(listServicesForDoctor).toHaveBeenCalledWith({ doctorId: 29n, clinicId: 3n });
+    expect(rowPaymentForDisplay).toHaveBeenCalledWith(
+      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Konseling', price: '350000' },
+      INTL,
+    );
+    expect(view).toMatchObject({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
+  });
+
+  it('offers Xendit only when the booked service is no longer mapped', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
+    vi.mocked(listServicesForDoctor).mockResolvedValue([]);
+
+    const view = await getPublicAppointmentById(APPOINTMENT);
+
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
+    expect(view).toMatchObject({ paymentMethods: ['xendit'], usd: null });
+  });
+
+  it('answers a cancel that went through with Xendit only, and logs, when the mapping read fails', async () => {
+    vi.mocked(findSessionById)
+      .mockResolvedValueOnce(row(SESSION_STATUS.PENDING))
+      .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
+    const dbDown = new Error('Too many connections');
+    vi.mocked(listServicesForDoctor).mockRejectedValue(dbDown);
+
+    const view = await cancelPublicAppointment(APPOINTMENT);
+
+    expect(cancelAppointment).toHaveBeenCalledWith(APPOINTMENT);
+    expect(view).toMatchObject({ status: 'CANCELLED', paymentMethods: ['xendit'], usd: null });
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
+    expect(logging.error).toHaveBeenCalledWith('USD price unavailable — showing rupiah and Xendit only', dbDown, {
+      resource: 'clinic',
+      resourceId: '3',
+      metadata: { doctorId: 29, serviceId: 7 },
+    });
   });
 });
 

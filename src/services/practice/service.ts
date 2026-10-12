@@ -15,6 +15,7 @@
 import type { Actor } from '@/lib/auth';
 import { logging } from '@/lib/logging';
 import { resolveKcActor } from '@/services/billing/kc-actor';
+import { resolveClinicPaymentManyForDisplay } from '@/services/payments/clinic-payment.service';
 import {
   findClinicById,
   listClinicMembers,
@@ -102,7 +103,7 @@ function readBusinessHours(extra: Record<string, unknown>): BusinessHours[] {
   return Array.isArray(value) ? (value as BusinessHours[]) : [];
 }
 
-function toPracticeDTO(c: WpClinic): PracticeDTO {
+function toPracticeDTO(c: WpClinic, international: boolean): PracticeDTO {
   // timezone, logoUrl and businessHours have no columns on KiviCare's table and
   // round-trip through `extra`, so adding fields needs no schema change.
   const extra = c.extra;
@@ -122,11 +123,21 @@ function toPracticeDTO(c: WpClinic): PracticeDTO {
     logoUrl: typeof extra.logoUrl === 'string' ? extra.logoUrl : null,
     status: c.isActive ? 1 : 0,
     businessHours: readBusinessHours(extra),
+    international,
     createdAt: c.createdAt.toISOString(),
     // KiviCare's clinics table has no updated_at column. Mirroring createdAt is
     // honest; inventing `now()` would not be.
     updatedAt: c.createdAt.toISOString(),
   };
+}
+
+/**
+ * DTOs for a page of clinics, with one settings read for the whole page. Never throws:
+ * a failed read is logged and every clinic reads `international: false`.
+ */
+async function toPracticeDTOs(clinics: WpClinic[]): Promise<PracticeDTO[]> {
+  const payment = await resolveClinicPaymentManyForDisplay(clinics.map((c) => Number(c.id)));
+  return clinics.map((c) => toPracticeDTO(c, payment.get(Number(c.id))?.international ?? false));
 }
 
 /** `HH:MM:SS` → `HH:mm`, the shape this DTO has always used. */
@@ -181,13 +192,14 @@ export async function listPractices(
     includeInactive: options.includeInactive,
     ids,
   });
-  return { data: items.map(toPracticeDTO), total };
+  return { data: await toPracticeDTOs(items), total };
 }
 
 export async function getPractice(id: number): Promise<PracticeDTO> {
   const clinic = await findClinicById(BigInt(id));
   if (!clinic) throw new PracticeNotFoundError(id);
-  return toPracticeDTO(clinic);
+  const [dto] = await toPracticeDTOs([clinic]);
+  return dto;
 }
 
 export async function updatePractice(
@@ -252,7 +264,7 @@ export async function exportPractices(params: { status?: number } = {}): Promise
   const out: PracticeDTO[] = [];
   for (let page = 1; ; page += 1) {
     const { items, total } = await listClinicRows({ page, perPage: 100, includeInactive: true });
-    out.push(...items.map(toPracticeDTO));
+    out.push(...(await toPracticeDTOs(items)));
     if (items.length === 0 || out.length >= total) break;
   }
   return params.status === undefined ? out : out.filter((p) => p.status === params.status);

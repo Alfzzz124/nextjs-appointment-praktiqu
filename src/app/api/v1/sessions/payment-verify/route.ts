@@ -7,6 +7,7 @@ import { billScopeFor } from '@/services/billing/kc-permissions';
 import { badRequest } from '@/lib/problem-details';
 import { KcError } from '@/lib/kc-response';
 import type { PaymentMethod } from '@/lib/wp-endpoint';
+import { paymentErrorProblem, statusProblem } from '@/services/payments/payment-errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,9 +43,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     if (err instanceof KcError) {
-      return NextResponse.json({ type: 'about:blank', title: err.message, status: err.httpStatus }, { status: err.httpStatus });
+      const p = statusProblem(err.httpStatus, err.message);
+      return NextResponse.json(p, { status: p.status });
     }
+    const paymentProblem = paymentErrorProblem(err);
+    if (paymentProblem) return NextResponse.json(paymentProblem, { status: paymentProblem.status });
     console.error('[sessions/payment-verify] unexpected error:', err);
-    return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
+    const fallback = statusProblem(500, 'Internal Server Error');
+    return NextResponse.json(fallback, { status: fallback.status });
   }
 }

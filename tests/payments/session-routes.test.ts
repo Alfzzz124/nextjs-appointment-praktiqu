@@ -21,7 +21,11 @@ const db = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ prisma: db }));
 
 const wpEndpoint = vi.hoisted(() => ({ createWcOrder: vi.fn(), getWcOrderStatus: vi.fn() }));
-vi.mock('@/lib/wp-endpoint', () => wpEndpoint);
+// Partial: the routes' error mapping needs the real WpEndpointError class.
+vi.mock('@/lib/wp-endpoint', async (orig) => ({
+  ...(await orig<typeof import('@/lib/wp-endpoint')>()),
+  ...wpEndpoint,
+}));
 
 const jobsClient = vi.hoisted(() => ({ jobs: { enqueue: vi.fn(), cancel: vi.fn() } }));
 vi.mock('@/lib/jobs/client', () => jobsClient);
@@ -43,6 +47,15 @@ vi.mock('@/services/payments/payment.service', () => ({
 vi.mock('@/lib/auth/route-guards', () => ({
   requireRoles: vi.fn(async () => ({ actor: { id: 'u1', role: 'RECEPTIONIST', practiceId: 'p1' } })),
 }));
+vi.mock('@/lib/logging', () => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 vi.mock('@/lib/kc-response', () => ({
   KcError: class KcError extends Error { constructor(message: string, public httpStatus = 400) { super(message); } },
 }));
@@ -53,6 +66,15 @@ import { POST as success } from '@/app/api/v1/sessions/payment-success/route';
 import { POST as cancelRoute } from '@/app/api/v1/sessions/payment-cancel/route';
 import * as svc from '@/services/payments/payment.service';
 import { requireRoles } from '@/lib/auth/route-guards';
+import { KcError } from '@/lib/kc-response';
+import {
+  ChargeMismatchError,
+  DiscountNotSupportedError,
+  PaymentMethodNotAllowedError,
+  PaypalRateMissingError,
+} from '@/services/payments/payment-errors';
+import { PaymentSettingsUnavailableError } from '@/repositories/wp/clinic-payment-settings.repo';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 
 function req(body: unknown) {
   return new NextRequest('http://x/api/v1/sessions/payment-verify', { method: 'POST', body: JSON.stringify(body) });
@@ -358,5 +380,70 @@ describe('POST /sessions/payment-webhook — null transactionId', () => {
     }), 'ok'));
     expect(res.status).toBe(200);
     expect(svc.markFailed).toHaveBeenCalled();
+  });
+});
+
+describe('POST /sessions/payment-verify — coded errors', () => {
+  const staff = { actor: { id: 'u1', role: 'RECEPTIONIST', practiceId: 'p1' } };
+
+  beforeEach(linkReceptionist);
+
+  it.each([
+    ['a clinic that is not international', 403, 'payment_method_not_allowed', () => new PaymentMethodNotAllowedError('no')],
+    ['an international clinic with no usable rate', 503, 'paypal_rate_missing', () => new PaypalRateMissingError('no rate')],
+    ['a settings read error', 503, 'payment_settings_unavailable', () => new PaymentSettingsUnavailableError('db down')],
+    ['the backstop', 502, 'charge_mismatch', () => new ChargeMismatchError('8.33 != 8.34')],
+    ['a discounted bill', 422, 'discount_not_supported', () => new DiscountNotSupportedError('discount')],
+  ])('answers %s with %i %s', async (_label, status, code, makeErr) => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(makeErr());
+    const res = await paymentVerify(req({ billId: '9', method: 'paypal' }));
+    expect(res.status).toBe(status);
+    expect(await res.json()).toMatchObject({ status, code });
+    expect(res.headers.get('Retry-After')).toBeNull();
+  });
+
+  it.each([
+    ['clinic_not_international', 409, 403, 'payment_method_not_allowed'],
+    ['charge_mismatch', 502, 502, 'charge_mismatch'],
+    ['paypal_rate_missing', 503, 503, 'paypal_rate_missing'],
+    ['gateway_missing', 503, 503, 'payment_method_unavailable'],
+    ['woocommerce_missing', 503, 503, 'payment_unavailable'],
+    ['invalid_charge', 400, 502, 'payment_gateway_rejected'],
+    ['order_create_failed', 500, 502, 'payment_start_failed'],
+  ])('maps plugin code %s (WP %i) to %i %s, without the WordPress message', async (wpCode, wpStatus, status, code) => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(
+      new WpEndpointError(`WC order create failed ${wpStatus}: secret wp detail`, wpStatus, wpCode),
+    );
+    const res = await paymentVerify(req({ billId: '9', method: 'paypal' }));
+    expect(res.status).toBe(status);
+    const body = await res.json();
+    expect(body).toMatchObject({ status, code });
+    expect(JSON.stringify(body)).not.toContain('secret wp detail');
+  });
+
+  it('maps an unreachable WordPress to 503 payment_unavailable', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(new WpEndpointError('/payments/order unreachable', 0));
+    const res = await paymentVerify(req({ billId: '9', method: 'card' }));
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('payment_unavailable');
+  });
+
+  it('answers a KcError with a coded problem', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(new KcError('Bill not found', 404));
+    const res = await paymentVerify(req({ billId: '9' }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ status: 404, code: 'not_found', detail: 'Bill not found' });
+  });
+
+  it('answers an unrecognised error with a coded 500', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(new Error('boom'));
+    const res = await paymentVerify(req({ billId: '9' }));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ status: 500, code: 'internal_error' });
   });
 });
