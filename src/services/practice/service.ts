@@ -15,6 +15,7 @@
 import type { Actor } from '@/lib/auth';
 import { logging } from '@/lib/logging';
 import { resolveKcActor } from '@/services/billing/kc-actor';
+import { countOwnedClinics, isClinicAdminUser } from '@/repositories/wp/clinic-admins.repo';
 import { resolveClinicPaymentManyForDisplay } from '@/services/payments/clinic-payment.service';
 import {
   findClinicById,
@@ -281,18 +282,66 @@ export async function listPracticeUsers(
   return members.map((m) => ({ userId: Number(m.userId), role: m.role }));
 }
 
-export async function changePracticeAdmin(practiceId: number, newAdminId: number): Promise<void> {
+/** `newAdminId` is not a WordPress account holding the kiviCare_clinic_admin capability. */
+export class NotAClinicAdminError extends Error {
+  constructor(public readonly wpUserId: number) {
+    super(`WordPress user ${wpUserId} is not a clinic admin`);
+    this.name = 'NotAClinicAdminError';
+  }
+}
+
+export interface ChangePracticeAdminResult {
+  clinicId: number;
+  adminId: number;
+  previousAdminId: number;
+  /** Clinics the previous admin still owns after this change; 0 = they now hold none. */
+  previousAdminClinicCount: number;
+  /** True when `newAdminId` already was the admin: nothing was written or audited. */
+  unchanged: boolean;
+}
+
+/**
+ * Make `newAdminId` (a wp_users.ID) the admin of a clinic. A clinic has exactly one admin;
+ * one admin may hold several clinics and picks one per request with X-Praktiqu-Clinic-Id.
+ * The previous admin loses this clinic at once: their next request naming it gets 403.
+ */
+export async function changePracticeAdmin(
+  practiceId: number,
+  newAdminId: number,
+  actorId: string,
+): Promise<ChangePracticeAdminResult> {
   const clinic = await findClinicById(BigInt(practiceId));
   if (!clinic) throw new PracticeNotFoundError(practiceId);
+  if (!(await isClinicAdminUser(BigInt(newAdminId)))) throw new NotAClinicAdminError(newAdminId);
 
-  // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields, so
-  // it is set explicitly rather than widening that type for one caller.
-  const { prisma } = await import('@/lib/db');
-  await prisma.$executeRawUnsafe(
-    `UPDATE wp_kc_clinics SET clinic_admin_id = ? WHERE id = ?`,
-    newAdminId,
-    practiceId,
-  );
+  const previousAdminId = Number(clinic.clinicAdminId);
+  const unchanged = previousAdminId === newAdminId;
+  if (!unchanged) {
+    // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields, so
+    // it is set explicitly rather than widening that type for one caller.
+    const { prisma } = await import('@/lib/db');
+    await prisma.$executeRawUnsafe(
+      `UPDATE wp_kc_clinics SET clinic_admin_id = ? WHERE id = ?`,
+      newAdminId,
+      practiceId,
+    );
+    // userId is the caller's users.id (a cuid): log_entries.userId is a foreign key to
+    // users.id, and logging swallows insert errors, so a wp_users.ID here would drop the row.
+    await logging.audit('practice.admin_changed', {
+      userId: actorId,
+      resource: 'clinic',
+      resourceId: String(practiceId),
+      metadata: { previousAdminId, newAdminId },
+    });
+  }
+
+  return {
+    clinicId: practiceId,
+    adminId: newAdminId,
+    previousAdminId,
+    previousAdminClinicCount: await countOwnedClinics(BigInt(previousAdminId)),
+    unchanged,
+  };
 }
 
 /* ------------------------------------------------------------------ */

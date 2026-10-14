@@ -1,21 +1,45 @@
 /**
- * POST /api/v1/practices/:id/change-admin — update the clinic admin for a practice
+ * POST /api/v1/practices/:id/change-admin — make a clinic admin the admin of this clinic.
+ *
+ * SUPER_ADMIN only. Body: `{ "newAdminId": <wp_users.ID> }`, a number or a numeric string,
+ * whose account holds the kiviCare_clinic_admin capability. A clinic has exactly one admin
+ * (wp_kc_clinics.clinic_admin_id); one admin may hold several clinics.
+ *
+ * This used to look `newAdminId` up as an auth cuid and then write Number(cuid) — NaN — into
+ * clinic_admin_id, so it could not succeed with any input.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withAuth } from '@/lib/auth';
 import { forbidden } from '@/lib/problem-details';
-import { changePracticeAdmin, PracticeNotFoundError } from '@/services/practice/service';
-import { prisma } from '@/lib/db';
+import {
+  changePracticeAdmin,
+  NotAClinicAdminError,
+  PracticeNotFoundError,
+} from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
-const schema = z.object({ newAdminId: z.string().min(1) });
+/** A wp_users.ID / wp_kc_clinics.id small enough to survive Number(). */
+const ID = /^[1-9][0-9]{0,14}$/;
+
+const schema = z.object({
+  newAdminId: z
+    .union([z.number().int().positive().max(Number.MAX_SAFE_INTEGER), z.string().regex(ID)])
+    .transform(Number),
+});
+
+const practiceNotFound = () =>
+  NextResponse.json(
+    { type: '/errors/resource-not-found', title: 'Practice not found', status: 404 },
+    { status: 404 },
+  );
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const { actor, params } = ctx as any;
-  if (!['SUPER_ADMIN'].includes(actor.role)) {
+  if (actor.role !== 'SUPER_ADMIN') {
     return NextResponse.json(forbidden('Insufficient permissions'), { status: 403 });
   }
+  if (!ID.test(String(params?.id ?? ''))) return practiceNotFound();
 
   let body: unknown;
   try {
@@ -40,22 +64,21 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     );
   }
 
-  const user = await prisma.user.findUnique({ where: { id: parsed.data.newAdminId } });
-  if (!user) {
-    return NextResponse.json(
-      { type: '/errors/not-found', title: 'User not found', status: 404 },
-      { status: 404 },
-    );
-  }
-
   try {
-    await changePracticeAdmin(Number(params.id), Number(parsed.data.newAdminId));
-    return NextResponse.json({ message: 'Practice admin updated' }, { status: 200 });
+    const result = await changePracticeAdmin(Number(params.id), parsed.data.newAdminId, actor.id);
+    return NextResponse.json({ message: 'Practice admin updated', data: result }, { status: 200 });
   } catch (err) {
-    if (err instanceof PracticeNotFoundError) {
+    if (err instanceof PracticeNotFoundError) return practiceNotFound();
+    if (err instanceof NotAClinicAdminError) {
       return NextResponse.json(
-        { type: '/errors/resource-not-found', title: 'Practice not found', status: 404 },
-        { status: 404 },
+        {
+          type: '/errors/validation-error',
+          title: 'Not a clinic admin',
+          status: 422,
+          code: 'not_a_clinic_admin',
+          detail: err.message,
+        },
+        { status: 422 },
       );
     }
     await logging.error('changePracticeAdmin failed', err, { path: `/api/v1/practices/${params.id}/change-admin` });
