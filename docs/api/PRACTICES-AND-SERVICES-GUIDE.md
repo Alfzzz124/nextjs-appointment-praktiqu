@@ -60,6 +60,29 @@ Pakai `accessToken` sebagai `Authorization: Bearer <token>`.
 > menghasilkan 400/404 yang membingungkan. Detailnya di
 > [`docs/handover/2026-07-31-frontend-breaking-changes.md`](../handover/2026-07-31-frontend-breaking-changes.md).
 
+### Klinik aktif (admin yang memegang beberapa klinik)
+
+Sejak 2026-10, satu `CLINIC_ADMIN` boleh memegang beberapa klinik (beberapa baris
+`wp_kc_clinics` dengan `clinic_admin_id` yang sama). Respons login dan `GET /auth/me`
+untuk CLINIC_ADMIN membawa daftarnya, klinik default lebih dulu:
+
+```json
+{ "user": { "role": "CLINIC_ADMIN", "clinicId": 4,
+            "clinics": [ { "id": 4, "name": "Klinik A", "active": true },
+                         { "id": 20, "name": "Klinik B", "active": true } ] } }
+```
+
+Pilih klinik untuk satu request dengan header **`X-Praktiqu-Clinic-Id: <id>`**. Tanpa header =
+klinik default (`clinicId`). Header hanya dibaca untuk CLINIC_ADMIN; role lain mengabaikannya.
+
+| Kasus | Jawaban |
+|---|---|
+| Format bukan bilangan bulat positif | 400, body memuat `invalid_clinic_header` |
+| Klinik bukan milik admin ini, atau tidak ada | 403, body memuat `clinic_not_in_scope` |
+
+Setiap endpoint ter-scope (daftar, detail, bills, pasien, laporan, pengaturan pembayaran)
+mengikuti klinik aktif ini. Klinik di luar klinik aktif tetap 404 seperti biasa.
+
 ---
 
 ## 3. Ringkasan hak akses
@@ -149,6 +172,10 @@ Catatan yang perlu diketahui sebelum dipakai:
 - `international` (read only) adalah flag Klinik Internasional yang tersimpan — untuk
   badge admin saja. Diubah lewat §4.16, bukan lewat PATCH. Nilainya `false` kalau
   pengaturannya gagal dibaca. Field ini juga ada di §4.3, jawaban §4.4, dan §4.15.
+
+> CLINIC_ADMIN hanya melihat **klinik aktifnya** (header `X-Praktiqu-Clinic-Id`, atau klinik
+> default bila tanpa header) — satu baris, walau ia memegang beberapa klinik. Daftar lengkap
+> klinik miliknya ada di `user.clinics` respons `/auth/me` (§2).
 
 ### 4.2 `POST /api/v1/practices` — ❌ belum ada
 
@@ -305,18 +332,34 @@ Semua orang yang terpetakan ke praktik itu, digabung dari tiga tabel mapping Kiv
 { "data": [ { "userId": 204, "role": "doctor" }, { "userId": 512, "role": "receptionist" } ] }
 ```
 
-### 4.11 `POST /api/v1/practices/{id}/change-admin` — ⚠️ rusak
+### 4.11 `POST /api/v1/practices/{id}/change-admin` — SUPER_ADMIN
 
-SUPER_ADMIN saja. Body: `{ "newAdminId": "<string>" }`.
+Menjadikan seorang admin klinik sebagai admin klinik `{id}`. Satu klinik punya satu admin;
+satu admin boleh memegang beberapa klinik. Admin lama kehilangan klinik ini seketika.
 
-Endpoint ini punya id yang saling bertabrakan dan **tidak bisa berhasil dengan input apa
-pun**: `newAdminId` dicari di tabel auth `User` (id-nya cuid), lalu nilai yang sama
-di-`Number()`-kan untuk ditulis ke `wp_kc_clinics.clinic_admin_id` (butuh integer).
+Body: `{ "newAdminId": 911 }` — `wp_users.ID` (angka atau string angka) yang punya
+capability `kiviCare_clinic_admin`.
 
-- Kirim cuid → lolos lookup, lalu `Number(cuid)` = `NaN` masuk ke SQL.
-- Kirim `wpUserId` numerik → lookup gagal duluan → 404.
+| Kasus | Jawaban |
+|---|---|
+| Bukan SUPER_ADMIN | 403 |
+| Klinik tidak ada / id bukan angka | 404 |
+| Body bukan JSON | 400 |
+| `newAdminId` hilang/tidak sah | 422 |
+| Akun bukan admin klinik / tidak ada | 422, `code: "not_a_clinic_admin"` |
 
-Pakai SQL langsung sampai ini diperbaiki. Lihat §9.
+Sukses (200):
+
+```json
+{ "message": "Practice admin updated",
+  "data": { "clinicId": 20, "adminId": 911, "previousAdminId": 512,
+            "previousAdminClinicCount": 0, "unchanged": false } }
+```
+
+`previousAdminClinicCount` = jumlah klinik yang masih dipegang admin lama; `0` berarti ia
+kini tidak memegang klinik apa pun. `unchanged: true` = akun itu sudah admin klinik ini
+(tidak ada yang ditulis, tidak ada audit). Perubahan dicatat di audit log
+`practice.admin_changed`.
 
 ### 4.12 `POST /api/v1/practices/{id}/resend-credentials` — belum ada
 
@@ -424,6 +467,18 @@ Error (`problem+json` dengan `code`):
 | 500 | `internal_error` | Kegagalan tak terduga; tercatat di log |
 | 502 | `payment_settings_save_failed` | WordPress gagal menyimpan; tidak ada audit |
 | 503 | `payment_settings_unavailable` | Pengaturan gagal dibaca. Pada PUT bisa juga berarti simpan sudah berhasil tapi baca ulang gagal: GET ulang dulu sebelum mencoba lagi |
+
+### 4.17 `GET /api/v1/practices/clinic-admins` — SUPER_ADMIN
+
+Semua akun WordPress yang ber-capability `kiviCare_clinic_admin`, urut nama — termasuk yang
+belum pernah login ke API.
+
+```json
+{ "data": [ { "wpUserId": 911, "name": "Admin Satu", "email": "a@klinik.co", "clinicIds": [4, 20] } ],
+  "total": 1 }
+```
+
+`clinicIds` = klinik yang `clinic_admin_id`-nya akun ini. Role lain: 403.
 
 ---
 
@@ -698,7 +753,7 @@ Semua sudah diverifikasi dari kode per 2026-08-05, bukan dugaan.
 |---|---|---|
 | 1 | `POST /practices` balas 501 | Klinik baru harus lewat provisioning WordPress |
 | 2 | Rute `[holidayId]` tidak ada (§4.9) | Hapus hari libur mustahil lewat API — 404 atau 500 |
-| 3 | `change-admin` mencampur id cuid dan integer (§4.11) | Endpoint gagal untuk input apa pun |
+| 3 | ~~`change-admin` mencampur id cuid dan integer~~ — **diperbaiki 2026-10** (§4.11) | — |
 | 4 | `?status=0` di `GET /practices` tidak menyaring (§4.1) | Diam-diam mengembalikan semua baris |
 | 5 | `search` tidak tersambung di `GET /practices` | Pencarian harus di sisi klien |
 | 6 | `bulk/status` menerima mapping id lewat field `serviceIds` (§5.5) | Kirim service id → 0 baris berubah, tanpa error |
