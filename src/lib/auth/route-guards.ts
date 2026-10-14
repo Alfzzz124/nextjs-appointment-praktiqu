@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getActor, AuthError, type Actor } from '@/lib/auth';
-import { unauthorized, forbidden } from '@/lib/problem-details';
+import { unauthorized, forbidden, badRequest } from '@/lib/problem-details';
 
 const PROBLEM_HEADERS = { 'Content-Type': 'application/problem+json' } as const;
 
@@ -31,8 +31,8 @@ export async function requireRoles(
   } catch (err) {
     if (err instanceof AuthError) {
       return {
-        response: NextResponse.json(unauthorized('unauthorized', err.message), {
-          status: 401,
+        response: NextResponse.json(authProblem(err), {
+          status: err.status,
           headers: PROBLEM_HEADERS,
         }),
       };
@@ -53,4 +53,15 @@ export async function requireRoles(
 /** Authenticate only (any valid role). Returns the actor or a 401 response. */
 export async function requireAuth(req: NextRequest): Promise<RoleGuardResult> {
   return requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN', 'PROFESSIONAL', 'RECEPTIONIST', 'CLIENT']);
+}
+
+/**
+ * Problem body for an AuthError. 401 stays `unauthorized`. 400/403 come from the
+ * X-Praktiqu-Clinic-Id check in getActor(), whose message IS its code, so it becomes the
+ * problem `code` the client acts on (the Laravel FE ends the session on it).
+ */
+function authProblem(err: AuthError) {
+  if (err.status === 403) return forbidden(err.message, err.message);
+  if (err.status === 400) return badRequest(err.message, err.message);
+  return unauthorized('unauthorized', err.message);
 }

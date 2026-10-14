@@ -31,7 +31,8 @@ export async function callerFromHeaders(
     actor = await getActor(req);
   } catch (err) {
     if (err instanceof AuthError) {
-      throw new SessionNoteAccessError('unauthenticated', 401);
+      // 401 = missing/invalid token. 400/403 = the active-clinic header was refused.
+      throw new SessionNoteAccessError(err.status === 401 ? 'unauthenticated' : err.message, err.status);
     }
     throw err;
   }
