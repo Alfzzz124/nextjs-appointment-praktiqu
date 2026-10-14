@@ -297,9 +297,10 @@ Form yang dikirim dari tab A bisa menulis ke klinik yang salah.
 - Saat inisialisasi `dashApp()`, pasang pembungkus `window.fetch` satu kali: untuk request
   same-origin, tambahkan header `X-Klinik-Halaman: <payload.profile.practiceId>` (kalau ada).
   Tangani `headers` berupa objek biasa maupun `Headers`.
-- Middleware baru `CocokKlinikHalaman` (alias `klinik.halaman`), dipasang di **setiap route
-  `routes/web.php` yang memakai middleware `staff:any` atau `staff:admin`**, kecuali
-  `POST /dashboard/klinik-aktif`. Aturannya: kalau header `X-Klinik-Halaman` ada **dan**
+- Middleware baru `CocokKlinikHalaman` (alias `klinik.halaman`), dipasang di **grup route
+  `Route::middleware('staff:any')`** di `routes/web.php` (semua aksi dashboard yang dipanggil
+  lewat `fetch`). Route halaman `/klinik` tidak perlu: navigasi browser tidak membawa header
+  ini. `POST /dashboard/klinik-aktif` berada di luar grup itu. Aturannya: kalau header `X-Klinik-Halaman` ada **dan**
   profil berrole `admin` **dan** nilainya ≠ `pq_profile.practiceId` → 409 JSON
   `{ "message": "Klinik aktif sudah berganti di tab lain. Muat ulang halaman ini." }`.
   Tanpa header, atau role bukan `admin` → lolos.
@@ -405,7 +406,9 @@ FE (`DOCKER_CONFIG=/tmp/dockercfg docker run --rm -v "$PWD":/app -w /app php:8.4
    Hostinger. Catat: admin yang memiliki >1 klinik, dan admin yang mapping dokternya berbeda
    dari klinik miliknya (default mereka akan berubah — kabari mereka).
 2. **Deploy backend** (Next.js saja). Kompatibel ke belakang: tanpa header = perilaku lama;
-   `clinics` hanya field tambahan. Perbarui `openapi.yaml` (header, kode error, dua endpoint).
+   `clinics` hanya field tambahan. Perbarui `docs/api/PRACTICES-AND-SERVICES-GUIDE.md` (header,
+   kode error, `clinics`, dua endpoint). `openapi.yaml` di root adalah spec API plugin KiviCare,
+   bukan `/api/v1`, jadi tidak disentuh.
 3. **Deploy FE** lewat branch + PR ke `raakanaka/laravel-praktiqu` (user yang merge; `main`
    auto-deploy). Verifikasi rilis benar-benar sampai di `https://appointment.praktiqu.com`.
 4. **Uji coba:** tugaskan klinik kedua ke satu admin percobaan lewat halaman super admin,
