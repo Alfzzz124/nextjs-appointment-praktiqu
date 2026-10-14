@@ -26,7 +26,8 @@ export async function resolveKcActor(actor: Actor): Promise<KcActor> {
   }
   const wpUserId = user.wpUserId;
 
-  const clinicId = await resolveClinicId(actor.role, wpUserId);
+  // activeClinicId was already checked against this admin's own clinics by getActor().
+  const clinicId = actor.activeClinicId ?? (await resolveClinicId(actor.role, wpUserId));
   return { actor, wpUserId, clinicId };
 }
 
