@@ -24,6 +24,7 @@ import { resolveKcActor, type KcActor } from '@/services/billing/kc-actor';
 import {
   CLIENT_STATUS,
   findPatientById,
+  patientInClinic,
   listPatients,
   type ClientStatus,
   type ListPatientsQuery,
@@ -211,7 +212,10 @@ export async function enforceClientReadAccess(kc: KcActor, patient: WpPatient): 
   }
 
   if (role === 'CLINIC_ADMIN' || role === 'RECEPTIONIST') {
-    if (kc.clinicId === null || patient.clinicId !== kc.clinicId) {
+    // Any of the patient's clinics counts, the same rule the list applies. `patient.clinicId`
+    // is only their FIRST mapping, so comparing against it hid a patient of clinics A+B from
+    // clinic B right after the list had shown them there.
+    if (kc.clinicId === null || !(await patientInClinic(patient.id, kc.clinicId))) {
       throw new ClientServiceError('Forbidden: client is not in your clinic', {
         status: 403,
         code: 'forbidden',

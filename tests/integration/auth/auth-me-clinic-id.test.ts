@@ -21,6 +21,8 @@ const BASE = 8_600_000;
 const END = BASE + 10_000;
 const CLINIC_A = BASE + 1;
 const CLINIC_B = BASE + 2;
+const CLINIC_INACTIVE = BASE + 3; // owned by ADMIN_WP, inactive
+const CLINIC_D = BASE + 4; // owned by ADMIN_WP, active
 const ADMIN_WP = BASE + 500;
 const RECEPTIONIST_WP = BASE + 501;
 const DOCTOR_WP = BASE + 502;
@@ -73,6 +75,18 @@ beforeAll(async () => {
     CLINIC_A,
     ADMIN_WP,
   );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_clinics (id, name, email, telephone_no, address, city, status, clinic_admin_id, clinic_logo, created_at)
+     VALUES (?, 'Klinik Nonaktif', 'n@test.local', '0221234567', 'Jl. Uji 3', 'Bandung', 0, ?, 0, NOW())`,
+    CLINIC_INACTIVE,
+    ADMIN_WP,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_clinics (id, name, email, telephone_no, address, city, status, clinic_admin_id, clinic_logo, created_at)
+     VALUES (?, 'Klinik D', 'd@test.local', '0221234567', 'Jl. Uji 4', 'Bandung', 1, ?, 0, NOW())`,
+    CLINIC_D,
+    ADMIN_WP,
+  );
   await prisma.kcReceptionistClinicMapping.create({
     data: { receptionistId: BigInt(RECEPTIONIST_WP), clinicId: BigInt(CLINIC_B), createdAt: new Date() },
   });
@@ -105,5 +119,29 @@ describe('GET /auth/me — clinicId', () => {
 
   it('gives an account with no WordPress link null rather than failing', async () => {
     expect((await me('auth-me-clinic-test-unlinked', 'CLINIC_ADMIN')).clinicId).toBeNull();
+  });
+});
+
+describe('GET /auth/me — clinics', () => {
+  it('lists every clinic a clinic admin owns, active first, and clinicId is the first', async () => {
+    const user = await me('auth-me-clinic-test-admin', 'CLINIC_ADMIN');
+    expect(user.clinics).toEqual([
+      { id: CLINIC_A, name: 'Klinik A', active: true },
+      { id: CLINIC_D, name: 'Klinik D', active: true },
+      { id: CLINIC_INACTIVE, name: 'Klinik Nonaktif', active: false },
+    ]);
+    expect(user.clinicId).toBe(CLINIC_A);
+  });
+
+  it('gives a receptionist no clinics field at all', async () => {
+    expect(await me('auth-me-clinic-test-receptionist', 'RECEPTIONIST')).not.toHaveProperty('clinics');
+  });
+
+  it('gives a professional no clinics field at all', async () => {
+    expect(await me('auth-me-clinic-test-doctor', 'PROFESSIONAL')).not.toHaveProperty('clinics');
+  });
+
+  it('gives an unlinked clinic admin an empty list', async () => {
+    expect((await me('auth-me-clinic-test-unlinked', 'CLINIC_ADMIN')).clinics).toEqual([]);
   });
 });

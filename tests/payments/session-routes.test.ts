@@ -7,9 +7,9 @@ import { NextRequest } from 'next/server';
 // service whole and never touches the database or WooCommerce.
 const db = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
-  kcDoctorClinicMapping: { findFirst: vi.fn() },
+  kcDoctorClinicMapping: { findFirst: vi.fn(), findMany: vi.fn() },
   kcReceptionistClinicMapping: { findFirst: vi.fn() },
-  kcClinic: { findFirst: vi.fn() },
+  kcClinic: { findFirst: vi.fn(), findMany: vi.fn() },
   kcBill: { findUnique: vi.fn() },
   kcPatientEncounter: { findUnique: vi.fn() },
   kcBillItem: { findMany: vi.fn() },
@@ -180,7 +180,10 @@ describe('POST /sessions/payment-verify — clinic scope', () => {
     db.user.findUnique.mockImplementation(async ({ where }: any) => (wpUserIds[where.id] ? { wpUserId: wpUserIds[where.id] } : null));
     db.kcReceptionistClinicMapping.findFirst.mockImplementation(async ({ where }: any) => (where.receptionistId === 501n ? { clinicId: CLINIC_A } : null));
     db.kcDoctorClinicMapping.findFirst.mockImplementation(async ({ where }: any) => (where.doctorId === 601n ? { clinicId: CLINIC_A } : null));
-    db.kcClinic.findFirst.mockImplementation(async ({ where }: any) => (where.clinicAdminId === 502n ? { id: CLINIC_A } : null));
+    // A clinic admin's clinics now come from findMany (every clinic they own), not findFirst.
+    db.kcClinic.findMany.mockImplementation(async ({ where }: any) =>
+      where.clinicAdminId === 502n ? [{ id: CLINIC_A, name: 'Klinik A', status: 1 }] : []);
+    db.kcDoctorClinicMapping.findMany.mockResolvedValue([]);
 
     const bills: Record<string, unknown> = { [BILL_A]: billRow(101n, CLINIC_A, 1001n), [BILL_B]: billRow(202n, CLINIC_B, 2002n) };
     const encounters: Record<string, unknown> = {
