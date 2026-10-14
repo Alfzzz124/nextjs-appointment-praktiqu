@@ -1575,7 +1575,7 @@ async function call(sub: string, role: string, clinicId: string, body: string) {
   const req = new NextRequest(`http://localhost/api/v1/practices/${clinicId}/change-admin`, {
     method: 'POST',
     body,
-    headers: { authorization: `Bearer ${await token(role, sub)}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${await token(sub, role)}`, 'content-type': 'application/json' },
   });
   return POST(req, { params: { id: clinicId } } as any);
 }
@@ -1727,7 +1727,7 @@ describe('changes', () => {
 
   it('the previous admin loses the clinic on their very next request', async () => {
     const req = new NextRequest('http://localhost/api/v1/practices', {
-      headers: { authorization: `Bearer ${await token('CLINIC_ADMIN', ADMIN1_AUTH)}`, 'x-praktiqu-clinic-id': String(CLINIC_A) },
+      headers: { authorization: `Bearer ${await token(ADMIN1_AUTH, 'CLINIC_ADMIN')}`, 'x-praktiqu-clinic-id': String(CLINIC_A) },
     });
     const res = await practicesGet(req);
     expect(res.status).toBe(403);
