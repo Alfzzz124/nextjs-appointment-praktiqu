@@ -350,6 +350,15 @@ export async function updatePractice(
   const existing = await findClinicById(BigInt(id));
   if (!existing) throw new PracticeNotFoundError(id);
 
+  // A rename moves the public booking link, so it obeys the same rules as a new clinic.
+  if (data.name !== undefined && data.name !== existing.name) {
+    await assertClinicNameAvailable(data.name, { exceptId: id });
+  }
+  const sameEmail = (data.email ?? '').trim().toLowerCase() === (existing.email ?? '').trim().toLowerCase();
+  if (data.email && !sameEmail) {
+    await assertClinicEmailAvailable(data.email, { exceptId: id });
+  }
+
   // Only the extra-backed fields actually supplied are merged, so a partial update
   // cannot blank the others out of the shared blob.
   const extra: Record<string, unknown> = {};
@@ -379,6 +388,20 @@ export async function updatePractice(
     metadata: { fields: Object.keys(data) },
   });
 
+  return getPractice(id);
+}
+
+/** Activate or deactivate one clinic (SUPER_ADMIN). Deactivating keeps every row it owns. */
+export async function setPracticeStatus(id: number, status: 0 | 1, ctx: { actorId: string }): Promise<PracticeDTO> {
+  const existing = await findClinicById(BigInt(id));
+  if (!existing) throw new PracticeNotFoundError(id);
+
+  await setClinicStatus([BigInt(id)], status);
+  await logging.audit(status === 1 ? 'practice.activate' : 'practice.deactivate', {
+    userId: ctx.actorId,
+    resource: 'clinic',
+    resourceId: String(id),
+  });
   return getPractice(id);
 }
 
