@@ -16,6 +16,7 @@ import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { getPublicAppointmentById } from '@/services/public/public-booking.service';
 import { findClinicById, listClinics, type WpClinic } from '@/repositories/wp/clinics.repo';
 import { listServicesForDoctor, type WpDoctorService } from '@/repositories/wp/services.repo';
+import { parseServiceCategory } from '@/repositories/wp/service-category';
 import {
   PROFESSIONAL_STATUS,
   findDoctorById,
@@ -281,6 +282,12 @@ export interface PublicService {
   durationMinutes: number | null;
   serviceType: string | null;
   /**
+   * The category the booking page groups services under, as KiviCare's own widget
+   * does ("Couple/Family Session Bahasa Indonesia", "Tes Psikologi"). `null` when the
+   * service has no category KiviCare can name — the FE then falls back to `serviceType`.
+   */
+  category: { value: string; label: string } | null;
+  /**
    * The clinic this row is offered at. A service id repeats across a professional's
    * clinics, so the booking must be submitted with this id for the charge to match the
    * USD shown here (spec §5).
@@ -316,13 +323,16 @@ export async function getPublicProfessionalServices(
   // One settings read for every clinic in the list. The USD quote per row is built by
   // the same computePublicAmount + buildUsdQuote that charges, so shown and charged match.
   const payment = await resolveClinicPaymentManyForDisplay(rows.map((s) => Number(s.clinicId)));
+  const categoryOf = await serviceCategoryLabeller(rows);
 
   // Sequential on purpose: a row of an international clinic runs a tax query, and the
   // MySQL user is capped at a handful of connections.
   const services: PublicService[] = [];
   for (const s of rows) {
     const clinicId = Number(s.clinicId);
-    const name = s.nameAlias ?? s.name;
+    // The catalogue name. Not `nameAlias`: that column holds the category slug — see
+    // WpDoctorService.nameAlias.
+    const name = s.name;
     // The doctor's charge, not the catalogue list price — that is what a patient pays.
     const price = s.charges ?? '0';
     const { paymentMethods, usd } = await rowPaymentForDisplay(
@@ -335,12 +345,48 @@ export async function getPublicProfessionalServices(
       price,
       durationMinutes: s.durationMinutes,
       serviceType: s.type,
+      category: categoryOf(s),
       clinicId,
       paymentMethods,
       usd,
     });
   }
   return services;
+}
+
+/**
+ * Names each row's category the way KiviCare's booking widget does: the label in the
+ * service's own category snapshot first, then the live `service_type` static-data row
+ * whose value is the service's `type`. The snapshot is what KiviCare writes today; rows
+ * created by an older KiviCare (or migrated in) carry only `type`, hence the fallback.
+ *
+ * The static-data read happens only when some row needs it, and includes inactive
+ * categories: retiring a category in KiviCare does not rename the services still in it.
+ */
+async function serviceCategoryLabeller(
+  rows: WpDoctorService[],
+): Promise<(s: WpDoctorService) => PublicService['category']> {
+  const fromSnapshot = (s: WpDoctorService) => {
+    const c = parseServiceCategory(s.category);
+    const label = c?.label?.trim();
+    return label ? { value: c?.value || s.type || label, label } : null;
+  };
+
+  const byValue = new Map<string, string>();
+  if (rows.some((s) => !fromSnapshot(s) && s.type)) {
+    const types = await listStaticData({ type: STATIC_DATA_TYPE.SERVICE_TYPE, includeInactive: true });
+    for (const t of types) {
+      const label = t.label?.trim();
+      if (t.value && label && !byValue.has(t.value)) byValue.set(t.value, label);
+    }
+  }
+
+  return (s) => {
+    const snap = fromSnapshot(s);
+    if (snap) return snap;
+    const label = s.type ? byValue.get(s.type) : undefined;
+    return label && s.type ? { value: s.type, label } : null;
+  };
 }
 
 export interface PublicSlot {

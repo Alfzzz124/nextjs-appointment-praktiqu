@@ -13459,6 +13459,7 @@ components:
           description: The KiviCare service id (repeats across a professional's clinics).
         name:
           type: string
+          description: The catalogue name KiviCare shows, e.g. "Couple/Family Session (2 Orang) - 2 Jam".
         price:
           type: string
           description: Rupiah — the doctor's charge for this service at this clinic.
@@ -13468,6 +13469,19 @@ components:
         serviceType:
           type: string
           nullable: true
+          description: The category slug (`wp_kc_services.type`).
+        category:
+          type: object
+          nullable: true
+          description: >-
+            The category to group services under on the booking page, as KiviCare's own widget does.
+            Null when KiviCare cannot name it; fall back to `serviceType` then.
+          properties:
+            value:
+              type: string
+            label:
+              type: string
+              example: Couple/Family Session Bahasa Indonesia
         clinicId:
           type: integer
           description: The clinic this row is offered at. Submit the booking with it.

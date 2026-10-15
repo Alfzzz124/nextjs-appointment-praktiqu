@@ -138,7 +138,7 @@ describe('public appointment view — payment fields', () => {
     vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
     vi.mocked(listServicesForDoctor).mockResolvedValue([
       { serviceId: 8n, name: 'Other', nameAlias: null, charges: '1' },
-      { serviceId: 7n, name: 'Consultation', nameAlias: 'Konseling', charges: '350000' },
+      { serviceId: 7n, name: 'Consultation', nameAlias: 'konseling', charges: '350000' },
     ] as never);
     const usd = { price: '21.39', taxes: [], fee: null, total: '21.39' };
     vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
@@ -147,7 +147,7 @@ describe('public appointment view — payment fields', () => {
 
     expect(listServicesForDoctor).toHaveBeenCalledWith({ doctorId: 29n, clinicId: 3n });
     expect(rowPaymentForDisplay).toHaveBeenCalledWith(
-      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Konseling', price: '350000' },
+      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Consultation', price: '350000' },
       INTL,
     );
     expect(view).toMatchObject({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
