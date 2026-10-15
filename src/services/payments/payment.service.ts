@@ -403,7 +403,7 @@ export async function initiatePublicPayment(
     : [];
   const mapping = offered.find((s) => Number(s.serviceId) === serviceId);
 
-  const serviceName = mapping ? (mapping.nameAlias ?? mapping.name) : 'Service';
+  const serviceName = mapping ? mapping.name : 'Service';
   const servicePrice = mapping ? toNum(mapping.charges ?? 0) : 0;
   const { expectedAmount, items, taxes } = await computePublicAmount({
     name: serviceName,

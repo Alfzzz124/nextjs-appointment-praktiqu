@@ -17,6 +17,11 @@ vi.mock('@/repositories/wp/doctors.repo', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/repositories/wp/doctors.repo')>()),
   findDoctorById: vi.fn(),
 }));
+// The category label is not what these tests are about; no category is named.
+vi.mock('@/repositories/wp/static-data.repo', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/static-data.repo')>()),
+  listStaticData: vi.fn(async () => []),
+}));
 vi.mock('@/repositories/wp/services.repo', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/repositories/wp/services.repo')>()),
   listServicesForDoctor: vi.fn(),
@@ -105,6 +110,7 @@ function mapping(serviceId: number, clinicId: number, charges: string): WpDoctor
     isActive: true,
     telemedService: null,
     nameAlias: null,
+    category: null,
   };
 }
 
@@ -171,19 +177,19 @@ describe("a professional's services", () => {
 
     expect(rows).toEqual([
       {
-        id: 7, name: 'Konsultasi', price: '200000', durationMinutes: 60, serviceType: 'KONSELING',
+        id: 7, name: 'Konsultasi', price: '200000', durationMinutes: 60, serviceType: 'KONSELING', category: null,
         clinicId: INTL,
         paymentMethods: ['xendit', 'paypal', 'card'],
         usd: { price: '12.23', taxes: [], fee: '1.39', total: '13.62' },
       },
       {
-        id: 7, name: 'Konsultasi', price: '200000', durationMinutes: 60, serviceType: 'KONSELING',
+        id: 7, name: 'Konsultasi', price: '200000', durationMinutes: 60, serviceType: 'KONSELING', category: null,
         clinicId: LOCAL,
         paymentMethods: ['xendit'],
         usd: null,
       },
       {
-        id: 8, name: 'Konsultasi', price: '0', durationMinutes: 60, serviceType: 'KONSELING',
+        id: 8, name: 'Konsultasi', price: '0', durationMinutes: 60, serviceType: 'KONSELING', category: null,
         clinicId: INTL,
         paymentMethods: ['xendit'],
         usd: null,

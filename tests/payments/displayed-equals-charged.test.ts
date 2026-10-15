@@ -48,6 +48,11 @@ vi.mock('@/services/billing/bill.service', () => ({
   getBill: vi.fn(),
 }));
 
+// The category label is not what these tests are about; no category is named.
+vi.mock('@/repositories/wp/static-data.repo', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/repositories/wp/static-data.repo')>()),
+  listStaticData: vi.fn(async () => []),
+}));
 vi.mock('@/repositories/wp/services.repo', () => ({
   listServicesForDoctor: vi.fn(),
   findServiceById: vi.fn(),
@@ -124,15 +129,19 @@ const EXPECTED = {
   total: usd(lineCents(CHARGES_IDR) + lineCents(TAX_IDR) + feeCents(FEE_IDR)),
 };
 
-/** A service with a nameAlias and the doctor's own charge, in the international clinic. */
+/**
+ * A service with a nameAlias and the doctor's own charge, in the international clinic.
+ * The alias is KiviCare's category slug, not a name — every path must bill `name`.
+ */
 const MAPPING = {
   mappingId: 11n,
   serviceId: BigInt(SERVICE),
   doctorId: BigInt(DOCTOR),
   clinicId: BigInt(CLINIC),
   name: 'Konseling Individu',
-  nameAlias: 'Konseling Premium',
+  nameAlias: 'konseling',
   type: 'KONSELING',
+  category: null,
   charges: String(CHARGES_IDR),
   durationMinutes: 60,
   isPublic: true,
@@ -255,7 +264,7 @@ async function lookedUpUsd() {
 async function chargedUsd() {
   await initiatePublicPayment(APPOINTMENT, 'paypal');
   const sent = wpEndpoint.createWcOrder.mock.calls[0][0];
-  expect(sent.charge.items.map((i: { name: string }) => i.name)).toEqual([MAPPING.nameAlias]);
+  expect(sent.charge.items.map((i: { name: string }) => i.name)).toEqual([MAPPING.name]);
   return {
     price: sent.charge.items[0].amount as string,
     taxes: sent.charge.taxes as Array<{ name: string; amount: string }>,

@@ -10,6 +10,7 @@ import {
   findMappingById,
   type ClinicServiceRow,
 } from '@/repositories/wp/services.repo';
+import { parseServiceCategory, type ServiceCategory } from '@/repositories/wp/service-category';
 import {
   findCatalogueByNameAndType,
   createCatalogue,
@@ -26,7 +27,7 @@ import { audit } from '@/lib/logging';
 import type { ServiceScope } from './scope';
 import type { ListServicesQuery, CreateServiceInput, UpdateServiceInput } from './validation';
 
-export type ServiceCategory = { id: number; label: string | null; value: string | null };
+export type { ServiceCategory };
 
 export type ServiceSummary = {
   /** The mapping id — what `/api/v1/services/{id}` addresses. */
@@ -55,22 +56,6 @@ export function isServiceCatalogError(err: unknown): err is ServiceCatalogError 
 }
 
 /**
- * KiviCare stores the category as a JSON snapshot rather than a foreign key, so the
- * label survives the static-data row being deleted. A snapshot written by hand, or by an
- * older KiviCare, may not parse — treat that as "no category" rather than a 500.
- */
-function parseCategory(raw: string | null): ServiceCategory | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<ServiceCategory>;
-    if (typeof parsed?.id !== 'number') return null;
-    return { id: parsed.id, label: parsed.label ?? null, value: parsed.value ?? null };
-  } catch {
-    return null;
-  }
-}
-
-/**
  * `charges` is a bare nullable varchar that KiviCare's own PHP UI writes with no format
  * constraint, so a legacy row can hold `"Rp 250.000"` or `"-"`. `Number()` turns those
  * into `NaN`, which is not representable in JSON — `JSON.stringify` emits `null` — so the
@@ -94,9 +79,8 @@ function toSummary(row: ClinicServiceRow): ServiceSummary {
     serviceId: Number(row.serviceId),
     doctorId: Number(row.doctorId),
     clinicId: Number(row.clinicId),
-    // A doctor-specific alias wins over the catalogue name, matching what KiviCare shows.
-    name: row.nameAlias ?? row.name,
-    category: parseCategory(row.category),
+    name: row.name,
+    category: parseServiceCategory(row.category),
     price: parsePrice(row.charges),
     durationMinutes: row.durationMinutes,
     telemedService: row.telemedService === 'yes' ? 'yes' : 'no',
@@ -304,7 +288,7 @@ export async function updateService(
   // `existing.serviceId` and silently repoint the mapping away from it. When the current
   // category can't be determined (missing or unparseable snapshot), any supplied
   // `categoryId` counts as a change, since we cannot prove otherwise.
-  const currentCategory = parseCategory(existing.category);
+  const currentCategory = parseServiceCategory(existing.category);
   const recategorising =
     input.categoryId !== undefined &&
     (currentCategory === null || input.categoryId !== currentCategory.id);
