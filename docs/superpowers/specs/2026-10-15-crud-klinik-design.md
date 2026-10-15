@@ -1,7 +1,7 @@
 # CRUD Klinik (Tambah, Edit, Nonaktifkan, Hapus) — Desain
 
 **Tanggal:** 2026-10-15
-**Status:** Disetujui per bagian oleh user (2026-10-15). Menunggu review spec tertulis.
+**Status:** Disetujui user (2026-10-15). Rencana implementasi: `docs/superpowers/plans/2026-10-15-crud-klinik.md`.
 **Repo yang tersentuh:**
 - Backend Next.js `Alfzzz124/nextjs-appointment-praktiqu` (branch `feat/crud-klinik`, dari `origin/main` 0b16fc7)
 - Plugin WordPress `praktiqu-endpoint` (folder `Wordpress-Plugin/praktiqu-endpoint` di repo backend), 1.7.0 → **1.8.0**
@@ -159,7 +159,8 @@ Tambahkan:
 - `countClinicReferences(id: bigint): Promise<ClinicReferenceCounts>` — satu query `SELECT`
   dengan subquery `COUNT(*)` per tabel di bawah, mengembalikan objek berkunci nama ramah.
 - `deleteClinicRow(id: bigint)` — menghapus baris klinik beserta data milik klinik yang tidak
-  bermakna tanpa kliniknya (lihat 2d), dalam satu transaksi.
+  bermakna tanpa kliniknya (lihat 2d). Tanpa transaksi: tabel produksi MyISAM, jadi baris
+  klinik dihapus **paling akhir** supaya kegagalan di tengah bisa diulang.
 
 Tabel yang dihitung `countClinicReferences` (semua kolom `clinic_id`, kecuali disebut lain):
 
@@ -249,7 +250,7 @@ di route `DELETE`. Audit `practice.deactivate` / `practice.activate`.
 **`deletePracticePermanently(id, ctx)`**
 1. Klinik harus ada (404).
 2. `countClinicReferences`. Ada yang > 0 → `ClinicNotEmptyError` membawa objek hitungan (409).
-3. `deleteClinicRow` menghapus, dalam satu transaksi:
+3. `deleteClinicRow` menghapus, berurutan (baris klinik paling akhir):
    - `wp_kc_clinic_schedule` dengan `module_type = OFF_DAY_MODULE.CLINIC` (nilainya `'clinic'`, dari
      `src/repositories/wp/off-days.repo.ts`) `AND module_id = id` (libur klinik),
    - `wp_options` dengan `option_name = clinicPaymentOptionName(id)`
@@ -276,18 +277,21 @@ Endpoint `activate` terpisah (bukan `PATCH status`) supaya FE punya aksi yang je
 `PATCH` tidak perlu tahu perbedaan role untuk satu field. `PATCH` dengan `status` oleh super
 admin tetap diizinkan demi kompatibilitas.
 
-Bentuk error mengikuti RFC 7807 yang dipakai route lain (`type`, `title`, `status`, `detail`):
+Bentuk error mengikuti RFC 7807 yang dipakai route lain (`type`, `title`, `status`, `detail`),
+ditambah field **`code`** (slug stabil yang dicocokkan FE). Pemetaannya satu tempat:
+`src/lib/practice-problems.ts`.
 
-| Kasus | Status | `type` | Tambahan |
+| Kasus | Status | `code` | Tambahan |
 |---|---|---|---|
-| Validasi zod | 422 | `/errors/validation-error` | `issues[]` |
-| Nama/slug bentrok | 409 | `/errors/clinic-name-conflict` | `reason`, `slug`, `conflictId?`, `conflictName?` |
-| Email klinik dipakai | 409 | `/errors/clinic-email-conflict` | `conflictId` |
-| Email admin dipakai | 409 | `/errors/admin-email-taken` | — |
-| Bukan clinic admin (mode existing) | 422 | `/errors/not-a-clinic-admin` | — |
-| Klinik tidak kosong | 409 | `/errors/clinic-not-empty` | `counts` (hanya kunci > 0) |
-| Plugin gagal | 502 / status plugin | `/errors/upstream` | `detail` dari plugin |
-| Admin klinik ubah status | 403 | `/errors/forbidden` | `detail: 'status_change_forbidden'` |
+| Validasi zod | 422 | `validation_error` | `issues[]` |
+| Nama/slug bentrok | 409 | `clinic_name_conflict` | `reason`, `slug`, `conflictId?`, `conflictName?` |
+| Email klinik dipakai | 409 | `clinic_email_conflict` | `conflictId` |
+| Email admin dipakai | 409 | `admin_email_taken` | — |
+| Bukan clinic admin (mode existing) | 422 | `not_a_clinic_admin` | — |
+| Klinik tidak kosong | 409 | `clinic_not_empty` | `counts` (hanya kunci > 0) |
+| Plugin gagal | 502 | `admin_provision_failed` | `detail` dari plugin |
+| Admin klinik ubah status | 403 | `status_change_forbidden` | — |
+| Klinik tidak ada / di luar scope | 404 | `practice_not_found` | — |
 
 Hapus komentar "stub — actual creation deferred to WP-side provisioning" di
 `practices/route.ts`, dan perbarui `docs/api/PRACTICES-AND-SERVICES-GUIDE.md` (kontrak
@@ -391,11 +395,15 @@ jadwal, `services` layanan, `followups` follow-up, `followupChains` rangkaian fo
 - Ganti tulisan "Klinik baru dibuat lewat WordPress/KiviCare…" dengan tombol
   `<a class="btn-red" href="/dashboard/klinik/baru">Add Clinic</a>` (super admin saja, di
   dalam `@if (($role ?? null) === 'super')`). Admin klinik tidak melihat tombol maupun tulisan.
-- Filter status di samping kotak cari: Semua / Aktif / Nonaktif (state Alpine baru, dipakai di
-  `fClinics`). Bawaan: Semua.
-- Di setiap kartu tambahkan tautan "Edit ›" (gaya sama dengan "Admin klinik ›"):
-  super admin di semua kartu; admin klinik hanya di kartu kliniknya (`r.id ==
-  profile.practiceId`).
+- Filter status di samping kotak cari: Semua / Aktif / Nonaktif (state Alpine baru,
+  getter baru `fClinicsTab`; `fClinics` tetap dipakai pemilih klinik di tab Services).
+  Bawaan: Semua.
+- Di setiap kartu (super admin) tambahkan tautan "Edit ›" (gaya sama dengan "Admin klinik ›").
+- Menu role `admin` **tidak punya tab Clinics**, jadi pintu edit admin klinik adalah kartu
+  **"Profil Klinik"** di tab Settings (pola kartu "Pembayaran Internasional"), lewat
+  `$editKlinikUrl` dari `DashboardController::render()`.
+- Setelah redirect dengan flash `klinikPesan`/`klinikPeringatan`, dashboard super admin terbuka
+  langsung di tab Clinics.
 - Flash sukses/peringatan dari 3b tampil di atas grid.
 - Komentar di `ResourceController.php` yang menjelaskan `'clinics'` dicabut diperbarui: aksi
   klinik kini lewat `KlinikController`, allowlist tetap tanpa `'clinics'`.
@@ -432,7 +440,8 @@ role)`):
 - Unit `tests/unit/practice/clinic-slug.test.ts` untuk `assertClinicNameAvailable`.
 - Seluruh suite + `npx tsc --noEmit` harus hijau.
 
-**FE** (`tests/Feature/KlinikCrudTest.php`, pola `AdminKlinikSuperTest.php` dengan
+**FE** (`tests/Feature/KlinikTambahTest.php`, `KlinikUbahTest.php`, `KlinikStatusHapusTest.php`,
+`KlinikTabTest.php`; pola `AdminKlinikSuperTest.php` dengan
 `Http::fake`):
 - super melihat `/dashboard/klinik/baru`; admin dan psikolog 404.
 - simpan memetakan 409 `clinic-name-conflict` ke error kolom `name`.
