@@ -13,6 +13,7 @@ import { badRequest, conflict, forbidden, notFound, validationError } from '@/li
 import {
   scopeForRequest,
   canWrite,
+  canEdit,
   parseServiceId,
   invalidIdResponse,
 } from '@/services/service-catalog/scope';
@@ -77,10 +78,13 @@ export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const id = parseServiceId(ctx.params.id);
   if (id === null) return invalidIdResponse();
 
-  if (!canWrite(actor.role)) {
-    return NextResponse.json(forbidden('Only Super Admin and Clinic Admin can edit services'), {
-      status: 403,
-    });
+  // A psychologist may edit too, but only their own rows: their scope carries their
+  // doctorId, and updateService answers 404 for any mapping outside it.
+  if (!canEdit(actor.role)) {
+    return NextResponse.json(
+      forbidden('Only Super Admin, Clinic Admin and the psychologist themselves can edit services'),
+      { status: 403 },
+    );
   }
 
   let body: unknown;

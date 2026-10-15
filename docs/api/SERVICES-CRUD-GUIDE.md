@@ -69,7 +69,7 @@ Matriks baca mengikuti KiviCare sendiri (`DoctorServiceController::getServices`)
 | `SUPER_ADMIN` | semua klinik | ✅ |
 | `CLINIC_ADMIN` | kliniknya sendiri | ✅ (kliniknya sendiri) |
 | `RECEPTIONIST` | kliniknya sendiri | ❌ |
-| `PROFESSIONAL` | **baris miliknya sendiri**, lintas klinik | ❌ |
+| `PROFESSIONAL` | **baris miliknya sendiri**, lintas klinik | ✏️ hanya `PUT` baris miliknya sendiri |
 | `CLIENT` | tidak ada | ❌ |
 
 Tiga hal yang perlu diketahui frontend:
@@ -80,6 +80,9 @@ Tiga hal yang perlu diketahui frontend:
    lain tidak bocor lewat beda status code.
 3. **Admin tanpa pemetaan klinik dapat daftar kosong**, bukan `500`. Tapi kalau dia mencoba
    `POST`, jawabannya `403` — dia tidak punya klinik untuk menaruh layanannya.
+4. **Psikolog boleh mengubah, tidak boleh menambah atau menghapus** (sejak 2026-10-15).
+   `PUT` dari `PROFESSIONAL` diterima untuk baris miliknya sendiri; baris psikolog lain
+   dijawab `404` lewat aturan nomor 2. `POST` dan `DELETE` tetap `403` untuknya.
 
 ---
 
