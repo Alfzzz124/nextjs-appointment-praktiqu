@@ -21,6 +21,7 @@ import { WpEndpointError } from '@/lib/wp-endpoint';
 import { assertClinicEmailAvailable, assertClinicNameAvailable } from './clinic-names';
 import { resolveClinicPaymentManyForDisplay } from '@/services/payments/clinic-payment.service';
 import {
+  countClinicReferences,
   deleteClinicRow,
   findClinicById,
   insertClinic,
@@ -404,6 +405,29 @@ export async function setPracticeStatus(id: number, status: 0 | 1, ctx: { actorI
   });
   return getPractice(id);
 }
+
+/**
+ * Delete a clinic for good (SUPER_ADMIN) — only one with no data at all, e.g. one created
+ * by mistake. Anything with appointments, bills, psychologists, patients, … can only be
+ * deactivated: deleting it would orphan those rows. The admin account is kept.
+ */
+export async function deletePracticePermanently(id: number, ctx: { actorId: string }): Promise<void> {
+  const clinic = await findClinicById(BigInt(id));
+  if (!clinic) throw new PracticeNotFoundError(id);
+
+  const counts = await countClinicReferences(BigInt(id));
+  const nonZero = Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0)) as Partial<ClinicReferenceCounts>;
+  if (Object.keys(nonZero).length > 0) throw new ClinicNotEmptyError(id, nonZero);
+
+  await deleteClinicRow(BigInt(id));
+  await logging.audit('practice.delete', {
+    userId: ctx.actorId,
+    resource: 'clinic',
+    resourceId: String(id),
+    metadata: { name: clinic.name, clinicAdminId: Number(clinic.clinicAdminId) },
+  });
+}
+
 
 /** Soft-delete: sets status to 0. */
 export async function bulkDeletePractices(ids: number[]): Promise<number> {

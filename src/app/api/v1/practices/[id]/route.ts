@@ -1,7 +1,8 @@
 /**
  * GET    /api/v1/practices/:id — get a practice (SUPER_ADMIN; CLINIC_ADMIN for their own)
  * PATCH  /api/v1/practices/:id — update its profile; a CLINIC_ADMIN may not send `status`
- * DELETE /api/v1/practices/:id — SUPER_ADMIN: deactivate (status 0), not a delete
+ * DELETE /api/v1/practices/:id — SUPER_ADMIN: deactivate (status 0); with ?permanent=true,
+ *                                 delete a clinic that has no data at all
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRoles } from '@/lib/auth/route-guards';
@@ -9,6 +10,7 @@ import { forbidden } from '@/lib/problem-details';
 import { practiceProblem } from '@/lib/practice-problems';
 import {
   assertPracticeInScope,
+  deletePracticePermanently,
   getPractice,
   setPracticeStatus,
   updatePractice,
@@ -71,19 +73,31 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
   }
 }
 
-/** DELETE /api/v1/practices/:id — soft deactivate (status = 0) */
+/**
+ * DELETE /api/v1/practices/:id — deactivate (status = 0).
+ * DELETE /api/v1/practices/:id?permanent=true — delete, only when the clinic has no data
+ * (409 clinic_not_empty with the counts otherwise).
+ */
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const gate = await requireRoles(req, ['SUPER_ADMIN']);
   if ('response' in gate) return gate.response;
 
+  const permanent = req.nextUrl.searchParams.get('permanent') === 'true';
   try {
     await assertPracticeInScope(gate.actor, Number(params.id));
-    await setPracticeStatus(Number(params.id), 0, { actorId: gate.actor.id });
+    if (permanent) {
+      await deletePracticePermanently(Number(params.id), { actorId: gate.actor.id });
+    } else {
+      await setPracticeStatus(Number(params.id), 0, { actorId: gate.actor.id });
+    }
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     const mapped = practiceProblem(err);
     if (mapped) return mapped;
-    await logging.error('deactivatePractice failed', err, { path: `/api/v1/practices/${params.id}`, method: 'DELETE' });
+    await logging.error(permanent ? 'deletePractice failed' : 'deactivatePractice failed', err, {
+      path: `/api/v1/practices/${params.id}`,
+      method: 'DELETE',
+    });
     return internalError();
   }
 }
