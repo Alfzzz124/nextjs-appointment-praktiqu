@@ -90,11 +90,18 @@ describe('gdpr.service', () => {
   });
 
   it('listAuditLog reads a filtered page (SELECT-only, no writes)', async () => {
-    const res = await listAuditLog({ page: 1, perPage: 5, action: 'read' });
+    const res = await listAuditLog({ page: 1, perPage: 5, action: 'read' }, null);
     expect(Array.isArray(res.entries)).toBe(true);
     expect(res.entries.length).toBeLessThanOrEqual(5);
     expect(res.pagination).toMatchObject({ page: 1, perPage: 5 });
     expect(typeof res.pagination.total).toBe('number');
+  });
+
+  it('listAuditLog clinic scope runs on MySQL and narrows to that clinic', async () => {
+    // A clinic id no mapping uses: the clinic-scoped query must parse and match nothing.
+    const res = await listAuditLog({ page: 1, perPage: 5 }, { clinicId: 999_999_999n });
+    expect(res.entries).toEqual([]);
+    expect(res.pagination.total).toBe(0);
   });
 
   it('exportSubjectData returns profile + datasets + a bills array', async () => {

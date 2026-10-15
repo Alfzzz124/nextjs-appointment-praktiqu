@@ -19,6 +19,7 @@ import { setAvailabilityInputSchema } from '@/services/professional/validation';
 import type { Actor } from '@/lib/auth';
 import {
   canEdit,
+  canUseClinic,
   canView,
   invalidIdResponse,
   parseProfessionalId,
@@ -53,6 +54,10 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
     );
   }
 
+  if (!(await canUseClinic(scope, actor.role, id, clinicId))) {
+    return NextResponse.json(forbidden("Cannot view this professional's availability at that clinic"), { status: 403 });
+  }
+
   const schedule = await getWeeklySchedule(id, clinicId);
   return NextResponse.json({ professionalId: id, clinicId, schedule });
 });
@@ -80,6 +85,12 @@ export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {
       validationError('missing_clinic_id', 'clinicId is required for this actor'),
       { status: 400 },
     );
+  }
+
+  // `?clinicId=` is the caller's claim, not a fact: canEdit only proved the actor may touch
+  // this professional somewhere.
+  if (!(await canUseClinic(scope, actor.role, id, clinicId))) {
+    return NextResponse.json(forbidden("Cannot update this professional's availability at that clinic"), { status: 403 });
   }
 
   let body: unknown;

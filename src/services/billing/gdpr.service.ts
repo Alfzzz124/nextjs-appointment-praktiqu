@@ -92,8 +92,24 @@ export async function withdrawConsent(id: number, scope: ConsentScope | null): P
 }
 
 // ---- Audit log (READ-ONLY — checksum chain, never written) ----
-export async function listAuditLog(p: { page: number; perPage: number | 'all'; eventType?: string; subjectUserId?: number; action?: string; dateFrom?: string; dateTo?: string }) {
+/**
+ * The audit rows an actor may read; null = all (SUPER_ADMIN). The log has no clinic column,
+ * so a clinic is reached through the subject: a patient or professional mapped to it. A
+ * scoped actor with no clinic gets -1, which matches nothing rather than everything.
+ */
+export interface AuditScope { clinicId: bigint }
+export function auditScopeFor(kc: KcActor): AuditScope | null {
+  if (kc.actor.role === 'SUPER_ADMIN') return null;
+  return { clinicId: kc.clinicId ?? -1n };
+}
+
+export async function listAuditLog(p: { page: number; perPage: number | 'all'; eventType?: string; subjectUserId?: number; action?: string; dateFrom?: string; dateTo?: string }, scope: AuditScope | null) {
   const where: string[] = ['1=1']; const args: unknown[] = [];
+  if (scope) {
+    where.push(`(subject_user_id IN (SELECT patient_id FROM wp_kc_patient_clinic_mappings WHERE clinic_id = ?)
+      OR subject_user_id IN (SELECT doctor_id FROM wp_kc_doctor_clinic_mappings WHERE clinic_id = ?))`);
+    args.push(scope.clinicId, scope.clinicId);
+  }
   if (p.eventType) { where.push('event_type = ?'); args.push(p.eventType); }
   if (p.subjectUserId !== undefined) { where.push('subject_user_id = ?'); args.push(p.subjectUserId); }
   if (p.action) { where.push('action = ?'); args.push(p.action); }

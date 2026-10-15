@@ -90,7 +90,7 @@ export async function getDoctorSession(id: number, scope: DoctorSessionScope | n
  * Shared by the single-row create and the weekly save so the two cannot drift into
  * disagreeing about who may write where.
  */
-function resolveWriteTarget(input: { clinicId?: number; doctorId: number }, kc: KcActor): { clinicId: number; doctorId: number } {
+async function resolveWriteTarget(input: { clinicId?: number; doctorId: number }, kc: KcActor): Promise<{ clinicId: number; doctorId: number }> {
   const clinicId = kc.actor.role === 'SUPER_ADMIN' ? Number(input.clinicId ?? 0) : Number(kc.clinicId ?? input.clinicId ?? 0);
   if (!clinicId) throw new KcError('clinicId is required', 400);
   // A PROFESSIONAL may only write their own schedule.
@@ -100,6 +100,16 @@ function resolveWriteTarget(input: { clinicId?: number; doctorId: number }, kc: 
   // A clinic-bound actor may not aim a write at someone else's clinic.
   if (kc.actor.role !== 'SUPER_ADMIN' && input.clinicId !== undefined && Number(input.clinicId) !== clinicId) {
     throw new KcError('Cannot write a session for another clinic', 403);
+  }
+  // Clinic staff are bound to their clinic above, but the psychologist in the body was not
+  // checked: an admin of clinic A could plant clinic-A schedule rows for a psychologist who
+  // works only at clinic B. The FE's custom-session form refuses that against the roster.
+  if (kc.actor.role === 'CLINIC_ADMIN' || kc.actor.role === 'RECEPTIONIST') {
+    const mapping = await prisma.kcDoctorClinicMapping.findFirst({
+      where: { doctorId: BigInt(input.doctorId), clinicId: BigInt(clinicId) },
+      select: { id: true },
+    });
+    if (!mapping) throw new KcError('Cannot write a session for a doctor outside your clinic', 403);
   }
   return { clinicId, doctorId: Number(input.doctorId) };
 }
@@ -139,7 +149,7 @@ async function assertNoOverlap(
 
 export interface DoctorSessionCreateInput { clinicId?: number; doctorId: number; day: string; startTime: string; endTime: string; timeSlot: number; }
 export async function createDoctorSession(input: DoctorSessionCreateInput, kc: KcActor): Promise<{ id: number }> {
-  const { clinicId, doctorId } = resolveWriteTarget(input, kc);
+  const { clinicId, doctorId } = await resolveWriteTarget(input, kc);
   if (toMinutes(input.endTime) <= toMinutes(input.startTime)) throw new KcError('End time must be after start time', 400);
   await assertNoOverlap({ clinicId, doctorId, day: input.day, startTime: input.startTime, endTime: input.endTime });
   // One interactive transaction pins one connection, so LAST_INSERT_ID() cannot pick up
@@ -312,7 +322,7 @@ export async function saveDoctorSessionWeek(
   input: DoctorSessionWeekInput,
   kc: KcActor,
 ): Promise<{ doctor_id: number; clinic_id: number; time_slot: number; windows: number }> {
-  const { clinicId, doctorId } = resolveWriteTarget(input, kc);
+  const { clinicId, doctorId } = await resolveWriteTarget(input, kc);
   const windows = buildWeekWindows(input.days);
 
   await prisma.$transaction(async (tx) => {
