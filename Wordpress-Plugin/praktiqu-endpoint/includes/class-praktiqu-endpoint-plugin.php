@@ -21,6 +21,7 @@ final class Plugin
     public Patients $patients;
     public Appointments $appointments;
     public Receptionists $receptionists;
+    public ClinicAdmins $clinic_admins;
     public Doctors $doctors;
     public ClinicalRecords $clinical_records;
     public Encounters $encounters;
@@ -37,11 +38,12 @@ final class Plugin
         $this->patients = new Patients();
         $this->appointments = new Appointments();
         $this->receptionists = new Receptionists();
+        $this->clinic_admins = new ClinicAdmins();
         $this->doctors = new Doctors();
         $this->clinical_records = new ClinicalRecords();
         $this->encounters = new Encounters($this->clinical_records);
         $this->jobs     = new Jobs($this->service, $this->payments, new Jobs_Webhook());
-        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments, $this->receptionists, $this->doctors, $this->encounters, $this->clinical_records);
+        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments, $this->receptionists, $this->doctors, $this->encounters, $this->clinical_records, $this->clinic_admins);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();
 
