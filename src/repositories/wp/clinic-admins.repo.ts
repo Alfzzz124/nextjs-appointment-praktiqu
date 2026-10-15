@@ -52,3 +52,12 @@ export async function listClinicAdmins(): Promise<ClinicAdminRow[]> {
     clinicIds: r.clinic_ids ? r.clinic_ids.split(',').map(Number) : [],
   }));
 }
+
+/** Whether any WordPress account already uses this email (case ignored). */
+export async function wpUserEmailExists(email: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
+    `SELECT COUNT(*) AS n FROM wp_users WHERE LOWER(user_email) = LOWER(?)`,
+    email.trim(),
+  );
+  return Number(rows[0]?.n ?? 0) > 0;
+}

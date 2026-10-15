@@ -21,6 +21,7 @@ import {
   findClinicById,
   listClinicMembers,
   listClinics as listClinicRows,
+  setClinicAdmin,
   setClinicStatus,
   updateClinic,
   type WpClinic,
@@ -317,14 +318,8 @@ export async function changePracticeAdmin(
   const previousAdminId = Number(clinic.clinicAdminId);
   const unchanged = previousAdminId === newAdminId;
   if (!unchanged) {
-    // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields, so
-    // it is set explicitly rather than widening that type for one caller.
-    const { prisma } = await import('@/lib/db');
-    await prisma.$executeRawUnsafe(
-      `UPDATE wp_kc_clinics SET clinic_admin_id = ? WHERE id = ?`,
-      newAdminId,
-      practiceId,
-    );
+    // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields.
+    await setClinicAdmin(BigInt(practiceId), BigInt(newAdminId));
     // userId is the caller's users.id (a cuid): log_entries.userId is a foreign key to
     // users.id, and logging swallows insert errors, so a wp_users.ID here would drop the row.
     await logging.audit('practice.admin_changed', {
