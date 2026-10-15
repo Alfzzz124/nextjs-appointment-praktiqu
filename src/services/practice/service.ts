@@ -15,15 +15,21 @@
 import type { Actor } from '@/lib/auth';
 import { logging } from '@/lib/logging';
 import { resolveKcActor } from '@/services/billing/kc-actor';
-import { countOwnedClinics, isClinicAdminUser } from '@/repositories/wp/clinic-admins.repo';
+import { countOwnedClinics, isClinicAdminUser, wpUserEmailExists } from '@/repositories/wp/clinic-admins.repo';
+import { createClinicAdminViaPlugin } from '@/repositories/wp/clinic-admins.write';
+import { WpEndpointError } from '@/lib/wp-endpoint';
+import { assertClinicEmailAvailable, assertClinicNameAvailable } from './clinic-names';
 import { resolveClinicPaymentManyForDisplay } from '@/services/payments/clinic-payment.service';
 import {
+  deleteClinicRow,
   findClinicById,
+  insertClinic,
   listClinicMembers,
   listClinics as listClinicRows,
   setClinicAdmin,
   setClinicStatus,
   updateClinic,
+  type ClinicReferenceCounts,
   type WpClinic,
 } from '@/repositories/wp/clinics.repo';
 import {
@@ -37,7 +43,9 @@ import {
   HolidayDTO,
   PracticeDTO,
   holidayInputSchema,
+  practiceCreateSchema,
   practiceUpdateSchema,
+  type ClinicAdminChoice,
 } from '@/types/practice';
 
 /* ------------------------------------------------------------------ */
@@ -65,6 +73,37 @@ export class PracticeValidationError extends Error {
   ) {
     super(message);
     this.name = 'PracticeValidationError';
+  }
+}
+
+
+/** `admin.mode = 'new'` with an email some WordPress account already uses. */
+export class AdminEmailTakenError extends Error {
+  constructor(public readonly email: string) {
+    super(`A WordPress account already uses ${email}`);
+    this.name = 'AdminEmailTakenError';
+  }
+}
+
+/** The plugin could not create the admin account; the clinic was removed again. */
+export class ClinicAdminProvisionError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ClinicAdminProvisionError';
+  }
+}
+
+/** A permanent delete of a clinic that still has data; `counts` holds only non-zero keys. */
+export class ClinicNotEmptyError extends Error {
+  constructor(
+    public readonly id: number,
+    public readonly counts: Partial<ClinicReferenceCounts>,
+  ) {
+    super(`Practice ${id} still has data`);
+    this.name = 'ClinicNotEmptyError';
   }
 }
 
@@ -202,6 +241,96 @@ export async function getPractice(id: number): Promise<PracticeDTO> {
   if (!clinic) throw new PracticeNotFoundError(id);
   const [dto] = await toPracticeDTOs([clinic]);
   return dto;
+}
+
+export interface CreatePracticeResult {
+  practice: PracticeDTO;
+  admin: { mode: ClinicAdminChoice['mode']; wpUserId: number | null; emailSent: boolean | null };
+}
+
+/** '' and whitespace-only become NULL, the way KiviCare leaves an unfilled column. */
+const orNull = (v: string | null | undefined): string | null => (v === undefined || v === null || v.trim() === '' ? null : v);
+
+/**
+ * Create a clinic (SUPER_ADMIN). Every check that can refuse runs BEFORE anything is
+ * written. With `admin.mode = 'new'` the clinic row is written first — the plugin needs its
+ * id to claim it — and removed again if the account cannot be made, so a failed request
+ * never leaves a half-made clinic behind.
+ */
+export async function createPractice(input: unknown, ctx: { actorId: string }): Promise<CreatePracticeResult> {
+  const parsed = practiceCreateSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new PracticeValidationError(
+      'Invalid practice input',
+      parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    );
+  }
+  const data = parsed.data;
+  const admin = data.admin;
+
+  await assertClinicNameAvailable(data.name);
+  await assertClinicEmailAvailable(data.email);
+  if (admin.mode === 'existing' && !(await isClinicAdminUser(BigInt(admin.wpUserId)))) {
+    throw new NotAClinicAdminError(admin.wpUserId);
+  }
+  if (admin.mode === 'new' && (await wpUserEmailExists(admin.email))) {
+    throw new AdminEmailTakenError(admin.email);
+  }
+
+  const id = await insertClinic({
+    name: data.name,
+    email: orNull(data.email),
+    telephone: orNull(data.telephoneNo),
+    address: orNull(data.address),
+    city: orNull(data.city),
+    state: orNull(data.state),
+    country: orNull(data.country),
+    postalCode: orNull(data.postalCode),
+    countryCode: orNull(data.countryCode),
+    countryCallingCode: orNull(data.countryCallingCode),
+    status: data.status === 1 ? 1 : 0,
+    clinicAdminId: admin.mode === 'existing' ? BigInt(admin.wpUserId) : 0n,
+  });
+
+  let adminId: number | null = admin.mode === 'existing' ? admin.wpUserId : null;
+  let emailSent: boolean | null = null;
+  if (admin.mode === 'new') {
+    try {
+      const created = await createClinicAdminViaPlugin({ name: admin.name, email: admin.email, clinicId: Number(id) });
+      adminId = created.id;
+      emailSent = created.emailSent;
+    } catch (err) {
+      await removeHalfMadeClinic(id);
+      if (err instanceof WpEndpointError) {
+        if (err.status === 409 && err.code === 'praktiqu_email_taken') throw new AdminEmailTakenError(admin.email);
+        throw new ClinicAdminProvisionError(err.message, err.status);
+      }
+      throw err;
+    }
+  }
+
+  await logging.audit('practice.create', {
+    userId: ctx.actorId,
+    resource: 'clinic',
+    resourceId: String(id),
+    metadata: { adminMode: admin.mode, adminId },
+  });
+
+  return { practice: await getPractice(Number(id)), admin: { mode: admin.mode, wpUserId: adminId, emailSent } };
+}
+
+/** The clinic was written moments ago and has no data, so deleting it outright is safe. */
+async function removeHalfMadeClinic(id: bigint): Promise<void> {
+  try {
+    await deleteClinicRow(id);
+  } catch (cleanupErr) {
+    // Left behind with clinic_admin_id = 0: findable by id in this log line and removable
+    // with DELETE /practices/:id?permanent=true.
+    await logging.error('createPractice: could not remove a clinic whose admin account failed', cleanupErr, {
+      resource: 'clinic',
+      resourceId: String(id),
+    });
+  }
 }
 
 export async function updatePractice(
