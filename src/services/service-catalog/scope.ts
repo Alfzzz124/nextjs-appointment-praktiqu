@@ -10,6 +10,11 @@
  * `wp_options` and configurable per install — unpredictable from an API's point of view.
  * Here it is fixed: the two admin roles, per the product decision that a clinic's shape
  * is set by its admin.
+ *
+ * Editing is one step wider (2026-10-15): a psychologist may change the price, duration,
+ * name and the rest of *their own* offerings. Adding and retiring offerings stays with
+ * the admins. "Their own" is not enforced here — `readScopeFor` pins a PROFESSIONAL to
+ * `doctorId = their wp user`, and `updateService` 404s any mapping outside that scope.
  */
 import { NextResponse } from 'next/server';
 import type { Actor } from '@/lib/auth';
@@ -51,6 +56,11 @@ export async function readScopeFor(actor: Actor): Promise<ServiceScope> {
 
 export function canWrite(role: Actor['role']): boolean {
   return role === 'SUPER_ADMIN' || role === 'CLINIC_ADMIN';
+}
+
+/** `canWrite`, plus a psychologist — whose scope only ever reaches their own mappings. */
+export function canEdit(role: Actor['role']): boolean {
+  return canWrite(role) || role === 'PROFESSIONAL';
 }
 
 /**

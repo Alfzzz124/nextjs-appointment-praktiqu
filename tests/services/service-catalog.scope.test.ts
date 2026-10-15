@@ -11,6 +11,7 @@ import { KcError } from '@/lib/kc-response';
 import {
   readScopeFor,
   canWrite,
+  canEdit,
   parseServiceId,
   scopeForRequest,
 } from '@/services/service-catalog/scope';
@@ -94,6 +95,17 @@ describe('canWrite', () => {
     expect(canWrite('RECEPTIONIST')).toBe(false);
     expect(canWrite('PROFESSIONAL')).toBe(false);
     expect(canWrite('CLIENT')).toBe(false);
+  });
+});
+
+describe('canEdit', () => {
+  it('admits the two admin roles plus a psychologist editing their own rows', () => {
+    expect(canEdit('SUPER_ADMIN')).toBe(true);
+    expect(canEdit('CLINIC_ADMIN')).toBe(true);
+    // Their reach is narrowed to their own mappings by readScopeFor, not here.
+    expect(canEdit('PROFESSIONAL')).toBe(true);
+    expect(canEdit('RECEPTIONIST')).toBe(false);
+    expect(canEdit('CLIENT')).toBe(false);
   });
 });
 
