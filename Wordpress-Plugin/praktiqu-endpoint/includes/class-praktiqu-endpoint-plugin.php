@@ -20,6 +20,7 @@ final class Plugin
     public Media $media;
     public Patients $patients;
     public Appointments $appointments;
+    public EmailKeys $email_keys;
     public Receptionists $receptionists;
     public ClinicAdmins $clinic_admins;
     public Doctors $doctors;
@@ -37,6 +38,7 @@ final class Plugin
         $this->media    = new Media();
         $this->patients = new Patients();
         $this->appointments = new Appointments();
+        $this->email_keys = new EmailKeys();
         $this->receptionists = new Receptionists();
         $this->clinic_admins = new ClinicAdmins();
         $this->doctors = new Doctors();
@@ -56,6 +58,7 @@ final class Plugin
         $this->jobs->register();
         $this->payments->register();
         $this->settings->register();
+        $this->email_keys->register();
     }
 
     public static function instance(): Plugin

@@ -66,6 +66,15 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
   whose sole listener handles check-in/check-out. A plain status change, including a
   staff approval of an unpaid booking, behaves as in 1.8.0. A listener that throws
   is logged and does not fail the request. The response gains `payment_confirmed`.
+* New email placeholders {{praktiqu_client_phone}} and {{praktiqu_professional_phone}},
+  answered through kivicare_custom_email_key_value from the user's basic_data →
+  mobile_number (empty string when missing or unreadable, never the literal key; only
+  phone characters are kept). KiviCare's own {{patient_contact_number}} /
+  {{doctor_contact_number}} are empty for nearly everyone (core reads a usermeta
+  KCPatient::save() never writes, then maps from a field its data lacks) and cannot be
+  overridden, so templates must switch keys — see
+  docs/deploy/email-phone-keys-runbook.md. Both keys are offered in KiviCare's template
+  editor via kivicare_template_dynamic_keys.
 
 = 1.8.0 =
 * New POST /clinic-admins creates the admin account of a clinic the Next.js app
