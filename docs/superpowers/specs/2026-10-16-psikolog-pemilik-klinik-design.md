@@ -233,3 +233,24 @@ memakai cabang pemilik.
 - Pemilik menunjuk pemilik lain.
 - Notifikasi ke psikolog saat dijadikan / dicabut sebagai pemilik.
 - Membuka rekam medis psikolog lain bagi pemilik.
+
+---
+
+## Catatan rencana (2026-10-16)
+
+Penyempurnaan saat menyusun `docs/superpowers/plans/2026-10-16-psikolog-pemilik-klinik.md`. Prinsipnya tidak berubah: K1–K6, allowlist, rekam medis tertutup.
+
+1. **Allowlist dipusatkan di satu tabel route, bukan cabang di tiap fungsi scope.**
+   - `getActor()` memvalidasi header untuk PROFESSIONAL.
+   - Pada route di `src/lib/auth/owner-routes.ts` saja, actor-nya ditukar menjadi CLINIC_ADMIN untuk klinik milik itu (`asClinicManager`). Logika scope admin yang sudah ada dipakai apa adanya.
+   - Route yang tidak terdaftar, termasuk route yang baru dibuat kelak, tetap melihat PROFESSIONAL.
+   - Alasan: di repo ini ada puluhan cabang `role === 'CLINIC_ADMIN'` / `kc.clinicId`. Menambah cabang pemilik di masing-masing mudah terlewat, sedangkan satu tabel route bisa diaudit dan diuji lengkap (`tests/lib/auth/owner-routes.test.ts`).
+2. **Cakupan §3 disesuaikan dengan yang benar-benar dipakai FE:**
+   - Billing pemilik **hanya baca** (daftar, detail, ekspor), karena layar Billing FE memang hanya baca.
+   - `professionals/{id}/availability`, `off-days`, dan `clinic-schedules` tidak dimasukkan, karena FE tidak memakainya. Jadwal dikelola lewat `professional-sessions` / `doctor-sessions`.
+   - Membuat janji temu manual tetap lewat jalur publik `/public/appointments`, yang sudah menerima psikolog. Yang berubah hanya roster di FE.
+3. **Nama kolom `clinic_owners` memakai camelCase** (`clinicId`, `doctorWpUserId`, `createdBy`, `createdAt`), mengikuti tabel app lain seperti `google_calendar_connections`.
+4. **Layar centang pemilik dibuat sebagai halaman tersendiri,** `/dashboard/klinik/{id}/pemilik` (pola `KlinikPembayaranController` / `KlinikAdminController`). Halaman ini ditautkan dari kartu di Settings untuk admin klinik dan dari halaman Admin Klinik untuk super admin. GET-nya juga mengembalikan `clinic: {id, name}`.
+5. **`PROFILE_VERSION` tidak dinaikkan,** karena menaikkannya me-logout semua staf. Sesi psikolog lama tanpa `ownedClinics` diisi dari `/auth/me` saat dashboard dibuka.
+6. **FE memakai pola yang sama dengan backend:** `AuthController::profilOperasional()` hanya dipakai di controller operasional. `PatientResultUploadController` (Hasil Klien disimpan di FE dan disaring per peran) dan `EncounterDocumentController` tetap memakai `validProfile()`.
+7. **Dalam mode pemilik, semua daftar di dashboard disaring ke klinik X.** Untuk daftar klinis seperti encounter, backend menambah syarat milik psikolog itu sendiri, jadi yang tampil adalah encounter miliknya di klinik X saja.
