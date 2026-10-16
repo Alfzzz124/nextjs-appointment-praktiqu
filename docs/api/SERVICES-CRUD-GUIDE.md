@@ -83,6 +83,10 @@ Tiga hal yang perlu diketahui frontend:
 4. **Psikolog boleh mengubah, tidak boleh menambah atau menghapus** (sejak 2026-10-15).
    `PUT` dari `PROFESSIONAL` diterima untuk baris miliknya sendiri; baris psikolog lain
    dijawab `404` lewat aturan nomor 2. `POST` dan `DELETE` tetap `403` untuknya.
+5. **Psikolog pemilik klinik** (sejak 2026-10-16): dengan header `X-Praktiqu-Clinic-Id` berisi
+   klinik yang ia miliki, `PROFESSIONAL` diperlakukan sebagai `CLINIC_ADMIN` klinik itu di
+   `/services` dan `/services/{id}` (tambah, ubah, hapus untuk semua psikolog di klinik itu).
+   Tanpa header, aturan nomor 4 berlaku. Lihat `src/lib/auth/owner-routes.ts`.
 
 ---
 
