@@ -176,6 +176,26 @@ Catatan yang perlu diketahui sebelum dipakai:
 > default bila tanpa header) — satu baris, walau ia memegang beberapa klinik. Daftar lengkap
 > klinik miliknya ada di `user.clinics` respons `/auth/me` (§2).
 
+### Mode pemilik (PROFESSIONAL)
+
+Psikolog juga boleh mengirim `X-Praktiqu-Clinic-Id`, tetapi hanya untuk klinik yang ia **miliki**
+(`ownedClinics` di `/auth/me`). Pemilik = psikolog aktif di klinik itu yang dicentang di
+`PUT /practices/{id}/owners`, atau satu-satunya psikolog aktif di klinik itu. Klinik lain → `403
+clinic_not_in_scope`, format salah → `400 invalid_clinic_header`.
+
+Dalam mode ini, dan **hanya** pada route di `src/lib/auth/owner-routes.ts` (layanan, jadwal,
+janji temu tanpa catatan, klien tanpa data klinis, billing baca, dashboard), ia bertindak
+sebagai admin klinik itu. Semua route lain, termasuk encounter, catatan sesi, hasil klien,
+riwayat medis, resep, laporan medis, pengaturan klinik, resepsionis, dan pemilik, tetap
+melihatnya sebagai psikolog biasa.
+
+`/sessions/export`, `/sessions/pending`, dan `/clients/export` sengaja **tidak** ikut mode pemilik: handler-nya belum men-scope admin klinik ke kliniknya.
+
+| Endpoint | Peran | Isi |
+| --- | --- | --- |
+| `GET /practices/{id}/owners` | SUPER_ADMIN, CLINIC_ADMIN (klinik aktifnya) | `{ clinic: {id,name}, data: [{doctorId,name,owner,source}] }`; `source` = `manual` \| `solo` \| `null`. Id klinik yang salah format atau tidak ada dijawab `404` (SUPER_ADMIN juga) |
+| `PUT /practices/{id}/owners` | sama | body `{ doctorIds: number[] }` = set pemilik manual lengkap; psikolog asing → 422 `fields.doctorIds`. Id klinik yang salah format atau tidak ada dijawab `404` (SUPER_ADMIN juga) |
+
 ### 4.2 `POST /api/v1/practices` — tambah klinik (SUPER_ADMIN)
 
 ```bash

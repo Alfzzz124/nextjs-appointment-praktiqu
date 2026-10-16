@@ -25,12 +25,10 @@ describe('clinic-schedule.service', () => {
     expect(m.selectionModes).toEqual(['single', 'range', 'multiple']);
   });
 
-  it('assertModuleInScope rejects a CLINIC_ADMIN targeting another clinic (403)', () => {
-    expect(() =>
-      assertModuleInScope('clinic', OTHER_CLINIC, kcAdmin),
-    ).toThrow();
+  it('assertModuleInScope rejects a CLINIC_ADMIN targeting another clinic (403)', async () => {
+    await expect(assertModuleInScope('clinic', OTHER_CLINIC, kcAdmin)).rejects.toThrow();
     // targeting own clinic is allowed
-    expect(() => assertModuleInScope('clinic', CLINIC, kcAdmin)).not.toThrow();
+    await expect(assertModuleInScope('clinic', CLINIC, kcAdmin)).resolves.toBeUndefined();
   });
 
   describe('DB-backed lifecycle', () => {

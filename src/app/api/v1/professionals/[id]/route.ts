@@ -110,6 +110,10 @@ export const DELETE = withAuth(async (_req: NextRequest, ctx: RouteParams) => {
   if (!scope) {
     return NextResponse.json(notFound('professional_not_found', 'Professional not found'), { status: 404 });
   }
+  // A CLINIC_ADMIN may only deactivate professionals mapped to their own clinic.
+  if (!canEdit(scope, actor.role)) {
+    return NextResponse.json(forbidden('Cannot deactivate a professional outside your clinic'), { status: 403 });
+  }
 
   await deactivateProfessional(id, actor.id);
   return NextResponse.json({ ok: true });

@@ -8,7 +8,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Prisma, RefreshTokenStatus, UserRole, WebhookEventName } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { listAdminClinics, resolveClinicId, type AdminClinic } from '@/services/billing/kc-actor';
+import { listOwnedClinics, type OwnedClinic } from '@/services/clinic-owner/service';
 import { getClientIp } from '@/lib/client-ip';
+import { logging } from '@/lib/logging';
 import { findWpAccountStatus } from '@/repositories/wp/account-status.repo';
 import {
   issueAccessToken,
@@ -159,6 +161,8 @@ export interface LoginResult {
     clinicId: number | null;
     /** See `scopeClinics`. Only a CLINIC_ADMIN carries it. */
     clinics?: AdminClinic[];
+    /** See `scopeClinics`. Only a PROFESSIONAL carries it. */
+    ownedClinics?: OwnedClinic[];
   };
   accessToken: string;
   accessTokenExpiresAt: Date;
@@ -270,11 +274,14 @@ export async function login(input: LoginInput): Promise<LoginResult> {
  * A PROFESSIONAL deliberately gets `clinicId: null`: they can work at several clinics, and
  * the FE treats this value as a clinic override (schedule saves, service lists), so a
  * first-mapping guess would lock them out of every clinic but one.
+ *
+ * `ownedClinics`: PROFESSIONAL only. Clinics they own (manually ticked, or the only active
+ * psychologist there), each usable as X-Praktiqu-Clinic-Id for owner mode. Always an array.
  */
 export async function scopeClinics(
   role: UserRole,
   wpUserId: bigint | null,
-): Promise<{ clinicId: number | null; clinics?: AdminClinic[] }> {
+): Promise<{ clinicId: number | null; clinics?: AdminClinic[]; ownedClinics?: OwnedClinic[] }> {
   if (role === 'CLINIC_ADMIN') {
     const clinics = wpUserId === null ? [] : await listAdminClinics(wpUserId);
     return { clinicId: clinics[0]?.id ?? null, clinics };
@@ -282,6 +289,19 @@ export async function scopeClinics(
   if (role === 'RECEPTIONIST' && wpUserId !== null) {
     const clinicId = await resolveClinicId(role, wpUserId);
     return { clinicId: clinicId === null ? null : Number(clinicId) };
+  }
+  if (role === 'PROFESSIONAL') {
+    if (wpUserId === null) return { clinicId: null, ownedClinics: [] };
+    try {
+      return { clinicId: null, ownedClinics: await listOwnedClinics(wpUserId) };
+    } catch (err) {
+      // Owner mode is optional: a missing `clinic_owners` table or a failing query must
+      // not take a psychologist's login or /auth/me down. The FE retries on its next refresh.
+      await logging.error('Could not load the owned clinics for a psychologist', err, {
+        metadata: { wpUserId: wpUserId.toString() },
+      });
+      return { clinicId: null, ownedClinics: [] };
+    }
   }
   return { clinicId: null };
 }

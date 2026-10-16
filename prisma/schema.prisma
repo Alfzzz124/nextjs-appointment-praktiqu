@@ -1051,6 +1051,23 @@ model GoogleCalendarConnection {
   @@map("google_calendar_connections")
 }
 
+/// A psychologist marked as owner of a clinic. See prisma/manual/2026-10-16-clinic-owners.sql
+/// and src/services/clinic-owner/service.ts — a row grants nothing on its own.
+model ClinicOwner {
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  /// wp_kc_clinics.id
+  clinicId       BigInt   @db.UnsignedBigInt
+  /// wp_users.ID of the psychologist
+  doctorWpUserId BigInt   @db.UnsignedBigInt
+  /// users.id (cuid) of the actor who granted it
+  createdBy      String   @db.VarChar(191)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+
+  @@unique([clinicId, doctorWpUserId])
+  @@index([doctorWpUserId])
+  @@map("clinic_owners")
+}
+
 /// A client-supplied Idempotency-Key for public booking.
 ///
 /// The gateway gives up at ~8s while the write carries on, so the caller cannot

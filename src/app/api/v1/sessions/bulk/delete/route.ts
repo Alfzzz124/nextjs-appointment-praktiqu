@@ -4,7 +4,7 @@ import { sessionActorFromRequest } from '@/lib/auth/session-actor';
 import { AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
 import { UserRole } from '@prisma/client';
-import { bulkCancelSessions } from '@/services/session/session.service';
+import { bulkCancelSessions, sessionIdsOutsideScope } from '@/services/session/session.service';
 import { z } from 'zod';
 
 
@@ -22,6 +22,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json(
         { type: '/errors/validation', title: 'Invalid input', status: 400, detail: parsed.error.issues[0]?.message },
         { status: 400 },
+      );
+    }
+    // All or nothing: one id outside the actor's clinic refuses the batch, so nothing is
+    // half-applied and the single-id clinic rule cannot be bypassed in bulk.
+    const outside = await sessionIdsOutsideScope(actor, parsed.data.ids);
+    if (outside.length > 0) {
+      return NextResponse.json(
+        {
+          type: '/errors/forbidden',
+          title: 'Forbidden',
+          status: 403,
+          detail: `${outside.length} of the selected sessions are outside your clinic`,
+        },
+        { status: 403 },
       );
     }
     const count = await bulkCancelSessions(parsed.data.ids);
