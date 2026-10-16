@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.0
+Stable tag: 1.8.1
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -54,6 +54,18 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.8.1 =
+* Paid public bookings now send KiviCare's booking emails to patient, doctor and
+  clinic. POST /appointments/{id}/status accepts an optional
+  `payment` { gateway, wc_order_id, transaction_id }; when it rides on status 1 and
+  the row is PENDING, the row is claimed with a conditional UPDATE and
+  kc_appointment_payment_completed fires once — a second or concurrent confirmation
+  of the same order fires nothing. Before, a paid booking (created PENDING, so
+  kc_after_create_appointment was skipped) reached only kc_appointment_status_update,
+  whose sole listener handles check-in/check-out. A plain status change, including a
+  staff approval of an unpaid booking, behaves as in 1.8.0. A listener that throws
+  is logged and does not fail the request. The response gains `payment_confirmed`.
 
 = 1.8.0 =
 * New POST /clinic-admins creates the admin account of a clinic the Next.js app

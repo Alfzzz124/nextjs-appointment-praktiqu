@@ -457,14 +457,22 @@ export async function initiatePublicPayment(
 export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
   if (!order.appointmentId) return;
 
-  // Read-then-write rather than a guarded UPDATE, because confirming goes through the
-  // plugin: KiviCare's status listeners send the confirmation mail and provision the
-  // telemed link. Re-entering with an already-BOOKED appointment is the idempotent
-  // case and stops here.
+  // Confirming goes through the plugin, and it is the `payment` argument that makes the
+  // plugin fire `kc_appointment_payment_completed` — KiviCare's own post-payment hook and
+  // the one its booking mail to patient, professional and clinic listens on. A bare
+  // status change reaches only `kc_appointment_status_update`, whose sole listener mails
+  // check-in/check-out, so paid bookings went out unannounced until 1.8.1. No telemed
+  // link is created on this path. Re-entering with an already-BOOKED appointment is the
+  // idempotent case and stops here; two callers that both get past this read are settled
+  // by the plugin, which claims PENDING → BOOKED with a conditional UPDATE and mails once.
   const appt = await findSessionById(Number(order.appointmentId));
   if (!appt || appt.status !== SESSION_STATUS.PENDING) return;
 
-  await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED);
+  await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED, {
+    gateway: order.gateway,
+    wcOrderId: order.wcOrderId,
+    transactionId: order.transactionId,
+  });
   await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
 
   // Guest bookings never pass through `transitionSession`, so this is the only hook

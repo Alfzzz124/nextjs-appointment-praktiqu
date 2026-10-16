@@ -124,17 +124,40 @@ export async function updateAppointment(
   });
 }
 
+/** The payment a BOOKED status write confirms. */
+export type ConfirmedPayment = {
+  gateway: string;
+  wcOrderId: number;
+  transactionId: string | null;
+};
+
 /**
  * Change status. Use `cancelAppointment` rather than passing 0 here directly — the
  * ordinal is counter-intuitive enough to be worth naming.
+ *
+ * `payment` marks a BOOKED write as a paid booking being confirmed. On PENDING → BOOKED
+ * the plugin then fires `kc_appointment_payment_completed`, which is what sends KiviCare's
+ * booking emails to patient, professional and clinic — exactly once, even when two
+ * callers confirm the same order at the same time. Without it a BOOKED write fires only
+ * the generic status hook, and nobody is mailed.
  */
 export async function setAppointmentStatus(
   appointmentId: number,
   status: number,
-): Promise<{ id: number; status: number; cancelled: boolean }> {
+  payment?: ConfirmedPayment,
+): Promise<{ id: number; status: number; cancelled: boolean; payment_confirmed?: boolean }> {
   return wpRequestJson(`/appointments/${appointmentId}/status`, {
     method: 'POST',
-    body: { status },
+    body: payment
+      ? {
+          status,
+          payment: {
+            gateway: payment.gateway,
+            wc_order_id: payment.wcOrderId,
+            transaction_id: payment.transactionId ?? '',
+          },
+        }
+      : { status },
   });
 }
 
