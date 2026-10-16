@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedDoctorClinicMapping, cleanup } from './fixtures';
 import { prisma } from '@/lib/db';
 import {
   createDoctorSession, getDoctorSession, listDoctorSessions,
@@ -39,6 +39,8 @@ describe('doctor-session.service', () => {
       assertTestDb();
       await cleanup();
       await seedClinicAdmin({ userId: ADMIN, clinicId: CLINIC });
+      // A CLINIC_ADMIN may only write sessions for a doctor mapped to their clinic.
+      await seedDoctorClinicMapping({ id: 9_000_971, doctorId: DOCTOR, clinicId: CLINIC });
     });
     afterAll(cleanup);
 
@@ -168,6 +170,9 @@ describe('weekly doctor sessions', () => {
       assertTestDb();
       await cleanup();
       await seedClinicAdmin({ userId: WEEK_ADMIN, clinicId: WEEK_CLINIC });
+      // A CLINIC_ADMIN may only write sessions for doctors mapped to their clinic.
+      await seedDoctorClinicMapping({ id: 9_000_972, doctorId: WEEK_DOCTOR, clinicId: WEEK_CLINIC });
+      await seedDoctorClinicMapping({ id: 9_000_973, doctorId: WEEK_DOCTOR + 5, clinicId: WEEK_CLINIC }); // LEGACY_DOCTOR
     });
     afterAll(cleanup);
 

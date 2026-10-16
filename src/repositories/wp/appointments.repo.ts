@@ -207,6 +207,16 @@ export async function findAppointmentById(id: bigint): Promise<WpAppointment | n
   return row ? toAppointment(row as AppointmentRow) : null;
 }
 
+/** Of `ids`, the appointments that belong to `clinicId`. Ids that do not exist are absent. */
+export async function appointmentIdsInClinic(ids: number[], clinicId: bigint): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await prisma.kcAppointment.findMany({
+    where: { id: { in: ids.map((id) => BigInt(id)) }, clinicId },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => Number(r.id)));
+}
+
 export async function listAppointments(
   query: ListAppointmentsQuery,
 ): Promise<PaginatedAppointments> {

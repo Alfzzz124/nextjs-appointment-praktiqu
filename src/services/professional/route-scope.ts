@@ -87,3 +87,61 @@ export function canEdit(scope: ProfessionalScope, actorRole: Actor['role']): boo
   if (actorRole === 'CLINIC_ADMIN') return scope.sharesClinic;
   return actorRole === 'PROFESSIONAL' && scope.isSelf;
 }
+
+/**
+ * May the actor read or write this professional's schedule AT `clinicId`?
+ *
+ * Call after `canView`/`canEdit`, which only say the actor may touch the professional at
+ * all. A schedule belongs to a doctor at one clinic, so the clinic is a second question:
+ * clinic staff are confined to their own clinic even for a professional they share with
+ * another, and a professional to the clinics they are actually mapped to.
+ */
+export async function canUseClinic(
+  scope: ProfessionalScope,
+  actorRole: Actor['role'],
+  professionalId: number,
+  clinicId: number,
+): Promise<boolean> {
+  if (actorRole === 'SUPER_ADMIN') return true;
+  if (actorRole === 'CLINIC_ADMIN' || actorRole === 'RECEPTIONIST') {
+    return scope.kc.clinicId !== null && BigInt(clinicId) === scope.kc.clinicId;
+  }
+  const mapping = await prisma.kcDoctorClinicMapping.findFirst({
+    where: { doctorId: BigInt(professionalId), clinicId: BigInt(clinicId) },
+    select: { id: true },
+  });
+  return mapping !== null;
+}
+
+/**
+ * Of `ids`, the ones a bulk action by this actor may NOT touch.
+ *
+ * SUPER_ADMIN touches anyone. A CLINIC_ADMIN only professionals mapped to their (active)
+ * clinic — the same rule `canEdit` applies to a single id, so a bulk call cannot reach
+ * what the single-id route refuses. An admin with no clinic may touch no one.
+ */
+export async function professionalIdsOutsideScope(actor: Actor, ids: number[]): Promise<number[]> {
+  if (actor.role === 'SUPER_ADMIN') return [];
+  const kc = await resolveKcActor(actor);
+  if (actor.role !== 'CLINIC_ADMIN' || kc.clinicId === null) return ids;
+
+  const rows = await prisma.kcDoctorClinicMapping.findMany({
+    where: { doctorId: { in: ids.map((id) => BigInt(id)) }, clinicId: kc.clinicId },
+    select: { doctorId: true },
+  });
+  const inClinic = new Set(rows.map((r) => Number(r.doctorId)));
+  return ids.filter((id) => !inClinic.has(id));
+}
+
+/** The 403 a bulk route answers when `professionalIdsOutsideScope` found any. */
+export function outsideScopeResponse(count: number): NextResponse {
+  return NextResponse.json(
+    {
+      type: '/errors/forbidden',
+      title: 'Forbidden',
+      status: 403,
+      detail: `${count} of the selected professionals are outside your clinic`,
+    },
+    { status: 403 },
+  );
+}

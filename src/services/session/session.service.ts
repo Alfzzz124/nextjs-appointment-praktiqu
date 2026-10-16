@@ -39,7 +39,7 @@ import {
   createAppointment,
   setAppointmentStatus,
 } from '@/repositories/wp/appointments.write';
-import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
+import { appointmentIdsInClinic, findConflictingAppointments } from '@/repositories/wp/appointments.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
 import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
@@ -626,6 +626,21 @@ export async function invalidatePendingForOffDay(
  * Sequential and through the plugin, so each cancellation fires KiviCare's hooks.
  * Failures are counted rather than thrown, so one bad id cannot abandon the batch.
  */
+/**
+ * Of `ids`, the sessions a bulk action by this actor may NOT touch — the same clinic rule
+ * `assertCanRead` applies to one session. SUPER_ADMIN touches any; clinic staff only their
+ * own clinic's, and staff with no clinic none. An id that does not exist counts as
+ * outside, so the answer does not reveal which ids exist elsewhere.
+ */
+export async function sessionIdsOutsideScope(actor: Actor, ids: number[]): Promise<number[]> {
+  if (actor.role === 'SUPER_ADMIN') return [];
+  if (actor.role !== 'CLINIC_ADMIN' && actor.role !== 'RECEPTIONIST') return ids;
+  const kc = await resolveKcActor(actor);
+  if (kc.clinicId === null) return ids;
+  const inClinic = await appointmentIdsInClinic(ids, kc.clinicId);
+  return ids.filter((id) => !inClinic.has(id));
+}
+
 export async function bulkCancelSessions(ids: number[]): Promise<number> {
   let cancelled = 0;
   for (const id of ids) {
