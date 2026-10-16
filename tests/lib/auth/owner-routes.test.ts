@@ -21,7 +21,6 @@ describe('isOwnerRoute — operational routes are elevated', () => {
     ['POST', '/api/v1/doctor-sessions/bulk/delete'],
     ['GET', '/api/v1/sessions'],
     ['GET', '/api/v1/sessions/calendar'],
-    ['GET', '/api/v1/sessions/export'],
     ['GET', '/api/v1/sessions/77'],
     ['POST', '/api/v1/sessions/77/approve'],
     ['POST', '/api/v1/sessions/77/check-out'],
@@ -72,6 +71,13 @@ describe('isOwnerRoute — clinical, configuration and unknown routes stay PROFE
     ['PATCH', '/api/v1/services/488'],
     ['GET', '/api/v1/services/abc'],
     ['GET', '/api/v1/services-extra'],
+    ['GET', '/api/v1/sessions/export'],
+    ['GET', '/api/v1/sessions/pending'],
+    ['GET', '/api/v1/clients/export'],
+    ['HEAD', '/api/v1/services'],
+    ['GET', '/api/v1/sessions/077'],
+    ['GET', '/api/v1/sessions/77/notes/'],
+    ['GET', '/api/v1//sessions'],
   ])('%s %s', (method, path) => {
     expect(isOwnerRoute(method, path)).toBe(false);
   });

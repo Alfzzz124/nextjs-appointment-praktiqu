@@ -17,11 +17,12 @@ const SHARED = BASE + 2; // DOC + OTHER, nobody ticked
 const DOC = BASE + 500;
 const OTHER = BASE + 501;
 const DOC_USER = 'owner-mode-test-doc';
+const RECEPTIONIST_USER = 'owner-mode-test-receptionist';
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
-async function req(path: string, header?: string, method = 'GET'): Promise<NextRequest> {
-  const jwt = await new SignJWT({ role: 'PROFESSIONAL' })
-    .setProtectedHeader({ alg: 'HS256' }).setSubject(DOC_USER).setExpirationTime('1h').sign(SECRET);
+async function req(path: string, header?: string, method = 'GET', sub = DOC_USER, role = 'PROFESSIONAL'): Promise<NextRequest> {
+  const jwt = await new SignJWT({ role })
+    .setProtectedHeader({ alg: 'HS256' }).setSubject(sub).setExpirationTime('1h').sign(SECRET);
   const headers: Record<string, string> = { authorization: `Bearer ${jwt}` };
   if (header !== undefined) headers['x-praktiqu-clinic-id'] = header;
   return new NextRequest(`http://localhost${path}`, { method, headers });
@@ -63,6 +64,9 @@ beforeAll(async () => {
   await prisma.user.create({
     data: { id: DOC_USER, email: `${DOC_USER}@test.local`, username: DOC_USER, firstName: 'D', lastName: 'R', displayName: 'Dr', role: 'PROFESSIONAL', wpUserId: BigInt(DOC), status: 1 },
   });
+  await prisma.user.create({
+    data: { id: RECEPTIONIST_USER, email: `${RECEPTIONIST_USER}@test.local`, username: RECEPTIONIST_USER, firstName: 'R', lastName: 'C', displayName: 'Rc', role: 'RECEPTIONIST', status: 1 },
+  });
 });
 
 afterAll(async () => {
@@ -95,6 +99,19 @@ describe('getActor — PROFESSIONAL with X-Praktiqu-Clinic-Id', () => {
     const err = await rejection(getActor(await req('/api/v1/services', String(SHARED))));
     expect(err.status).toBe(403);
     expect(err.message).toBe('clinic_not_in_scope');
+  });
+
+  it('a clinic that does not exist: the same 403 clinic_not_in_scope', async () => {
+    const err = await rejection(getActor(await req('/api/v1/services', String(BASE + 9))));
+    expect(err.status).toBe(403);
+    expect(err.message).toBe('clinic_not_in_scope');
+  });
+
+  it('a receptionist sending the header is unaffected', async () => {
+    const actor = await getActor(await req('/api/v1/services', String(OWNED), 'GET', RECEPTIONIST_USER, 'RECEPTIONIST'));
+    expect(actor.role).toBe('RECEPTIONIST');
+    expect(actor.activeClinicId).toBeUndefined();
+    expect(actor.ownerClinicId).toBeUndefined();
   });
 
   it('a malformed value: 400 invalid_clinic_header', async () => {

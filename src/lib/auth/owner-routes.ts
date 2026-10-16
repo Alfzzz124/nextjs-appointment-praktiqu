@@ -35,14 +35,16 @@ export const OWNER_ROUTES: readonly Rule[] = [
 
   // Appointments (not their notes, summaries, attachments or custom fields)
   rule('/api/v1/sessions', ['GET']),
-  rule('/api/v1/sessions/(?:calendar|pending|export)', ['GET']),
+  // Deliberately NOT listed: sessions/export, sessions/pending, clients/export — their handlers
+  // are not clinic-scoped for a CLINIC_ADMIN, so elevating would leak other clinics' data.
+  // Fix the handler before adding them here.
+  rule('/api/v1/sessions/calendar', ['GET']),
   rule('/api/v1/sessions/bulk/delete', ['POST']),
   rule(`/api/v1/sessions/${ID}`, ['GET']),
   rule(`/api/v1/sessions/${ID}/(?:approve|reject|cancel|check-in|check-out)`, ['POST']),
 
   // Clients: identity and contact only
   rule('/api/v1/clients', ['GET', 'POST']),
-  rule('/api/v1/clients/export', ['GET']),
   rule('/api/v1/clients/bulk/(?:delete|status)', ['POST']),
   rule(`/api/v1/clients/${ID}`, ['GET', 'PATCH', 'DELETE']),
   rule(`/api/v1/clients/${ID}/status`, ['PATCH']),
