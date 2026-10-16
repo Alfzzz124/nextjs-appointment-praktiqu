@@ -27,7 +27,7 @@ async function req(sub: string, role: string, clinicId: number, method = 'GET', 
     ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
   });
 }
-const ctx = (id: number) => ({ params: { id: String(id) } });
+const ctx = (id: number | string) => ({ params: { id: String(id) } });
 
 function caps(role: string) { return `a:1:{s:${role.length}:"${role}";b:1;}`; }
 
@@ -125,5 +125,21 @@ describe('PUT /practices/{id}/owners', () => {
     });
     const res = await PUT(await req('owners-route-test-doc', 'PROFESSIONAL', CLINIC, 'PUT', { doctorIds: [] }), ctx(CLINIC));
     expect(res.status).toBe(403);
+    const rows = await prisma.clinicOwner.findMany({ where: { clinicId: BigInt(CLINIC) } });
+    expect(rows.map((r) => Number(r.doctorWpUserId)).sort()).toEqual([DOC_A, DOC_B]);
+  });
+});
+
+describe('ids that are not a real clinic', () => {
+  const MISSING = BASE + 9;
+
+  it('answers 404 to super admin for a clinic that does not exist (GET and PUT)', async () => {
+    expect((await GET(await req('owners-route-test-super', 'SUPER_ADMIN', MISSING), ctx(MISSING))).status).toBe(404);
+    expect((await PUT(await req('owners-route-test-super', 'SUPER_ADMIN', MISSING, 'PUT', { doctorIds: [5] }), ctx(MISSING))).status).toBe(404);
+  });
+
+  it.each(['1e3', '0x10', '-5', ' 5 ', '0'])('answers 404 for the malformed id %j', async (bad) => {
+    expect((await GET(await req('owners-route-test-super', 'SUPER_ADMIN', CLINIC), ctx(bad))).status).toBe(404);
+    expect((await PUT(await req('owners-route-test-super', 'SUPER_ADMIN', CLINIC, 'PUT', { doctorIds: [] }), ctx(bad))).status).toBe(404);
   });
 });

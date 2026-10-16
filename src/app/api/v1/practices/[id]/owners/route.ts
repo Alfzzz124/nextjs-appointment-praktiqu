@@ -26,10 +26,21 @@ const bodySchema = z.object({ doctorIds: z.array(z.number().int().positive()).ma
 const notFound = () =>
   NextResponse.json({ type: '/errors/resource-not-found', title: 'Practice not found', status: 404 }, { status: 404 });
 
-/** The scope gate shared by both verbs: a response to send, or null to carry on. */
-async function gate(req: NextRequest, id: string): Promise<{ actorId: string; clinicId: bigint } | NextResponse> {
+const CLINIC_ID = /^[1-9][0-9]{0,18}$/;
+
+/**
+ * The gate shared by both verbs: role, then a strict id, then scope, then existence.
+ * Returns the caller and clinic to carry on with, or a ready-made response to send.
+ * Malformed, out-of-scope and nonexistent ids all answer the same 404.
+ */
+async function gate(
+  req: NextRequest,
+  id: string,
+): Promise<{ actorId: string; clinicId: bigint; clinicName: string } | NextResponse> {
   const g = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in g) return g.response;
+  // Number() would accept "1e3" and BigInt() would then throw: refuse anything but plain digits.
+  if (!CLINIC_ID.test(id)) return notFound();
   try {
     await assertPracticeInScope(g.actor, Number(id));
   } catch (err) {
@@ -42,18 +53,20 @@ async function gate(req: NextRequest, id: string): Promise<{ actorId: string; cl
     }
     throw err;
   }
-  return { actorId: g.actor.id, clinicId: BigInt(id) };
+  const clinicId = BigInt(id);
+  const clinic = await prisma.kcClinic.findUnique({ where: { id: clinicId }, select: { name: true } });
+  if (!clinic) return notFound();
+  return { actorId: g.actor.id, clinicId, clinicName: clinic.name?.trim() || `Klinik #${clinicId}` };
 }
 
-async function payload(clinicId: bigint, roster: Awaited<ReturnType<typeof listClinicOwnerRoster>>) {
-  const clinic = await prisma.kcClinic.findUnique({ where: { id: clinicId }, select: { name: true } });
-  return { clinic: { id: Number(clinicId), name: clinic?.name?.trim() || `Klinik #${clinicId}` }, data: roster };
+function payload(g: { clinicId: bigint; clinicName: string }, roster: Awaited<ReturnType<typeof listClinicOwnerRoster>>) {
+  return { clinic: { id: Number(g.clinicId), name: g.clinicName }, data: roster };
 }
 
 export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const g = await gate(req, params.id);
   if (g instanceof NextResponse) return g;
-  return NextResponse.json(await payload(g.clinicId, await listClinicOwnerRoster(g.clinicId)));
+  return NextResponse.json(payload(g, await listClinicOwnerRoster(g.clinicId)));
 }
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
@@ -76,7 +89,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 
   try {
     const roster = await setClinicOwners(g.clinicId, parsed.data.doctorIds, g.actorId);
-    return NextResponse.json(await payload(g.clinicId, roster));
+    return NextResponse.json(payload(g, roster));
   } catch (err) {
     if (err instanceof NotAClinicProfessionalError) {
       return NextResponse.json(
