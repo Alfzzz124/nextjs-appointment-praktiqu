@@ -11,6 +11,9 @@
  * hooks, so a direct write skips nothing — see the Writes section below.
  */
 import { prisma } from '@/lib/db';
+import { lastInsertId } from '@/lib/last-insert-id';
+import { clinicPaymentOptionName } from './clinic-payment-settings.repo';
+import { OFF_DAY_MODULE } from './off-days.repo';
 import { labelOf, paginate } from './wp-user';
 
 /** KiviCare uses 1 = active, 0 = inactive across its tables. */
@@ -289,4 +292,126 @@ export async function listClinicMembers(clinicId: bigint): Promise<
     userId: BigInt(r.user_id),
     role: r.role as 'doctor' | 'receptionist' | 'patient',
   }));
+}
+
+/* ------------------------------------------------------------------ */
+/* Create / delete (CRUD klinik)                                       */
+/* ------------------------------------------------------------------ */
+
+export type InsertClinicInput = {
+  name: string;
+  email: string | null;
+  telephone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  postalCode: string | null;
+  countryCode: string | null;
+  countryCallingCode: string | null;
+  status: 0 | 1;
+  /** 0 = no admin yet; one can be given later through change-admin. */
+  clinicAdminId: bigint;
+};
+
+/**
+ * Insert a clinic and return its id. Columns KiviCare's own create fills but the app does
+ * not manage get KiviCare's empty values: specialties '[]', clinic_logo 0, profile_image NULL.
+ */
+export async function insertClinic(input: InsertClinicInput): Promise<bigint> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO wp_kc_clinics
+         (name, email, telephone_no, specialties, address, city, state, country, postal_code,
+          status, clinic_admin_id, clinic_logo, profile_image, extra, country_code, country_calling_code, created_at)
+       VALUES (?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, NOW(3))`,
+      input.name,
+      input.email,
+      input.telephone,
+      input.address,
+      input.city,
+      input.state,
+      input.country,
+      input.postalCode,
+      input.status,
+      input.clinicAdminId,
+      input.countryCode,
+      input.countryCallingCode,
+    );
+    return lastInsertId(tx);
+  });
+}
+
+export async function setClinicAdmin(id: bigint, adminId: bigint): Promise<void> {
+  await prisma.$executeRawUnsafe(`UPDATE wp_kc_clinics SET clinic_admin_id = ? WHERE id = ?`, adminId, id);
+}
+
+/** Every clinic's id and name, inactive ones included — the input for the booking-link check. */
+export async function listClinicNames(): Promise<Array<{ id: number; name: string | null }>> {
+  const rows = await prisma.kcClinic.findMany({ select: { id: true, name: true }, orderBy: { id: 'asc' } });
+  return rows.map((r) => ({ id: Number(r.id), name: r.name }));
+}
+
+/** The lowest-id clinic using this email (case and surrounding spaces ignored), or null. */
+export async function findClinicIdByEmail(email: string, exceptId?: number): Promise<number | null> {
+  const except = exceptId === undefined ? '' : 'AND id <> ?';
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint }>>(
+    `SELECT id FROM wp_kc_clinics WHERE LOWER(TRIM(email)) = LOWER(?) ${except} ORDER BY id LIMIT 1`,
+    email.trim(),
+    ...(exceptId === undefined ? [] : [exceptId]),
+  );
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
+/**
+ * Tables whose rows belong to a clinic through a `clinic_id` column. A clinic with any of
+ * these may only be deactivated, never deleted. Taken from information_schema of the test DB
+ * on 2026-10-15 — re-run that query (see the spec) when KiviCare adds tables.
+ */
+export const CLINIC_REFERENCE_TABLES = {
+  appointments: 'wp_kc_appointments',
+  bills: 'wp_kc_bills',
+  encounters: 'wp_kc_patient_encounters',
+  doctors: 'wp_kc_doctor_clinic_mappings',
+  patients: 'wp_kc_patient_clinic_mappings',
+  receptionists: 'wp_kc_receptionist_clinic_mappings',
+  sessions: 'wp_kc_clinic_sessions',
+  services: 'wp_kc_service_doctor_mapping',
+  followups: 'wp_kc_followups',
+  followupChains: 'wp_kc_followup_chains',
+  taxes: 'wp_kc_taxes',
+  notifications: 'wp_kc_custom_notifications',
+} as const;
+
+export type ClinicReferenceKey = keyof typeof CLINIC_REFERENCE_TABLES;
+export type ClinicReferenceCounts = Record<ClinicReferenceKey, number>;
+
+/** Rows per table that point at this clinic, in one round trip. */
+export async function countClinicReferences(id: bigint): Promise<ClinicReferenceCounts> {
+  const keys = Object.keys(CLINIC_REFERENCE_TABLES) as ClinicReferenceKey[];
+  // Table names come from the constant above, never from input, so interpolating them is safe.
+  const selects = keys.map((k) => `(SELECT COUNT(*) FROM ${CLINIC_REFERENCE_TABLES[k]} WHERE clinic_id = ?) AS \`${k}\``);
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, bigint | number>>>(
+    `SELECT ${selects.join(', ')}`,
+    ...keys.map(() => id),
+  );
+  const row = rows[0] ?? {};
+  return Object.fromEntries(keys.map((k) => [k, Number(row[k] ?? 0)])) as ClinicReferenceCounts;
+}
+
+/**
+ * Delete a clinic and what only means something with it: its holidays and its international
+ * payment option. The caller checks countClinicReferences first; the admin account stays.
+ *
+ * No transaction: production tables are MyISAM, which ignores them. The clinic row goes LAST,
+ * so a failure part-way leaves a clinic that can simply be deleted again.
+ */
+export async function deleteClinicRow(id: bigint): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM wp_kc_clinic_schedule WHERE module_type = ? AND module_id = ?`,
+    OFF_DAY_MODULE.CLINIC,
+    id,
+  );
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_options WHERE option_name = ?`, clinicPaymentOptionName(Number(id)));
+  await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinics WHERE id = ?`, id);
 }

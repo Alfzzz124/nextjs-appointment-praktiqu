@@ -129,6 +129,49 @@ export const practiceUpdateSchema = z
 export type PracticeUpdateInput = z.infer<typeof practiceUpdateSchema>;
 
 // ============================================================
+// Practice creation
+// ============================================================
+
+/** Who becomes the new clinic's admin (wp_kc_clinics.clinic_admin_id). */
+export const clinicAdminChoiceSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('existing'), wpUserId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict(),
+  z.object({ mode: z.literal('new'), name: z.string().trim().min(1).max(120), email: z.string().trim().email().max(100) }).strict(),
+  z.object({ mode: z.literal('none') }).strict(),
+]);
+export type ClinicAdminChoice = z.infer<typeof clinicAdminChoiceSchema>;
+
+const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
+
+/**
+ * POST /practices. The contact fields follow practiceUpdateSchema, but `name` is required
+ * and the extra-blob fields (timezone, logoUrl, businessHours) are not accepted here — set
+ * them afterwards with PATCH.
+ */
+export const practiceCreateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    email: z.string().trim().email().max(191).nullable().optional(),
+    telephoneNo: z.string().trim().min(3).max(40).nullable().optional(),
+    address: optionalText(255),
+    city: optionalText(80),
+    state: optionalText(80),
+    country: optionalText(80),
+    postalCode: optionalText(20),
+    countryCode: z.string().length(2, 'countryCode must be ISO 3166-1 alpha-2').nullable().optional(),
+    countryCallingCode: z
+      .string()
+      .regex(/^\+\d{1,4}$/, 'countryCallingCode must be E.164 like "+1"')
+      .nullable()
+      .optional(),
+    status: z
+      .union([z.literal(PracticeStatus.ACTIVE), z.literal(PracticeStatus.INACTIVE)])
+      .default(PracticeStatus.ACTIVE),
+    admin: clinicAdminChoiceSchema.default({ mode: 'none' }),
+  })
+  .strict();
+export type PracticeCreateInput = z.infer<typeof practiceCreateSchema>;
+
+// ============================================================
 // Response shapes
 // ============================================================
 

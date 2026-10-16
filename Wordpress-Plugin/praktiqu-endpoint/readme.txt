@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.7.0
+Stable tag: 1.8.0
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -54,6 +54,16 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.8.0 =
+* New POST /clinic-admins creates the admin account of a clinic the Next.js app
+  just created: wp_insert_user with the kiviCare_clinic_admin role, a conditional
+  claim of wp_kc_clinics.clinic_admin_id (only while it is 0), KiviCare's
+  clinic_admin_registration email (WordPress's new-user email as fallback) and the
+  kivicare_clinic_admin_registered action. Answers 400 praktiqu_invalid_email /
+  praktiqu_invalid_name / praktiqu_missing_clinic, 404 praktiqu_clinic_not_found,
+  409 praktiqu_clinic_has_admin / praktiqu_email_taken. The password is never
+  returned.
 
 = 1.7.0 =
 * International clinics. New GET|PUT /clinics/{id}/payment-settings stores one

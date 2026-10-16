@@ -27,8 +27,9 @@ final class REST_Controller
     private Doctors $doctors;
     private Encounters $encounters;
     private ClinicalRecords $clinical_records;
+    private ClinicAdmins $clinic_admins;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors, Encounters $encounters, ClinicalRecords $clinical_records)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors, Encounters $encounters, ClinicalRecords $clinical_records, ClinicAdmins $clinic_admins)
     {
         $this->service = $service;
         $this->jobs = $jobs;
@@ -40,6 +41,7 @@ final class REST_Controller
         $this->doctors = $doctors;
         $this->encounters = $encounters;
         $this->clinical_records = $clinical_records;
+        $this->clinic_admins = $clinic_admins;
     }
 
     public function register(): void
@@ -239,6 +241,21 @@ final class REST_Controller
                 // receptionistCreateSchema upstream — declared here without its own
                 // bounds so the two cannot drift apart.
                 'password'  => ['required' => false, 'type' => 'string'],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/clinic-admins — create the admin account of a clinic that has none
+        //
+        // The Next.js app writes the wp_kc_clinics row itself; the account has to come from
+        // wp_insert_user (see ClinicAdmins). Refuses a clinic that already has an admin.
+        register_rest_route($ns, '/clinic-admins', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_clinic_admin'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'email'     => ['required' => true, 'type' => 'string', 'format' => 'email'],
+                'name'      => ['required' => true, 'type' => 'string'],
+                'clinic_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
 
@@ -592,6 +609,18 @@ final class REST_Controller
     public function handle_create_receptionist(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
     {
         $result = $this->receptionists->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * POST /praktiqu/v1/clinic-admins
+     */
+    public function handle_create_clinic_admin(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->clinic_admins->create((array) $request->get_json_params(), $request);
         if (is_wp_error($result)) {
             return $result;
         }

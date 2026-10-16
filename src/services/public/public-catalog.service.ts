@@ -249,6 +249,21 @@ export async function findPublicProfessionalBySlug(
   return match ? getPublicProfessional(Number(match.id)) : null;
 }
 
+/**
+ * Every personal-link slug an active professional holds — the same rule
+ * findPublicProfessionalBySlug matches on. A clinic must not take one of these: the FE
+ * resolves /{slug} to a clinic first, so the professional's link would stop working.
+ */
+export async function listActiveProfessionalSlugs(): Promise<Set<string>> {
+  const slugs = new Set<string>();
+  for (const d of await listDoctorNames()) {
+    if (d.status !== PROFESSIONAL_STATUS.ACTIVE) continue;
+    const slug = slugifyName(publicFullName(d));
+    if (slug !== '') slugs.add(slug);
+  }
+  return slugs;
+}
+
 function nextAvailableFor(
   sessions: Array<{ day: string | null; startTime: string | null }>,
   from: Date,
