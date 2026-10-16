@@ -276,13 +276,13 @@ describe('checkPublicPaymentStatus — verify fallback', () => {
     db.paymentOrder.findFirst.mockResolvedValue(pendingOrder(stale()));
     wpEndpoint.getWcOrderStatus.mockResolvedValue({ orderId: 42, status: 'processing', isPaid: true, transactionId: 'tx-1', amount: 100000 });
     db.paymentOrder.updateMany.mockResolvedValue({ count: 1 });
-    db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'paid', expectedAmount: 100000, source: 'public', appointmentId: String(APPOINTMENT) });
+    db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'paid', expectedAmount: 100000, source: 'public', appointmentId: String(APPOINTMENT), gateway: 'xendit', transactionId: 'tx-1' });
 
     const result = await checkPublicPaymentStatus(APPOINTMENT);
 
     expect(result.status).toBe('paid');
-    // Through the plugin: confirming is what sends KiviCare's booking mail.
-    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    // Through the plugin, with the payment: that is what makes it fire KiviCare's booking mail.
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, { gateway: 'xendit', wcOrderId: 42, transactionId: 'tx-1' });
   });
 
   it('does not reconcile a pending order younger than 2 minutes', async () => {
@@ -466,7 +466,7 @@ describe('applyPaidSideEffectsSession — settling a bill without transactions',
 describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
   function paidOrder() {
     return {
-      wcOrderId: 42, status: 'paid', expectedAmount: 100000, createdAt: new Date(),
+      wcOrderId: 42, status: 'paid', expectedAmount: 100000, createdAt: new Date(), gateway: 'paypal', transactionId: 'PAYID-9',
       source: 'public', appointmentId: String(APPOINTMENT), billId: null,
     };
   }
@@ -476,7 +476,7 @@ describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
 
     await checkPublicPaymentStatus(APPOINTMENT);
 
-    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, { gateway: 'paypal', wcOrderId: 42, transactionId: 'PAYID-9' });
     expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({
       hook: 'praktiqu_payment_auto_cancel',
       args: { wcOrderId: 42 },
@@ -508,9 +508,9 @@ describe('applyPaidSideEffectsPublic — schedules session reminders', () => {
       .mockResolvedValueOnce(appointmentRow('PENDING'))
       .mockResolvedValueOnce(bookedRowFuture());
 
-    await applyPaidSideEffectsPublic({ appointmentId: String(APPOINTMENT), wcOrderId: 42 } as any);
+    await applyPaidSideEffectsPublic({ appointmentId: String(APPOINTMENT), wcOrderId: 42, gateway: 'xendit', transactionId: 'tx-1' } as any);
 
-    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, { gateway: 'xendit', wcOrderId: 42, transactionId: 'tx-1' });
     const reminderCalls = jobsClient.jobs.enqueue.mock.calls
       .map((c) => c[0])
       .filter((c) => c.hook === 'praktiqu_session_send_reminder');

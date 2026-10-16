@@ -28,6 +28,7 @@ final class Appointments
 {
     /** Verified against KCAppointment.php:41-45. */
     private const STATUS_CANCELLED = 0;
+    private const STATUS_BOOKED    = 1;
     private const STATUS_PENDING   = 2;
 
     /** KiviCare's model class, present only while the plugin is active. */
@@ -117,6 +118,20 @@ final class Appointments
     /**
      * Change an appointment's status. Cancellation is this with status = 0.
      *
+     * A move from PENDING to BOOKED that carries `payment` is a public booking being paid,
+     * and fires `kc_appointment_payment_completed` — the hook KiviCare's own
+     * KCAppointmentPaymentService::confirmPayment fires. Besides `kc_after_create_appointment`,
+     * which create() skips for PENDING, it is the only hook the booking emails to patient,
+     * doctor and clinic listen on; `kc_appointment_status_update` reaches nothing but the
+     * check-in/check-out mail. Without `payment` (a staff approval) the move fires no
+     * payment hook, because KiviCare's listener would also mail "payment processed".
+     *
+     * confirmPayment itself is not called. Its "already confirmed" guard is a read, so two
+     * confirmations racing past it would both send the emails; it writes a
+     * wp_kc_payments_appointment_mappings row nothing on our side keeps up to date; and its
+     * telemed and Google Calendar steps are ones create() does not take for staff
+     * bookings either.
+     *
      * @return array<string,mixed>|\WP_Error
      */
     public function set_status(int $appointment_id, int $status, \WP_REST_Request $request): array|\WP_Error
@@ -134,10 +149,32 @@ final class Appointments
 
         global $wpdb;
         $table = $wpdb->prefix . 'kc_appointments';
-        $updated = $wpdb->update($table, ['status' => $status], ['id' => $appointment_id], ['%d'], ['%d']);
 
-        if ($updated === false) {
-            return new \WP_Error('praktiqu_status_update_failed', 'Failed to update status.', ['status' => 500]);
+        $payment = $status === self::STATUS_BOOKED ? $this->payment_data($request) : null;
+
+        // Claimed with a conditional UPDATE, not by reading $appointment->status: the
+        // payment webhook and the client's status poll can confirm the same order at
+        // once, and only the request whose UPDATE moves the row off PENDING may mail.
+        $paid_now = false;
+        if ($payment !== null) {
+            $claimed = $wpdb->query($wpdb->prepare(
+                "UPDATE {$table} SET status = %d WHERE id = %d AND status = %d",
+                self::STATUS_BOOKED,
+                $appointment_id,
+                self::STATUS_PENDING
+            ));
+            if ($claimed === false) {
+                return new \WP_Error('praktiqu_status_update_failed', 'Failed to update status.', ['status' => 500]);
+            }
+            $paid_now = (int) $claimed === 1;
+        }
+
+        if (!$paid_now) {
+            $updated = $wpdb->update($table, ['status' => $status], ['id' => $appointment_id], ['%d'], ['%d']);
+
+            if ($updated === false) {
+                return new \WP_Error('praktiqu_status_update_failed', 'Failed to update status.', ['status' => 500]);
+            }
         }
 
         // Order matters: KiviCare fires the cancellation hook BEFORE the generic
@@ -148,10 +185,26 @@ final class Appointments
         }
         do_action('kc_appointment_status_update', $appointment_id, $status, $appointment);
 
+        if ($paid_now) {
+            // The status is committed and the claim cannot match again, so a listener
+            // that throws must not turn this into a 500: Next.js would stop before
+            // scheduling the session reminders, and no retry could ever send the mail.
+            try {
+                do_action('kc_appointment_payment_completed', $appointment_id, $payment);
+            } catch (\Throwable $e) {
+                error_log(sprintf(
+                    '[praktiqu-endpoint] kc_appointment_payment_completed failed for appointment %d: %s',
+                    $appointment_id,
+                    $e->getMessage()
+                ));
+            }
+        }
+
         return [
-            'id'        => $appointment_id,
-            'status'    => $status,
-            'cancelled' => $status === self::STATUS_CANCELLED,
+            'id'                => $appointment_id,
+            'status'            => $status,
+            'cancelled'         => $status === self::STATUS_CANCELLED,
+            'payment_confirmed' => $paid_now,
         ];
     }
 
@@ -239,6 +292,28 @@ final class Appointments
             );
         }
         return true;
+    }
+
+    /**
+     * The payment a status request says it confirms, in the shape KiviCare's gateways
+     * hand to `kc_appointment_payment_completed` (transaction_id, payment_id), or null
+     * when the request carries none.
+     *
+     * @return array<string,string>|null
+     */
+    private function payment_data(\WP_REST_Request $request): ?array
+    {
+        $payment = $request->get_param('payment');
+        if (!is_array($payment)) {
+            return null;
+        }
+
+        return [
+            'gateway'        => sanitize_text_field((string) ($payment['gateway'] ?? '')),
+            'transaction_id' => sanitize_text_field((string) ($payment['transaction_id'] ?? '')),
+            'payment_id'     => (string) absint($payment['wc_order_id'] ?? 0),
+            'payment_status' => 'completed',
+        ];
     }
 
     private function to_utc(string $date, string $time, string $timezone): ?string

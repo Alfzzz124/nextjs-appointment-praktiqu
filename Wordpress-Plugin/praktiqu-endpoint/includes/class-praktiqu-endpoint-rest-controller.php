@@ -160,6 +160,9 @@ final class REST_Controller
                 'id'     => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
                 // 0=CANCELLED 1=BOOKED 2=PENDING 3=CHECK_OUT 4=CHECK_IN (KCAppointment.php:41-45)
                 'status' => ['required' => true, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
+                // { gateway, wc_order_id, transaction_id } when status 1 confirms a paid
+                // booking; makes PENDING → BOOKED fire kc_appointment_payment_completed.
+                'payment' => ['required' => false, 'type' => 'object'],
             ],
         ]);
 
