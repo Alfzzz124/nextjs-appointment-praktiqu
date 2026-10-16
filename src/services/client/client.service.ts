@@ -551,6 +551,7 @@ export async function bulkSetClientStatus(ids: number[], status: ClientStatus): 
 /* ------------------------------------------------------------------ */
 
 export interface ClientExportParams {
+  /** Honoured for SUPER_ADMIN only; clinic staff are confined to their own clinic. */
   clinicId?: number;
   status?: ClientStatus;
 }
@@ -558,13 +559,20 @@ export interface ClientExportParams {
 /** Page size for the export sweep. */
 const EXPORT_PAGE = 100;
 
-export async function exportClients(params: ClientExportParams): Promise<Client[]> {
+export async function exportClients(actor: Actor, params: ClientExportParams): Promise<Client[]> {
+  if (!['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role)) {
+    throw new ClientServiceError('Not authorized', { status: 403, code: 'forbidden' });
+  }
+  const kc = await resolveKcActor(actor);
+  const clinicIds =
+    visibleClinics(kc) ?? (params.clinicId ? [BigInt(params.clinicId)] : undefined);
+
   const out: Client[] = [];
   for (let page = 1; ; page += 1) {
     const { items, total } = await listPatients({
       page,
       perPage: EXPORT_PAGE,
-      clinicIds: params.clinicId ? [BigInt(params.clinicId)] : undefined,
+      clinicIds,
       statuses: params.status ? [params.status] : undefined,
     });
     out.push(...items.map(toClient));
