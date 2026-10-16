@@ -10,6 +10,7 @@ import { prisma } from '@/lib/db';
 import { listAdminClinics, resolveClinicId, type AdminClinic } from '@/services/billing/kc-actor';
 import { listOwnedClinics, type OwnedClinic } from '@/services/clinic-owner/service';
 import { getClientIp } from '@/lib/client-ip';
+import { logging } from '@/lib/logging';
 import { findWpAccountStatus } from '@/repositories/wp/account-status.repo';
 import {
   issueAccessToken,
@@ -290,7 +291,17 @@ export async function scopeClinics(
     return { clinicId: clinicId === null ? null : Number(clinicId) };
   }
   if (role === 'PROFESSIONAL') {
-    return { clinicId: null, ownedClinics: wpUserId === null ? [] : await listOwnedClinics(wpUserId) };
+    if (wpUserId === null) return { clinicId: null, ownedClinics: [] };
+    try {
+      return { clinicId: null, ownedClinics: await listOwnedClinics(wpUserId) };
+    } catch (err) {
+      // Owner mode is optional: a missing `clinic_owners` table or a failing query must
+      // not take a psychologist's login or /auth/me down. The FE retries on its next refresh.
+      await logging.error('Could not load the owned clinics for a psychologist', err, {
+        metadata: { wpUserId: wpUserId.toString() },
+      });
+      return { clinicId: null, ownedClinics: [] };
+    }
   }
   return { clinicId: null };
 }
