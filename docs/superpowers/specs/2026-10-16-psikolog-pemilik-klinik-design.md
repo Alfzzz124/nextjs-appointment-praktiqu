@@ -254,3 +254,9 @@ Penyempurnaan saat menyusun `docs/superpowers/plans/2026-10-16-psikolog-pemilik-
 5. **`PROFILE_VERSION` tidak dinaikkan,** karena menaikkannya me-logout semua staf. Sesi psikolog lama tanpa `ownedClinics` diisi dari `/auth/me` saat dashboard dibuka.
 6. **FE memakai pola yang sama dengan backend:** `AuthController::profilOperasional()` hanya dipakai di controller operasional. `PatientResultUploadController` (Hasil Klien disimpan di FE dan disaring per peran) dan `EncounterDocumentController` tetap memakai `validProfile()`.
 7. **Dalam mode pemilik, semua daftar di dashboard disaring ke klinik X.** Untuk daftar klinis seperti encounter, backend menambah syarat milik psikolog itu sendiri, jadi yang tampil adalah encounter miliknya di klinik X saja.
+8. **Tiga route sengaja tidak ikut mode pemilik** (temuan review 2026-10-16): `GET /sessions/export`, `GET /sessions/pending`, `GET /clients/export`. Handler-nya tidak men-scope `CLINIC_ADMIN` ke kliniknya, jadi kalau dibuka, setiap pemilik (termasuk pemilik solo otomatis) akan bisa melihat data semua klinik. FE tidak memakai ketiganya. Kebocoran yang sama bagi admin klinik dan resepsionis yang sebenarnya dicatat sebagai pekerjaan terpisah.
+9. **Hasil final review:**
+   - `ownedClinics` di FE disegarkan paling lama 5 menit sekali (`ownedClinicsAt`).
+   - Guard dua tab juga berlaku untuk psikolog.
+   - Kegagalan memuat klinik milik tidak menjatuhkan login psikolog, karena `ownedClinics` menjadi `[]`.
+   - Sesi khusus FE dalam mode pemilik dicek dulu ke backend sebelum ditulis.
