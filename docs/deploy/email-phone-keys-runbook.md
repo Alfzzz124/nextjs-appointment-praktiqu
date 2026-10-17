@@ -56,12 +56,18 @@ git history, tar backup, upload to a temp dir, `php -l`, then `cp` + `mv` one fi
 time), with `1.8.0` as the backed-up version and the merged commit of
 `fix/email-booking-berbayar`. Swap order:
 
-1. `includes/class-praktiqu-endpoint-email-keys.php` (new)
-2. `includes/class-praktiqu-endpoint-appointments.php`,
-   `includes/class-praktiqu-endpoint-rest-controller.php`,
-   `includes/class-praktiqu-endpoint-plugin.php`
-3. `readme.txt`
-4. `praktiqu-endpoint.php` **last** — it requires the new class.
+1. `includes/class-praktiqu-endpoint-email-keys.php` (new) — nothing loads it yet.
+2. `praktiqu-endpoint.php` — it requires the new class. The old `Plugin` class does not use
+   it, so the site keeps working with only this file swapped.
+3. `includes/class-praktiqu-endpoint-appointments.php`,
+   `includes/class-praktiqu-endpoint-rest-controller.php`, then
+   `includes/class-praktiqu-endpoint-plugin.php` — the new `Plugin` does `new EmailKeys()`.
+4. `readme.txt`, and `tests/` if the server copy has it.
+
+Do **not** leave `praktiqu-endpoint.php` for last (this list said so until 2026-10-16): a
+`class-praktiqu-endpoint-plugin.php` swapped before it runs `new EmailKeys()` with no file
+requiring that class, and every request fatals until the main file is swapped too. The 1.8.1
+deploy on 2026-10-16 used the order above.
 
 Verify the version, that the plugin is still active, and that the new key answers. The phone
 is masked so it does not land in a terminal log:
