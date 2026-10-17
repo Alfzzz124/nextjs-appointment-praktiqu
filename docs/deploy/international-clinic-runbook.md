@@ -115,11 +115,14 @@ ssh -o ConnectTimeout=40 praktiqu-hostinger "cd ~/plugin-upload-1.7.0 && find . 
 5. Swap the files in, one at a time, each as `cp <upload>/<f> <plugin>/<f>.new && mv
    <plugin>/<f>.new <plugin>/<f>`. Copy the two **new** classes first
    (`includes/class-praktiqu-endpoint-clinic-payment-settings.php`,
-   `includes/class-praktiqu-endpoint-charge-validator.php`), then the changed includes
+   `includes/class-praktiqu-endpoint-charge-validator.php`), then `praktiqu-endpoint.php` —
+   it is the file that requires them — then the changed includes
    (`class-praktiqu-endpoint-rest-controller.php`, `class-praktiqu-endpoint-settings.php`,
-   `class-praktiqu-endpoint-payments.php`), then `uninstall.php` and `readme.txt`, and
-   `praktiqu-endpoint.php` **last** — it is the file that requires the new classes. Upload
-   `tests/` only if the server copy already has it.
+   `class-praktiqu-endpoint-payments.php`), then `uninstall.php` and `readme.txt`. Upload
+   `tests/` only if the server copy already has it. Check first that the main file's diff
+   only adds `require_once` lines and the version. Until 2026-10-16 this step said to swap
+   `praktiqu-endpoint.php` **last**; that is unsafe — a changed include that already uses a
+   new class fatals every request until the main file requires it.
 6. Verify the version and that the plugin is still active (it is a normal plugin on Hostinger
    and can drop out of `active_plugins`):
 
