@@ -118,8 +118,10 @@ Login dan refresh `/auth/me` menyimpan `practiceClinics` ke profil sesi psikolog
 
 - **Mekanisme refresh.** `AuthController::segarkanKlinikPemilik()` sudah memanggil
   `/auth/me` setiap 5 menit untuk `ownedClinics`. Fungsi itu juga menyimpan `practiceClinics`.
-- **Pemicu refresh.** Kunci `practiceClinics` yang belum ada di sesi (login sebelum fitur ini)
-  ikut memicu refresh, sama seperti `ownedClinics`.
+- **Sesi lama.** Tidak ada pemicu refresh tambahan. `ownedClinicsAt` tidak pernah lebih tua
+  dari 5 menit, jadi sesi yang dibuat sebelum fitur ini akan membawa `practiceClinics`
+  paling lambat 5 menit setelah rilis. Selama jeda itu `store` tidak mengirim `clinicId`
+  (lihat F2), dan backend yang memutuskan.
 - **Klinik baru.** Psikolog yang baru dipetakan ke klinik baru akan melihatnya paling lambat 5
   menit kemudian.
 
@@ -137,9 +139,13 @@ Login dan refresh `/auth/me` menyimpan `practiceClinics` ke profil sesi psikolog
     berlaku." tanpa memanggil backend.
   - Kalau `practiceClinics` kosong atau tidak ada, `clinicId` tidak dikirim dan keputusannya
     diserahkan ke backend.
-- **Pesan.** `tolak()` diganti menjadi "Peran Anda tidak boleh menambah atau menghapus
-  layanan." Pesan lama menyebut "Hanya Super Admin dan Admin Klinik", padahal kini psikolog
-  pun boleh menambah.
+- **Pesan.** `tolak()` menerima pesan:
+  - default: "Peran Anda tidak boleh mengubah layanan klinik ini.";
+  - `destroy`: "Hanya Super Admin dan Admin Klinik yang boleh menghapus layanan.".
+
+  Pesan lama "Hanya Super Admin dan Admin Klinik yang boleh mengubah layanan." keliru, karena
+  kini psikolog pun boleh menambah dan mengubah.
+- **Psikolog tanpa `professionalId` di sesi.** Jawabannya 403 tanpa memanggil backend.
 
 ### F3. Tampilan (`dashboard.blade.php`)
 
@@ -190,8 +196,8 @@ Login dan refresh `/auth/me` menyimpan `practiceClinics` ke profil sesi psikolog
   - 1 klinik → otomatis;
   - > 1 tanpa pilihan → 422 tanpa memanggil backend.
 - `destroy` sebagai psikolog → tetap 403. `store` sebagai admin tidak berubah.
-- `segarkanKlinikPemilik` menyimpan `practiceClinics`, dan sesi tanpa kunci itu ikut
-  disegarkan.
+- Login dan `segarkanKlinikPemilik` menyimpan `practiceClinics`. Sesi yang masih segar
+  tidak memicu `/auth/me`.
 - Tampilan: tombol Add Service ada untuk psikolog; tombol Hapus tetap tidak.
 
 ## Rilis
