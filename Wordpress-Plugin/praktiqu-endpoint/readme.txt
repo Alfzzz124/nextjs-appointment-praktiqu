@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.1
+Stable tag: 1.8.2
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -54,6 +54,17 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.8.2 =
+* POST /patients accepts an optional `adopt_existing` flag. When the email already
+  belongs to an account whose every role is `customer` or `subscriber` (WooCommerce
+  sign-ups), the patient role is added to that account — the WooCommerce role stays —
+  instead of answering 409. Name and phone only fill empty fields, the clinic mapping
+  is added, and kc_patient_update fires (not kc_patient_save, so no welcome email with
+  a new password). The response is the usual patient payload plus `adopted`. Staff
+  accounts, site editors and accounts with no role still answer 409. Without the flag
+  nothing changes. Fixes clinic staff being unable to book a client whose email was
+  "already registered".
 
 = 1.8.1 =
 * Paid public bookings now send KiviCare's booking emails to patient, doctor and

@@ -515,9 +515,37 @@ describe('createPublicAppointment', () => {
     ).rejects.toBeInstanceOf(WpConfigError);
   });
 
+  /**
+   * Seen in production 2026-10-19: a client who signed up through WooCommerce holds
+   * only `customer`. findPatientByEmail misses them, a plain create answers 409, and
+   * clinic staff could not book them at all. The plugin adopts such an account when
+   * asked; it still refuses staff.
+   */
+  it('asks the plugin to adopt an existing ordinary account instead of refusing it', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue(null);
+    vi.mocked(createPatient).mockResolvedValue({
+      id: 1032,
+      email: INPUT.clientEmail,
+      username: 'dao',
+      firstName: 'Dao',
+      lastName: '',
+      contactNumber: INPUT.clientMobile,
+      patientUniqueId: null,
+    });
+
+    await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(vi.mocked(createPatient).mock.calls[0][0]).toMatchObject({
+      email: INPUT.clientEmail,
+      adoptExisting: true,
+    });
+    expect(vi.mocked(createAppointment).mock.calls[0][0].patientId).toBe(1032);
+  });
+
   it('reports a conflict when the email belongs to a non-patient account', async () => {
     // findPatientByEmail is role-filtered, so it misses a doctor's address and the
-    // plugin answers 409. Booking against that account would be wrong.
+    // plugin answers 409 even with adoptExisting. Booking against that account would
+    // be wrong.
     vi.mocked(findPatientByEmail).mockResolvedValue(null);
     vi.mocked(createPatient).mockRejectedValue(
       new WpEndpointError('That email is already registered.', 409),
