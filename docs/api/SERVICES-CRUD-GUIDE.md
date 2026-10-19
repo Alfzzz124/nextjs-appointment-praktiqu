@@ -464,13 +464,16 @@ Semua error memakai bentuk RFC 7807 (`type`, `title`, `status`, `code`, `detail`
 | `422` | `invalid_query` | query string tidak valid |
 | `422` | `clinic_required` | `SUPER_ADMIN` tidak menyebut `clinicId`, atau `PROFESSIONAL` dengan beberapa klinik aktif tidak memilih |
 
-`403` tidak punya `code` yang stabil: pada `POST /services`, kalimat Inggris penolakannya ada di
-field `code` (field `detail` tidak diisi). Empat kalimat untuk psikolog, persis seperti ini:
+`403` tidak punya `code` yang stabil: pada semua endpoint `/services` (`POST`, `PUT`, `DELETE`,
+penolakan peran, dan `Actor is not assigned to a clinic`), kalimat Inggris penolakannya ada di
+field `code` (field `detail` tidak diisi). Belum ada kode mesin yang stabil; untuk sementara, kalau
+perlu membedakan, cocokkan dengan kalimat-kalimat ini (akan berubah bila backend menambah kode).
+Empat kalimat untuk psikolog, persis seperti ini:
 
 - `Psychologists can only add services for themselves` — `doctorIds` memuat psikolog lain
 - `Professional is not assigned to an active clinic` — psikolog tanpa klinik aktif
 - `Not a clinic this professional practises at` — `clinicId` bukan klinik aktif tempat ia praktik
-- `Professional is not linked to a WordPress account` — akunnya belum tertaut ke akun WordPress
+- `User is not linked to a WordPress account` — akunnya belum tertaut ke akun WordPress
 
 Untuk `422`, `fields` berisi pesan per field:
 

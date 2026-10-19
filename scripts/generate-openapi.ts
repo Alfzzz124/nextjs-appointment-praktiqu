@@ -804,7 +804,9 @@ registry.registerPath({
   description:
     'Creates one `wp_kc_services` row — reused when an identical name and type already ' +
     'exist, because the catalogue is global — plus one mapping per professional. ' +
-    'SUPER_ADMIN and CLINIC_ADMIN only.',
+    'SUPER_ADMIN, CLINIC_ADMIN, and a PROFESSIONAL for themselves only, at an active clinic they ' +
+    'practise at (`doctorIds` must be their own id; 403 otherwise; 422 `clinic_required` when they ' +
+    'practise at several and send no `clinicId`; see docs/api/SERVICES-CRUD-GUIDE.md §6).',
   security: auth,
   request: {
     body: { content: { 'application/json': { schema: createServiceSchema } }, required: true },

@@ -8,7 +8,7 @@ import { prisma } from '@/lib/db';
 import { listPracticeClinics } from '@/services/billing/kc-actor';
 import { assertTestDb } from '../../billing/fixtures';
 
-const BASE = 8_790_000;
+const BASE = 8_791_000;
 const END = BASE + 10_000;
 const ACTIVE_A = BASE + 1;
 const ACTIVE_B = BASE + 2;
