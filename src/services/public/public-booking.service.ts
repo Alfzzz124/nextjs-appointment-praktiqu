@@ -278,17 +278,25 @@ async function resolvePatient(
   try {
     // No password: WordPress generates one and the kc_patient_save listener mails it,
     // which is how a guest gets an account they can later log into.
+    //
+    // adoptExisting: an address that already has an ordinary account (a WooCommerce
+    // `customer` — four such on production, 2026-10-19) is missed by the role-filtered
+    // lookup above, and a plain create answers 409. That locked those clients out of
+    // booking entirely, including when clinic staff booked for them. The plugin now
+    // adds the patient role to that account — the same "re-use by email" this function
+    // already does for patients. Staff accounts still answer 409, handled below.
     const created = await createPatient({
       email: input.clientEmail,
       firstName,
       lastName,
       contactNumber: input.clientMobile,
       clinicId,
+      adoptExisting: true,
     });
     return created.id;
   } catch (err) {
-    // 409 here means the address exists but is not a patient — findPatientByEmail is
-    // role-filtered, so the two checks disagreeing is exactly that case.
+    // 409 here means the address belongs to a staff account (psikolog, admin, editor)
+    // the plugin refused to adopt — or to any account, on a plugin older than 1.8.2.
     if (err instanceof WpEndpointError && err.status === 409) {
       throw new EmailConflictError('That email is already registered to another account');
     }
