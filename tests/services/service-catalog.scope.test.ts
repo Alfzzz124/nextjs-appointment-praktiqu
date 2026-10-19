@@ -12,6 +12,7 @@ import {
   readScopeFor,
   canWrite,
   canEdit,
+  canCreate,
   parseServiceId,
   scopeForRequest,
 } from '@/services/service-catalog/scope';
@@ -106,6 +107,21 @@ describe('canEdit', () => {
     expect(canEdit('PROFESSIONAL')).toBe(true);
     expect(canEdit('RECEPTIONIST')).toBe(false);
     expect(canEdit('CLIENT')).toBe(false);
+  });
+});
+
+describe('canCreate', () => {
+  it('admits the two admin roles plus a psychologist adding for themselves', () => {
+    expect(canCreate('SUPER_ADMIN')).toBe(true);
+    expect(canCreate('CLINIC_ADMIN')).toBe(true);
+    // Narrowed to their own name and clinics by resolveOwnCreateTarget, not here.
+    expect(canCreate('PROFESSIONAL')).toBe(true);
+    expect(canCreate('RECEPTIONIST')).toBe(false);
+    expect(canCreate('CLIENT')).toBe(false);
+  });
+
+  it('leaves deleting to the admins', () => {
+    expect(canWrite('PROFESSIONAL')).toBe(false);
   });
 });
 
