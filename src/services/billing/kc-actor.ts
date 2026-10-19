@@ -83,6 +83,36 @@ export async function listAdminClinics(wpUserId: bigint): Promise<AdminClinic[]>
   }));
 }
 
+/** One active clinic a PROFESSIONAL practises at, as /auth/me `practiceClinics` reports it. */
+export interface PracticeClinic {
+  id: number;
+  name: string;
+}
+
+/**
+ * Every ACTIVE clinic this psychologist is mapped to, ascending by id, each once.
+ *
+ * The one source for where a psychologist may add a service of their own
+ * (POST /api/v1/services) and for the clinic picker the FE builds from `practiceClinics`.
+ * Inactive clinics are left out on purpose: several psychologists still hold a mapping to a
+ * retired clinic, and counting it would make them pick between one live clinic and one that
+ * nobody can book.
+ */
+export async function listPracticeClinics(wpUserId: bigint): Promise<PracticeClinic[]> {
+  const mappings = await prisma.kcDoctorClinicMapping.findMany({
+    where: { doctorId: wpUserId },
+    select: { clinicId: true },
+  });
+  if (mappings.length === 0) return [];
+
+  const clinics = await prisma.kcClinic.findMany({
+    where: { id: { in: mappings.map((m) => m.clinicId) }, status: 1 },
+    select: { id: true, name: true },
+    orderBy: { id: 'asc' },
+  });
+  return clinics.map((c) => ({ id: Number(c.id), name: c.name?.trim() || `Klinik #${c.id}` }));
+}
+
 type ClinicRow = { id: bigint; name: string | null; status: number };
 
 async function adminClinicRows(wpUserId: bigint): Promise<ClinicRow[]> {
