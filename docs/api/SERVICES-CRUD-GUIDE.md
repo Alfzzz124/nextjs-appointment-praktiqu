@@ -69,7 +69,7 @@ Matriks baca mengikuti KiviCare sendiri (`DoctorServiceController::getServices`)
 | `SUPER_ADMIN` | semua klinik | ✅ |
 | `CLINIC_ADMIN` | kliniknya sendiri | ✅ (kliniknya sendiri) |
 | `RECEPTIONIST` | kliniknya sendiri | ❌ |
-| `PROFESSIONAL` | **baris miliknya sendiri**, lintas klinik | ✏️ hanya `PUT` baris miliknya sendiri |
+| `PROFESSIONAL` | **baris miliknya sendiri**, lintas klinik | ✏️ `POST` untuk dirinya sendiri, `PUT` baris miliknya sendiri |
 | `CLIENT` | tidak ada | ❌ |
 
 Tiga hal yang perlu diketahui frontend:
@@ -80,9 +80,10 @@ Tiga hal yang perlu diketahui frontend:
    lain tidak bocor lewat beda status code.
 3. **Admin tanpa pemetaan klinik dapat daftar kosong**, bukan `500`. Tapi kalau dia mencoba
    `POST`, jawabannya `403` — dia tidak punya klinik untuk menaruh layanannya.
-4. **Psikolog boleh mengubah, tidak boleh menambah atau menghapus** (sejak 2026-10-15).
-   `PUT` dari `PROFESSIONAL` diterima untuk baris miliknya sendiri; baris psikolog lain
-   dijawab `404` lewat aturan nomor 2. `POST` dan `DELETE` tetap `403` untuknya.
+4. **Psikolog boleh menambah dan mengubah, tidak boleh menghapus.** `PUT` dari `PROFESSIONAL`
+   (sejak 2026-10-15) diterima untuk baris miliknya sendiri; baris psikolog lain dijawab `404`
+   lewat aturan nomor 2. `POST` (sejak 2026-10-19) diterima hanya untuk dirinya sendiri, di
+   klinik aktif tempat ia praktik — lihat §6. `DELETE` tetap `403` untuknya.
 5. **Psikolog pemilik klinik** (sejak 2026-10-16): dengan header `X-Praktiqu-Clinic-Id` berisi
    klinik yang ia miliki, `PROFESSIONAL` diperlakukan sebagai `CLINIC_ADMIN` klinik itu di
    `/services` dan `/services/{id}` (tambah, ubah, hapus untuk semua psikolog di klinik itu).
@@ -173,7 +174,17 @@ Catatan soal field:
 
 ## 6. `POST /api/v1/services` — buat layanan
 
-Hanya `SUPER_ADMIN` dan `CLINIC_ADMIN`.
+`SUPER_ADMIN`, `CLINIC_ADMIN`, dan `PROFESSIONAL` untuk dirinya sendiri.
+
+**Untuk `PROFESSIONAL`** (sejak 2026-10-19):
+
+- `doctorIds` harus berisi dirinya sendiri saja (wp user id-nya, sama dengan
+  `user.wpUserId` di `/auth/me`). Ada id lain → `403`.
+- `clinicId` boleh tidak dikirim kalau ia hanya praktik di satu klinik aktif. Kalau lebih,
+  wajib salah satu dari `user.practiceClinics` di `/auth/me`. Kosong → `422 clinic_required`;
+  klinik lain → `403`.
+- Psikolog tanpa klinik aktif sama sekali → `403`.
+- Layanannya langsung berlaku seperti buatan admin (tidak ada persetujuan).
 
 Satu request menghasilkan **1 baris katalog + 1 baris mapping per psikolog**.
 
@@ -444,14 +455,14 @@ Semua error memakai bentuk RFC 7807 (`type`, `title`, `status`, `code`, `detail`
 | `400` | *tidak ada `code`* | `{id}` di path bukan bilangan bulat positif — bedakan lewat `title: "Invalid service id"` |
 | `400` | `invalid_json` | body bukan JSON yang sah |
 | `401` | — | token tidak ada atau tidak sah |
-| `403` | — | peran tidak boleh menulis, atau aktor tidak punya klinik |
+| `403` | — | peran tidak boleh menulis, aktor tidak punya klinik, atau psikolog menyebut psikolog/klinik selain miliknya |
 | `404` | `service_not_found` | tidak ada, **atau** milik klinik lain |
 | `409` | `service_already_offered` | duplikat saat `POST` |
 | `409` | `service_name_taken` | duplikat saat ganti nama |
 | `409` | `service_has_upcoming_appointments` | ada `count` janji temu mendatang |
 | `422` | `validation_failed` | body tidak valid; cek `fields` |
 | `422` | `invalid_query` | query string tidak valid |
-| `422` | `clinic_required` | `SUPER_ADMIN` tidak menyebut `clinicId` |
+| `422` | `clinic_required` | `SUPER_ADMIN` tidak menyebut `clinicId`, atau `PROFESSIONAL` dengan beberapa klinik aktif tidak memilih |
 
 Untuk `422`, `fields` berisi pesan per field:
 

@@ -176,6 +176,14 @@ Catatan yang perlu diketahui sebelum dipakai:
 > default bila tanpa header) — satu baris, walau ia memegang beberapa klinik. Daftar lengkap
 > klinik miliknya ada di `user.clinics` respons `/auth/me` (§2).
 
+### Klinik praktik (PROFESSIONAL)
+
+`/auth/me` dan respons login untuk psikolog membawa `user.practiceClinics`: setiap klinik
+**aktif** tempat ia dipetakan, `[{ "id": 4, "name": "AzaniDianda.com" }]`, urut id naik.
+Selalu berupa larik (boleh kosong); role lain tidak membawa field ini. Inilah pilihan klinik
+saat psikolog menambah layanannya sendiri (`POST /api/v1/services`). Berbeda dari
+`ownedClinics`, daftar ini tidak memberi akses admin apa pun.
+
 ### Mode pemilik (PROFESSIONAL)
 
 Psikolog juga boleh mengirim `X-Praktiqu-Clinic-Id`, tetapi hanya untuk klinik yang ia **miliki**
