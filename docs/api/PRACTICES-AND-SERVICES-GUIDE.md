@@ -103,7 +103,7 @@ mengikuti klinik aktif ini. Klinik di luar klinik aktif tetap 404 seperti biasa.
 | `GET /professionals/{id}/services/export` | ✅ | ⚠️ tanpa cek klinik | ❌ | ❌ |
 | `POST/DELETE /professionals/{id}/services` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
 | `/professionals/{id}/services/bulk/*` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
-| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | baca saja | baca saja |
+| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | 🔸 baca; `POST` untuk dirinya sendiri; `PUT` miliknya | baca saja |
 
 ⛔ = dipensiunkan, menjawab `410 Gone` tanpa memeriksa token sama sekali.
 

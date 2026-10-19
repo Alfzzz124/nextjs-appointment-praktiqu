@@ -72,7 +72,7 @@ Matriks baca mengikuti KiviCare sendiri (`DoctorServiceController::getServices`)
 | `PROFESSIONAL` | **baris miliknya sendiri**, lintas klinik | ✏️ `POST` untuk dirinya sendiri, `PUT` baris miliknya sendiri |
 | `CLIENT` | tidak ada | ❌ |
 
-Tiga hal yang perlu diketahui frontend:
+Lima hal yang perlu diketahui frontend:
 
 1. **`clinicId` di query dipaksa.** Kalau `CLINIC_ADMIN` mengirim `?clinicId=99`, dia tetap
    dapat kliniknya sendiri. Bukan error — cukup abaikan saja parameternya untuk peran itu.
@@ -213,8 +213,8 @@ curl -s https://staging2.praktiqu.com/api/v1/services \
 | `categoryId` | ✅ | harus kategori aktif dari §4 |
 | `price` | ✅ | angka ≥ 0 |
 | `duration` | ✅ | bilangan bulat **1–1440** menit |
-| `doctorIds` | ✅ | array, minimal 1. Duplikat dibuang otomatis |
-| `clinicId` | tergantung | diabaikan untuk `CLINIC_ADMIN`; **wajib** untuk `SUPER_ADMIN` |
+| `doctorIds` | ✅ | array, minimal 1. Duplikat dibuang otomatis. Untuk `PROFESSIONAL` hanya boleh berisi id dirinya sendiri |
+| `clinicId` | tergantung | diabaikan untuk `CLINIC_ADMIN`; **wajib** untuk `SUPER_ADMIN`; untuk `PROFESSIONAL` boleh kosong kalau ia hanya praktik di satu klinik aktif, selain itu wajib dan dipilih dari `user.practiceClinics` |
 | `telemedService` | — | `"yes"` \| `"no"`, default `"no"` |
 | `status` | — | `0` \| `1`, default `1` |
 | `isPublic` | — | `0` \| `1`, default `1` — `0` menyembunyikan dari halaman booking publik |
@@ -242,8 +242,8 @@ Pakai `mappings[].id` kalau selanjutnya mau `PUT`/`DELETE`.
 | `400` | `doctors_not_in_clinic` | ada `doctorId` yang tidak terpetakan ke `clinicId` itu |
 | `409` | `service_already_offered` | psikolog itu sudah punya layanan bernama sama di klinik itu |
 | `422` | `validation_failed` | body tidak lolos tabel di atas; detail per-field ada di `fields` |
-| `422` | `clinic_required` | `SUPER_ADMIN` tidak menyebut `clinicId` |
-| `403` | — | peran tidak boleh tulis, atau admin tanpa klinik |
+| `422` | `clinic_required` | `SUPER_ADMIN` tidak menyebut `clinicId`, atau `PROFESSIONAL` dengan beberapa klinik aktif tidak memilih |
+| `403` | — | peran tidak boleh tulis, admin tanpa klinik, atau psikolog menyebut psikolog lain, klinik yang bukan tempat praktiknya, atau tidak punya klinik aktif |
 
 Dua hal yang terjadi di balik layar:
 
@@ -275,7 +275,7 @@ Mengembalikan objek yang sama persis dengan satu elemen di `services[]` (§5).
 
 ## 8. `PUT /api/v1/services/{id}` — ubah
 
-Hanya `SUPER_ADMIN` dan `CLINIC_ADMIN`. Kirim **field yang mau diubah saja**; body kosong → `422`.
+`SUPER_ADMIN`, `CLINIC_ADMIN`, dan `PROFESSIONAL` untuk baris miliknya sendiri (lihat §3). Kirim **field yang mau diubah saja**; body kosong → `422`.
 
 ```bash
 curl -s -X PUT https://staging2.praktiqu.com/api/v1/services/429 \
@@ -463,6 +463,14 @@ Semua error memakai bentuk RFC 7807 (`type`, `title`, `status`, `code`, `detail`
 | `422` | `validation_failed` | body tidak valid; cek `fields` |
 | `422` | `invalid_query` | query string tidak valid |
 | `422` | `clinic_required` | `SUPER_ADMIN` tidak menyebut `clinicId`, atau `PROFESSIONAL` dengan beberapa klinik aktif tidak memilih |
+
+`403` tidak punya `code` yang stabil: pada `POST /services`, kalimat Inggris penolakannya ada di
+field `code` (field `detail` tidak diisi). Empat kalimat untuk psikolog, persis seperti ini:
+
+- `Psychologists can only add services for themselves` — `doctorIds` memuat psikolog lain
+- `Professional is not assigned to an active clinic` — psikolog tanpa klinik aktif
+- `Not a clinic this professional practises at` — `clinicId` bukan klinik aktif tempat ia praktik
+- `Professional is not linked to a WordPress account` — akunnya belum tertaut ke akun WordPress
 
 Untuk `422`, `fields` berisi pesan per field:
 
