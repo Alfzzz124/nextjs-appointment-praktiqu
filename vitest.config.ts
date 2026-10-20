@@ -8,6 +8,8 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     globals: false,
     setupFiles: ['./tests/setup-env.ts'],
+    /** Lifts the test DB's AUTO_INCREMENT counters above every suite's id block. */
+    globalSetup: ['./tests/global-setup.ts'],
     /**
      * Run test files one at a time.
      *

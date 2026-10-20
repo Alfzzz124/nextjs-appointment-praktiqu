@@ -503,6 +503,11 @@ export async function cleanup() {
   await deleteIfTableExists(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // Followups: FK-safe order (activity log + reminders reference followups; followups reference chains).
+  // Followups created through the service get AUTO_INCREMENT ids outside the block, so
+  // their log and reminders are found through the followup's block-range patient.
+  for (const table of ['wp_kc_followup_activity_log', 'wp_kc_followup_reminders']) {
+    await deleteIfTableExists(`DELETE FROM ${table} WHERE followup_id IN (SELECT id FROM wp_kc_followups WHERE patient_id >= ${TEST_MARKER} AND patient_id < ${TEST_MARKER_END})`);
+  }
   await deleteIfTableExists(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
@@ -548,6 +553,8 @@ export async function cleanup() {
     ['wp_kc_followups', 'patient_id'],
     ['wp_kc_followup_chains', 'patient_id'],
     ['wp_kc_patient_review', 'patient_id'],
+    // grantConsent() through the service: AUTO_INCREMENT id, block-range subject.
+    ['wp_kc_gdpr_consents', 'user_id'],
     ['wp_kc_clinic_sessions', 'clinic_id'],
     // Holidays created through addHoliday() get AUTO_INCREMENT ids (outside the block)
     // but their module_id is the practice's block-range clinic id.

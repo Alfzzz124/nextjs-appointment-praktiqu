@@ -109,6 +109,12 @@ describe('wp patients repository', () => {
   });
 
   afterAll(async () => {
+    // Tests below insert mappings without an id (AUTO_INCREMENT), so they
+    // are found by patient_id, which is in this suite's block.
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id >= ? AND patient_id < ?`,
+      BASE, END,
+    );
     await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
     await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
     await prisma.$disconnect();
