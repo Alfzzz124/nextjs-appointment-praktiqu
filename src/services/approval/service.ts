@@ -40,7 +40,7 @@ import {
   type SessionMailFacts,
 } from './emails';
 import { firstReminderAt, isOverdue } from './schedule';
-import type { ApprovalSetting } from './settings';
+import { requiresApproval, type ApprovalSetting } from './settings';
 import * as store from './store';
 
 export const APPROVAL_REMINDER_HOOK = 'praktiqu_approval_reminder' as const;
@@ -258,6 +258,20 @@ export interface HoldInput {
   paymentOrderId: string | null;
   actorId?: string | null;
   now?: Date;
+}
+
+/**
+ * Whether a payment that just became known (webhook, status poll, or "mark as paid") puts
+ * the booking in its psychologist's queue: their switch is on AND the session has not
+ * started. Held after its start, a request would be overdue at once, and an overdue
+ * request can only be rejected — so such a booking is booked as before instead.
+ *
+ * The switch is read first, so for a psychologist who has it off nothing else is looked
+ * at: their bookings go exactly the way they always did.
+ */
+export async function shouldHoldForApproval(row: SessionRow, now: Date = new Date()): Promise<boolean> {
+  if (!(await requiresApproval(row.professionalId))) return false;
+  return !isOverdue(sessionStartsAtUtc(row), now);
 }
 
 /**

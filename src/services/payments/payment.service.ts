@@ -248,11 +248,11 @@ import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo
 import { getPublicAppUrl } from '@/lib/public-url';
 import { syncSessionReminders } from '@/services/session/reminder-schedule';
 import { APPROVAL_STATE, findApproval } from '@/services/approval/store';
-import { requiresApproval } from '@/services/approval/settings';
 import {
   completeApproval,
   holdForApproval,
   publicApprovalFor,
+  shouldHoldForApproval,
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
@@ -483,14 +483,15 @@ export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<v
 
   // A psychologist who approves their own bookings (spec 2026-10-19): the booking stays
   // PENDING — slot held, no confirmation yet — and joins their queue instead of being
-  // booked here. A record that already exists means a repeated webhook or poll; an
-  // APPROVED one on a PENDING booking is an approval that died before the plugin.
+  // booked here, unless the session has already started (shouldHoldForApproval). A record
+  // that already exists means a repeated webhook or poll; an APPROVED one on a PENDING
+  // booking is an approval that died before the plugin.
   const approval = await findApproval(appt.id);
   if (approval) {
     if (approval.state === APPROVAL_STATE.APPROVED) await completeApproval(approval);
     return;
   }
-  if (await requiresApproval(appt.professionalId)) {
+  if (await shouldHoldForApproval(appt)) {
     await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
     await holdForApproval({ row: appt, paymentOrderId: order.id });
     return;

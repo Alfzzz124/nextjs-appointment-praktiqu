@@ -74,6 +74,12 @@ vi.mock('@/services/session/reminder-schedule', async (orig) => ({
 const kc = vi.hoisted(() => ({ resolveKcActor: vi.fn() }));
 vi.mock('@/services/billing/kc-actor', () => kc);
 
+const settings = vi.hoisted(() => ({ requiresApproval: vi.fn() }));
+vi.mock('@/services/approval/settings', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/settings')>()),
+  requiresApproval: (...a: unknown[]) => settings.requiresApproval(...a),
+}));
+
 import {
   approvalViews,
   approveAwaiting,
@@ -86,6 +92,7 @@ import {
   publicApprovalView,
   rejectAwaiting,
   settleExternal,
+  shouldHoldForApproval,
   toPublicApprovalView,
   withApprovals,
 } from '@/services/approval/service';
@@ -177,6 +184,7 @@ beforeEach(() => {
   jobsClient.jobs.cancel.mockResolvedValue(undefined);
   schedule.syncSessionReminders.mockResolvedValue(undefined);
   kc.resolveKcActor.mockResolvedValue({ actor: ADMIN, wpUserId: 24n, clinicId: 4n });
+  settings.requiresApproval.mockResolvedValue(true);
 });
 
 describe('holdForApproval', () => {
@@ -214,6 +222,24 @@ describe('holdForApproval', () => {
 
     expect(jobsClient.jobs.enqueue).not.toHaveBeenCalled();
     expect(email.sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('shouldHoldForApproval', () => {
+  it('the switch is on and the session is ahead: hold', async () => {
+    expect(await shouldHoldForApproval(row(), NOW)).toBe(true);
+    expect(settings.requiresApproval).toHaveBeenCalledWith(34);
+  });
+
+  it('the switch is off: no hold', async () => {
+    settings.requiresApproval.mockResolvedValue(false);
+    expect(await shouldHoldForApproval(row(), NOW)).toBe(false);
+  });
+
+  it('the session has already started: no hold, whatever the switch says', async () => {
+    // Held now it would be overdue at once, and an overdue request can only be rejected.
+    expect(await shouldHoldForApproval(row({ slotDate: '2026-10-19' }), NOW)).toBe(false);
+    expect(await shouldHoldForApproval(row({ slotDate: '2026-10-20', startTime: '10:00:00' }), NOW)).toBe(false);
   });
 });
 

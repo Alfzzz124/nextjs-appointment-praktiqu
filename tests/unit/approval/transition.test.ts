@@ -247,6 +247,17 @@ describe('a PENDING booking without a record', () => {
     expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
   });
 
+  it('"mark as paid" after the session started books it directly, switch or not', async () => {
+    actAs(ADMIN, 24n);
+    settings.requiresApproval.mockResolvedValue(true);
+    repo.findSessionById.mockResolvedValue(row({ slotDate: '2020-01-01' }));
+
+    await transitionSession({ actor: ADMIN as never, sessionId: 7, target: SESSION_STATUS.BOOKED });
+
+    expect(approval.holdForApproval).not.toHaveBeenCalled();
+    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 1);
+  });
+
   it('"mark as paid" with the switch off books it exactly as before', async () => {
     actAs(ADMIN, 24n);
 

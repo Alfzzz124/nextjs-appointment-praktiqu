@@ -906,6 +906,8 @@ describe('ensureSessionPayment — international gate (paypal/card)', () => {
 });
 
 describe('applyPaidSideEffectsPublic — psychologist approval', () => {
+  /** A session still ahead: one already started is never held (see the last test). */
+  const ahead = () => ({ ...appointmentRow('PENDING'), slotDate: '2099-07-15' });
   const PAID = {
     id: 'po_1',
     source: 'public',
@@ -917,12 +919,12 @@ describe('applyPaidSideEffectsPublic — psychologist approval', () => {
   } as never;
 
   it('a psychologist with the switch on: queued, not booked', async () => {
-    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
+    sessions.findSessionById.mockResolvedValue(ahead());
     approval.requiresApproval.mockResolvedValue(true);
 
     await applyPaidSideEffectsPublic(PAID);
 
-    expect(approval.holdForApproval).toHaveBeenCalledWith({ row: appointmentRow('PENDING'), paymentOrderId: 'po_1' });
+    expect(approval.holdForApproval).toHaveBeenCalledWith({ row: ahead(), paymentOrderId: 'po_1' });
     expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
     expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: 42 } });
   });
@@ -950,7 +952,7 @@ describe('applyPaidSideEffectsPublic — psychologist approval', () => {
   });
 
   it('switch off: booked exactly as before', async () => {
-    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
+    sessions.findSessionById.mockResolvedValue(ahead());
 
     await applyPaidSideEffectsPublic(PAID);
 
@@ -960,6 +962,20 @@ describe('applyPaidSideEffectsPublic — psychologist approval', () => {
       transactionId: 'tx-1',
     });
     expect(approval.holdForApproval).not.toHaveBeenCalled();
+  });
+
+  it('a payment that lands after the session started: booked as before, switch or not', async () => {
+    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING')); // 2026-07-15, past
+    approval.requiresApproval.mockResolvedValue(true);
+
+    await applyPaidSideEffectsPublic(PAID);
+
+    expect(approval.holdForApproval).not.toHaveBeenCalled();
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, {
+      gateway: 'xendit',
+      wcOrderId: 42,
+      transactionId: 'tx-1',
+    });
   });
 });
 

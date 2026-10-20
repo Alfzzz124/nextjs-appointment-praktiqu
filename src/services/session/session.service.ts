@@ -47,7 +47,6 @@ import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo'
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { syncSessionReminders } from './reminder-schedule';
 import { APPROVAL_STATE, findApproval, findApprovals } from '@/services/approval/store';
-import { requiresApproval } from '@/services/approval/settings';
 import {
   approveAwaiting,
   closeOnCancel,
@@ -55,6 +54,7 @@ import {
   holdForApproval,
   isBeingConfirmed,
   rejectAwaiting,
+  shouldHoldForApproval,
   toPublicApprovalView,
   withApprovals,
   type ApprovalView,
@@ -576,9 +576,10 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     );
   }
 
-  if (target === SESSION_STATUS.BOOKED && approval === null && (await requiresApproval(row.professionalId))) {
+  if (target === SESSION_STATUS.BOOKED && approval === null && (await shouldHoldForApproval(row))) {
     // "Mark as paid" for a psychologist who approves their own bookings: the payment is
-    // now known, so the booking joins their queue instead of skipping it.
+    // now known, so the booking joins their queue instead of skipping it — unless the
+    // session has already started, in which case it is booked as before.
     await holdForApproval({ row, paymentOrderId: null, actorId: actor.id });
     await logging.audit('session.marked_paid', {
       userId: actor.id,
