@@ -174,6 +174,26 @@ export async function publicApprovalView(row: Timed, now: Date = new Date()): Pr
   };
 }
 
+/**
+ * publicApprovalView by appointment id, for callers that hold no session row. Reads the
+ * session only when there is a record, so a booking without approval costs one query.
+ */
+export async function publicApprovalFor(
+  appointmentId: number,
+  now: Date = new Date(),
+): Promise<PublicApprovalView | null> {
+  const a = await store.findApproval(appointmentId);
+  if (!a) return null;
+  const row = await findSessionById(appointmentId);
+  return {
+    state: a.state,
+    requestedAt: a.requestedAt.toISOString(),
+    decidedAt: iso(a.decidedAt),
+    refundStatus: a.refundStatus,
+    isOverdue: row ? overdue(a, row, now) : false,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Mail                                                                */
 /* ------------------------------------------------------------------ */

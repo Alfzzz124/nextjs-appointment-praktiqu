@@ -247,6 +247,14 @@ import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { syncSessionReminders } from '@/services/session/reminder-schedule';
+import { APPROVAL_STATE, findApproval } from '@/services/approval/store';
+import { requiresApproval } from '@/services/approval/settings';
+import {
+  completeApproval,
+  holdForApproval,
+  publicApprovalFor,
+  type PublicApprovalView,
+} from '@/services/approval/service';
 import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
 import {
   amountToCents,
@@ -285,6 +293,11 @@ export interface PaymentStatusView {
   /** What the payer was billed, in `chargedCurrency`. */
   chargedAmount: number;
   chargedCurrency: string;
+  /**
+   * Public bookings only: the psychologist-approval state when the booking waits for (or
+   * was decided by) its psychologist. Null otherwise; absent on staff bill payments.
+   */
+  approval?: PublicApprovalView | null;
 }
 
 /**
@@ -468,6 +481,21 @@ export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<v
   const appt = await findSessionById(Number(order.appointmentId));
   if (!appt || appt.status !== SESSION_STATUS.PENDING) return;
 
+  // A psychologist who approves their own bookings (spec 2026-10-19): the booking stays
+  // PENDING — slot held, no confirmation yet — and joins their queue instead of being
+  // booked here. A record that already exists means a repeated webhook or poll; an
+  // APPROVED one on a PENDING booking is an approval that died before the plugin.
+  const approval = await findApproval(appt.id);
+  if (approval) {
+    if (approval.state === APPROVAL_STATE.APPROVED) await completeApproval(approval);
+    return;
+  }
+  if (await requiresApproval(appt.professionalId)) {
+    await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
+    await holdForApproval({ row: appt, paymentOrderId: order.id });
+    return;
+  }
+
   await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED, {
     gateway: order.gateway,
     wcOrderId: order.wcOrderId,
@@ -566,7 +594,10 @@ export async function cancelIfStillPending(order: PaymentOrder): Promise<void> {
     const appt = await findSessionById(Number(order.appointmentId));
     // Only an unpaid, unconfirmed booking is released. A BOOKED appointment means the
     // payment landed after all, and cancelling it here would drop a paid session.
-    if (appt && appt.status === SESSION_STATUS.PENDING) {
+    // A booking with an approval record is PAID and waits for its psychologist — paid
+    // through another order of the same booking, or marked paid by staff. An older order
+    // expiring must not release it.
+    if (appt && appt.status === SESSION_STATUS.PENDING && !(await findApproval(appt.id))) {
       await cancelAppointment(Number(order.appointmentId));
     }
   }
@@ -629,6 +660,8 @@ export async function checkPublicPaymentStatus(appointmentId: number): Promise<P
     status: reconciled.status as PaymentStatus,
     expectedAmount: reconciled.expectedAmount,
     ...chargedView(reconciled),
+    // Paid but waiting for the psychologist: the FE says so instead of "confirmed".
+    approval: await publicApprovalFor(appointmentId),
   };
 }
 

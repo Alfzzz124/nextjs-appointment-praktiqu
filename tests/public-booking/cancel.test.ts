@@ -35,6 +35,13 @@ vi.mock('@/lib/logging', () => ({
   },
 }));
 
+const approval = vi.hoisted(() => ({ closeOnCancel: vi.fn(), publicApprovalView: vi.fn() }));
+vi.mock('@/services/approval/service', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/service')>()),
+  closeOnCancel: (...a: unknown[]) => approval.closeOnCancel(...a),
+  publicApprovalView: (...a: unknown[]) => approval.publicApprovalView(...a),
+}));
+
 import { findSessionById, SESSION_STATUS } from '@/repositories/wp/sessions.repo';
 import { findServiceById, listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { cancelAppointment } from '@/repositories/wp/appointments.write';
@@ -48,6 +55,11 @@ import {
   NotCancellableError,
   AppointmentNotFoundError,
 } from '@/services/public/public-booking.service';
+
+beforeEach(() => {
+  approval.closeOnCancel.mockReset().mockResolvedValue(false);
+  approval.publicApprovalView.mockReset().mockResolvedValue(null);
+});
 
 const APPOINTMENT = 5150;
 
@@ -98,6 +110,7 @@ describe('getPublicAppointmentById', () => {
       clinicId: 3,
       paymentMethods: ['xendit'],
       usd: null,
+      approval: null,
     });
   });
 
@@ -233,5 +246,29 @@ describe('cancelPublicAppointment', () => {
       .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
 
     expect((await cancelPublicAppointment(APPOINTMENT)).status).toBe('CANCELLED');
+  });
+});
+
+describe('psychologist approval', () => {
+  it('the public view carries the approval state', async () => {
+    const view = {
+      state: 'AWAITING',
+      requestedAt: '2026-10-20T02:00:00.000Z',
+      decidedAt: null,
+      refundStatus: 'NONE',
+      isOverdue: false,
+    };
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    approval.publicApprovalView.mockResolvedValue(view);
+
+    expect((await getPublicAppointmentById(APPOINTMENT))?.approval).toEqual(view);
+  });
+
+  it('a client cancelling a booking that waits for approval puts it on the refund list', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(approval.closeOnCancel).toHaveBeenCalledWith(APPOINTMENT, null);
   });
 });
