@@ -6,7 +6,6 @@
  * logs and ends. WordPress-side unscheduling is best-effort and WP-Cron runs late, so every
  * run re-reads the record and the appointment and acts only on what is true now.
  */
-import { jobs } from '@/lib/jobs/client';
 import { registerJobHandler } from '@/lib/jobs/webhook-handler';
 import { logging } from '@/lib/logging';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
@@ -15,15 +14,14 @@ import { buildAdminEscalationEmail, buildProfessionalRequestEmail } from './emai
 import { planReminder } from './schedule';
 import {
   APPROVAL_REMINDER_EVENT,
-  APPROVAL_REMINDER_HOOK,
   approvalLink,
-  approvalReminderArgs,
   clinicAdminContact,
   completeApproval,
   finishRejection,
   mail,
   mailFacts,
   notifyFinishedRejection,
+  scheduleReminder,
   settleExternal,
 } from './service';
 import * as store from './store';
@@ -129,9 +127,7 @@ export async function handleApprovalReminder(data: Record<string, unknown>, now:
     escalated = admin ? 'sent' : 'no_admin';
   }
 
-  if (plan.nextRunAt) {
-    await jobs.enqueue({ hook: APPROVAL_REMINDER_HOOK, runAt: plan.nextRunAt, args: approvalReminderArgs(appointmentId) });
-  }
+  if (plan.nextRunAt) await scheduleReminder(appointmentId, plan.nextRunAt);
 
   await logging.audit(`${APPROVAL_REMINDER_EVENT}.ran`, {
     resource: 'session',

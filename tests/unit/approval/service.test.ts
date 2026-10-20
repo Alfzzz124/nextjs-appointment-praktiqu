@@ -181,7 +181,7 @@ beforeEach(() => {
     clinicAdminId: 24n,
   });
   email.sendEmail.mockResolvedValue({ ok: true });
-  jobsClient.jobs.enqueue.mockResolvedValue(undefined);
+  jobsClient.jobs.enqueue.mockResolvedValue(true);
   jobsClient.jobs.cancel.mockResolvedValue(undefined);
   schedule.syncSessionReminders.mockResolvedValue(undefined);
   kc.resolveKcActor.mockResolvedValue({ actor: ADMIN, wpUserId: 24n, clinicId: 4n });
@@ -213,6 +213,24 @@ describe('holdForApproval', () => {
     expect(log.logging.audit).toHaveBeenCalledWith(
       'session.approval_requested',
       expect.objectContaining({ resourceId: '7' }),
+    );
+    expect(log.logging.error).not.toHaveBeenCalled();
+  });
+
+  it('the reminder job could not be scheduled: still held and mailed, and the gap is logged as an error', async () => {
+    jobsClient.jobs.enqueue.mockResolvedValue(false);
+
+    expect(await holdForApproval({ row: row(), paymentOrderId: 'po_1', now: NOW })).toBe(true);
+
+    expect(email.sendEmail).toHaveBeenCalledTimes(2);
+    expect(log.logging.error).toHaveBeenCalledWith(
+      'approval: the reminder job could not be scheduled',
+      undefined,
+      {
+        resource: 'session',
+        resourceId: '7',
+        metadata: { hook: 'praktiqu_approval_reminder', runAt: '2026-10-21T03:00:00.000Z' },
+      },
     );
   });
 

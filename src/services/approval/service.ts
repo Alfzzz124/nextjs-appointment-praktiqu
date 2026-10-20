@@ -54,6 +54,23 @@ export function approvalReminderArgs(appointmentId: number): { appointmentId: nu
   return { appointmentId };
 }
 
+/**
+ * Schedule the next reminder run. jobs.enqueue never throws; a booking it failed for is
+ * still in the queue, but nobody is reminded and no admin is escalated to, so the gap is
+ * logged as an error naming the booking. There is no column to mark it: a later read
+ * cannot tell a missing job from one that has not run yet, and Action Scheduler does not
+ * dedupe, so re-scheduling from a read could remind twice.
+ */
+export async function scheduleReminder(appointmentId: number, runAt: Date): Promise<void> {
+  const scheduled = await jobs.enqueue({ hook: APPROVAL_REMINDER_HOOK, runAt, args: approvalReminderArgs(appointmentId) });
+  if (scheduled) return;
+  await logging.error('approval: the reminder job could not be scheduled', undefined, {
+    resource: 'session',
+    resourceId: String(appointmentId),
+    metadata: { hook: APPROVAL_REMINDER_HOOK, runAt: runAt.toISOString() },
+  });
+}
+
 export class ApprovalError extends Error {
   constructor(
     public code: string,
@@ -300,11 +317,7 @@ export async function holdForApproval(input: HoldInput): Promise<boolean> {
     metadata: { professionalId: row.professionalId, clinicId: row.clinicId, paymentOrderId: input.paymentOrderId },
   });
 
-  await jobs.enqueue({
-    hook: APPROVAL_REMINDER_HOOK,
-    runAt: firstReminderAt(now, sessionStartsAtUtc(row)),
-    args: approvalReminderArgs(row.id),
-  });
+  await scheduleReminder(row.id, firstReminderAt(now, sessionStartsAtUtc(row)));
 
   const facts = await mailFacts(row);
   if (facts) {

@@ -110,7 +110,7 @@ beforeEach(() => {
   decisions.finishRejection.mockResolvedValue(true);
   decisions.notifyFinishedRejection.mockResolvedValue(undefined);
   email.sendEmail.mockResolvedValue({ ok: true });
-  jobsClient.jobs.enqueue.mockResolvedValue(undefined);
+  jobsClient.jobs.enqueue.mockResolvedValue(true);
 });
 
 describe('handleApprovalReminder', () => {
@@ -124,6 +124,18 @@ describe('handleApprovalReminder', () => {
       hook: 'praktiqu_approval_reminder',
       runAt: at(48),
       args: { appointmentId: 7 },
+    });
+  });
+
+  it('the next run could not be scheduled: logged as an error', async () => {
+    jobsClient.jobs.enqueue.mockResolvedValue(false);
+
+    await handleApprovalReminder({ appointmentId: 7 }, at(24));
+
+    expect(log.logging.error).toHaveBeenCalledWith('approval: the reminder job could not be scheduled', undefined, {
+      resource: 'session',
+      resourceId: '7',
+      metadata: { hook: 'praktiqu_approval_reminder', runAt: at(48).toISOString() },
     });
   });
 
