@@ -1,6 +1,6 @@
 # Approval: konfirmasi "claim-first" di plugin (1.8.4)
 
-Status: **draf, menunggu persetujuan user.** Plugin belum diubah.
+Status: **disetujui user 2026-10-20: opsi A (§2), tanpa §8.**
 Induk: `2026-10-19-approval-psikolog-design.md`. Temuan: review akhir I3 ("live race").
 
 ## 1. Masalah
@@ -131,7 +131,9 @@ stdin.
   kolom baru.
 - Opsi B (§2).
 
-## 8. Opsional, menumpang rilis plugin yang sama
+## 8. Opsional, menumpang rilis plugin yang sama (tidak diambil)
+
+User memutuskan 2026-10-20: tidak ikut 1.8.4. Celahnya tetap terdokumentasi di runbook.
 
 Penolakan setengah jadi yang dirapikan lewat **pembacaan** (antrean/detail) tidak mengirim email
 penolakan ke klien. Email hanya terkirim bila job pengingat yang merapikannya. Setelah crash,
@@ -140,5 +142,4 @@ pembacaan hampir selalu menang, karena psikolog memuat ulang halamannya.
 Kalau ingin ditutup juga: tambahkan hook ke-7 `praktiqu_approval_rejection_notice` di 1.8.4.
 Pembacaan yang memenangkan penulisan bersyarat `PENDING → CANCELLED` meng-enqueue hook itu dengan
 `runAt = now`, lalu handler-nya (konteks sistem) mengirim email dan audit. Hasilnya tetap tepat
-sekali, karena hanya pemenang penulisan yang meng-enqueue. **Perlu keputusan user: ikut atau
-tidak.**
+sekali, karena hanya pemenang penulisan yang meng-enqueue.

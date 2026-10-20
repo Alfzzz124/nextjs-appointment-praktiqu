@@ -125,6 +125,16 @@ namespace {
             return 1;
         }
 
+        /** The re-read after a missed claim: SELECT status FROM … WHERE id = I. */
+        public function get_var(string $query)
+        {
+            if (preg_match('/SELECT status FROM wp_kc_appointments WHERE id = (\d+)/', $query, $m) !== 1) {
+                return null;
+            }
+            $row = $this->appointments[(int) $m[1]] ?? null;
+            return $row === null ? null : (string) $row['status'];
+        }
+
         /** Like MySQL, an UPDATE that leaves the value as it was affects 0 rows, not false. */
         public function update(string $table, array $data, array $where, $format = null, $where_format = null)
         {
@@ -250,6 +260,57 @@ namespace {
     check('the hook did fire', count(payment_hooks()), 1);
     check('the committed status is still reported as success', $result['status'] ?? null, 1);
     check('row is BOOKED', $wpdb->appointments[3358]['status'], 1);
+
+    // expect_status (1.8.4): a compare-and-set. PraktiQU's approval sends it so an approval
+    // whose plugin call lands after a cancellation cannot rewrite CANCELLED as BOOKED.
+    echo "\nexpect_status PENDING, with a payment, on a PENDING row\n";
+    reset_world(2);
+    $result = set_status(1, ['status' => 1, 'payment' => PAID, 'expect_status' => 2]);
+    check('row is BOOKED', $wpdb->appointments[3358]['status'], 1);
+    check('payment hook fired exactly once', count(payment_hooks()), 1);
+    check('status hook before it', fired(), ['kc_appointment_status_update', 'kc_appointment_payment_completed']);
+    check('response: claimed, payment confirmed', [$result['claimed'] ?? null, $result['payment_confirmed'] ?? null], [true, true]);
+
+    echo "\nexpect_status PENDING on a row cancelled meanwhile\n";
+    reset_world(0);
+    $result = set_status(1, ['status' => 1, 'payment' => PAID, 'expect_status' => 2]);
+    check(
+        '409 praktiqu_status_conflict naming the current status',
+        $result instanceof WP_Error ? [$result->get_error_code(), $result->get_error_data()] : $result,
+        ['praktiqu_status_conflict', ['status' => 409, 'current_status' => 0]],
+    );
+    check('row stays CANCELLED', $wpdb->appointments[3358]['status'], 0);
+    check('nothing fired', fired(), []);
+
+    echo "\nexpect_status PENDING on a row another request already BOOKED\n";
+    foreach ([[1, 'already BOOKED'], [2, 'BOOKED by a racing request']] as [$start, $label]) {
+        reset_world($start);
+        $wpdb->lose_race = $start === 2;
+        $result = set_status(1, ['status' => 1, 'payment' => PAID, 'expect_status' => 2]);
+        check("{$label}: not an error", is_array($result), true);
+        check("{$label}: not claimed, payment not confirmed here", [$result['claimed'] ?? null, $result['payment_confirmed'] ?? null], [false, false]);
+        check("{$label}: row stays BOOKED", $wpdb->appointments[3358]['status'], 1);
+        check("{$label}: nothing fired", fired(), []);
+    }
+
+    echo "\nexpect_status PENDING without a payment (marked paid by hand, then approved)\n";
+    reset_world(2);
+    $result = set_status(1, ['status' => 1, 'expect_status' => 2]);
+    check('row is BOOKED', $wpdb->appointments[3358]['status'], 1);
+    check('status hook only, no payment hook', fired(), ['kc_appointment_status_update']);
+    check('response: claimed, no payment', [$result['claimed'] ?? null, $result['payment_confirmed'] ?? null], [true, false]);
+    reset_world(4);
+    $result = set_status(1, ['status' => 1, 'expect_status' => 2]);
+    check(
+        'on a CHECK_IN row: 409, row untouched',
+        [$result instanceof WP_Error ? $result->get_error_data() : $result, $wpdb->appointments[3358]['status'], fired()],
+        [['status' => 409, 'current_status' => 4], 4, []],
+    );
+
+    echo "\nexpect_status on a cancellation\n";
+    reset_world(2);
+    set_status(0, ['status' => 0, 'expect_status' => 2]);
+    check('PENDING → CANCELLED claimed: cancellation hooks', fired(), ['kc_appointment_cancelled', 'kc_appointment_status_update']);
 
     echo "\nUnknown appointment\n";
     reset_world(2);

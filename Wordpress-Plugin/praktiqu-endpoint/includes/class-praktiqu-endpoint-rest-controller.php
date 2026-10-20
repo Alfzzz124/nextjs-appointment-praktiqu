@@ -163,6 +163,9 @@ final class REST_Controller
                 // { gateway, wc_order_id, transaction_id } when status 1 confirms a paid
                 // booking; makes PENDING → BOOKED fire kc_appointment_payment_completed.
                 'payment' => ['required' => false, 'type' => 'object'],
+                // Compare-and-set (1.8.4): write only if the row still has this status;
+                // 409 praktiqu_status_conflict otherwise. Sent by psychologist approval.
+                'expect_status' => ['required' => false, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
             ],
         ]);
 
