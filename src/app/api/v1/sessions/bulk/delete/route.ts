@@ -38,7 +38,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 403 },
       );
     }
-    const count = await bulkCancelSessions(parsed.data.ids);
+    const count = await bulkCancelSessions(parsed.data.ids, actor.id);
     return NextResponse.json({ message: `${count} sessions cancelled`, data: { updated: count } });
   } catch (err) {
     if (err instanceof AuthError) {

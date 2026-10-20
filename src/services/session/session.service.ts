@@ -45,6 +45,17 @@ import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.r
 import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { syncSessionReminders } from './reminder-schedule';
+import { APPROVAL_STATE, findApproval, findApprovals } from '@/services/approval/store';
+import { requiresApproval } from '@/services/approval/settings';
+import {
+  approveAwaiting,
+  closeOnCancel,
+  completeApproval,
+  holdForApproval,
+  rejectAwaiting,
+  withApprovals,
+  type ApprovalView,
+} from '@/services/approval/service';
 
 export { SESSION_STATUS, canTransition, normaliseStatus };
 export type { SessionStatus };
@@ -89,6 +100,11 @@ export interface SessionWithRelations extends Session {
   professionalName: string;
   clientName: string;
   clientEmail: string;
+  /**
+   * The psychologist-approval record, when this booking was paid for a psychologist who
+   * approves their own bookings. Null for every other booking. See services/approval.
+   */
+  approval?: ApprovalView | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -363,7 +379,8 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
 
 export async function getSession(actor: Actor, id: number): Promise<SessionWithRelations> {
   const kc = await resolveKcActor(actor);
-  return toSession(await loadForActor(kc, id));
+  const [session] = await withApprovals([toSession(await loadForActor(kc, id))]);
+  return session;
 }
 
 export async function listSessions(
@@ -411,7 +428,7 @@ export async function listSessions(
   const { items, total } = await listSessionRows(query);
 
   return {
-    data: items.map(toSession),
+    data: await withApprovals(items.map(toSession)),
     pagination: {
       currentPage: page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -436,7 +453,9 @@ export async function listPendingForProfessional(
     professionalId: target,
     statuses: [SESSION_STATUS.PENDING],
   });
-  return items.map(toSession);
+  // The pending queue holds both unpaid bookings and paid ones waiting for approval;
+  // `approval` is what tells them apart.
+  return withApprovals(items.map(toSession));
 }
 
 /* ------------------------------------------------------------------ */
@@ -448,10 +467,23 @@ export interface TransitionArgs {
   sessionId: number;
   target: SessionStatus;
   reason?: string;
+  /**
+   * Set by POST /sessions/:id/reject. For a paid booking that waits for its psychologist
+   * a rejection is a decision with its own rules (who may, the client's mail, the refund);
+   * a plain cancel of the same booking is not.
+   */
+  intent?: 'reject';
+}
+
+async function reread(sessionId: number): Promise<SessionWithRelations> {
+  const updated = await findSessionById(sessionId);
+  if (!updated) throw new SessionServiceError('not_found', 'Session not found', 404);
+  const [session] = await withApprovals([toSession(updated)]);
+  return session;
 }
 
 export async function transitionSession(args: TransitionArgs): Promise<SessionWithRelations> {
-  const { actor, sessionId, target, reason } = args;
+  const { actor, sessionId, target, reason, intent } = args;
   const kc = await resolveKcActor(actor);
   const row = await loadForActor(kc, sessionId);
 
@@ -479,6 +511,39 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     );
   }
 
+  // A PENDING booking may be paid and waiting for its psychologist (session_approvals).
+  // Approving or rejecting it is a decision with its own rules — services/approval.
+  const approval = row.status === SESSION_STATUS.PENDING ? await findApproval(sessionId) : null;
+
+  if (approval?.state === APPROVAL_STATE.AWAITING && (target === SESSION_STATUS.BOOKED || intent === 'reject')) {
+    if (!isAdmin && !isOwningProfessional) {
+      throw new SessionServiceError('forbidden', 'Not authorized to decide this booking', 403);
+    }
+    if (target === SESSION_STATUS.BOOKED) await approveAwaiting({ actor, row, approval });
+    else await rejectAwaiting({ actor, row, reason: reason ?? '' });
+    return reread(sessionId);
+  }
+
+  if (approval?.state === APPROVAL_STATE.APPROVED && target === SESSION_STATUS.BOOKED) {
+    // An earlier approval claimed the record but never reached the plugin.
+    await completeApproval(approval);
+    return reread(sessionId);
+  }
+
+  if (target === SESSION_STATUS.BOOKED && approval === null && (await requiresApproval(row.professionalId))) {
+    // "Mark as paid" for a psychologist who approves their own bookings: the payment is
+    // now known, so the booking joins their queue instead of skipping it.
+    await holdForApproval({ row, paymentOrderId: null, actorId: actor.id });
+    await logging.audit('session.marked_paid', {
+      userId: actor.id,
+      resource: 'session',
+      resourceId: String(sessionId),
+      action: 'session.marked_paid',
+      metadata: { heldForApproval: true },
+    });
+    return reread(sessionId);
+  }
+
   // Through the plugin, so KiviCare's cancellation email and telemed teardown fire.
   await setAppointmentStatus(sessionId, toKcStatus(target));
 
@@ -500,7 +565,14 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
   // lewat sini saat disetujui, jadi ia tidak butuh kail sendiri.
   await syncSessionReminders(updated);
 
-  return toSession(updated);
+  // A paid booking that waited for its psychologist and was cancelled instead: the money
+  // is in, so it joins the refund list.
+  if (target === SESSION_STATUS.CANCELLED && approval?.state === APPROVAL_STATE.AWAITING) {
+    await closeOnCancel(sessionId, actor.id);
+  }
+
+  const [session] = await withApprovals([toSession(updated)]);
+  return session;
 }
 
 /* ------------------------------------------------------------------ */
@@ -601,7 +673,12 @@ export async function invalidatePendingForOffDay(
     statuses: [SESSION_STATUS.PENDING],
   });
 
-  for (const s of items) {
+  // A PENDING booking with an approval record is PAID and waits for its psychologist.
+  // Cancelling it here would drop money silently; it stays in the queue to be decided.
+  const held = await findApprovals(items.map((s) => s.id));
+  const unpaid = items.filter((s) => !held.has(s.id));
+
+  for (const s of unpaid) {
     await setSessionStatusDirect(s.id, SESSION_STATUS.CANCELLED);
     await logging.audit('session.status_changed', {
       userId: null,
@@ -617,7 +694,7 @@ export async function invalidatePendingForOffDay(
     });
   }
 
-  return items.length;
+  return unpaid.length;
 }
 
 /**
@@ -641,7 +718,7 @@ export async function sessionIdsOutsideScope(actor: Actor, ids: number[]): Promi
   return ids.filter((id) => !inClinic.has(id));
 }
 
-export async function bulkCancelSessions(ids: number[]): Promise<number> {
+export async function bulkCancelSessions(ids: number[], actorId: string | null = null): Promise<number> {
   let cancelled = 0;
   for (const id of ids) {
     try {
@@ -649,7 +726,16 @@ export async function bulkCancelSessions(ids: number[]): Promise<number> {
       cancelled += 1;
     } catch {
       // Counted, not thrown — the returned number is the caller's signal.
+      continue;
     }
+    // A paid booking that waited for its psychologist now has money to return. A failure
+    // here is logged, not thrown: the cancellation itself already happened.
+    await closeOnCancel(id, actorId).catch((err) =>
+      logging.error('bulk cancel: closing the approval record failed', err, {
+        resource: 'session',
+        resourceId: String(id),
+      }),
+    );
   }
   return cancelled;
 }
