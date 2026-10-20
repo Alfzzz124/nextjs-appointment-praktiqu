@@ -479,21 +479,24 @@ export async function rejectAwaiting(input: DecideInput & { reason: string }): P
 
   await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(row.id) });
   await auditDecision(actor, row, 'REJECTED', reason);
+  await mailRejection(row);
+}
 
+/** The client's rejection mail. It names the clinic to ask about the refund, never the reason. */
+async function mailRejection(row: SessionRow): Promise<void> {
   const facts = await mailFacts(row);
-  if (facts) {
-    const clinic = await findClinicById(BigInt(row.clinicId));
-    await mail(
-      row.clientEmail,
-      buildClientRejectedEmail({
-        ...facts,
-        clinicName: clinic?.name ?? 'klinik',
-        clinicEmail: clinic?.email ?? null,
-        clinicPhone: clinic?.telephone ?? null,
-      }),
-      'approval_client_rejected',
-    );
-  }
+  if (!facts) return;
+  const clinic = await findClinicById(BigInt(row.clinicId));
+  await mail(
+    row.clientEmail,
+    buildClientRejectedEmail({
+      ...facts,
+      clinicName: clinic?.name ?? 'klinik',
+      clinicEmail: clinic?.email ?? null,
+      clinicPhone: clinic?.telephone ?? null,
+    }),
+    'approval_client_rejected',
+  );
 }
 
 /**
@@ -549,10 +552,18 @@ export async function settleExternal(appointmentId: number, status: SessionStatu
  * A rejection claimed on the record whose CANCELLED write never landed: the process died
  * in between, or the write failed and so did undoing the claim. The decision stands, so
  * the slot is released here — directly, as rejectAwaiting does — and the refund stays
- * NEEDED. The client's rejection mail is not sent from here.
+ * NEEDED.
+ *
+ * The write only moves a PENDING appointment, so of a read and the reminder job finishing
+ * the same rejection, exactly one gets true. Nobody is mailed from here, because the queue
+ * and the item call this on a read; the reminder job follows a true with
+ * notifyFinishedRejection.
  */
-export async function finishRejection(approval: store.ApprovalRecord): Promise<void> {
-  await setSessionStatusDirect(approval.appointmentId, SESSION_STATUS.CANCELLED);
+export async function finishRejection(approval: store.ApprovalRecord): Promise<boolean> {
+  const moved = await setSessionStatusDirect(approval.appointmentId, SESSION_STATUS.CANCELLED, {
+    from: SESSION_STATUS.PENDING,
+  });
+  if (!moved) return false;
   await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(approval.appointmentId) });
   await logging.audit('session.status_changed', {
     userId: approval.decidedBy,
@@ -566,6 +577,23 @@ export async function finishRejection(approval: store.ApprovalRecord): Promise<v
       finishedRejection: true,
     },
   });
+  return true;
+}
+
+/**
+ * What rejectAwaiting would have done after its write: the decision's audit and the
+ * client's mail. For the reminder job only, after its own finishRejection got true — it runs
+ * as the system, once. A rejection that a read finished first goes without the mail.
+ */
+export async function notifyFinishedRejection(approval: store.ApprovalRecord, row: SessionRow): Promise<void> {
+  await logging.audit('session.approval_decided', {
+    userId: approval.decidedBy,
+    resource: 'session',
+    resourceId: String(approval.appointmentId),
+    action: 'session.approval_decided',
+    metadata: { decision: 'REJECTED', reason: approval.rejectReason, professionalId: row.professionalId, recovered: true },
+  });
+  await mailRejection(row);
 }
 
 /* ------------------------------------------------------------------ */

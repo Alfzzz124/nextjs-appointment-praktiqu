@@ -89,6 +89,7 @@ import {
   holdForApproval,
   listQueue,
   markRefunded,
+  notifyFinishedRejection,
   publicApprovalView,
   rejectAwaiting,
   settleExternal,
@@ -411,13 +412,50 @@ describe('settleExternal', () => {
 });
 
 describe('finishRejection', () => {
-  it('writes the CANCELLED a rejection never got, directly, and stops the reminders', async () => {
-    await finishRejection(record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' }));
+  const REJECTED = record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' });
 
-    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(7, 'CANCELLED');
+  it('writes the CANCELLED a rejection never got, directly and only over PENDING, and stops the reminders', async () => {
+    expect(await finishRejection(REJECTED)).toBe(true);
+
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(7, 'CANCELLED', { from: 'PENDING' });
     expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
     expect(store.claimDecision).not.toHaveBeenCalled();
     expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
+    // Nobody is mailed from here: a read finishes rejections too (see notifyFinishedRejection).
+    expect(email.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('someone else moved the appointment first: false, and nothing else is done', async () => {
+    sessions.setSessionStatusDirect.mockResolvedValue(false);
+
+    expect(await finishRejection(REJECTED)).toBe(false);
+
+    expect(jobsClient.jobs.cancel).not.toHaveBeenCalled();
+    expect(log.logging.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe('notifyFinishedRejection', () => {
+  it("writes the decision's audit and sends the client the mail rejectAwaiting never got to", async () => {
+    await notifyFinishedRejection(
+      record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'Di luar keahlian saya', refundStatus: 'NEEDED' }),
+      row(),
+    );
+
+    expect(log.logging.audit).toHaveBeenCalledWith('session.approval_decided', {
+      userId: 'u_psi',
+      resource: 'session',
+      resourceId: '7',
+      action: 'session.approval_decided',
+      metadata: { decision: 'REJECTED', reason: 'Di luar keahlian saya', professionalId: 34, recovered: true },
+    });
+    expect(email.sendEmail).toHaveBeenCalledTimes(1);
+    const sent = email.sendEmail.mock.calls[0][0] as { to: string; subject: string; text: string; template: string };
+    expect(sent.to).toBe('ada@contoh.test');
+    expect(sent.subject).toBe('Jadwal sesi Anda tidak dapat diterima');
+    expect(sent.template).toBe('approval_client_rejected');
+    expect(sent.text).toContain('Klinik Sehat');
+    expect(sent.text).not.toContain('Di luar keahlian');
   });
 });
 
@@ -440,7 +478,7 @@ describe('reconcile on read', () => {
     // Cancelled in KiviCare: CANCELLED with a refund to make.
     expect(store.claimDecision).toHaveBeenCalledWith(7, { state: 'CANCELLED', decidedBy: null, decidedAt: NOW });
     // A rejection whose CANCELLED write never landed: finished.
-    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(8, 'CANCELLED');
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(8, 'CANCELLED', { from: 'PENDING' });
     // Checked out (a bill settled): approved outside the app.
     expect(store.claimDecision).toHaveBeenCalledWith(9, { state: 'APPROVED', decidedBy: null, decidedAt: NOW });
     // Still waiting: left alone.
@@ -477,7 +515,9 @@ describe('reconcile on read', () => {
 
     await getApprovalItem(ADMIN as never, 7, NOW);
 
-    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(7, 'CANCELLED');
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(7, 'CANCELLED', { from: 'PENDING' });
+    // A read finishes the rejection but mails nobody.
+    expect(email.sendEmail).not.toHaveBeenCalled();
     expect(sessions.setSessionStatusDirect.mock.invocationCallOrder[0]).toBeLessThan(
       store.findApprovals.mock.invocationCallOrder[0],
     );

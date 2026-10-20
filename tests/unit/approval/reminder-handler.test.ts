@@ -18,6 +18,7 @@ const decisions = vi.hoisted(() => ({
   completeApproval: vi.fn(),
   settleExternal: vi.fn(),
   finishRejection: vi.fn(),
+  notifyFinishedRejection: vi.fn(),
   clinicAdminContact: vi.fn(),
 }));
 vi.mock('@/services/approval/service', async (orig) => ({
@@ -106,7 +107,8 @@ beforeEach(() => {
   decisions.clinicAdminContact.mockResolvedValue({ email: 'admin@klinik.test', name: 'Rina' });
   decisions.completeApproval.mockResolvedValue(undefined);
   decisions.settleExternal.mockResolvedValue(undefined);
-  decisions.finishRejection.mockResolvedValue(undefined);
+  decisions.finishRejection.mockResolvedValue(true);
+  decisions.notifyFinishedRejection.mockResolvedValue(undefined);
   email.sendEmail.mockResolvedValue({ ok: true });
   jobsClient.jobs.enqueue.mockResolvedValue(undefined);
 });
@@ -176,15 +178,27 @@ describe('handleApprovalReminder', () => {
     },
   );
 
-  it('REJECTED but the appointment is still PENDING: finishes the rejection', async () => {
+  it('REJECTED but the appointment is still PENDING: finishes the rejection and tells the client', async () => {
     const rejected = record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' });
     store.findApproval.mockResolvedValue(rejected);
 
     await handleApprovalReminder({ appointmentId: 7 }, at(24));
 
     expect(decisions.finishRejection).toHaveBeenCalledWith(rejected);
-    expect(email.sendEmail).not.toHaveBeenCalled();
+    expect(decisions.notifyFinishedRejection).toHaveBeenCalledWith(rejected, row());
+    expect(decisions.notifyFinishedRejection.mock.invocationCallOrder[0]).toBeGreaterThan(
+      decisions.finishRejection.mock.invocationCallOrder[0],
+    );
     expect(jobsClient.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('REJECTED and PENDING, but a read finished it first: the client is not told twice', async () => {
+    store.findApproval.mockResolvedValue(record({ state: 'REJECTED', decidedBy: 'u_psi', refundStatus: 'NEEDED' }));
+    decisions.finishRejection.mockResolvedValue(false);
+
+    await handleApprovalReminder({ appointmentId: 7 }, at(24));
+
+    expect(decisions.notifyFinishedRejection).not.toHaveBeenCalled();
   });
 
   it('already decided: skipped', async () => {

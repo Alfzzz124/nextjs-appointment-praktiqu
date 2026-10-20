@@ -23,6 +23,7 @@ import {
   finishRejection,
   mail,
   mailFacts,
+  notifyFinishedRejection,
   settleExternal,
 } from './service';
 import * as store from './store';
@@ -52,8 +53,14 @@ export async function handleApprovalReminder(data: Record<string, unknown>, now:
     return;
   }
   if (approval.state === store.APPROVAL_STATE.REJECTED && row.status === SESSION_STATUS.PENDING) {
-    await finishRejection(approval);
-    await logging.audit(`${APPROVAL_REMINDER_EVENT}.rejection_finished`, { resource: 'session', resourceId });
+    // False: a read of the queue or the item got there first and mailed nobody.
+    const finished = await finishRejection(approval);
+    if (finished) await notifyFinishedRejection(approval, row);
+    await logging.audit(`${APPROVAL_REMINDER_EVENT}.rejection_finished`, {
+      resource: 'session',
+      resourceId,
+      metadata: { notified: finished },
+    });
     return;
   }
   if (approval.state === store.APPROVAL_STATE.AWAITING && row.status !== SESSION_STATUS.PENDING) {

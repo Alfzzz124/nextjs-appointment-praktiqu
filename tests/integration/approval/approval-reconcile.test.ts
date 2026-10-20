@@ -42,6 +42,7 @@ import { GET as itemGet } from '@/app/api/v1/sessions/[id]/approval/route';
 import { POST as approvePost } from '@/app/api/v1/sessions/[id]/approve/route';
 import { POST as rejectPost } from '@/app/api/v1/sessions/[id]/reject/route';
 import { POST as cancelPost } from '@/app/api/v1/sessions/[id]/cancel/route';
+import { handleApprovalReminder } from '@/services/approval/reminder-handler';
 
 const BASE = 8_880_000;
 const END = BASE + 10_000;
@@ -57,6 +58,7 @@ const APPT_LOST_ANSWER = BASE + 104; // AWAITING; the plugin commits BOOKED, the
 const APPT_BEING_CONFIRMED = BASE + 105; // APPROVED, still PENDING: the confirmation is on its way
 const APPT_ITEM_HALF_REJECTED = BASE + 110; // OTHER_DOCTOR, REJECTED + PENDING, read as an item
 const APPT_APPROVE_REJECTED = BASE + 111; // OTHER_DOCTOR, REJECTED + PENDING, then /approve
+const APPT_JOB_HALF_REJECTED = BASE + 112; // OTHER_DOCTOR, REJECTED + PENDING, found by the reminder job
 
 const PSI = 'approval-reconcile-test-psi';
 const OTHER_PSI = 'approval-reconcile-test-other';
@@ -206,6 +208,8 @@ beforeAll(async () => {
   await record(APPT_ITEM_HALF_REJECTED, OTHER_DOCTOR, 'REJECTED');
   await appointment(APPT_APPROVE_REJECTED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
   await record(APPT_APPROVE_REJECTED, OTHER_DOCTOR, 'REJECTED');
+  await appointment(APPT_JOB_HALF_REJECTED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
+  await record(APPT_JOB_HALF_REJECTED, OTHER_DOCTOR, 'REJECTED');
 });
 
 beforeEach(() => {
@@ -303,5 +307,30 @@ describe('GET /sessions/:id/approval', () => {
       approval: { state: 'REJECTED', refundStatus: 'NEEDED' },
     });
     expect(await statusOf(APPT_ITEM_HALF_REJECTED)).toBe(APPOINTMENT_STATUS.CANCELLED);
+    // A read mails nobody; only the reminder job, which runs as the system, does.
+    expect(email.sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('the reminder job', () => {
+  const decidedAudits = () =>
+    prisma.logEntry.count({ where: { resourceId: String(APPT_JOB_HALF_REJECTED), action: 'session.approval_decided' } });
+
+  it('finishes a half-done rejection, tells the client once and audits the decision', async () => {
+    await handleApprovalReminder({ appointmentId: APPT_JOB_HALF_REJECTED });
+
+    expect(await statusOf(APPT_JOB_HALF_REJECTED)).toBe(APPOINTMENT_STATUS.CANCELLED);
+    expect(await approvalOf(APPT_JOB_HALF_REJECTED)).toMatchObject({ state: 'REJECTED', refundStatus: 'NEEDED' });
+    expect(email.sendEmail).toHaveBeenCalledTimes(1);
+    expect(email.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: `u${PATIENT}@approval-reconcile.test.local`, template: 'approval_client_rejected' }),
+    );
+    expect(await decidedAudits()).toBe(1);
+
+    // WordPress may run the job again (its unschedule is best-effort): nothing is repeated.
+    await handleApprovalReminder({ appointmentId: APPT_JOB_HALF_REJECTED });
+
+    expect(email.sendEmail).toHaveBeenCalledTimes(1);
+    expect(await decidedAudits()).toBe(1);
   });
 });
