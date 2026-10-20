@@ -55,7 +55,7 @@ const KNOWN: Record<string, Known> = {
   'src/services/billing/bill.service.ts': {
     writes: 2,
     approvalAware: false,
-    why: 'settling a bill checks out the encounter of a held session; never a PENDING public booking',
+    why: 'settling a bill checks out its appointment without consulting approval, so a booking still waiting for its psychologist can be checked out this way (accepted 2026-10-20); the approval reminder job then closes its record as approved outside the app (settleExternal)',
   },
   'src/app/api/v1/sessions/bulk/delete/route.ts': {
     writes: 1,
