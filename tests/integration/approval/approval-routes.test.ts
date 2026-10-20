@@ -357,6 +357,11 @@ describe('deciding', () => {
     );
     expect(Number(rows[0].status)).toBe(APPOINTMENT_STATUS.BOOKED);
     expect(email.sendEmail).not.toHaveBeenCalled();
+    // Nor does it touch the approval: still approved, no refund owed.
+    expect(await prisma.sessionApproval.findUnique({ where: { appointmentId: BigInt(APPT_AWAITING) } })).toMatchObject({
+      state: 'APPROVED',
+      refundStatus: 'NONE',
+    });
   });
 
   it('a reject with no body is a validation error, not a 500', async () => {

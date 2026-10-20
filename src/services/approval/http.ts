@@ -1,7 +1,8 @@
 /**
  * Error → HTTP answer for the approval routes, in the shapes the sessions/* routes use:
  * AuthError as the auth problem, zod as 422, anything carrying code + status (ApprovalError,
- * SessionServiceError, KcError) as its own problem, everything else 500.
+ * SessionServiceError) as its own problem, everything else 500. KcError carries
+ * `httpStatus` and no `code`, so it is not matched and lands in the 500 too.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';

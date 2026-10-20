@@ -54,6 +54,8 @@ backend aman sendirian:
 ## Rollback
 
 - FE dan backend: revert merge, lalu auto-deploy. Tabel baru boleh dibiarkan; backend lama tidak membacanya.
-- **Sesi yang sedang `AWAITING` saat rollback backend akan tertinggal `PENDING`.** Sebelum rollback, putuskan dulu semuanya: `SELECT appointmentId FROM session_approvals WHERE state='AWAITING';`. Kalau tidak, job auto-cancel lama bisa melepasnya.
+- **Putuskan dulu semua sesi yang sedang `AWAITING` sebelum rollback backend:** `SELECT appointmentId FROM session_approvals WHERE state='AWAITING';`. Backend lama tidak membaca `session_approvals`, jadi baginya sesi itu hanya `PENDING` biasa:
+  - Yang dibayar lewat order akan **di-BOOKED-kan otomatis** oleh backend lama. Setiap kali status pembayarannya dibaca lagi (`/public/payment-verify` dari halaman klien, atau webhook yang datang ulang), `ensurePaidSideEffectsApplied` → `applyPaidSideEffectsPublic` melihat janji temu `PENDING` dengan order `paid` dan langsung mem-`BOOKED`-kannya, tanpa keputusan psikolog dan tanpa menutup catatan approval-nya.
+  - Yang ditandai lunas manual (tanpa order) tertinggal `PENDING`, dan job auto-cancel lama bisa melepasnya.
 - Plugin: kembalikan backup 1.8.2 (mekanismenya: `docs/deploy/international-clinic-runbook.md`, bagian Rollback). Tanpa Next.js baru, tidak ada yang meng-enqueue hook baru.
 - Job pengingat yang sudah di-enqueue dengan hook `praktiqu_approval_reminder` tetap ada di Action Scheduler. Setelah plugin kembali ke 1.8.2, yang tidak lagi mendaftarkan hook itu, job tersebut tidak melakukan apa-apa: tidak ada callback dan tidak ada webhook ke Next.js. Action Scheduler boleh mencatatnya selesai atau gagal (tergantung versinya); biarkan saja.
