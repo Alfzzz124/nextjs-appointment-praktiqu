@@ -12,6 +12,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
 import { CLIENT_STATUS } from '@/repositories/wp/patients.repo';
+import { idBlock } from '../helpers/id-blocks';
 
 /**
  * Stand in for the praktiqu-endpoint plugin.
@@ -50,8 +51,7 @@ const {
 } = await import('@/services/client/client.service');
 const { GET: statisticsGet } = await import('@/app/api/v1/clients/[id]/statistics/route');
 
-const BASE = 8_300_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('complete-in-progress/clients.test.ts');
 const CLINIC = BigInt(BASE + 900);
 
 const JWT_SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');

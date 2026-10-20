@@ -9,9 +9,9 @@ import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { clinicPaymentOptionName } from '@/repositories/wp/clinic-payment-settings.repo';
 import { DELETE } from '@/app/api/v1/practices/[id]/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_760_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/practice-delete-permanent.test.ts');
 const EMPTY = BASE + 1;
 const BUSY = BASE + 2;
 const MISSING = BASE + 9;
@@ -51,7 +51,7 @@ beforeAll(async () => {
     await prisma.$executeRawUnsafe(
       `INSERT INTO wp_kc_clinics (id, name, status, clinic_admin_id, clinic_logo, created_at) VALUES (?, ?, 1, 0, 0, NOW())`,
       id,
-      `Klinik Uji Hapus 8760 ${id}`,
+      `Klinik Uji Hapus 8640 ${id}`,
     );
   }
   // EMPTY has a holiday and a payment option — neither counts as "data", both go with it.
@@ -112,7 +112,7 @@ describe('DELETE ?permanent=true', () => {
 
     const audit = await prisma.logEntry.findFirst({ where: { action: 'practice.delete', resourceId: String(EMPTY) } });
     expect(audit).toMatchObject({ userId: SUPER, resource: 'clinic' });
-    expect(audit!.metadata).toMatchObject({ name: `Klinik Uji Hapus 8760 ${EMPTY}`, clinicAdminId: 0 });
+    expect(audit!.metadata).toMatchObject({ name: `Klinik Uji Hapus 8640 ${EMPTY}`, clinicAdminId: 0 });
   });
 
   it('404s a clinic that does not exist', async () => {

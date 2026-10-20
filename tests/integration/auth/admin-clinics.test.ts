@@ -9,9 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { listAdminClinicIds, listAdminClinics, resolveClinicId } from '@/services/billing/kc-actor';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_650_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/auth/admin-clinics.test.ts');
 
 const OWNER = BASE + 500; // owns three clinics, and is also mapped as a doctor elsewhere
 const MAPPED_ONLY = BASE + 501; // owns none, has two doctor mappings

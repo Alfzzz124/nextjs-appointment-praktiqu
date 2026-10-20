@@ -11,10 +11,12 @@ import { NextRequest } from 'next/server';
 import { GET as weekGET, PUT as weekPUT, DELETE as weekDELETE } from '@/app/api/v1/professional-sessions/week/route';
 import { GET as groupedGET } from '@/app/api/v1/professional-sessions/grouped/route';
 import { POST as bulkDeletePOST } from '@/app/api/v1/professional-sessions/bulk/delete/route';
-import { assertTestDb, cleanup, seedClinicAdmin, seedDoctorClinicMapping } from './fixtures';
+import { assertTestDb, cleanup, seedClinicAdmin, seedDoctorClinicMapping, useIdBlock } from './fixtures';
+
+const { BASE: ID_BASE } = useIdBlock('billing/professional-session-week-routes.integration.test.ts');
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
-const CLINIC = 9_000_201, ADMIN = 9_000_202, DOCTOR = 9_000_210;
+const CLINIC = ID_BASE + 201, ADMIN = ID_BASE + 202, DOCTOR = ID_BASE + 210;
 const BASE = 'http://localhost/api/v1/professional-sessions';
 
 async function token(role: string, sub = `test-admin-${ADMIN}`) {
@@ -57,7 +59,7 @@ describe('doctor-session week routes — round trip', () => {
     await cleanup();
     await seedClinicAdmin({ userId: ADMIN, clinicId: CLINIC });
     // A CLINIC_ADMIN may only write sessions for a doctor mapped to their clinic.
-    await seedDoctorClinicMapping({ id: 9_000_974, doctorId: DOCTOR, clinicId: CLINIC });
+    await seedDoctorClinicMapping({ id: ID_BASE + 974, doctorId: DOCTOR, clinicId: CLINIC });
   });
   afterAll(cleanup);
 

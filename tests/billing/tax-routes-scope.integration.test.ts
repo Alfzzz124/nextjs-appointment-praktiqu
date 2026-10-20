@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
-import { assertTestDb, seedClinicAdmin, seedTax, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedTax, cleanup, useIdBlock } from './fixtures';
 
 import { GET as taxGet, PUT as taxPut, DELETE as taxDelete } from '@/app/api/v1/taxes/[id]/route';
 import { PUT as taxStatusPut } from '@/app/api/v1/taxes/[id]/status/route';
 import { POST as taxBulkDelete } from '@/app/api/v1/taxes/bulk/delete/route';
 import { PUT as taxBulkStatus } from '@/app/api/v1/taxes/bulk/status/route';
+
+const { BASE } = useIdBlock('billing/tax-routes-scope.integration.test.ts');
 
 /**
  * Route-level proof that `taxes/[id]` and its bulk siblings actually resolve the
@@ -23,7 +25,7 @@ function reqWith(jwt: string, url: string, init: RequestInit = {}) {
   return new NextRequest(url, { ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...(init.headers ?? {}) } });
 }
 
-const CLINIC_A = 9_031_001, CLINIC_B = 9_031_002;
+const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
 let taxAId: number, taxBId: number;
 
 beforeAll(async () => {
@@ -31,8 +33,8 @@ beforeAll(async () => {
   await cleanup();
   await seedClinicAdmin({ userId: CLINIC_A, clinicId: CLINIC_A });
   await seedClinicAdmin({ userId: CLINIC_B, clinicId: CLINIC_B });
-  taxAId = Number((await seedTax({ id: 9_031_101, name: 'Route Tax A', clinicId: CLINIC_A })).id);
-  taxBId = Number((await seedTax({ id: 9_031_102, name: 'Route Tax B', clinicId: CLINIC_B })).id);
+  taxAId = Number((await seedTax({ id: BASE + 101, name: 'Route Tax A', clinicId: CLINIC_A })).id);
+  taxBId = Number((await seedTax({ id: BASE + 102, name: 'Route Tax B', clinicId: CLINIC_B })).id);
 });
 afterAll(cleanup);
 

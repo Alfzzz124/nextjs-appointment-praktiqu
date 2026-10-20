@@ -17,10 +17,9 @@ import {
   listDoctors,
 } from '@/repositories/wp/doctors.repo';
 import { KIVICARE_ROLES } from '@/repositories/wp/wp-user';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 8_500_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-doctors.repo.test.ts');
 
 function capabilities(role: string): string {
   return `a:1:{s:${role.length}:"${role}";b:1;}`;

@@ -7,9 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { listPracticeClinics } from '@/services/billing/kc-actor';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_710_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/services/practice-clinics.test.ts');
 const ACTIVE_A = BASE + 1;
 const ACTIVE_B = BASE + 2;
 const RETIRED = BASE + 3;

@@ -10,9 +10,9 @@ import { prisma } from '@/lib/db';
 import { AuthError, getActor } from '@/lib/auth';
 import { resolveKcActor } from '@/services/billing/kc-actor';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_660_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/auth/active-clinic-header.test.ts');
 const ADMIN_WP = BASE + 500;
 const OTHER_ADMIN_WP = BASE + 501;
 const RECEPTIONIST_WP = BASE + 502;

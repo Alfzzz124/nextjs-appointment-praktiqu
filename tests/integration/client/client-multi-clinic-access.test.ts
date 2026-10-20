@@ -7,12 +7,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { assertTestDb, seedPatient, seedPatientClinicMapping } from '../../billing/fixtures';
+import { assertTestDb, seedPatient, seedPatientClinicMapping, useIdBlock } from '../../billing/fixtures';
 import { GET as clientGet } from '@/app/api/v1/clients/[id]/route';
 import { GET as clientsGet } from '@/app/api/v1/clients/route';
 
-const BASE = 8_680_000;
-const END = BASE + 10_000;
+const { BASE, END } = useIdBlock('integration/client/client-multi-clinic-access.test.ts');
 const ADMIN_WP = BASE + 500;
 const CLINIC_A = BASE + 1;
 const CLINIC_B = BASE + 2;

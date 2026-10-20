@@ -9,9 +9,9 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { AuthError, getActor } from '@/lib/auth';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_770_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/auth/owner-mode-header.test.ts');
 const OWNED = BASE + 1; // solo clinic of DOC
 const SHARED = BASE + 2; // DOC + OTHER, nobody ticked
 const DOC = BASE + 500;

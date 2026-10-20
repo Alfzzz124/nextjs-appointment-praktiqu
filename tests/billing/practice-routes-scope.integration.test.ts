@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
-import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, cleanup, useIdBlock } from './fixtures';
 
 import { GET as practiceGet, PATCH as practicePatch, DELETE as practiceDelete } from '@/app/api/v1/practices/[id]/route';
 import { GET as settingsGet, PATCH as settingsPatch } from '@/app/api/v1/practices/[id]/settings/route';
 import { GET as holidaysGet, POST as holidaysPost, DELETE as holidayDelete } from '@/app/api/v1/practices/[id]/holidays/route';
 import { GET as usersGet } from '@/app/api/v1/practices/[id]/users/route';
+
+const { BASE } = useIdBlock('billing/practice-routes-scope.integration.test.ts');
 
 /**
  * Route-level proof for the extra cross-tenant gap found during audit: every
@@ -25,7 +27,7 @@ function reqWith(jwt: string, url: string, init: RequestInit = {}) {
   return new NextRequest(url, { ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...(init.headers ?? {}) } });
 }
 
-const CLINIC_A = 9_042_001, CLINIC_B = 9_042_002;
+const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
 let jwtA: string;
 
 beforeAll(async () => {

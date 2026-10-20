@@ -14,11 +14,11 @@ import { doctorSessionScopeFor } from '@/services/billing/staff-scope';
 import { billScopeFor } from '@/services/billing/kc-permissions';
 import { dashboardScopeFor } from '@/services/billing/schedule-scope';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { GET: settingsGET } = await import('@/app/api/v1/practices/[id]/settings/route');
 
-const BASE = 8_780_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/auth/owner-mode-scope.test.ts');
 const FIRST = BASE + 1; // DOC's first mapping, shared with OTHER, not owned
 const OWNED = BASE + 2; // DOC + OTHER, DOC ticked
 const DOC = BASE + 500;

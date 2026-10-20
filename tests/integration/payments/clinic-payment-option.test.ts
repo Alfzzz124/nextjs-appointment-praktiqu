@@ -29,6 +29,7 @@ import { assertTestDb } from '../../billing/fixtures';
 import { readRawPaymentOptions } from '@/repositories/wp/clinic-payment-settings.repo';
 import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
 import { buildUsdQuote } from '@/services/payments/intl-pricing';
+import { idBlock } from '../../helpers/id-blocks';
 
 /** ClinicPaymentSettings::encode() output for the §1 example (plugin Task A1). */
 const PLUGIN_FIXTURE =
@@ -38,8 +39,9 @@ const SERIALIZED =
   'a:6:{s:13:"international";b:1;s:7:"fx_rate";i:16500;s:14:"markup_percent";i:10;s:13:"fixed_fee_idr";i:25000;s:10:"updated_at";s:25:"2026-10-06T08:00:00+00:00";s:10:"updated_by";i:123;}';
 
 /** Test-owned clinic ids. Only the options are needed — no wp_kc_clinics row. */
-const CLINIC = 7_960_001;
-const SERIALIZED_CLINIC = 7_960_002;
+const { BASE } = idBlock('integration/payments/clinic-payment-option.test.ts');
+const CLINIC = BASE + 1;
+const SERIALIZED_CLINIC = BASE + 2;
 const NAMES = [CLINIC, SERIALIZED_CLINIC].map((id) => `praktiqu_endpoint_clinic_${id}_payment`);
 
 const onTestDb = /test/i.test(process.env.DATABASE_URL ?? '');

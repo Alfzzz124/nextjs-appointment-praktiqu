@@ -16,9 +16,9 @@ import { WpEndpointError } from '@/lib/wp-endpoint';
 import { createClinicAdminViaPlugin } from '@/repositories/wp/clinic-admins.write';
 import { assertTestDb } from '../../billing/fixtures';
 import { POST } from '@/app/api/v1/practices/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_740_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/practice-create.test.ts');
 const EXISTING_CLINIC = BASE + 1;
 const ADMIN_WP = BASE + 500; // a real clinic admin account
 const PATIENT_WP = BASE + 501;

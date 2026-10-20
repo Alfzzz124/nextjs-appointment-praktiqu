@@ -9,11 +9,11 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { issueAccessToken } from '@/lib/auth/jwt';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { POST } = await import('@/app/api/v1/services/route');
 
-const BASE = 8_720_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/services/professional-create.test.ts');
 const ACTIVE = BASE + 1;
 const RETIRED = BASE + 2;
 const CATEGORY = BASE + 3;

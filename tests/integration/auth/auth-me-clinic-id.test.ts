@@ -13,12 +13,11 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { issueAccessToken } from '@/lib/auth/jwt';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { GET } = await import('@/app/api/v1/auth/me/route');
 
-/** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
-const BASE = 8_600_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/auth/auth-me-clinic-id.test.ts');
 const CLINIC_A = BASE + 1;
 const CLINIC_B = BASE + 2;
 const CLINIC_INACTIVE = BASE + 3; // owned by ADMIN_WP, inactive

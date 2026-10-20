@@ -7,11 +7,11 @@ import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { GET, PUT } = await import('@/app/api/v1/practices/[id]/owners/route');
 
-const BASE = 8_790_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/clinic-owners-route.test.ts');
 const CLINIC = BASE + 1; // ADMIN_WP's
 const ELSEWHERE = BASE + 2; // someone else's
 const ADMIN_WP = BASE + 400;

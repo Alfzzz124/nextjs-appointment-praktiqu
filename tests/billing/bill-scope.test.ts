@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedEncounter } from './fixtures';
+import { assertTestDb, seedEncounter, useIdBlock } from './fixtures';
 import { prisma } from '@/lib/db';
 import {
   createBill, getBill, getBillByEncounter, updateBill, updateBillItem, deleteBillItem,
   encountersWithoutBill, listBills,
   type BillScope,
 } from '@/services/billing/bill.service';
+
+const { BASE } = useIdBlock('billing/bill-scope.test.ts');
 
 /**
  * Cross-tenant row-scope regression suite (Critical finding, feat/encounter-documents
@@ -17,10 +19,10 @@ import {
  * for every one of those functions.
  */
 
-const CLINIC_A = 9_020_001, CLINIC_B = 9_020_002;
-const DOCTOR_A = 9_020_011, DOCTOR_B = 9_020_012;
-const PATIENT_A = 9_020_021, PATIENT_B = 9_020_022;
-const ENC_A = 9_020_101, ENC_B = 9_020_102, ENC_B_NOBILL = 9_020_103, ENC_A_NOBILL = 9_020_105;
+const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
+const DOCTOR_A = BASE + 11, DOCTOR_B = BASE + 12;
+const PATIENT_A = BASE + 21, PATIENT_B = BASE + 22;
+const ENC_A = BASE + 101, ENC_B = BASE + 102, ENC_B_NOBILL = BASE + 103, ENC_A_NOBILL = BASE + 105;
 
 const scopeA: BillScope = { clinicId: BigInt(CLINIC_A) };
 const scopeDoctorA: BillScope = { doctorId: BigInt(DOCTOR_A) };
@@ -144,7 +146,7 @@ describe('updateBillItem / deleteBillItem scope', () => {
 describe('createBill scope', () => {
   it('clinic A cannot create a bill against clinic B\'s encounter (404 "Encounter not found")', async () => {
     // A fresh, still-unbilled encounter in clinic B.
-    const encId = 9_020_104;
+    const encId = BASE + 104;
     await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(encId) } });
     await seedEncounter({ id: encId, clinicId: CLINIC_B, doctorId: DOCTOR_B, patientId: PATIENT_B });
     try {
@@ -170,7 +172,7 @@ describe('createBill scope', () => {
     // body labels it as clinic B's — `assertBillScope` now authorises bills by
     // `clinicId`, so a caller-controlled value here would move the row into
     // clinic B's listBills/exportBills/revenue and out of clinic A's.
-    const encId = 9_020_107;
+    const encId = BASE + 107;
     await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(encId) } });
     await seedEncounter({ id: encId, clinicId: CLINIC_A, doctorId: DOCTOR_A, patientId: PATIENT_A });
     try {

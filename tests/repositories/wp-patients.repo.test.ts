@@ -18,16 +18,9 @@ import {
   listPatients,
   PATIENT_ROLE,
 } from '@/repositories/wp/patients.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/**
- * Test-owned ID range, matching the convention in tests/billing/fixtures.ts.
- *
- * Cleanup MUST be bounded by END. Vitest runs suites concurrently and every wp
- * repository suite shares wp_users; an unbounded `gte: BASE` delete here wiped the
- * doctors suite's fixtures at 9_500_000 out from under it.
- */
-const BASE = 8_400_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-patients.repo.test.ts');
 
 /** Serialised PHP array as WordPress writes it into wp_capabilities. */
 function capabilities(role: string): string {

@@ -7,9 +7,9 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from './fixtures';
 import { renameMedReport } from '@/services/billing/patient-medical-report.service';
+import { idBlock } from '../helpers/id-blocks';
 
-const BASE = 8_900_000;
-const END = BASE + 1_000;
+const { BASE, END } = idBlock('billing/patient-medical-report-rename.test.ts');
 const REPORT = BASE + 1;
 const PATIENT = BASE + 50;
 

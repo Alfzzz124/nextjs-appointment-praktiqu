@@ -11,9 +11,9 @@ import { assertTestDb } from '../../billing/fixtures';
 import { GET as practicesGet } from '@/app/api/v1/practices/route';
 import { GET as practiceGet } from '@/app/api/v1/practices/[id]/route';
 import { GET as billsGet } from '@/app/api/v1/bills/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_670_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/practice-active-clinic.test.ts');
 const ADMIN_WP = BASE + 500;
 const OTHER_WP = BASE + 501;
 const CLINIC_A = BASE + 1; // ADMIN_WP's default

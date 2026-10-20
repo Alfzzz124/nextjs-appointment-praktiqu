@@ -12,9 +12,9 @@ import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { DELETE, PATCH } from '@/app/api/v1/practices/[id]/route';
 import { POST as ACTIVATE } from '@/app/api/v1/practices/[id]/activate/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_750_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/practice-status.test.ts');
 const OWN = BASE + 1; // the clinic admin's clinic
 const OTHER = BASE + 2;
 const MISSING = BASE + 9;

@@ -20,13 +20,13 @@ import {
 } from '@/repositories/wp/clinics.repo';
 import { wpUserEmailExists } from '@/repositories/wp/clinic-admins.repo';
 import { clinicPaymentOptionName } from '@/repositories/wp/clinic-payment-settings.repo';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_770_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/clinics-repo-write.test.ts');
 const FIXED = BASE + 1; // inserted with an explicit id, for the reference counts
 const WP_USER = BASE + 500;
 const DOCTOR = BASE + 600;
-const PREFIX = 'Klinik Uji Repo 8770';
+const PREFIX = 'Klinik Uji Repo 8850';
 const DOMAIN = 'crud-repo.test.local';
 
 async function wipe() {

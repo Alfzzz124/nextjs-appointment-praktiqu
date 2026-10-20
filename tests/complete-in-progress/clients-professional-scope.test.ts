@@ -15,12 +15,12 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
+import { idBlock } from '../helpers/id-blocks';
 
 const { listClients, getClient, ClientServiceError } = await import('@/services/client/client.service');
 const { GET: customFieldsGet } = await import('@/app/api/v1/clients/[id]/custom-fields/route');
 
-const BASE = 8_400_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('complete-in-progress/clients-professional-scope.test.ts');
 const CLINIC = BigInt(BASE + 900);
 const DOCTOR = BASE + 700;
 const OTHER_DOCTOR = BASE + 701;

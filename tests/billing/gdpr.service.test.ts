@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import {
-  assertTestDb, cleanup, seedConsent, seedAppointment, seedEncounter,
+  assertTestDb, cleanup, cleanupTestConsentVersions, seedConsent, seedAppointment, seedEncounter, useIdBlock,
 } from './fixtures';
 import {
   createConsentVersion, activateConsentVersion, getConsentVersion,
@@ -9,22 +9,23 @@ import {
   listAuditLog, exportSubjectData, softDeleteSubject,
 } from '@/services/billing/gdpr.service';
 
-// TEST_MARKER-range ids
-const SUBJECT = 9_001_003;
-const OTHER = 9_001_004;
-const CLINIC_ID = 9_001_001;
-const DOCTOR = 9_001_002;
-const APPOINTMENT_ID = 9_001_400;
-const ENCOUNTER_ID = 9_001_500;
+
+const { BASE } = useIdBlock('billing/gdpr.service.test.ts');
+const SUBJECT = BASE + 1_003;
+const OTHER = BASE + 1_004;
+const CLINIC_ID = BASE + 1_001;
+const DOCTOR = BASE + 1_002;
+const APPOINTMENT_ID = BASE + 1_400;
+const ENCOUNTER_ID = BASE + 1_500;
 const CONSENT_TYPE = 'gdpr-service-test-type';
 
 const kcClient = { actor: { id: 'c', role: 'CLIENT', practiceId: null }, wpUserId: BigInt(SUBJECT), clinicId: null } as any;
-const kcAdmin = { actor: { id: 'a', role: 'CLINIC_ADMIN', practiceId: null }, wpUserId: BigInt(9_001_000), clinicId: BigInt(CLINIC_ID) } as any;
-const kcSuper = { actor: { id: 's', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(9_001_005), clinicId: null } as any;
+const kcAdmin = { actor: { id: 'a', role: 'CLINIC_ADMIN', practiceId: null }, wpUserId: BigInt(BASE + 1_000), clinicId: BigInt(CLINIC_ID) } as any;
+const kcSuper = { actor: { id: 's', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(BASE + 1_005), clinicId: null } as any;
 
 const clientScope = { userId: BigInt(SUBJECT) };
 
-/** Seed a wp_users subject row directly (kcUser maps to wp_users; cleaned by cleanup id>=TEST_MARKER). */
+/** Seed a wp_users subject row directly (kcUser maps to wp_users; cleanup() deletes it with the block). */
 async function seedSubjectUser(id: number) {
   await prisma.kcUser.create({
     data: {
@@ -39,10 +40,14 @@ describe('gdpr.service', () => {
   beforeAll(async () => {
     assertTestDb();
     await cleanup();
+    await cleanupTestConsentVersions();
     await seedSubjectUser(SUBJECT);
     await seedSubjectUser(OTHER);
   });
-  afterAll(cleanup);
+  afterAll(async () => {
+    await cleanup();
+    await cleanupTestConsentVersions();
+  });
 
   it('createConsentVersion auto-increments version_number per consent_type; activate flips is_active', async () => {
     const v1 = await createConsentVersion(
@@ -79,14 +84,14 @@ describe('gdpr.service', () => {
   });
 
   it('listConsents scope: a CLIENT sees only their own rows', async () => {
-    await seedConsent({ id: 9_001_301, userId: SUBJECT, consentType: 'scope-test', consentVersionId: '1', status: 'granted' });
-    await seedConsent({ id: 9_001_302, userId: OTHER, consentType: 'scope-test', consentVersionId: '1', status: 'granted' });
+    await seedConsent({ id: BASE + 1_301, userId: SUBJECT, consentType: 'scope-test', consentVersionId: '1', status: 'granted' });
+    await seedConsent({ id: BASE + 1_302, userId: OTHER, consentType: 'scope-test', consentVersionId: '1', status: 'granted' });
 
     const list = await listConsents({ page: 1, perPage: 100, consentType: 'scope-test' }, clientScope);
     expect(list.consents.length).toBeGreaterThan(0);
     expect(list.consents.every((c) => c.user_id === SUBJECT)).toBe(true);
-    expect(list.consents.some((c) => c.id === 9_001_301)).toBe(true);
-    expect(list.consents.some((c) => c.id === 9_001_302)).toBe(false);
+    expect(list.consents.some((c) => c.id === BASE + 1_301)).toBe(true);
+    expect(list.consents.some((c) => c.id === BASE + 1_302)).toBe(false);
   });
 
   it('listAuditLog reads a filtered page (SELECT-only, no writes)', async () => {
@@ -119,7 +124,7 @@ describe('gdpr.service', () => {
   });
 
   it('softDeleteSubject sets user_status=1 + usermeta markers and deletes NO rows', async () => {
-    const apptId = 9_001_401;
+    const apptId = BASE + 1_401;
     await seedAppointment({ id: apptId, clinicId: CLINIC_ID, doctorId: DOCTOR, patientId: SUBJECT });
 
     const res = await softDeleteSubject(SUBJECT, kcSuper);

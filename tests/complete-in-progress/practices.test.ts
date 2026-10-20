@@ -6,12 +6,13 @@ import {
   exportPractices,
   listPracticeUsers,
 } from '@/services/practice/service';
+import { idBlock } from '../helpers/id-blocks';
 
 /** wp_kc_clinics.id — numeric since practices moved to KiviCare (D2). */
 let practice1Id: number;
 
-/** Test-owned clinic id, below billing's TEST_MARKER range. */
-const SEED_CLINIC = 7_800_001;
+const { BASE } = idBlock('complete-in-progress/practices.test.ts');
+const SEED_CLINIC = BASE + 1;
 
 beforeAll(async () => {
   // Seeds its own clinic rather than reading the shadow `clinics` table, which is

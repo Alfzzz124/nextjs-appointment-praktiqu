@@ -7,11 +7,11 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { issueAccessToken } from '@/lib/auth/jwt';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { GET } = await import('@/app/api/v1/auth/me/route');
 
-const BASE = 8_755_000;
-const END = BASE + 5_000;
+const { BASE, END } = idBlock('integration/auth/auth-me-owned-clinics.test.ts');
 const SOLO = BASE + 1;
 const DOC = BASE + 500;
 const LONE = BASE + 501; // a doctor with no clinic at all
