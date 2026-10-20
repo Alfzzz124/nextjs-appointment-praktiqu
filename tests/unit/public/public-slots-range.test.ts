@@ -60,6 +60,12 @@ const MONDAY = '2026-08-31';
 const TUESDAY = '2026-09-01';
 
 /**
+ * The fixture window is a 30-minute grid and the service runs 60 minutes: two whole
+ * sessions, so it may start at any session boundary, each slot still 60 minutes long.
+ */
+const MONDAY_STARTS = ['09:00:00', '09:30:00', '10:00:00', '10:30:00', '11:00:00'];
+
+/**
  * Every call passes an explicit `now`. The reader hides slots that have already
  * started, so without one these dates would silently start emptying themselves the
  * moment the wall clock passed them.
@@ -98,8 +104,9 @@ describe('getPublicSlotsForRange', () => {
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
       now: MONDAY_MIDNIGHT,
     });
-    expect(days?.[0].slots.map((s) => s.startTime)).toEqual([
-      '09:00:00', '10:00:00', '11:00:00',
+    expect(days?.[0].slots.map((s) => `${s.startTime}-${s.endTime}`)).toEqual([
+      '09:00:00-10:00:00', '09:30:00-10:30:00', '10:00:00-11:00:00',
+      '10:30:00-11:30:00', '11:00:00-12:00:00',
     ]);
   });
 
@@ -130,7 +137,7 @@ describe('getPublicSlotsForRange', () => {
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: TUESDAY,
       now: MONDAY_MIDNIGHT,
     });
-    expect(days?.[0].slots).toHaveLength(3);
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
   });
 
   it('empties a day covered by a full-day off day', async () => {
@@ -222,8 +229,8 @@ describe('getPublicSlotsForRange — slots already past', () => {
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
       now: new Date('2026-08-31T08:59:00'),
     });
-    // 09:00 is a minute away; 10:00 is an hour and a minute.
-    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['10:00:00', '11:00:00']);
+    // 09:00 is a minute away and 09:30 half an hour; 10:00 is an hour and a minute.
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['10:00:00', '10:30:00', '11:00:00']);
   });
 
   it('empties a day that is wholly in the past, without closing later days', async () => {
@@ -236,7 +243,7 @@ describe('getPublicSlotsForRange — slots already past', () => {
       now: new Date('2026-09-01T07:00:00'),
     });
     expect(days?.[0].slots).toEqual([]);
-    expect(days?.[1].slots).toHaveLength(3);
+    expect(days?.[1].slots).toHaveLength(MONDAY_STARTS.length);
   });
 
   it('compares against local clinic time, not UTC', async () => {

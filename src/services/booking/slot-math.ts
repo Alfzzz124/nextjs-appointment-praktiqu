@@ -52,6 +52,12 @@ export function toTime(minutes: number): string {
  *
  * `durationMinutes` overrides each window's own slot size when supplied; that
  * is the professional's duration for the service being booked.
+ *
+ * A service that is a whole number of the window's sessions long (180′ on a 60′
+ * grid) may start at any session boundary, not only every `duration` minutes
+ * from the window start. And windows that touch with no gap between them are
+ * one continuous stretch of working time, so a slot may run on into the next.
+ * Both only ever add starts: every slot the narrower rule offered is still here.
  */
 export function buildDaySlots(input: {
   windows: TimeWindow[];
@@ -59,7 +65,8 @@ export function buildDaySlots(input: {
   durationMinutes?: number;
 }): DaySlot[] {
   const { windows, blocked, durationMinutes } = input;
-  const slots: DaySlot[] = [];
+  const found: { start: number; end: number }[] = [];
+  const seen = new Set<string>();
 
   // Nilai nol atau negatif diperlakukan sebagai "tidak ada penimpaan", bukan
   // sebagai ukuran slot. `duration = 0` pada sebuah mapping layanan adalah data
@@ -69,23 +76,53 @@ export function buildDaySlots(input: {
   // satu pun petunjuk di layar maupun di log. Dua dari 250 mapping hidup punya itu.
   const override = durationMinutes !== undefined && durationMinutes > 0 ? durationMinutes : undefined;
 
-  for (const w of windows) {
-    const duration = override ?? w.slotDurationMinutes;
-    // Jendela yang memang tidak punya ukuran slot terpakai sama sekali benar-benar
-    // tidak bisa dipesan, dan itu berbeda dari penimpaan yang tidak bermakna.
-    if (duration <= 0) continue;
+  // Jendela yang memang tidak punya ukuran slot terpakai sama sekali benar-benar
+  // tidak bisa dipesan, dan itu berbeda dari penimpaan yang tidak bermakna. Jendela
+  // seperti itu juga bukan jam kerja yang boleh disambung oleh jendela tetangganya.
+  const usable = windows.filter((w) => (override ?? w.slotDurationMinutes) > 0);
+  const stretches = continuousStretches(
+    usable.map((w) => ({ start: toMinutes(w.startTime), end: toMinutes(w.endTime) })),
+  );
 
+  for (const w of usable) {
+    const duration = override ?? w.slotDurationMinutes;
     const windowStart = toMinutes(w.startTime);
     const windowEnd = toMinutes(w.endTime);
+    const stretchEnd =
+      stretches.find((s) => s.start <= windowStart && windowStart < s.end)?.end ?? windowEnd;
 
-    for (let start = windowStart; start + duration <= windowEnd; start += duration) {
+    // Kisi sesi hanya dipakai bila layanan pas sejumlah sesi utuh. Layanan 90′ di
+    // kisi 60′ tetap melompat selebar durasinya sendiri (09:00, 10:30, …) — dicampur
+    // dengan kisi, daftarnya jadi 09:00, 10:00, 10:30, 11:00, … tanpa pola.
+    const grid = w.slotDurationMinutes;
+    const step = grid > 0 && grid < duration && duration % grid === 0 ? grid : duration;
+
+    for (let start = windowStart; start < windowEnd && start + duration <= stretchEnd; start += step) {
       const end = start + duration;
       if (blocked.some((b) => b.start < end && b.end > start)) continue;
-      slots.push({ startTime: toTime(start), endTime: toTime(end) });
+      const key = `${start}-${end}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ start, end });
     }
   }
 
-  return slots;
+  return found
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+    .map((s) => ({ startTime: toTime(s.start), endTime: toTime(s.end) }));
+}
+
+/** Ranges that touch or overlap, merged into the continuous stretches they form. */
+function continuousStretches(
+  ranges: { start: number; end: number }[],
+): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  for (const r of ranges.filter((x) => x.end > x.start).sort((a, b) => a.start - b.start)) {
+    const last = out[out.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else out.push({ ...r });
+  }
+  return out;
 }
 
 /** The minimum an off day has to look like for slot arithmetic. */
