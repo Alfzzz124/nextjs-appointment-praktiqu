@@ -75,6 +75,7 @@ import {
   publicApprovalView,
   rejectAwaiting,
   settleExternal,
+  toPublicApprovalView,
   withApprovals,
 } from '@/services/approval/service';
 
@@ -447,6 +448,21 @@ describe('views', () => {
   it('withApprovals sets null where there is no record', async () => {
     const [s] = await withApprovals([row()], NOW);
     expect(s.approval).toBeNull();
+  });
+
+  it('toPublicApprovalView keeps only what a client may see', async () => {
+    store.findApprovals.mockResolvedValue(
+      new Map([[7, record({ state: 'REJECTED', decidedBy: 'u_admin', decidedAt: NOW, rejectReason: 'rahasia', refundStatus: 'NEEDED' })]]),
+    );
+    const staff = (await approvalViews([row()], NOW)).get(7)!;
+
+    expect(toPublicApprovalView(staff)).toEqual({
+      state: 'REJECTED',
+      requestedAt: '2026-10-20T02:00:00.000Z',
+      decidedAt: NOW.toISOString(),
+      refundStatus: 'NEEDED',
+      isOverdue: false,
+    });
   });
 
   it('publicApprovalView carries no names, reason or order', async () => {

@@ -38,6 +38,7 @@ import { POST as refundPost } from '@/app/api/v1/sessions/[id]/refund-done/route
 import { POST as approvePost } from '@/app/api/v1/sessions/[id]/approve/route';
 import { POST as rejectPost } from '@/app/api/v1/sessions/[id]/reject/route';
 import { GET as settingGet, PUT as settingPut } from '@/app/api/v1/professionals/[id]/approval-setting/route';
+import { GET as sessionGet } from '@/app/api/v1/sessions/[id]/route';
 
 const BASE = 8_870_000;
 const END = BASE + 10_000;
@@ -59,6 +60,7 @@ const OTHER_PSI = 'approval-routes-test-other';
 const ADMIN = 'approval-routes-test-admin';
 const SUPER = 'approval-routes-test-super';
 const RESEPSIONIS = 'approval-routes-test-resepsionis';
+const KLIEN = 'approval-routes-test-klien';
 
 const DATE = `${new Date().getUTCFullYear() + 1}-03-10`;
 const inRange = { gte: BigInt(BASE), lt: BigInt(END) };
@@ -176,6 +178,7 @@ beforeAll(async () => {
   await authUser(ADMIN, 'CLINIC_ADMIN', ADMIN_WP, 'Rina');
   await authUser(SUPER, 'SUPER_ADMIN', SUPER_WP, 'Super');
   await authUser(RESEPSIONIS, 'RECEPTIONIST', null, 'Resepsionis');
+  await authUser(KLIEN, 'CLIENT', PATIENT, 'Klien');
 
   await appointment(APPT_AWAITING, CLINIC_1, DOCTOR, APPOINTMENT_STATUS.PENDING);
   await appointment(APPT_OTHER, CLINIC_2, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
@@ -286,6 +289,18 @@ describe('GET /sessions/:id/approval', () => {
     const res = await itemGet(await req(PSI, 'PROFESSIONAL', '/x'), sessionCtx(APPT_PLAIN));
     expect(res.status).toBe(404);
     expect((await res.json()).title).toBe('approval_not_found');
+  });
+});
+
+describe('a client on the staff session endpoints', () => {
+  it('GET /sessions/:id gives the client the public approval view: no reason, names or order', async () => {
+    const res = await sessionGet(await req(KLIEN, 'CLIENT', `/sessions/${APPT_REJECTED}`), sessionCtx(APPT_REJECTED));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+
+    expect(data.approval).toMatchObject({ state: 'REJECTED', refundStatus: 'NEEDED', isOverdue: false });
+    expect(Object.keys(data.approval).sort()).toEqual(['decidedAt', 'isOverdue', 'refundStatus', 'requestedAt', 'state']);
+    expect(JSON.stringify(data)).not.toContain('Jadwal bentrok');
   });
 });
 

@@ -59,17 +59,21 @@ const approval = vi.hoisted(() => ({
   holdForApproval: vi.fn(),
   completeApproval: vi.fn(),
 }));
+const views = vi.hoisted(() => ({ withApprovals: vi.fn() }));
 vi.mock('@/services/approval/service', async (orig) => ({
   ...(await orig<typeof import('@/services/approval/service')>()),
   ...approval,
-  withApprovals: async (rows: Array<Record<string, unknown>>) => rows.map((r) => ({ ...r, approval: null })),
+  withApprovals: (...a: unknown[]) => views.withApprovals(...a),
 }));
 
 import {
   bulkCancelSessions,
+  getSession,
   invalidatePendingForOffDay,
+  listSessions,
   transitionSession,
 } from '@/services/session/session.service';
+import type { ApprovalView } from '@/services/approval/service';
 
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
@@ -117,6 +121,7 @@ function record(over: Partial<ApprovalRecord> = {}): ApprovalRecord {
 const PSIKOLOG = { id: 'u_psi', role: 'PROFESSIONAL', practiceId: null };
 const ADMIN = { id: 'u_admin', role: 'CLINIC_ADMIN', practiceId: null };
 const RESEPSIONIS = { id: 'u_resepsionis', role: 'RECEPTIONIST', practiceId: null };
+const KLIEN = { id: 'u_klien', role: 'CLIENT', practiceId: null };
 
 function actAs(actor: { id: string; role: string }, wpUserId: bigint) {
   kcActor.resolveKcActor.mockResolvedValue({ actor, wpUserId, clinicId: 1n });
@@ -137,6 +142,9 @@ beforeEach(() => {
   approval.holdForApproval.mockResolvedValue(true);
   approval.completeApproval.mockResolvedValue(undefined);
   schedule.syncSessionReminders.mockResolvedValue(undefined);
+  views.withApprovals.mockImplementation(async (rows: Array<Record<string, unknown>>) =>
+    rows.map((r) => ({ ...r, approval: null })),
+  );
   actAs(PSIKOLOG, 119n);
 });
 
@@ -294,5 +302,65 @@ describe('bulkCancelSessions', () => {
       [7, 'u_admin'],
       [9, 'u_admin'],
     ]);
+  });
+});
+
+describe('what a client sees', () => {
+  /** The staff view, with everything a client must not read. */
+  const STAFF_VIEW: ApprovalView = {
+    state: 'REJECTED',
+    requestedAt: '2026-09-01T00:00:00.000Z',
+    decidedAt: '2026-09-02T00:00:00.000Z',
+    decidedByName: 'Pamela Dewi',
+    rejectReason: 'Di luar keahlian saya',
+    refundStatus: 'NEEDED',
+    refundedAt: null,
+    refundedByName: null,
+    refundNote: null,
+    isOverdue: false,
+    payment: { gateway: 'xendit', wcOrderId: 49863, expectedAmount: 350000, chargedAmount: 350000, chargedCurrency: 'IDR' },
+  };
+  const PUBLIC_KEYS = ['decidedAt', 'isOverdue', 'refundStatus', 'requestedAt', 'state'];
+
+  beforeEach(() => {
+    views.withApprovals.mockImplementation(async (rows: Array<Record<string, unknown>>) =>
+      rows.map((r) => ({ ...r, approval: STAFF_VIEW })),
+    );
+    actAs(KLIEN, 522n);
+  });
+
+  it('getSession gives a client the public approval view only', async () => {
+    const s = await getSession(KLIEN as never, 7);
+
+    expect(Object.keys(s.approval!).sort()).toEqual(PUBLIC_KEYS);
+    expect(s.approval).toEqual({
+      state: 'REJECTED',
+      requestedAt: '2026-09-01T00:00:00.000Z',
+      decidedAt: '2026-09-02T00:00:00.000Z',
+      refundStatus: 'NEEDED',
+      isOverdue: false,
+    });
+  });
+
+  it('listSessions does too', async () => {
+    repo.listSessions.mockResolvedValue({ items: [row()], total: 1 });
+
+    const page = await listSessions(KLIEN as never, {});
+
+    expect(Object.keys(page.data[0].approval!).sort()).toEqual(PUBLIC_KEYS);
+  });
+
+  it("so does the answer to the client's own cancel", async () => {
+    const s = await transitionSession({ actor: KLIEN as never, sessionId: 7, target: SESSION_STATUS.CANCELLED });
+
+    expect(Object.keys(s.approval!).sort()).toEqual(PUBLIC_KEYS);
+  });
+
+  it('staff still get the whole view', async () => {
+    actAs(PSIKOLOG, 119n);
+
+    const s = await getSession(PSIKOLOG as never, 7);
+
+    expect(s.approval).toEqual(STAFF_VIEW);
   });
 });

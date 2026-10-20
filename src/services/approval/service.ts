@@ -164,6 +164,21 @@ export async function withApprovals<T extends Timed>(
   return rows.map((r) => ({ ...r, approval: views.get(r.id) ?? null }));
 }
 
+/**
+ * The client's slice of a staff view. A client may hold a token for the staff session
+ * endpoints too (their own sessions), and the staff view carries the internal reject
+ * reason, staff names and order numbers (spec §2).
+ */
+export function toPublicApprovalView(v: ApprovalView): PublicApprovalView {
+  return {
+    state: v.state,
+    requestedAt: v.requestedAt,
+    decidedAt: v.decidedAt,
+    refundStatus: v.refundStatus,
+    isOverdue: v.isOverdue,
+  };
+}
+
 export async function publicApprovalView(row: Timed, now: Date = new Date()): Promise<PublicApprovalView | null> {
   const a = await store.findApproval(row.id);
   if (!a) return null;

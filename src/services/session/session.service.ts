@@ -53,8 +53,10 @@ import {
   completeApproval,
   holdForApproval,
   rejectAwaiting,
+  toPublicApprovalView,
   withApprovals,
   type ApprovalView,
+  type PublicApprovalView,
 } from '@/services/approval/service';
 
 export { SESSION_STATUS, canTransition, normaliseStatus };
@@ -103,8 +105,9 @@ export interface SessionWithRelations extends Session {
   /**
    * The psychologist-approval record, when this booking was paid for a psychologist who
    * approves their own bookings. Null for every other booking. See services/approval.
+   * Staff get the whole view; a client only the public one (`forActor`).
    */
-  approval?: ApprovalView | null;
+  approval?: ApprovalView | PublicApprovalView | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -206,6 +209,20 @@ function assertCanRead(kc: KcActor, s: SessionRow): void {
   // Clinic staff, scoped to their own clinic.
   if (kc.clinicId !== null && s.clinicId === Number(kc.clinicId)) return;
   throw new SessionServiceError('forbidden', 'Not authorized for this clinic', 403);
+}
+
+/**
+ * Sessions as this actor may see them. A client's token reaches these endpoints for their
+ * own sessions, but the staff approval view carries the internal reject reason, staff
+ * names and order numbers (spec §2), so a client gets the public view instead. The one
+ * place that decides; every return of sessions with `approval` passes through here.
+ */
+function forActor<S extends { approval: ApprovalView | null }>(
+  actor: Actor,
+  sessions: S[],
+): Array<Omit<S, 'approval'> & { approval: ApprovalView | PublicApprovalView | null }> {
+  if (actor.role !== 'CLIENT') return sessions;
+  return sessions.map((s) => ({ ...s, approval: s.approval ? toPublicApprovalView(s.approval) : null }));
 }
 
 async function loadForActor(kc: KcActor, id: number): Promise<SessionRow> {
@@ -379,7 +396,7 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
 
 export async function getSession(actor: Actor, id: number): Promise<SessionWithRelations> {
   const kc = await resolveKcActor(actor);
-  const [session] = await withApprovals([toSession(await loadForActor(kc, id))]);
+  const [session] = forActor(actor, await withApprovals([toSession(await loadForActor(kc, id))]));
   return session;
 }
 
@@ -428,7 +445,7 @@ export async function listSessions(
   const { items, total } = await listSessionRows(query);
 
   return {
-    data: await withApprovals(items.map(toSession)),
+    data: forActor(actor, await withApprovals(items.map(toSession))),
     pagination: {
       currentPage: page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -455,7 +472,7 @@ export async function listPendingForProfessional(
   });
   // The pending queue holds both unpaid bookings and paid ones waiting for approval;
   // `approval` is what tells them apart.
-  return withApprovals(items.map(toSession));
+  return forActor(actor, await withApprovals(items.map(toSession)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -475,10 +492,10 @@ export interface TransitionArgs {
   intent?: 'reject';
 }
 
-async function reread(sessionId: number): Promise<SessionWithRelations> {
+async function reread(actor: Actor, sessionId: number): Promise<SessionWithRelations> {
   const updated = await findSessionById(sessionId);
   if (!updated) throw new SessionServiceError('not_found', 'Session not found', 404);
-  const [session] = await withApprovals([toSession(updated)]);
+  const [session] = forActor(actor, await withApprovals([toSession(updated)]));
   return session;
 }
 
@@ -525,13 +542,13 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     }
     if (target === SESSION_STATUS.BOOKED) await approveAwaiting({ actor, row, approval });
     else await rejectAwaiting({ actor, row, reason: reason ?? '' });
-    return reread(sessionId);
+    return reread(actor, sessionId);
   }
 
   if (approval?.state === APPROVAL_STATE.APPROVED && target === SESSION_STATUS.BOOKED) {
     // An earlier approval claimed the record but never reached the plugin.
     await completeApproval(approval);
-    return reread(sessionId);
+    return reread(actor, sessionId);
   }
 
   if (target === SESSION_STATUS.BOOKED && approval === null && (await requiresApproval(row.professionalId))) {
@@ -545,7 +562,7 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
       action: 'session.marked_paid',
       metadata: { heldForApproval: true },
     });
-    return reread(sessionId);
+    return reread(actor, sessionId);
   }
 
   // Through the plugin, so KiviCare's cancellation email and telemed teardown fire.
@@ -575,7 +592,7 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     await closeOnCancel(sessionId, actor.id);
   }
 
-  const [session] = await withApprovals([toSession(updated)]);
+  const [session] = forActor(actor, await withApprovals([toSession(updated)]));
   return session;
 }
 
