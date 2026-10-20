@@ -17,6 +17,8 @@ import '@/services/session/reminder-handler';
 // never released and its slot stays blocked; tests/unit/public/unpaid-booking-registration.test.ts
 // guards this import.
 import '@/services/public/unpaid-booking';
+// Same reason: registers the handler for approval.reminder (psychologist approval).
+import '@/services/approval/reminder-handler';
 
 export const dynamic = 'force-dynamic';
 
