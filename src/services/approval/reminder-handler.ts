@@ -20,6 +20,7 @@ import {
   approvalReminderArgs,
   clinicAdminContact,
   completeApproval,
+  finishRejection,
   mail,
   mailFacts,
   settleExternal,
@@ -43,10 +44,16 @@ export async function handleApprovalReminder(data: Record<string, unknown>, now:
   }
 
   // The record and the appointment disagree: settle that, then stop. An APPROVED record on
-  // a PENDING appointment is an approval that died before it reached the plugin.
+  // a PENDING appointment is an approval that died before it reached the plugin; a
+  // REJECTED one is a rejection whose CANCELLED write never landed.
   if (approval.state === store.APPROVAL_STATE.APPROVED && row.status === SESSION_STATUS.PENDING) {
     await completeApproval(approval);
     await logging.audit(`${APPROVAL_REMINDER_EVENT}.completed`, { resource: 'session', resourceId });
+    return;
+  }
+  if (approval.state === store.APPROVAL_STATE.REJECTED && row.status === SESSION_STATUS.PENDING) {
+    await finishRejection(approval);
+    await logging.audit(`${APPROVAL_REMINDER_EVENT}.rejection_finished`, { resource: 'session', resourceId });
     return;
   }
   if (approval.state === store.APPROVAL_STATE.AWAITING && row.status !== SESSION_STATUS.PENDING) {

@@ -16,6 +16,9 @@ const store = vi.hoisted(() => ({
   claimDecision: vi.fn(),
   revertDecision: vi.fn(),
   markRefundDone: vi.fn(),
+  listUnsettled: vi.fn(),
+  listApprovals: vi.fn(),
+  countApprovals: vi.fn(),
   userNames: vi.fn(),
   paymentOrdersByIds: vi.fn(),
   findWpUserContact: vi.fn(),
@@ -32,10 +35,15 @@ const writes = vi.hoisted(() => ({
 }));
 vi.mock('@/repositories/wp/appointments.write', () => writes);
 
-const sessions = vi.hoisted(() => ({ findSessionById: vi.fn(), setSessionStatusDirect: vi.fn() }));
+const sessions = vi.hoisted(() => ({
+  findSessionById: vi.fn(),
+  listSessionsByIds: vi.fn(),
+  setSessionStatusDirect: vi.fn(),
+}));
 vi.mock('@/repositories/wp/sessions.repo', async (orig) => ({
   ...(await orig<typeof import('@/repositories/wp/sessions.repo')>()),
   findSessionById: (...a: unknown[]) => sessions.findSessionById(...a),
+  listSessionsByIds: (...a: unknown[]) => sessions.listSessionsByIds(...a),
   setSessionStatusDirect: (...a: unknown[]) => sessions.setSessionStatusDirect(...a),
 }));
 
@@ -70,7 +78,10 @@ import {
   approvalViews,
   approveAwaiting,
   closeOnCancel,
+  finishRejection,
+  getApprovalItem,
   holdForApproval,
+  listQueue,
   markRefunded,
   publicApprovalView,
   rejectAwaiting,
@@ -144,11 +155,15 @@ beforeEach(() => {
   store.claimDecision.mockResolvedValue(true);
   store.revertDecision.mockResolvedValue(undefined);
   store.markRefundDone.mockResolvedValue(true);
+  store.listUnsettled.mockResolvedValue([]);
+  store.listApprovals.mockResolvedValue({ items: [], total: 0 });
+  store.countApprovals.mockResolvedValue({ awaiting: 0, refundNeeded: 0 });
   store.userNames.mockResolvedValue(new Map([['u_admin', 'Rina Admin']]));
   store.paymentOrdersByIds.mockResolvedValue(new Map([['po_1', ORDER]]));
   store.findWpUserContact.mockResolvedValue({ email: 'admin@klinik.test', name: 'Rina Admin' });
   writes.setAppointmentStatus.mockResolvedValue({ id: 7, status: 1, cancelled: false });
   sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
+  sessions.listSessionsByIds.mockResolvedValue([]);
   sessions.setSessionStatusDirect.mockResolvedValue(true);
   clinics.findClinicById.mockResolvedValue({
     id: 4n,
@@ -258,6 +273,7 @@ describe('approveAwaiting', () => {
 
   it('a failed plugin write undoes the claim and answers 502', async () => {
     writes.setAppointmentStatus.mockRejectedValue(new Error('plugin down'));
+    sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.PENDING }));
 
     await expect(
       approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW }),
@@ -265,6 +281,32 @@ describe('approveAwaiting', () => {
 
     expect(store.revertDecision).toHaveBeenCalledWith(7, 'APPROVED', 'u_psi');
     expect(schedule.syncSessionReminders).not.toHaveBeenCalled();
+  });
+
+  it('the plugin committed but its answer was lost: the booking IS confirmed, the claim stays', async () => {
+    writes.setAppointmentStatus.mockRejectedValue(new Error('socket hang up'));
+    sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
+
+    await approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW });
+
+    expect(store.revertDecision).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
+    expect(schedule.syncSessionReminders).toHaveBeenCalledWith(row({ status: SESSION_STATUS.BOOKED }));
+    expect(log.logging.audit).toHaveBeenCalledWith(
+      'session.approval_decided',
+      expect.objectContaining({ metadata: expect.objectContaining({ decision: 'APPROVED' }) }),
+    );
+  });
+
+  it('the plugin failed and the appointment cannot be read back: undone, 502', async () => {
+    writes.setAppointmentStatus.mockRejectedValue(new Error('plugin down'));
+    sessions.findSessionById.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW }),
+    ).rejects.toMatchObject({ code: 'upstream_failed', status: 502 });
+
+    expect(store.revertDecision).toHaveBeenCalledWith(7, 'APPROVED', 'u_psi');
   });
 });
 
@@ -339,6 +381,91 @@ describe('settleExternal', () => {
   it('CANCELLED outside the app: closes as CANCELLED with a refund to make', async () => {
     await settleExternal(7, SESSION_STATUS.CANCELLED, NOW);
     expect(store.claimDecision).toHaveBeenCalledWith(7, { state: 'CANCELLED', decidedBy: null, decidedAt: NOW });
+  });
+});
+
+describe('finishRejection', () => {
+  it('writes the CANCELLED a rejection never got, directly, and stops the reminders', async () => {
+    await finishRejection(record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' }));
+
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(7, 'CANCELLED');
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(store.claimDecision).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
+  });
+});
+
+describe('reconcile on read', () => {
+  const REJECTED_8 = record({ appointmentId: 8, state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' });
+
+  it('listQueue settles stranded records before it pages and counts', async () => {
+    store.listUnsettled.mockResolvedValue([record(), REJECTED_8, record({ appointmentId: 9 }), record({ appointmentId: 10 })]);
+    sessions.listSessionsByIds.mockResolvedValueOnce([
+      row({ id: 7, status: SESSION_STATUS.CANCELLED }),
+      row({ id: 8, status: SESSION_STATUS.PENDING }),
+      row({ id: 9, status: SESSION_STATUS.CHECK_OUT }),
+      row({ id: 10, status: SESSION_STATUS.PENDING }),
+    ]);
+
+    await listQueue(ADMIN as never, { filter: 'AWAITING', page: 1, limit: 20 }, NOW);
+
+    expect(store.listUnsettled).toHaveBeenCalledWith({ clinicId: 4, doctorWpUserId: undefined });
+    expect(sessions.listSessionsByIds).toHaveBeenNthCalledWith(1, [7, 8, 9, 10]);
+    // Cancelled in KiviCare: CANCELLED with a refund to make.
+    expect(store.claimDecision).toHaveBeenCalledWith(7, { state: 'CANCELLED', decidedBy: null, decidedAt: NOW });
+    // A rejection whose CANCELLED write never landed: finished.
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(8, 'CANCELLED');
+    // Checked out (a bill settled): approved outside the app.
+    expect(store.claimDecision).toHaveBeenCalledWith(9, { state: 'APPROVED', decidedBy: null, decidedAt: NOW });
+    // Still waiting: left alone.
+    expect(store.claimDecision).not.toHaveBeenCalledWith(10, expect.anything());
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledTimes(1);
+
+    const settledAt = store.claimDecision.mock.invocationCallOrder[0];
+    expect(settledAt).toBeLessThan(store.listApprovals.mock.invocationCallOrder[0]);
+    expect(settledAt).toBeLessThan(store.countApprovals.mock.invocationCallOrder[0]);
+  });
+
+  it('a failure while settling is logged and the queue still answers', async () => {
+    store.listUnsettled.mockResolvedValue([REJECTED_8]);
+    sessions.listSessionsByIds.mockResolvedValueOnce([row({ id: 8, status: SESSION_STATUS.PENDING })]);
+    sessions.setSessionStatusDirect.mockRejectedValue(new Error('db down'));
+
+    await expect(listQueue(ADMIN as never, { filter: 'AWAITING', page: 1, limit: 20 }, NOW)).resolves.toMatchObject({
+      counts: { awaiting: 0, refundNeeded: 0 },
+    });
+    expect(log.logging.error).toHaveBeenCalled();
+  });
+
+  it('nothing unsettled: no session read for it', async () => {
+    await listQueue(ADMIN as never, { filter: 'AWAITING', page: 1, limit: 20 }, NOW);
+
+    expect(sessions.listSessionsByIds).toHaveBeenCalledTimes(1); // toItems only
+  });
+
+  it('getApprovalItem settles its one record before building the item', async () => {
+    sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.PENDING }));
+    store.findApproval.mockResolvedValue(record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' }));
+    sessions.listSessionsByIds.mockResolvedValue([row({ status: SESSION_STATUS.PENDING })]);
+    store.findApprovals.mockResolvedValue(new Map([[7, record({ state: 'REJECTED', refundStatus: 'NEEDED' })]]));
+
+    await getApprovalItem(ADMIN as never, 7, NOW);
+
+    expect(sessions.setSessionStatusDirect).toHaveBeenCalledWith(7, 'CANCELLED');
+    expect(sessions.setSessionStatusDirect.mock.invocationCallOrder[0]).toBeLessThan(
+      store.findApprovals.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('getApprovalItem: an AWAITING record whose appointment was booked in KiviCare is closed as approved', async () => {
+    sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
+    store.findApproval.mockResolvedValue(record());
+    sessions.listSessionsByIds.mockResolvedValue([row({ status: SESSION_STATUS.BOOKED })]);
+    store.findApprovals.mockResolvedValue(new Map([[7, record({ state: 'APPROVED' })]]));
+
+    await getApprovalItem(ADMIN as never, 7, NOW);
+
+    expect(store.claimDecision).toHaveBeenCalledWith(7, { state: 'APPROVED', decidedBy: null, decidedAt: NOW });
   });
 });
 

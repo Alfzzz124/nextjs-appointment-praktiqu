@@ -551,6 +551,19 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     return reread(actor, sessionId);
   }
 
+  if (
+    target === SESSION_STATUS.BOOKED &&
+    (approval?.state === APPROVAL_STATE.REJECTED || approval?.state === APPROVAL_STATE.CANCELLED)
+  ) {
+    // Decided against, but the CANCELLED write has not landed yet. Booking it now would
+    // book a session whose money is already on the refund list.
+    throw new SessionServiceError(
+      'approval_already_decided',
+      `This booking was already ${approval.state}; reload it`,
+      409,
+    );
+  }
+
   if (target === SESSION_STATUS.BOOKED && approval === null && (await requiresApproval(row.professionalId))) {
     // "Mark as paid" for a psychologist who approves their own bookings: the payment is
     // now known, so the booking joins their queue instead of skipping it.

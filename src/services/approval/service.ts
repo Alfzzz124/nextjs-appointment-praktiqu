@@ -404,9 +404,20 @@ export async function approveAwaiting(input: DecideInput & { approval: store.App
   try {
     await confirmBooked(approval);
   } catch (err) {
-    await store.revertDecision(row.id, store.APPROVAL_STATE.APPROVED, actor.id);
-    await logging.error('approval: confirming the booking failed', err, { resource: 'session', resourceId: String(row.id) });
-    throw new ApprovalError('upstream_failed', 'The booking could not be confirmed. Try again.', 502);
+    // The plugin may have committed before its answer was lost (a timeout, a dropped
+    // connection). Then the booking IS confirmed, and undoing the claim would leave an
+    // AWAITING record on a BOOKED appointment that nothing settles until a read does.
+    // Any other status — still PENDING, or unreadable — and the claim is undone.
+    const current = await findSessionById(row.id).catch(() => null);
+    if (current?.status !== SESSION_STATUS.BOOKED) {
+      await store.revertDecision(row.id, store.APPROVAL_STATE.APPROVED, actor.id);
+      await logging.error('approval: confirming the booking failed', err, { resource: 'session', resourceId: String(row.id) });
+      throw new ApprovalError('upstream_failed', 'The booking could not be confirmed. Try again.', 502);
+    }
+    await logging.error('approval: the plugin answered with an error, but the booking is BOOKED', err, {
+      resource: 'session',
+      resourceId: String(row.id),
+    });
   }
 
   await afterBooked(row.id);
@@ -503,6 +514,29 @@ export async function settleExternal(appointmentId: number, status: SessionStatu
     resourceId: String(appointmentId),
     action: 'session.approval_decided',
     metadata: { decision: 'APPROVED', external: true, status },
+  });
+}
+
+/**
+ * A rejection claimed on the record whose CANCELLED write never landed: the process died
+ * in between, or the write failed and so did undoing the claim. The decision stands, so
+ * the slot is released here — directly, as rejectAwaiting does — and the refund stays
+ * NEEDED. The client's rejection mail is not sent from here.
+ */
+export async function finishRejection(approval: store.ApprovalRecord): Promise<void> {
+  await setSessionStatusDirect(approval.appointmentId, SESSION_STATUS.CANCELLED);
+  await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(approval.appointmentId) });
+  await logging.audit('session.status_changed', {
+    userId: approval.decidedBy,
+    resource: 'session',
+    resourceId: String(approval.appointmentId),
+    action: 'session.status_changed',
+    metadata: {
+      from: SESSION_STATUS.PENDING,
+      to: SESSION_STATUS.CANCELLED,
+      reason: approval.rejectReason,
+      finishedRejection: true,
+    },
   });
 }
 
@@ -614,6 +648,41 @@ async function toItems(records: store.ApprovalRecord[], now: Date): Promise<Appr
   return items;
 }
 
+/**
+ * Put right the records whose appointment moved without passing through here, before a
+ * read shows them. The reminder job does the same, but it stops a day before the session
+ * and never runs after it: a bill settled at check-out, a cancel in KiviCare's dashboard
+ * on the day, or a booking whose approval call errored after the plugin committed would
+ * otherwise stay wrong for good.
+ *
+ * AWAITING on an appointment that is no longer PENDING → settleExternal. REJECTED on one
+ * that still is → finishRejection. Best effort: a failure is logged and the read goes on.
+ */
+async function reconcile(records: store.ApprovalRecord[], now: Date): Promise<void> {
+  const open = records.filter(
+    (a) => a.state === store.APPROVAL_STATE.AWAITING || a.state === store.APPROVAL_STATE.REJECTED,
+  );
+  if (open.length === 0) return;
+
+  const rows = new Map((await listSessionsByIds(open.map((a) => a.appointmentId))).map((r) => [r.id, r]));
+  for (const a of open) {
+    const row = rows.get(a.appointmentId);
+    if (!row) continue;
+    try {
+      if (a.state === store.APPROVAL_STATE.AWAITING && row.status !== SESSION_STATUS.PENDING) {
+        await settleExternal(a.appointmentId, row.status, now);
+      } else if (a.state === store.APPROVAL_STATE.REJECTED && row.status === SESSION_STATUS.PENDING) {
+        await finishRejection(a);
+      }
+    } catch (err) {
+      await logging.error('approval: reconciling a record failed', err, {
+        resource: 'session',
+        resourceId: String(a.appointmentId),
+      });
+    }
+  }
+}
+
 export async function listQueue(actor: Actor, q: QueueQuery, now: Date = new Date()): Promise<QueuePage> {
   const scope = await queueScope(actor, q);
   if (scope === null) {
@@ -623,6 +692,7 @@ export async function listQueue(actor: Actor, q: QueueQuery, now: Date = new Dat
       counts: { awaiting: 0, refundNeeded: 0 },
     };
   }
+  await reconcile(await store.listUnsettled(scope), now);
   const { items, total } = await store.listApprovals(q.filter, scope, q.page, q.limit);
   const counts = await store.countApprovals(scope);
   return {
@@ -656,6 +726,8 @@ export async function getApprovalItem(
 
   const record = await store.findApproval(appointmentId);
   if (!record) throw new ApprovalError('approval_not_found', 'This session has no approval record', 404);
+  await reconcile([record], now);
+  // toItems reads the record and the session again, so the item shows what reconcile left.
   const [item] = await toItems([record], now);
   if (!item) throw new ApprovalError('approval_not_found', 'This session has no approval record', 404);
   return item;

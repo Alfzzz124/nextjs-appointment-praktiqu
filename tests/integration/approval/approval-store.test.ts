@@ -16,6 +16,7 @@ import {
   findWpUserContact,
   insertAwaiting,
   listApprovals,
+  listUnsettled,
   markEscalated,
   markRefundDone,
   paymentOrdersByIds,
@@ -247,6 +248,14 @@ describe('listApprovals / countApprovals', () => {
     const page2 = await listApprovals('AWAITING', { clinicId: CLINIC_2 }, 2, 1);
     expect(page2.total).toBe(1);
     expect(page2.items).toEqual([]);
+  });
+
+  it('listUnsettled: every AWAITING row and every rejection still owing a refund, within the scope', async () => {
+    const unsettled = async (scope: Parameters<typeof listUnsettled>[0]) =>
+      ours((await listUnsettled(scope)).map((a) => a.appointmentId)).sort();
+
+    expect(await unsettled({ clinicId: CLINIC_1 })).toEqual([BASE + 130, BASE + 132]);
+    expect(await unsettled({ doctorWpUserId: DOCTOR_B })).toEqual([BASE + 131]);
   });
 
   it('counts within the scope', async () => {

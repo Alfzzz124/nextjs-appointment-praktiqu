@@ -51,7 +51,11 @@ const KNOWN: Record<string, Known> = {
   },
   'src/services/public/unpaid-booking.ts': { writes: 1, approvalAware: true, why: 'release of an unpaid guest booking' },
   'src/services/public/public-booking.service.ts': { writes: 1, approvalAware: true, why: "the client's own cancel link" },
-  'src/services/approval/service.ts': { writes: 2, approvalAware: true, why: 'the approval decisions themselves' },
+  'src/services/approval/service.ts': {
+    writes: 3,
+    approvalAware: true,
+    why: 'the approval decisions themselves, and finishRejection: the CANCELLED write a rejection claimed but never got (the queue, the item and the reminder job all finish it through this one call)',
+  },
   'src/services/billing/bill.service.ts': {
     writes: 2,
     approvalAware: false,

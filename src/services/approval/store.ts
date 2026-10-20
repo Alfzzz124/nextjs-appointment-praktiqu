@@ -207,6 +207,24 @@ export async function listApprovals(
   return { items: rows.map(toRecord), total };
 }
 
+/**
+ * The records a read may have to put right before showing them: every AWAITING one, and
+ * every rejection whose refund is still open (a rejection that died between its claim and
+ * the CANCELLED write leaves exactly that). Unpaged: both are work queues, so small.
+ */
+export async function listUnsettled(scope: QueueScope): Promise<ApprovalRecord[]> {
+  const rows = await prisma.sessionApproval.findMany({
+    where: {
+      ...scopeWhere(scope),
+      OR: [
+        { state: APPROVAL_STATE.AWAITING },
+        { state: APPROVAL_STATE.REJECTED, refundStatus: REFUND_STATUS.NEEDED },
+      ],
+    },
+  });
+  return rows.map(toRecord);
+}
+
 /** The two numbers the FE badges show. Sequential: the pool is small (max_user_connections=5). */
 export async function countApprovals(scope: QueueScope): Promise<{ awaiting: number; refundNeeded: number }> {
   const base = scopeWhere(scope);

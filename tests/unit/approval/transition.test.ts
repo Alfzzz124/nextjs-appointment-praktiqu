@@ -266,6 +266,20 @@ describe('a PENDING booking without a record', () => {
   });
 });
 
+it.each(['REJECTED', 'CANCELLED'] as const)(
+  '/approve on a PENDING booking whose record is %s is refused, not booked',
+  async (state) => {
+    approvalStore.findApproval.mockResolvedValue(record({ state, refundStatus: 'NEEDED' }));
+
+    await expect(
+      transitionSession({ actor: PSIKOLOG as never, sessionId: 7, target: SESSION_STATUS.BOOKED }),
+    ).rejects.toMatchObject({ status: 409, code: 'approval_already_decided' });
+
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(approval.holdForApproval).not.toHaveBeenCalled();
+  },
+);
+
 it('an APPROVED record on a PENDING booking finishes the approval', async () => {
   approvalStore.findApproval.mockResolvedValue(record({ state: 'APPROVED', decidedBy: 'u_psi' }));
 

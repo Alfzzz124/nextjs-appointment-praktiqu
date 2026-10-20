@@ -17,6 +17,7 @@ vi.mock('@/services/approval/store', async (orig) => ({
 const decisions = vi.hoisted(() => ({
   completeApproval: vi.fn(),
   settleExternal: vi.fn(),
+  finishRejection: vi.fn(),
   clinicAdminContact: vi.fn(),
 }));
 vi.mock('@/services/approval/service', async (orig) => ({
@@ -105,6 +106,7 @@ beforeEach(() => {
   decisions.clinicAdminContact.mockResolvedValue({ email: 'admin@klinik.test', name: 'Rina' });
   decisions.completeApproval.mockResolvedValue(undefined);
   decisions.settleExternal.mockResolvedValue(undefined);
+  decisions.finishRejection.mockResolvedValue(undefined);
   email.sendEmail.mockResolvedValue({ ok: true });
   jobsClient.jobs.enqueue.mockResolvedValue(undefined);
 });
@@ -174,6 +176,17 @@ describe('handleApprovalReminder', () => {
     },
   );
 
+  it('REJECTED but the appointment is still PENDING: finishes the rejection', async () => {
+    const rejected = record({ state: 'REJECTED', decidedBy: 'u_psi', rejectReason: 'x', refundStatus: 'NEEDED' });
+    store.findApproval.mockResolvedValue(rejected);
+
+    await handleApprovalReminder({ appointmentId: 7 }, at(24));
+
+    expect(decisions.finishRejection).toHaveBeenCalledWith(rejected);
+    expect(email.sendEmail).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
   it('already decided: skipped', async () => {
     store.findApproval.mockResolvedValue(record({ state: 'REJECTED' }));
     sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.CANCELLED }));
@@ -182,6 +195,7 @@ describe('handleApprovalReminder', () => {
 
     expect(email.sendEmail).not.toHaveBeenCalled();
     expect(decisions.settleExternal).not.toHaveBeenCalled();
+    expect(decisions.finishRejection).not.toHaveBeenCalled();
   });
 
   it('refuses an id that is not a positive integer, and accepts a numeric string', async () => {
