@@ -76,3 +76,20 @@ describe('GET /auth/me — ownedClinics', () => {
     expect(await me('auth-me-owned-test-super', 'SUPER_ADMIN')).not.toHaveProperty('ownedClinics');
   });
 });
+
+describe('GET /auth/me — practiceClinics', () => {
+  it('lists the active clinics a psychologist practises at', async () => {
+    expect((await me('auth-me-owned-test-doc', 'PROFESSIONAL')).practiceClinics).toEqual([
+      { id: SOLO, name: 'Klinik Solo' },
+    ]);
+  });
+
+  it('gives a psychologist without clinics, or without a WordPress link, an empty list', async () => {
+    expect((await me('auth-me-owned-test-lone', 'PROFESSIONAL')).practiceClinics).toEqual([]);
+    expect((await me('auth-me-owned-test-unlinked', 'PROFESSIONAL')).practiceClinics).toEqual([]);
+  });
+
+  it('gives other roles no practiceClinics field at all', async () => {
+    expect(await me('auth-me-owned-test-super', 'SUPER_ADMIN')).not.toHaveProperty('practiceClinics');
+  });
+});

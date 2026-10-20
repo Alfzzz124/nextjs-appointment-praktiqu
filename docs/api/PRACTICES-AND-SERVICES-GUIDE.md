@@ -103,7 +103,7 @@ mengikuti klinik aktif ini. Klinik di luar klinik aktif tetap 404 seperti biasa.
 | `GET /professionals/{id}/services/export` | ✅ | ⚠️ tanpa cek klinik | ❌ | ❌ |
 | `POST/DELETE /professionals/{id}/services` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
 | `/professionals/{id}/services/bulk/*` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
-| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | baca saja | baca saja |
+| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | 🔸 baca; `POST` untuk dirinya sendiri; `PUT` miliknya | baca saja |
 
 ⛔ = dipensiunkan, menjawab `410 Gone` tanpa memeriksa token sama sekali.
 
@@ -175,6 +175,14 @@ Catatan yang perlu diketahui sebelum dipakai:
 > CLINIC_ADMIN hanya melihat **klinik aktifnya** (header `X-Praktiqu-Clinic-Id`, atau klinik
 > default bila tanpa header) — satu baris, walau ia memegang beberapa klinik. Daftar lengkap
 > klinik miliknya ada di `user.clinics` respons `/auth/me` (§2).
+
+### Klinik praktik (PROFESSIONAL)
+
+`/auth/me` dan respons login untuk psikolog membawa `user.practiceClinics`: setiap klinik
+**aktif** tempat ia dipetakan, `[{ "id": 4, "name": "AzaniDianda.com" }]`, urut id naik.
+Selalu berupa larik (boleh kosong); role lain tidak membawa field ini. Inilah pilihan klinik
+saat psikolog menambah layanannya sendiri (`POST /api/v1/services`). Berbeda dari
+`ownedClinics`, daftar ini tidak memberi akses admin apa pun.
 
 ### Mode pemilik (PROFESSIONAL)
 
