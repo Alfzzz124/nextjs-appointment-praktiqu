@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.2
+Stable tag: 1.8.3
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -54,6 +54,13 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.8.3 =
+* New job hook praktiqu_approval_reminder. PraktiQU schedules it when a paid
+  booking waits for its psychologist's approval; when it fires the plugin calls
+  back with approval.reminder and PraktiQU reminds the psychologist, escalates
+  to the clinic admin once, and schedules the next run. Without the new Next.js
+  nothing enqueues it, so this version is safe to deploy first.
 
 = 1.8.2 =
 * POST /patients accepts an optional `adopt_existing` flag. When the email already
