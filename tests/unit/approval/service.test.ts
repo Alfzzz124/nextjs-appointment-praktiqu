@@ -264,7 +264,7 @@ describe('shouldHoldForApproval', () => {
 
 describe('approveAwaiting', () => {
   it('claims, books with the payment, cancels the reminder and schedules session reminders', async () => {
-    await approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW });
+    await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW });
 
     expect(store.claimDecision).toHaveBeenCalledWith(7, { state: 'APPROVED', decidedBy: 'u_psi', decidedAt: NOW });
     expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 1, {
@@ -281,13 +281,13 @@ describe('approveAwaiting', () => {
   });
 
   it('a booking marked paid by hand has no order: booked without payment data', async () => {
-    await approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record({ paymentOrderId: null }), now: NOW });
+    await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record({ paymentOrderId: null }), now: NOW });
 
     expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 1, undefined);
   });
 
   it('an admin approving is recorded as on behalf of the psychologist', async () => {
-    await approveAwaiting({ actor: ADMIN as never, row: row(), approval: record(), now: NOW });
+    await approveAwaiting({ actor: ADMIN as never, actorWpUserId: 24, row: row(), approval: record(), now: NOW });
 
     expect(log.logging.audit).toHaveBeenCalledWith(
       'session.approval_decided',
@@ -295,9 +295,19 @@ describe('approveAwaiting', () => {
     );
   });
 
+  it('a psychologist approving their own booking as clinic owner is not on behalf of anyone', async () => {
+    // Owner mode turns the psychologist into their clinic's CLINIC_ADMIN on this route.
+    await approveAwaiting({ actor: ADMIN as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW });
+
+    expect(log.logging.audit).toHaveBeenCalledWith(
+      'session.approval_decided',
+      expect.objectContaining({ metadata: expect.objectContaining({ onBehalf: false }) }),
+    );
+  });
+
   it('refuses once the session has started, before claiming anything', async () => {
     await expect(
-      approveAwaiting({ actor: PSIKOLOG as never, row: row({ slotDate: '2026-10-19' }), approval: record(), now: NOW }),
+      approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row({ slotDate: '2026-10-19' }), approval: record(), now: NOW }),
     ).rejects.toMatchObject({ code: 'session_already_started', status: 422 });
 
     expect(store.claimDecision).not.toHaveBeenCalled();
@@ -307,7 +317,7 @@ describe('approveAwaiting', () => {
     store.claimDecision.mockResolvedValue(false);
     store.findApproval.mockResolvedValue(record({ state: 'REJECTED', decidedBy: 'u_admin' }));
 
-    const err = await approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW }).catch(
+    const err = await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW }).catch(
       (e: unknown) => e,
     );
 
@@ -321,7 +331,7 @@ describe('approveAwaiting', () => {
     sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.PENDING }));
 
     await expect(
-      approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW }),
+      approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW }),
     ).rejects.toMatchObject({ code: 'upstream_failed', status: 502 });
 
     expect(store.revertDecision).toHaveBeenCalledWith(7, 'APPROVED', 'u_psi');
@@ -332,7 +342,7 @@ describe('approveAwaiting', () => {
     writes.setAppointmentStatus.mockRejectedValue(new Error('socket hang up'));
     sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
 
-    await approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW });
+    await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW });
 
     expect(store.revertDecision).not.toHaveBeenCalled();
     expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
@@ -348,7 +358,7 @@ describe('approveAwaiting', () => {
     sessions.findSessionById.mockRejectedValue(new Error('db down'));
 
     await expect(
-      approveAwaiting({ actor: PSIKOLOG as never, row: row(), approval: record(), now: NOW }),
+      approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW }),
     ).rejects.toMatchObject({ code: 'upstream_failed', status: 502 });
 
     expect(store.revertDecision).toHaveBeenCalledWith(7, 'APPROVED', 'u_psi');
@@ -357,7 +367,7 @@ describe('approveAwaiting', () => {
 
 describe('rejectAwaiting', () => {
   it('claims with the reason, cancels directly (no plugin mail) and mails the client without the reason', async () => {
-    await rejectAwaiting({ actor: PSIKOLOG as never, row: row(), reason: 'Di luar keahlian saya', now: NOW });
+    await rejectAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), reason: 'Di luar keahlian saya', now: NOW });
 
     expect(store.claimDecision).toHaveBeenCalledWith(7, {
       state: 'REJECTED',
@@ -377,12 +387,22 @@ describe('rejectAwaiting', () => {
     expect(sent.text).not.toContain('Di luar keahlian');
   });
 
+  it('on behalf follows who the actor is, not their role', async () => {
+    await rejectAwaiting({ actor: ADMIN as never, actorWpUserId: 24, row: row(), reason: 'x', now: NOW });
+    await rejectAwaiting({ actor: ADMIN as never, actorWpUserId: 34, row: row(), reason: 'x', now: NOW });
+
+    const onBehalf = log.logging.audit.mock.calls
+      .filter(([event]) => event === 'session.approval_decided')
+      .map(([, ctx]) => (ctx as { metadata: { onBehalf: boolean } }).metadata.onBehalf);
+    expect(onBehalf).toEqual([true, false]);
+  });
+
   it('a lost race answers 409 and writes nothing', async () => {
     store.claimDecision.mockResolvedValue(false);
     store.findApproval.mockResolvedValue(record({ state: 'APPROVED', decidedBy: 'u_admin' }));
 
     await expect(
-      rejectAwaiting({ actor: PSIKOLOG as never, row: row(), reason: 'x', now: NOW }),
+      rejectAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), reason: 'x', now: NOW }),
     ).rejects.toMatchObject({ code: 'approval_already_decided', status: 409 });
 
     expect(sessions.setSessionStatusDirect).not.toHaveBeenCalled();
@@ -392,7 +412,7 @@ describe('rejectAwaiting', () => {
     sessions.setSessionStatusDirect.mockRejectedValue(new Error('db down'));
 
     await expect(
-      rejectAwaiting({ actor: PSIKOLOG as never, row: row(), reason: 'x', now: NOW }),
+      rejectAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), reason: 'x', now: NOW }),
     ).rejects.toMatchObject({ code: 'status_write_failed', status: 500 });
 
     expect(store.revertDecision).toHaveBeenCalledWith(7, 'REJECTED', 'u_psi');

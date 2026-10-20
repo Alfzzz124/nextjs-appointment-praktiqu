@@ -163,7 +163,7 @@ describe('an AWAITING booking', () => {
   it('/approve by its psychologist is an approval, not a plain status write', async () => {
     await transitionSession({ actor: PSIKOLOG as never, sessionId: 7, target: SESSION_STATUS.BOOKED });
 
-    expect(approval.approveAwaiting).toHaveBeenCalledWith({ actor: PSIKOLOG, row: row(), approval: record() });
+    expect(approval.approveAwaiting).toHaveBeenCalledWith({ actor: PSIKOLOG, actorWpUserId: 119, row: row(), approval: record() });
     expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
   });
 
@@ -178,7 +178,12 @@ describe('an AWAITING booking', () => {
       intent: 'reject',
     });
 
-    expect(approval.rejectAwaiting).toHaveBeenCalledWith({ actor: ADMIN, row: row(), reason: 'Jadwal bentrok' });
+    expect(approval.rejectAwaiting).toHaveBeenCalledWith({
+      actor: ADMIN,
+      actorWpUserId: 24,
+      row: row(),
+      reason: 'Jadwal bentrok',
+    });
     expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
   });
 

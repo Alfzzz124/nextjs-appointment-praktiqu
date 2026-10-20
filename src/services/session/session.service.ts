@@ -542,8 +542,9 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     if (!isAdmin && !isOwningProfessional) {
       throw new SessionServiceError('forbidden', 'Not authorized to decide this booking', 403);
     }
-    if (target === SESSION_STATUS.BOOKED) await approveAwaiting({ actor, row, approval });
-    else await rejectAwaiting({ actor, row, reason: reason ?? '' });
+    const actorWpUserId = Number(kc.wpUserId);
+    if (target === SESSION_STATUS.BOOKED) await approveAwaiting({ actor, actorWpUserId, row, approval });
+    else await rejectAwaiting({ actor, actorWpUserId, row, reason: reason ?? '' });
     return reread(actor, sessionId);
   }
 

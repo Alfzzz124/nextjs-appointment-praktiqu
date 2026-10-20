@@ -394,12 +394,14 @@ async function alreadyDecided(appointmentId: number): Promise<ApprovalError> {
 }
 
 async function auditDecision(
-  actor: Actor,
-  row: SessionRow,
+  input: Pick<DecideInput, 'actor' | 'actorWpUserId' | 'row'>,
   decision: 'APPROVED' | 'REJECTED',
   reason: string | null,
 ): Promise<void> {
-  const onBehalf = actor.role !== 'PROFESSIONAL';
+  const { actor, row } = input;
+  // By who decided, not by role: a psychologist who owns the clinic decides as its
+  // CLINIC_ADMIN (owner mode), and deciding their own booking is not on anyone's behalf.
+  const onBehalf = row.professionalId !== input.actorWpUserId;
   await logging.audit('session.approval_decided', {
     userId: actor.id,
     resource: 'session',
@@ -422,6 +424,8 @@ async function auditDecision(
 
 export interface DecideInput {
   actor: Actor;
+  /** The actor's wp_users.ID, which the caller resolved when it checked they may decide. */
+  actorWpUserId: number;
   row: SessionRow;
   now?: Date;
 }
@@ -462,7 +466,7 @@ export async function approveAwaiting(input: DecideInput & { approval: store.App
   }
 
   await afterBooked(row.id);
-  await auditDecision(actor, row, 'APPROVED', null);
+  await auditDecision(input, 'APPROVED', null);
 }
 
 /** The caller (transitionSession) has already checked that the actor may decide. */
@@ -491,7 +495,7 @@ export async function rejectAwaiting(input: DecideInput & { reason: string }): P
   }
 
   await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(row.id) });
-  await auditDecision(actor, row, 'REJECTED', reason);
+  await auditDecision(input, 'REJECTED', reason);
   await mailRejection(row);
 }
 
