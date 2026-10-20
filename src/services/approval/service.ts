@@ -25,6 +25,7 @@ import { findServiceById } from '@/repositories/wp/services.repo';
 import {
   SESSION_STATUS,
   findSessionById,
+  listSessionsByIds,
   setSessionStatusDirect,
   type SessionRow,
   type SessionStatus,
@@ -39,6 +40,7 @@ import {
   type SessionMailFacts,
 } from './emails';
 import { firstReminderAt, isOverdue } from './schedule';
+import type { ApprovalSetting } from './settings';
 import * as store from './store';
 
 export const APPROVAL_REMINDER_HOOK = 'praktiqu_approval_reminder' as const;
@@ -536,4 +538,127 @@ export async function markRefunded(input: MarkRefundedInput): Promise<ApprovalVi
   const view = (await approvalViews([row], now)).get(appointmentId);
   if (!view) throw new ApprovalError('approval_not_found', 'This session has no approval record', 404);
   return view;
+}
+
+/* ------------------------------------------------------------------ */
+/* Queue                                                               */
+/* ------------------------------------------------------------------ */
+
+export type ApprovalQueueItem = SessionRow & { serviceName: string; approval: ApprovalView };
+
+export interface QueueQuery {
+  filter: store.QueueFilter;
+  professionalId?: number;
+  clinicId?: number;
+  page: number;
+  limit: number;
+}
+
+export interface QueuePage {
+  data: ApprovalQueueItem[];
+  pagination: { currentPage: number; totalPages: number; totalItems: number; itemsPerPage: number };
+  counts: { awaiting: number; refundNeeded: number };
+}
+
+/** Null: the actor may look, but at nothing (another clinic, or an admin with no clinic). */
+async function queueScope(
+  actor: Actor,
+  q: Pick<QueueQuery, 'professionalId' | 'clinicId'>,
+): Promise<store.QueueScope | null> {
+  if (actor.role === 'PROFESSIONAL') {
+    const kc = await resolveKcActor(actor);
+    // A psychologist always sees their own queue, whatever the query asks for.
+    return { doctorWpUserId: Number(kc.wpUserId) };
+  }
+  if (actor.role === 'CLINIC_ADMIN') {
+    const kc = await resolveKcActor(actor);
+    if (kc.clinicId === null) return null;
+    const own = Number(kc.clinicId);
+    // Asking for another clinic gets nothing rather than a 403, like GET /sessions.
+    if (q.clinicId !== undefined && q.clinicId !== own) return null;
+    return { clinicId: own, doctorWpUserId: q.professionalId };
+  }
+  if (actor.role === 'SUPER_ADMIN') {
+    return { clinicId: q.clinicId, doctorWpUserId: q.professionalId };
+  }
+  throw new ApprovalError('forbidden', 'Not authorized to see the approval queue', 403);
+}
+
+async function toItems(records: store.ApprovalRecord[], now: Date): Promise<ApprovalQueueItem[]> {
+  const rows = await listSessionsByIds(records.map((a) => a.appointmentId));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const views = await approvalViews(rows, now);
+  const items: ApprovalQueueItem[] = [];
+  for (const a of records) {
+    const row = byId.get(a.appointmentId);
+    const view = views.get(a.appointmentId);
+    // A record whose appointment was deleted in KiviCare: nothing to show or decide.
+    if (!row || !view) continue;
+    items.push({ ...row, serviceName: await serviceNameOf(row), approval: view });
+  }
+  return items;
+}
+
+export async function listQueue(actor: Actor, q: QueueQuery, now: Date = new Date()): Promise<QueuePage> {
+  const scope = await queueScope(actor, q);
+  if (scope === null) {
+    return {
+      data: [],
+      pagination: { currentPage: q.page, totalPages: 1, totalItems: 0, itemsPerPage: q.limit },
+      counts: { awaiting: 0, refundNeeded: 0 },
+    };
+  }
+  const { items, total } = await store.listApprovals(q.filter, scope, q.page, q.limit);
+  const counts = await store.countApprovals(scope);
+  return {
+    data: await toItems(items, now),
+    pagination: {
+      currentPage: q.page,
+      totalPages: Math.max(1, Math.ceil(total / q.limit)),
+      totalItems: total,
+      itemsPerPage: q.limit,
+    },
+    counts,
+  };
+}
+
+/** One item, same shape as the queue's, for the FE detail page. */
+export async function getApprovalItem(
+  actor: Actor,
+  appointmentId: number,
+  now: Date = new Date(),
+): Promise<ApprovalQueueItem> {
+  const row = await findSessionById(appointmentId);
+  if (!row) throw new ApprovalError('not_found', 'Session not found', 404);
+
+  if (actor.role !== 'SUPER_ADMIN') {
+    const kc = await resolveKcActor(actor);
+    const allowed =
+      (actor.role === 'PROFESSIONAL' && row.professionalId === Number(kc.wpUserId)) ||
+      (actor.role === 'CLINIC_ADMIN' && kc.clinicId !== null && Number(kc.clinicId) === row.clinicId);
+    if (!allowed) throw new ApprovalError('forbidden', 'Not authorized', 403);
+  }
+
+  const record = await store.findApproval(appointmentId);
+  if (!record) throw new ApprovalError('approval_not_found', 'This session has no approval record', 404);
+  const [item] = await toItems([record], now);
+  if (!item) throw new ApprovalError('approval_not_found', 'This session has no approval record', 404);
+  return item;
+}
+
+export interface ApprovalSettingView {
+  professionalId: number;
+  requiresApproval: boolean;
+  updatedAt: string | null;
+  updatedByName: string | null;
+}
+
+export async function approvalSettingView(setting: ApprovalSetting): Promise<ApprovalSettingView> {
+  const names = await store.userNames([setting.updatedBy]);
+  return {
+    professionalId: setting.professionalId,
+    requiresApproval: setting.requiresApproval,
+    updatedAt: iso(setting.updatedAt),
+    updatedByName: setting.updatedBy ? (names.get(setting.updatedBy) ?? null) : null,
+  };
 }

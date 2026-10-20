@@ -281,6 +281,17 @@ export async function findSessionById(id: number): Promise<SessionRow | null> {
   return rows.length > 0 ? toSession(rows[0]) : null;
 }
 
+/** The sessions with these ids, in no particular order. Ids that do not exist are absent. */
+export async function listSessionsByIds(ids: number[]): Promise<SessionRow[]> {
+  const wanted = [...new Set(ids)].filter((id) => Number.isSafeInteger(id) && id > 0);
+  if (wanted.length === 0) return [];
+  const rows = await prisma.$queryRawUnsafe<RawRow[]>(
+    `${SELECT_SQL} WHERE a.id IN (${wanted.map(() => '?').join(',')})`,
+    ...wanted,
+  );
+  return rows.map(toSession);
+}
+
 export async function listSessions(
   query: ListSessionsQuery,
 ): Promise<{ items: SessionRow[]; total: number }> {
