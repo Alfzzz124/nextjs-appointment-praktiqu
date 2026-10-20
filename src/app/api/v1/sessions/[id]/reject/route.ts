@@ -41,7 +41,7 @@ export async function POST(
     const { id: rawId } = await params;
     const id = parseSessionId(rawId);
     if (id === null) return invalidSessionId();
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { reason } = rejectSchema.parse(body);
     const actor = await sessionActorFromRequest(req);
 

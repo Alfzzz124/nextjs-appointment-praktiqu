@@ -193,6 +193,34 @@ describe('an AWAITING booking', () => {
   });
 });
 
+describe('a BOOKED booking', () => {
+  it('/reject is refused: a stale rejection must not cancel an approved, paid booking', async () => {
+    repo.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
+
+    await expect(
+      transitionSession({
+        actor: PSIKOLOG as never,
+        sessionId: 7,
+        target: SESSION_STATUS.CANCELLED,
+        reason: 'basi',
+        intent: 'reject',
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'invalid_transition' });
+
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(approval.rejectAwaiting).not.toHaveBeenCalled();
+    expect(approval.closeOnCancel).not.toHaveBeenCalled();
+  });
+
+  it('a plain cancel (no intent) still cancels it as before', async () => {
+    repo.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
+
+    await transitionSession({ actor: PSIKOLOG as never, sessionId: 7, target: SESSION_STATUS.CANCELLED });
+
+    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 0);
+  });
+});
+
 describe('a PENDING booking without a record', () => {
   it('"mark as paid" for a psychologist with the switch on queues it instead of booking it', async () => {
     actAs(ADMIN, 24n);

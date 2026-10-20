@@ -68,16 +68,16 @@ hanya saat memutar ulang permintaan ber-`Idempotency-Key` (200). Hanya `state`, 
 | `POST /sessions/{id}/reject` `{reason}` | Batal seperti sebelumnya. | Tolak → `CANCELLED`, `refundStatus = NEEDED`, email standar ke klien (tanpa alasan). Hanya psikolognya, `CLINIC_ADMIN`, `SUPER_ADMIN`. |
 | `POST /sessions/{id}/cancel` | Batal. | Batal → `approval.state = CANCELLED`, `refundStatus = NEEDED`. |
 
-`/reject` mewajibkan `reason`: string 1–500 karakter setelah di-trim, selain itu 422. Body harus JSON
-yang valid; body kosong atau bukan JSON berujung 500 `Internal server error`, bukan 422.
+`/reject` mewajibkan `reason`: string 1–500 karakter setelah di-trim. `reason` yang hilang, kosong
+atau > 500, juga body yang kosong atau bukan JSON, dijawab 422 validasi.
 
 Keputusan yang kalah balapan: **409 `approval_already_decided`** (hanya `/approve` dan `/reject`;
 `/cancel` tidak pernah menjawabnya). Daftar lengkap kode error ada di [Kode error](#kode-error).
 
-Perhatian untuk FE: `/reject` pada sesi yang sudah `BOOKED` **bukan error**. Sesi itu dibatalkan
-seperti pembatalan biasa (`approval.state` tetap `APPROVED`, `refundStatus` tetap `NONE`, tanpa
-email penolakan approval; email pembatalan KiviCare yang biasa tetap berlaku). Untuk sesi yang
-punya `approval`, sembunyikan tombol Tolak kecuali `approval.state = AWAITING`, dan muat ulang item
+Perhatian untuk FE: `/reject` hanya berlaku untuk sesi `PENDING`. Untuk status lain, misalnya sesi
+yang sementara itu sudah disetujui dan kini `BOOKED`, jawabannya 400 `invalid_transition` dan sesi
+tidak berubah: muat ulang item dan tampilkan keputusan yang sudah ada. Untuk sesi yang punya
+`approval`, sembunyikan tombol Tolak kecuali `approval.state = AWAITING`, dan muat ulang item
 sebelum mengirim keputusan dari halaman yang sudah lama terbuka.
 
 ## Endpoint baru
@@ -151,7 +151,7 @@ ada di bawah tabel.
 | HTTP | Kode (`title`) | Endpoint | Kapan | Yang dilakukan FE |
 |---|---|---|---|---|
 | 409 | `approval_already_decided` | `/approve`, `/reject` | Kalah balapan: dua keputusan masuk bersamaan dan yang lain menang. `detail` menyebut keputusan dan pengambilnya. | Muat ulang item, tampilkan keputusan yang sudah ada. Jangan diulang. |
-| 400 | `invalid_transition` | `/approve`, `/reject` | Sesi sudah bukan `PENDING` saat permintaan sampai (halaman basi): `/approve` pada sesi `BOOKED`, `CHECK_IN`, `CHECK_OUT` atau `CANCELLED`; `/reject` pada sesi `CHECK_IN`, `CHECK_OUT` atau `CANCELLED`. (`/reject` pada sesi `BOOKED` tidak masuk sini, lihat perhatian di atas.) | Muat ulang item; tombol keputusan hilang sendiri. |
+| 400 | `invalid_transition` | `/approve`, `/reject` | Sesi sudah bukan `PENDING` saat permintaan sampai (halaman basi): `/approve` pada sesi `BOOKED`, `CHECK_IN`, `CHECK_OUT` atau `CANCELLED`; `/reject` pada sesi mana pun yang bukan `PENDING`: `BOOKED`, `CHECK_IN`, `CHECK_OUT` atau `CANCELLED`. | Muat ulang item dan tampilkan keputusan yang sudah ada; tombol keputusan hilang sendiri. |
 | 422 | `session_already_started` | `/approve` | Jam sesi sudah lewat (`isOverdue`). | Tampilkan bahwa hanya tolak yang mungkin; sembunyikan Setujui. |
 | 502 | `upstream_failed` | `/approve` | Penulisan ke WordPress gagal. Klaim keputusan sudah dibatalkan, permintaan kembali `AWAITING`. | Aman diulang. Tampilkan "coba lagi". |
 | 500 | `status_write_failed` | `/reject` | Penulisan status batal gagal. Klaim keputusan sudah dibatalkan, permintaan kembali `AWAITING`. | Aman diulang. Tampilkan "coba lagi". |
@@ -159,7 +159,7 @@ ada di bawah tabel.
 | 404 | `approval_not_found` | `/approval`, `/refund-done` | Sesinya ada, tetapi tidak pernah menunggu approval. | Tampilkan "bukan booking approval". |
 | 404 | `not_found` | `/approve`, `/reject`, `/approval`, `/refund-done` | Id sesi tidak ada. | Kembali ke antrean. |
 | 403 | `forbidden` | semua | Di luar scope atau peran salah: resepsionis di antrean, `/approval` atau `/approve`; psikolog di `/refund-done`; sesi milik psikolog atau klinik lain; `/approve` atau `/reject` pada sesi `AWAITING` oleh selain psikolognya, `CLINIC_ADMIN` atau `SUPER_ADMIN`. | Sembunyikan aksinya sesuai peran. |
-| 422 | validasi | `/sessions/approvals`, `/reject`, `/refund-done` | Query atau body salah: `state` tidak dikenal, `limit` di luar 1–100, `page` < 1, `professionalId` atau `clinicId` bukan bilangan bulat positif, `reason` kosong atau > 500, `note` > 500 atau ada kunci lain di body. `title` = `Validation Error`, `type` = `/errors/validation-error`. | Perbaiki input. |
+| 422 | validasi | `/sessions/approvals`, `/reject`, `/refund-done` | Query atau body salah: `state` tidak dikenal, `limit` di luar 1–100, `page` < 1, `professionalId` atau `clinicId` bukan bilangan bulat positif, `reason` hilang, kosong atau > 500, body `/reject` kosong atau bukan JSON, `note` > 500 atau ada kunci lain di body. `title` = `Validation Error`, `type` = `/errors/validation-error`. | Perbaiki input. |
 
 Selain tabel itu:
 

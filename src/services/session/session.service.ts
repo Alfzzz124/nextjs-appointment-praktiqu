@@ -510,6 +510,10 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
       400,
     );
   }
+  // A stale reject must not cancel an approved, paid booking as a plain cancel.
+  if (intent === 'reject' && row.status !== SESSION_STATUS.PENDING) {
+    throw new SessionServiceError('invalid_transition', 'Only a pending booking can be rejected', 400);
+  }
 
   // A PENDING booking may be paid and waiting for its psychologist (session_approvals).
   // Approving or rejecting it is a decision with its own rules — services/approval.

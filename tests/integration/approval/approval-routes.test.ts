@@ -330,6 +330,28 @@ describe('deciding', () => {
     expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
     expect(email.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: `u${PATIENT}@approval-routes.test.local` }));
   });
+
+  it('a stale reject of the booking approved above is refused and leaves it BOOKED', async () => {
+    const res = await rejectPost(await req(SUPER, 'SUPER_ADMIN', '/x', { reason: 'basi' }), sessionCtx(APPT_AWAITING));
+    expect(res.status).toBe(400);
+    expect((await res.json()).title).toBe('invalid_transition');
+
+    const rows = await prisma.$queryRawUnsafe<Array<{ status: number }>>(
+      'SELECT status FROM wp_kc_appointments WHERE id = ?',
+      APPT_AWAITING,
+    );
+    expect(Number(rows[0].status)).toBe(APPOINTMENT_STATUS.BOOKED);
+    expect(email.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('a reject with no body is a validation error, not a 500', async () => {
+    const noBody = new NextRequest('http://localhost/api/v1/x', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${await token(SUPER, 'SUPER_ADMIN')}` },
+    });
+    const res = await rejectPost(noBody, sessionCtx(APPT_PLAIN));
+    expect(res.status).toBe(422);
+  });
 });
 
 describe('POST /sessions/:id/refund-done', () => {
