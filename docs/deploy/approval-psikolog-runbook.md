@@ -9,9 +9,13 @@ Urutan wajib: **plugin → SQL → backend → FE**, dan setiap langkah baru bol
 langkah sebelumnya terverifikasi di produksi. Saklar default mati, tetapi itu **tidak** membuat
 backend aman sendirian:
 
-- **Plugin 1.8.3 dan SQL masing-masing aman dijalankan sendirian.** Plugin hanya mendaftarkan satu
-  hook yang belum di-enqueue siapa pun. SQL hanya `CREATE TABLE IF NOT EXISTS` untuk dua tabel yang
-  belum dibaca kode lama.
+- **Plugin 1.8.4 dan SQL masing-masing aman dijalankan sendirian.** Plugin (1.8.4 berisi 1.8.3)
+  mendaftarkan satu hook yang belum di-enqueue siapa pun, dan menambah argumen opsional
+  `expect_status` di `/appointments/{id}/status` yang hanya dikirim backend baru. SQL hanya
+  `CREATE TABLE IF NOT EXISTS` untuk dua tabel yang belum dibaca kode lama.
+- **Backend baru di atas plugin 1.8.3 tetap jalan**, karena `expect_status` diabaikan. Hanya saja
+  race batal-vs-setujui (spec `2026-10-20-approval-claim-first-design.md`) belum tertutup, jadi
+  urutan plugin dulu tetap wajib.
 - **Backend baru membaca `session_approvals` / `professional_approval_settings` di banyak jalur,
   bukan hanya saat saklar menyala:** setiap `GET /sessions`, `GET /sessions/{id}` dan
   `GET /sessions/pending`; approve, reject dan cancel; webhook dan pengecekan pembayaran;
@@ -23,13 +27,15 @@ backend aman sendirian:
   `/professionals/{id}/approval-setting`). **PR FE tidak boleh di-merge sebelum backend
   (langkah 3) terverifikasi live.**
 
-1. **Plugin 1.8.3** di Hostinger WP (`ssh praktiqu-hostinger`; matikan Cloudflare WARP dulu).
-   - Cocokkan dulu isi server dengan git 1.8.2. Buat backup `~/plugin-backups/praktiqu-endpoint-1.8.2-<UTC>.tgz`.
-   - Hanya dua file plugin yang berubah, ditambah readme: `includes/class-praktiqu-endpoint-jobs.php` dan `praktiqu-endpoint.php`.
-   - `tests/test-jobs-approval-reminder.php` ikut di git tetapi **tidak di-deploy**.
-   - Tukar **`includes/class-praktiqu-endpoint-jobs.php` dulu**, baru `praktiqu-endpoint.php`, lalu `readme.txt`. Tidak ada kelas baru yang di-require, jadi urutan ini sengaja berbeda dari §2.1 langkah 5 di `international-clinic-runbook.md` (lihat bullet berikutnya).
+1. **Plugin 1.8.4** di Hostinger WP (`ssh praktiqu-hostinger`; matikan Cloudflare WARP dulu).
+   - Cocokkan dulu isi server dengan git versi yang sedang terpasang (1.8.2, atau 1.8.3 kalau itu sudah sempat di-deploy). Buat backup `~/plugin-backups/praktiqu-endpoint-<versi>-<UTC>.tgz`.
+   - File plugin yang berubah, ditambah readme:
+     - dari 1.8.2: `includes/class-praktiqu-endpoint-jobs.php`, `includes/class-praktiqu-endpoint-appointments.php`, `includes/class-praktiqu-endpoint-rest-controller.php` dan `praktiqu-endpoint.php`;
+     - dari 1.8.3: sama, tanpa `class-praktiqu-endpoint-jobs.php`.
+   - `tests/test-jobs-approval-reminder.php` dan `tests/test-appointments-set-status.php` ikut di git tetapi **tidak di-deploy**.
+   - Tukar **file `includes/` dulu**, baru `praktiqu-endpoint.php`, lalu `readme.txt`. Tidak ada kelas baru yang di-require, jadi urutan ini sengaja berbeda dari §2.1 langkah 5 di `international-clinic-runbook.md` (lihat bullet berikutnya).
    - Mekanisme tukar file yang persis (cocokkan md5, backup tar, `php -l`, `cp` lalu `mv`, cek plugin masih aktif): `docs/deploy/international-clinic-runbook.md` §2.1, langkah 1–6.
-   - Verifikasi: `GET https://api-appointment.praktiqu.com/wp-json/praktiqu/v1/health` (header `X-PraktiQU-Service-Token`; jalankan dari server, bukan dari luar, karena WAF menahan curl; token dibaca di server seperti di §2.1 langkah 7 runbook itu) menjawab `"version":"1.8.3"`; plugin masih ada di `active_plugins` (§2.1 langkah 6); tidak ada baris baru di `error_log`.
+   - Verifikasi: `GET https://api-appointment.praktiqu.com/wp-json/praktiqu/v1/health` (header `X-PraktiQU-Service-Token`; jalankan dari server, bukan dari luar, karena WAF menahan curl; token dibaca di server seperti di §2.1 langkah 7 runbook itu) menjawab `"version":"1.8.4"`; plugin masih ada di `active_plugins` (§2.1 langkah 6); tidak ada baris baru di `error_log`.
 2. **SQL** `prisma/manual/2026-10-19-approval-psikolog.sql` di DB produksi:
    ```bash
    mysql -u <user> -p <database> < prisma/manual/2026-10-19-approval-psikolog.sql
@@ -78,5 +84,5 @@ backend aman sendirian:
 - **Putuskan dulu semua sesi yang sedang `AWAITING` sebelum rollback backend:** `SELECT appointmentId FROM session_approvals WHERE state='AWAITING';`. Backend lama tidak membaca `session_approvals`, jadi baginya sesi itu hanya `PENDING` biasa:
   - Yang dibayar lewat order akan **di-BOOKED-kan otomatis** oleh backend lama. Setiap kali status pembayarannya dibaca lagi (`/public/payment-verify` dari halaman klien, atau webhook yang datang ulang), `ensurePaidSideEffectsApplied` → `applyPaidSideEffectsPublic` melihat janji temu `PENDING` dengan order `paid` dan langsung mem-`BOOKED`-kannya, tanpa keputusan psikolog dan tanpa menutup catatan approval-nya.
   - Yang ditandai lunas manual (tanpa order) tertinggal `PENDING`, dan job auto-cancel lama bisa melepasnya.
-- Plugin: kembalikan backup 1.8.2 (mekanismenya: `docs/deploy/international-clinic-runbook.md`, bagian Rollback). Tanpa Next.js baru, tidak ada yang meng-enqueue hook baru.
+- Plugin: kembalikan backup versi sebelumnya (mekanismenya: `docs/deploy/international-clinic-runbook.md`, bagian Rollback). Tanpa Next.js baru, tidak ada yang meng-enqueue hook baru. Kembali ke 1.8.3 dengan backend baru tetap jalan: `expect_status` diabaikan, dan race batal-vs-setujui terbuka lagi.
 - Job pengingat yang sudah di-enqueue dengan hook `praktiqu_approval_reminder` tetap ada di Action Scheduler. Setelah plugin kembali ke 1.8.2, yang tidak lagi mendaftarkan hook itu, job tersebut tidak melakukan apa-apa: tidak ada callback dan tidak ada webhook ke Next.js. Action Scheduler boleh mencatatnya selesai atau gagal (tergantung versinya); biarkan saja.

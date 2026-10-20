@@ -19,7 +19,7 @@ import { jobs } from '@/lib/jobs/client';
 import { logging } from '@/lib/logging';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
-import { setAppointmentStatus, type ConfirmedPayment } from '@/repositories/wp/appointments.write';
+import { isStatusConflict, setAppointmentStatus, type ConfirmedPayment } from '@/repositories/wp/appointments.write';
 import { findClinicById } from '@/repositories/wp/clinics.repo';
 import { findServiceById } from '@/repositories/wp/services.repo';
 import {
@@ -346,9 +346,51 @@ async function paymentFor(approval: store.ApprovalRecord): Promise<ConfirmedPaym
  * `kc_appointment_payment_completed` exactly once — KiviCare's booking mail to client,
  * psychologist and clinic. A booking marked paid by hand has no order and books without
  * it, which mails nobody (the gap spec §12 keeps).
+ *
+ * Only over PENDING (`expectStatus`, plugin 1.8.4). A cancellation that lands between the
+ * claim and this call would otherwise be rewritten as BOOKED, after the client was already
+ * told it was cancelled and with no refund flagged. The plugin answers 409 instead, and
+ * settleConflict decides what the record becomes.
  */
 async function confirmBooked(approval: store.ApprovalRecord): Promise<void> {
-  await setAppointmentStatus(approval.appointmentId, APPOINTMENT_STATUS.BOOKED, await paymentFor(approval));
+  await setAppointmentStatus(approval.appointmentId, APPOINTMENT_STATUS.BOOKED, await paymentFor(approval), {
+    expectStatus: APPOINTMENT_STATUS.PENDING,
+  });
+}
+
+type ConflictOutcome = 'booked' | 'cancelled' | 'other';
+
+/**
+ * The confirmation found the appointment no longer PENDING (spec 2026-10-20 claim-first):
+ * - BOOKED: an earlier confirmation got there and its answer was lost. Confirmed.
+ * - CANCELLED: cancelled under the approval, so it never became a booking. The money is
+ *   in, so the record joins the refund list.
+ * - anything else (checked in or out by a bill): the approval stands and the session is
+ *   under way, so there is nothing to schedule. Logged, because nothing should get here.
+ */
+async function settleConflict(appointmentId: number, approvedBy: string | null, now: Date): Promise<ConflictOutcome> {
+  const current = await findSessionById(appointmentId);
+  if (current?.status === SESSION_STATUS.BOOKED) return 'booked';
+
+  await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(appointmentId) });
+  if (current?.status === SESSION_STATUS.CANCELLED) {
+    if (await store.cancelApproved(appointmentId, now)) {
+      await logging.audit('session.approval_cancelled', {
+        userId: null,
+        resource: 'session',
+        resourceId: String(appointmentId),
+        action: 'session.approval_cancelled',
+        metadata: { refundStatus: store.REFUND_STATUS.NEEDED, raced: true, approvedBy },
+      });
+    }
+    return 'cancelled';
+  }
+  await logging.warn('approval: the appointment left PENDING before its approval reached it', {
+    resource: 'session',
+    resourceId: String(appointmentId),
+    metadata: { status: current?.status ?? null },
+  });
+  return 'other';
 }
 
 async function afterBooked(appointmentId: number): Promise<void> {
@@ -373,10 +415,16 @@ export function isBeingConfirmed(
 
 /**
  * Finish an approval that was claimed but never reached the plugin (the process died in
- * between). Safe to repeat: the plugin's claim only moves a PENDING row.
+ * between). Safe to repeat: the plugin's claim only moves a PENDING row. An appointment
+ * cancelled in the meantime puts the record on the refund list instead.
  */
-export async function completeApproval(approval: store.ApprovalRecord): Promise<void> {
-  await confirmBooked(approval);
+export async function completeApproval(approval: store.ApprovalRecord, now: Date = new Date()): Promise<void> {
+  try {
+    await confirmBooked(approval);
+  } catch (err) {
+    if (!isStatusConflict(err)) throw err;
+    if ((await settleConflict(approval.appointmentId, approval.decidedBy, now)) !== 'booked') return;
+  }
   await afterBooked(approval.appointmentId);
 }
 
@@ -446,26 +494,38 @@ export async function approveAwaiting(input: DecideInput & { approval: store.App
   });
   if (!claimed) throw await alreadyDecided(row.id);
 
+  let outcome: ConflictOutcome = 'booked';
   try {
     await confirmBooked(approval);
   } catch (err) {
-    // The plugin may have committed before its answer was lost (a timeout, a dropped
-    // connection). Then the booking IS confirmed, and undoing the claim would leave an
-    // AWAITING record on a BOOKED appointment that nothing settles until a read does.
-    // Any other status — still PENDING, or unreadable — and the claim is undone.
-    const current = await findSessionById(row.id).catch(() => null);
-    if (current?.status !== SESSION_STATUS.BOOKED) {
-      await store.revertDecision(row.id, store.APPROVAL_STATE.APPROVED, actor.id);
-      await logging.error('approval: confirming the booking failed', err, { resource: 'session', resourceId: String(row.id) });
-      throw new ApprovalError('upstream_failed', 'The booking could not be confirmed. Try again.', 502);
+    if (isStatusConflict(err)) {
+      outcome = await settleConflict(row.id, actor.id, now);
+    } else {
+      // The plugin may have committed before its answer was lost (a timeout, a dropped
+      // connection). Then the booking IS confirmed, and undoing the claim would leave an
+      // AWAITING record on a BOOKED appointment that nothing settles until a read does.
+      // Any other status — still PENDING, or unreadable — and the claim is undone.
+      const current = await findSessionById(row.id).catch(() => null);
+      if (current?.status !== SESSION_STATUS.BOOKED) {
+        await store.revertDecision(row.id, store.APPROVAL_STATE.APPROVED, actor.id);
+        await logging.error('approval: confirming the booking failed', err, { resource: 'session', resourceId: String(row.id) });
+        throw new ApprovalError('upstream_failed', 'The booking could not be confirmed. Try again.', 502);
+      }
+      await logging.error('approval: the plugin answered with an error, but the booking is BOOKED', err, {
+        resource: 'session',
+        resourceId: String(row.id),
+      });
     }
-    await logging.error('approval: the plugin answered with an error, but the booking is BOOKED', err, {
-      resource: 'session',
-      resourceId: String(row.id),
-    });
   }
 
-  await afterBooked(row.id);
+  if (outcome === 'cancelled') {
+    throw new ApprovalError(
+      'booking_cancelled',
+      'This booking was cancelled while it was being approved; its payment is on the refund list',
+      409,
+    );
+  }
+  if (outcome === 'booked') await afterBooked(row.id);
   await auditDecision(input, 'APPROVED', null);
 }
 

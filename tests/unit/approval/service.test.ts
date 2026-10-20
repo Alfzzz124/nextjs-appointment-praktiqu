@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo';
 import type { ApprovalRecord } from '@/services/approval/store';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 
 const store = vi.hoisted(() => ({
   findApproval: vi.fn(),
@@ -22,6 +23,7 @@ const store = vi.hoisted(() => ({
   userNames: vi.fn(),
   paymentOrdersByIds: vi.fn(),
   findWpUserContact: vi.fn(),
+  cancelApproved: vi.fn(),
 }));
 vi.mock('@/services/approval/store', async (orig) => ({
   ...(await orig<typeof import('@/services/approval/store')>()),
@@ -33,7 +35,10 @@ const writes = vi.hoisted(() => ({
   cancelAppointment: vi.fn(),
   createAppointment: vi.fn(),
 }));
-vi.mock('@/repositories/wp/appointments.write', () => writes);
+vi.mock('@/repositories/wp/appointments.write', async (orig) => ({
+  ...(await orig<typeof import('@/repositories/wp/appointments.write')>()),
+  ...writes,
+}));
 
 const sessions = vi.hoisted(() => ({
   findSessionById: vi.fn(),
@@ -84,6 +89,7 @@ import {
   approvalViews,
   approveAwaiting,
   closeOnCancel,
+  completeApproval,
   finishRejection,
   getApprovalItem,
   holdForApproval,
@@ -169,6 +175,7 @@ beforeEach(() => {
   store.userNames.mockResolvedValue(new Map([['u_admin', 'Rina Admin']]));
   store.paymentOrdersByIds.mockResolvedValue(new Map([['po_1', ORDER]]));
   store.findWpUserContact.mockResolvedValue({ email: 'admin@klinik.test', name: 'Rina Admin' });
+  store.cancelApproved.mockResolvedValue(true);
   writes.setAppointmentStatus.mockResolvedValue({ id: 7, status: 1, cancelled: false });
   sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
   sessions.listSessionsByIds.mockResolvedValue([]);
@@ -267,11 +274,13 @@ describe('approveAwaiting', () => {
     await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW });
 
     expect(store.claimDecision).toHaveBeenCalledWith(7, { state: 'APPROVED', decidedBy: 'u_psi', decidedAt: NOW });
-    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 1, {
-      gateway: 'xendit',
-      wcOrderId: 49863,
-      transactionId: 'tx_9',
-    });
+    // Only over PENDING: a cancellation that landed after the claim must not become BOOKED.
+    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(
+      7,
+      1,
+      { gateway: 'xendit', wcOrderId: 49863, transactionId: 'tx_9' },
+      { expectStatus: 2 },
+    );
     expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
     expect(schedule.syncSessionReminders).toHaveBeenCalledWith(row({ status: SESSION_STATUS.BOOKED }));
     expect(log.logging.audit).toHaveBeenCalledWith(
@@ -283,7 +292,7 @@ describe('approveAwaiting', () => {
   it('a booking marked paid by hand has no order: booked without payment data', async () => {
     await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record({ paymentOrderId: null }), now: NOW });
 
-    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 1, undefined);
+    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(7, 1, undefined, { expectStatus: 2 });
   });
 
   it('an admin approving is recorded as on behalf of the psychologist', async () => {
@@ -353,6 +362,64 @@ describe('approveAwaiting', () => {
     );
   });
 
+  describe('the plugin finds the appointment no longer PENDING (409 praktiqu_status_conflict)', () => {
+    const conflict = () => new WpEndpointError('status 409', 409, 'praktiqu_status_conflict');
+
+    it('cancelled meanwhile: the record moves to CANCELLED with a refund, and the approver gets 409', async () => {
+      writes.setAppointmentStatus.mockRejectedValue(conflict());
+      sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.CANCELLED }));
+
+      await expect(
+        approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW }),
+      ).rejects.toMatchObject({ code: 'booking_cancelled', status: 409 });
+
+      expect(store.cancelApproved).toHaveBeenCalledWith(7, NOW);
+      expect(store.revertDecision).not.toHaveBeenCalled();
+      expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
+      expect(log.logging.audit).toHaveBeenCalledWith('session.approval_cancelled', {
+        userId: null,
+        resource: 'session',
+        resourceId: '7',
+        action: 'session.approval_cancelled',
+        metadata: { refundStatus: 'NEEDED', raced: true, approvedBy: 'u_psi' },
+      });
+      expect(log.logging.audit).not.toHaveBeenCalledWith('session.approval_decided', expect.anything());
+      expect(schedule.syncSessionReminders).not.toHaveBeenCalled();
+    });
+
+    it('booked already (an earlier call whose answer was lost): confirmed as usual', async () => {
+      writes.setAppointmentStatus.mockRejectedValue(conflict());
+      sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.BOOKED }));
+
+      await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW });
+
+      expect(store.cancelApproved).not.toHaveBeenCalled();
+      expect(store.revertDecision).not.toHaveBeenCalled();
+      expect(schedule.syncSessionReminders).toHaveBeenCalledWith(row({ status: SESSION_STATUS.BOOKED }));
+      expect(log.logging.audit).toHaveBeenCalledWith(
+        'session.approval_decided',
+        expect.objectContaining({ metadata: expect.objectContaining({ decision: 'APPROVED' }) }),
+      );
+    });
+
+    it('checked out meanwhile (a bill settled): the approval stands, no session reminders, a warning', async () => {
+      writes.setAppointmentStatus.mockRejectedValue(conflict());
+      sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.CHECK_OUT }));
+
+      await approveAwaiting({ actor: PSIKOLOG as never, actorWpUserId: 34, row: row(), approval: record(), now: NOW });
+
+      expect(store.cancelApproved).not.toHaveBeenCalled();
+      expect(store.revertDecision).not.toHaveBeenCalled();
+      expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: 7 } });
+      expect(schedule.syncSessionReminders).not.toHaveBeenCalled();
+      expect(log.logging.warn).toHaveBeenCalled();
+      expect(log.logging.audit).toHaveBeenCalledWith(
+        'session.approval_decided',
+        expect.objectContaining({ metadata: expect.objectContaining({ decision: 'APPROVED' }) }),
+      );
+    });
+  });
+
   it('the plugin failed and the appointment cannot be read back: undone, 502', async () => {
     writes.setAppointmentStatus.mockRejectedValue(new Error('plugin down'));
     sessions.findSessionById.mockRejectedValue(new Error('db down'));
@@ -362,6 +429,39 @@ describe('approveAwaiting', () => {
     ).rejects.toMatchObject({ code: 'upstream_failed', status: 502 });
 
     expect(store.revertDecision).toHaveBeenCalledWith(7, 'APPROVED', 'u_psi');
+  });
+});
+
+describe('completeApproval', () => {
+  const APPROVED = record({ state: 'APPROVED', decidedBy: 'u_psi', decidedAt: NOW });
+
+  it('books only over PENDING, then stops the reminder and schedules the session reminders', async () => {
+    await completeApproval(APPROVED, NOW);
+
+    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(
+      7,
+      1,
+      { gateway: 'xendit', wcOrderId: 49863, transactionId: 'tx_9' },
+      { expectStatus: 2 },
+    );
+    expect(schedule.syncSessionReminders).toHaveBeenCalledWith(row({ status: SESSION_STATUS.BOOKED }));
+  });
+
+  it('cancelled before the approval reached WordPress: the record joins the refund list, nothing throws', async () => {
+    writes.setAppointmentStatus.mockRejectedValue(new WpEndpointError('status 409', 409, 'praktiqu_status_conflict'));
+    sessions.findSessionById.mockResolvedValue(row({ status: SESSION_STATUS.CANCELLED }));
+
+    await completeApproval(APPROVED, NOW);
+
+    expect(store.cancelApproved).toHaveBeenCalledWith(7, NOW);
+    expect(schedule.syncSessionReminders).not.toHaveBeenCalled();
+  });
+
+  it('another failure still throws, for the caller to retry', async () => {
+    writes.setAppointmentStatus.mockRejectedValue(new Error('plugin down'));
+
+    await expect(completeApproval(APPROVED, NOW)).rejects.toThrow('plugin down');
+    expect(store.cancelApproved).not.toHaveBeenCalled();
   });
 });
 

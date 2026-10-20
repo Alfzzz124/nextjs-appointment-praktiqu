@@ -140,25 +140,39 @@ export type ConfirmedPayment = {
  * booking emails to patient, professional and clinic — exactly once, even when two
  * callers confirm the same order at the same time. Without it a BOOKED write fires only
  * the generic status hook, and nobody is mailed.
+ *
+ * `expectStatus` (plugin 1.8.4) makes the write a compare-and-set: a row that no longer
+ * has that status is left alone and the call throws a WpEndpointError that
+ * isStatusConflict() recognises; a row already at `status` answers `claimed: false`.
+ * Plugin 1.8.3 ignores it and writes as before.
  */
 export async function setAppointmentStatus(
   appointmentId: number,
   status: number,
   payment?: ConfirmedPayment,
-): Promise<{ id: number; status: number; cancelled: boolean; payment_confirmed?: boolean }> {
+  opts: { expectStatus?: number } = {},
+): Promise<{ id: number; status: number; cancelled: boolean; payment_confirmed?: boolean; claimed?: boolean }> {
   return wpRequestJson(`/appointments/${appointmentId}/status`, {
     method: 'POST',
-    body: payment
-      ? {
-          status,
-          payment: {
-            gateway: payment.gateway,
-            wc_order_id: payment.wcOrderId,
-            transaction_id: payment.transactionId ?? '',
-          },
-        }
-      : { status },
+    body: {
+      status,
+      ...(payment
+        ? {
+            payment: {
+              gateway: payment.gateway,
+              wc_order_id: payment.wcOrderId,
+              transaction_id: payment.transactionId ?? '',
+            },
+          }
+        : {}),
+      ...(opts.expectStatus !== undefined ? { expect_status: opts.expectStatus } : {}),
+    },
   });
+}
+
+/** The plugin's answer to an `expectStatus` the row no longer had (409). */
+export function isStatusConflict(err: unknown): boolean {
+  return err instanceof WpEndpointError && err.code === 'praktiqu_status_conflict';
 }
 
 /**

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import {
+  cancelApproved,
   claimDecision,
   countApprovals,
   findApproval,
@@ -173,6 +174,32 @@ describe('claimDecision / revertDecision', () => {
     await revertDecision(BASE + 105, 'APPROVED', 'someone-else');
 
     expect((await findApproval(BASE + 105))!.state).toBe('APPROVED');
+  });
+});
+
+describe('cancelApproved', () => {
+  it('moves only an APPROVED record to CANCELLED, with a refund to make', async () => {
+    await awaiting(BASE + 106);
+    expect(await cancelApproved(BASE + 106, T0)).toBe(false);
+    expect((await findApproval(BASE + 106))!.state).toBe('AWAITING');
+
+    await claimDecision(BASE + 106, { state: 'APPROVED', decidedBy: USER, decidedAt: T0 });
+    const later = new Date(T0.getTime() + 60_000);
+    expect(await cancelApproved(BASE + 106, later)).toBe(true);
+
+    const row = await findApproval(BASE + 106);
+    expect(row).toMatchObject({ state: 'CANCELLED', refundStatus: 'NEEDED', decidedBy: null, rejectReason: null });
+    expect(row!.decidedAt!.toISOString()).toBe(later.toISOString());
+    // Once only.
+    expect(await cancelApproved(BASE + 106, later)).toBe(false);
+  });
+
+  it('leaves a rejection alone', async () => {
+    await awaiting(BASE + 107);
+    await claimDecision(BASE + 107, { state: 'REJECTED', decidedBy: USER, decidedAt: T0, rejectReason: 'x' });
+
+    expect(await cancelApproved(BASE + 107, T0)).toBe(false);
+    expect((await findApproval(BASE + 107))!.state).toBe('REJECTED');
   });
 });
 

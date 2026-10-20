@@ -134,6 +134,25 @@ export async function revertDecision(
   });
 }
 
+/**
+ * APPROVED → CANCELLED with a refund to make, as one conditional UPDATE: the approval's
+ * confirmation found the appointment already cancelled, so it never became a booking.
+ * Nobody decided the cancellation through the app, hence decidedBy null.
+ */
+export async function cancelApproved(appointmentId: number, now: Date): Promise<boolean> {
+  const { count } = await prisma.sessionApproval.updateMany({
+    where: { appointmentId: BigInt(appointmentId), state: APPROVAL_STATE.APPROVED },
+    data: {
+      state: APPROVAL_STATE.CANCELLED,
+      decidedAt: now,
+      decidedBy: null,
+      rejectReason: null,
+      refundStatus: REFUND_STATUS.NEEDED,
+    },
+  });
+  return count === 1;
+}
+
 /** NEEDED → DONE. False when the refund was not needed, or already marked. */
 export async function markRefundDone(
   appointmentId: number,

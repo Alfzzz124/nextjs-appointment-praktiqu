@@ -17,6 +17,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 
 const writes = vi.hoisted(() => ({ setAppointmentStatus: vi.fn(), cancelAppointment: vi.fn() }));
 vi.mock('@/repositories/wp/appointments.write', async (orig) => ({
@@ -59,6 +60,7 @@ const APPT_BEING_CONFIRMED = BASE + 105; // APPROVED, still PENDING: the confirm
 const APPT_ITEM_HALF_REJECTED = BASE + 110; // OTHER_DOCTOR, REJECTED + PENDING, read as an item
 const APPT_APPROVE_REJECTED = BASE + 111; // OTHER_DOCTOR, REJECTED + PENDING, then /approve
 const APPT_JOB_HALF_REJECTED = BASE + 112; // OTHER_DOCTOR, REJECTED + PENDING, found by the reminder job
+const APPT_RACE_CANCELLED = BASE + 113; // OTHER_DOCTOR, AWAITING; cancelled between the claim and the plugin call
 
 const PSI = 'approval-reconcile-test-psi';
 const OTHER_PSI = 'approval-reconcile-test-other';
@@ -210,14 +212,32 @@ beforeAll(async () => {
   await record(APPT_APPROVE_REJECTED, OTHER_DOCTOR, 'REJECTED');
   await appointment(APPT_JOB_HALF_REJECTED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
   await record(APPT_JOB_HALF_REJECTED, OTHER_DOCTOR, 'REJECTED');
+  await appointment(APPT_RACE_CANCELLED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
+  await record(APPT_RACE_CANCELLED, OTHER_DOCTOR, 'AWAITING');
 });
+
+/** The plugin's status write, expect_status (1.8.4) included. */
+async function pluginSetStatus(id: number, status: number, _payment?: unknown, opts: { expectStatus?: number } = {}) {
+  if (opts.expectStatus !== undefined) {
+    const moved = await prisma.$executeRawUnsafe(
+      'UPDATE wp_kc_appointments SET status = ? WHERE id = ? AND status = ?',
+      status,
+      id,
+      opts.expectStatus,
+    );
+    if (moved === 0) {
+      if ((await statusOf(id)) !== status) throw new WpEndpointError('status 409', 409, 'praktiqu_status_conflict');
+      return { id, status, cancelled: status === 0, claimed: false };
+    }
+    return { id, status, cancelled: status === 0, claimed: true };
+  }
+  await prisma.$executeRawUnsafe('UPDATE wp_kc_appointments SET status = ? WHERE id = ?', status, id);
+  return { id, status, cancelled: status === 0 };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  writes.setAppointmentStatus.mockImplementation(async (id: number, status: number) => {
-    await prisma.$executeRawUnsafe('UPDATE wp_kc_appointments SET status = ? WHERE id = ?', status, id);
-    return { id, status, cancelled: status === 0 };
-  });
+  writes.setAppointmentStatus.mockImplementation(pluginSetStatus);
   writes.cancelAppointment.mockResolvedValue({ id: 0, status: 0, cancelled: true });
   jobsClient.enqueue.mockResolvedValue(undefined);
   jobsClient.cancel.mockResolvedValue(undefined);
@@ -252,6 +272,24 @@ describe('/approve', () => {
     expect((await res.json()).title).toBe('approval_already_decided');
     expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
     expect(await statusOf(APPT_APPROVE_REJECTED)).toBe(APPOINTMENT_STATUS.PENDING);
+  });
+
+  it('cancelled between the claim and the plugin call: 409, the booking stays CANCELLED and joins the refund list', async () => {
+    writes.setAppointmentStatus.mockImplementationOnce(async (id: number, ...rest: unknown[]) => {
+      // KiviCare's dashboard (or a cancel that read the record before the claim) lands first.
+      await prisma.$executeRawUnsafe('UPDATE wp_kc_appointments SET status = ? WHERE id = ?', APPOINTMENT_STATUS.CANCELLED, id);
+      return pluginSetStatus(id, ...(rest as [number, unknown, { expectStatus?: number }]));
+    });
+
+    const res = await approvePost(await req(OTHER_PSI, 'PROFESSIONAL', '/x', {}), sessionCtx(APPT_RACE_CANCELLED));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).title).toBe('booking_cancelled');
+    expect(await statusOf(APPT_RACE_CANCELLED)).toBe(APPOINTMENT_STATUS.CANCELLED);
+    expect(await approvalOf(APPT_RACE_CANCELLED)).toMatchObject({ state: 'CANCELLED', refundStatus: 'NEEDED', decidedBy: null });
+
+    const item = await itemGet(await req(OTHER_PSI, 'PROFESSIONAL', '/x'), sessionCtx(APPT_RACE_CANCELLED));
+    expect((await item.json()).data).toMatchObject({ status: 'CANCELLED', approval: { state: 'CANCELLED', refundStatus: 'NEEDED' } });
   });
 
   it('the plugin commits BOOKED and then errors: the approval stands', async () => {
