@@ -1,11 +1,12 @@
 /**
- * Records stranded by an appointment that moved without passing through the approval
- * service, against the test database (final review I2, M1).
+ * An approval record and its appointment that disagree, against the test database (final
+ * review I2, I3, M1).
  *
  * The reminder job stops a day before the session and never runs after it, so the queue
  * and the item settle what it would have: a booking cancelled or checked out in KiviCare,
  * and a rejection whose CANCELLED write never landed. An approval whose plugin call
- * errored after committing is kept, not undone.
+ * errored after committing is kept, not undone. A booking approved but not yet confirmed
+ * cannot be cancelled or rejected under it.
  *
  * The plugin is the one boundary mocked; jobs and email are mocked so nothing leaves the
  * machine.
@@ -39,6 +40,8 @@ vi.mock('@/lib/email', async (orig) => ({
 import { GET as queueGet } from '@/app/api/v1/sessions/approvals/route';
 import { GET as itemGet } from '@/app/api/v1/sessions/[id]/approval/route';
 import { POST as approvePost } from '@/app/api/v1/sessions/[id]/approve/route';
+import { POST as rejectPost } from '@/app/api/v1/sessions/[id]/reject/route';
+import { POST as cancelPost } from '@/app/api/v1/sessions/[id]/cancel/route';
 
 const BASE = 8_880_000;
 const END = BASE + 10_000;
@@ -51,6 +54,7 @@ const APPT_CHECKED_OUT = BASE + 101; // AWAITING, checked out by a bill settleme
 const APPT_HALF_REJECTED = BASE + 102; // REJECTED, but its CANCELLED write never landed
 const APPT_WAITING = BASE + 103; // AWAITING, still PENDING: stays
 const APPT_LOST_ANSWER = BASE + 104; // AWAITING; the plugin commits BOOKED, then errors
+const APPT_BEING_CONFIRMED = BASE + 105; // APPROVED, still PENDING: the confirmation is on its way
 const APPT_ITEM_HALF_REJECTED = BASE + 110; // OTHER_DOCTOR, REJECTED + PENDING, read as an item
 const APPT_APPROVE_REJECTED = BASE + 111; // OTHER_DOCTOR, REJECTED + PENDING, then /approve
 
@@ -127,7 +131,7 @@ async function appointment(id: number, doctor: number, status: number) {
   );
 }
 
-async function record(id: number, doctor: number, state: 'AWAITING' | 'REJECTED') {
+async function record(id: number, doctor: number, state: 'AWAITING' | 'APPROVED' | 'REJECTED') {
   await prisma.sessionApproval.create({
     data: {
       appointmentId: BigInt(id),
@@ -138,6 +142,7 @@ async function record(id: number, doctor: number, state: 'AWAITING' | 'REJECTED'
       ...(state === 'REJECTED'
         ? { decidedAt: new Date(), decidedBy: PSI, rejectReason: 'Jadwal bentrok', refundStatus: 'NEEDED' }
         : {}),
+      ...(state === 'APPROVED' ? { decidedAt: new Date(), decidedBy: PSI } : {}),
     },
   });
 }
@@ -195,6 +200,8 @@ beforeAll(async () => {
   await record(APPT_WAITING, DOCTOR, 'AWAITING');
   await appointment(APPT_LOST_ANSWER, DOCTOR, APPOINTMENT_STATUS.PENDING);
   await record(APPT_LOST_ANSWER, DOCTOR, 'AWAITING');
+  await appointment(APPT_BEING_CONFIRMED, DOCTOR, APPOINTMENT_STATUS.PENDING);
+  await record(APPT_BEING_CONFIRMED, DOCTOR, 'APPROVED');
   await appointment(APPT_ITEM_HALF_REJECTED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
   await record(APPT_ITEM_HALF_REJECTED, OTHER_DOCTOR, 'REJECTED');
   await appointment(APPT_APPROVE_REJECTED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING);
@@ -215,6 +222,22 @@ beforeEach(() => {
 
 afterAll(async () => {
   await wipe();
+});
+
+describe('approved and still being confirmed', () => {
+  it('/reject and /cancel answer 409 approval_already_decided and change nothing', async () => {
+    const rejected = await rejectPost(await req(PSI, 'PROFESSIONAL', '/x', { reason: 'basi' }), sessionCtx(APPT_BEING_CONFIRMED));
+    expect(rejected.status).toBe(409);
+    expect((await rejected.json()).title).toBe('approval_already_decided');
+
+    const cancelled = await cancelPost(await req(PSI, 'PROFESSIONAL', '/x', {}), sessionCtx(APPT_BEING_CONFIRMED));
+    expect(cancelled.status).toBe(409);
+    expect((await cancelled.json()).title).toBe('approval_already_decided');
+
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(await statusOf(APPT_BEING_CONFIRMED)).toBe(APPOINTMENT_STATUS.PENDING);
+    expect(await approvalOf(APPT_BEING_CONFIRMED)).toMatchObject({ state: 'APPROVED', refundStatus: 'NONE' });
+  });
 });
 
 describe('/approve', () => {

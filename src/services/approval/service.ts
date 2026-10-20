@@ -331,6 +331,20 @@ async function afterBooked(appointmentId: number): Promise<void> {
 }
 
 /**
+ * Approved, and the confirmation is on its way to WordPress (or died on the way): the
+ * record says APPROVED while the appointment is still PENDING. A cancel now would find no
+ * AWAITING record to put on the refund list, and the approval's own write could still
+ * land after it. Every cancel path refuses this state; it clears in moments, or through
+ * completeApproval.
+ */
+export function isBeingConfirmed(
+  status: SessionStatus,
+  approval: Pick<store.ApprovalRecord, 'state'> | null | undefined,
+): boolean {
+  return status === SESSION_STATUS.PENDING && approval?.state === store.APPROVAL_STATE.APPROVED;
+}
+
+/**
  * Finish an approval that was claimed but never reached the plugin (the process died in
  * between). Safe to repeat: the plugin's claim only moves a PENDING row.
  */

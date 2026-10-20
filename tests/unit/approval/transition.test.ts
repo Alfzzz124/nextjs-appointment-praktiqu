@@ -10,11 +10,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo';
 import type { ApprovalRecord } from '@/services/approval/store';
 
-const repo = vi.hoisted(() => ({ findSessionById: vi.fn(), listSessions: vi.fn(), setSessionStatusDirect: vi.fn() }));
+const repo = vi.hoisted(() => ({
+  findSessionById: vi.fn(),
+  listSessions: vi.fn(),
+  listSessionsByIds: vi.fn(),
+  setSessionStatusDirect: vi.fn(),
+}));
 vi.mock('@/repositories/wp/sessions.repo', async (orig) => ({
   ...(await orig<typeof import('@/repositories/wp/sessions.repo')>()),
   findSessionById: (...a: unknown[]) => repo.findSessionById(...a),
   listSessions: (...a: unknown[]) => repo.listSessions(...a),
+  listSessionsByIds: (...a: unknown[]) => repo.listSessionsByIds(...a),
   setSessionStatusDirect: (...a: unknown[]) => repo.setSessionStatusDirect(...a),
 }));
 
@@ -130,6 +136,7 @@ function actAs(actor: { id: string; role: string }, wpUserId: bigint) {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.findSessionById.mockResolvedValue(row());
+  repo.listSessionsByIds.mockResolvedValue([]);
   repo.setSessionStatusDirect.mockResolvedValue(true);
   writes.setAppointmentStatus.mockResolvedValue({ id: 7, status: 1, cancelled: false });
   writes.cancelAppointment.mockResolvedValue({ id: 7, status: 0, cancelled: true });
@@ -280,6 +287,27 @@ it.each(['REJECTED', 'CANCELLED'] as const)(
   },
 );
 
+describe('approved and still being confirmed (APPROVED record, PENDING booking)', () => {
+  beforeEach(() => {
+    approvalStore.findApproval.mockResolvedValue(record({ state: 'APPROVED', decidedBy: 'u_psi' }));
+  });
+
+  it.each([
+    ['/cancel', undefined],
+    ['/reject', 'reject' as const],
+  ])('%s is refused with 409: cancelling now would drop the money unflagged', async (_label, intent) => {
+    actAs(ADMIN, 24n);
+
+    await expect(
+      transitionSession({ actor: ADMIN as never, sessionId: 7, target: SESSION_STATUS.CANCELLED, reason: 'x', intent }),
+    ).rejects.toMatchObject({ status: 409, code: 'approval_already_decided' });
+
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(approval.rejectAwaiting).not.toHaveBeenCalled();
+    expect(approval.closeOnCancel).not.toHaveBeenCalled();
+  });
+});
+
 it('an APPROVED record on a PENDING booking finishes the approval', async () => {
   approvalStore.findApproval.mockResolvedValue(record({ state: 'APPROVED', decidedBy: 'u_psi' }));
 
@@ -307,6 +335,27 @@ describe('invalidatePendingForOffDay', () => {
 });
 
 describe('bulkCancelSessions', () => {
+  it('skips a booking that is approved and still being confirmed, and counts it as not cancelled', async () => {
+    approvalStore.findApprovals.mockResolvedValue(
+      new Map([
+        [7, record({ appointmentId: 7, state: 'APPROVED' })],
+        [9, record({ appointmentId: 9, state: 'APPROVED' })],
+      ]),
+    );
+    repo.listSessionsByIds.mockResolvedValue([
+      row({ id: 7, status: SESSION_STATUS.PENDING }),
+      row({ id: 9, status: SESSION_STATUS.BOOKED }),
+    ]);
+
+    expect(await bulkCancelSessions([7, 8, 9], 'u_admin')).toBe(2);
+
+    expect(approvalStore.findApprovals).toHaveBeenCalledTimes(1);
+    expect(approvalStore.findApprovals).toHaveBeenCalledWith([7, 8, 9]);
+    expect(repo.listSessionsByIds).toHaveBeenCalledWith([7, 9]);
+    // An approved booking that is BOOKED is an ordinary booking: it cancels.
+    expect(writes.cancelAppointment.mock.calls).toEqual([[8], [9]]);
+  });
+
   it('closes the approval record of every booking it cancelled', async () => {
     writes.cancelAppointment.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('plugin')).mockResolvedValueOnce({});
 

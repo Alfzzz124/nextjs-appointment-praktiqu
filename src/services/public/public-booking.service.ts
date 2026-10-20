@@ -39,7 +39,13 @@ import {
 import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
 import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
 import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
-import { closeOnCancel, publicApprovalView, type PublicApprovalView } from '@/services/approval/service';
+import {
+  closeOnCancel,
+  isBeingConfirmed,
+  publicApprovalView,
+  type PublicApprovalView,
+} from '@/services/approval/service';
+import { findApproval } from '@/services/approval/store';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -578,6 +584,12 @@ export async function cancelPublicAppointment(id: number): Promise<PublicAppoint
   if (!current) throw new AppointmentNotFoundError();
 
   if (!CANCELLABLE_STATUSES.includes(current.status)) {
+    throw new NotCancellableError();
+  }
+  // Approved by the psychologist and on its way to BOOKED: a cancel now would drop the
+  // payment with no refund flag. Not cancellable for the moment — the existing answer,
+  // because a public endpoint never answers a new 409.
+  if (current.status === SESSION_STATUS.PENDING && isBeingConfirmed(current.status, await findApproval(id))) {
     throw new NotCancellableError();
   }
 

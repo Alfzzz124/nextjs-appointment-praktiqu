@@ -28,6 +28,7 @@ import {
   canTransition,
   findSessionById,
   listSessions as listSessionRows,
+  listSessionsByIds,
   normaliseStatus,
   setSessionStatusDirect,
   toKcStatus,
@@ -52,6 +53,7 @@ import {
   closeOnCancel,
   completeApproval,
   holdForApproval,
+  isBeingConfirmed,
   rejectAwaiting,
   toPublicApprovalView,
   withApprovals,
@@ -551,6 +553,16 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
     return reread(actor, sessionId);
   }
 
+  if (target === SESSION_STATUS.CANCELLED && isBeingConfirmed(row.status, approval)) {
+    // Approved, and the confirmation has not reached WordPress yet. A cancel or a reject
+    // now would drop the money with no refund flag. It clears in moments.
+    throw new SessionServiceError(
+      'approval_already_decided',
+      'This booking was approved and is being confirmed; reload it',
+      409,
+    );
+  }
+
   if (
     target === SESSION_STATUS.BOOKED &&
     (approval?.state === APPROVAL_STATE.REJECTED || approval?.state === APPROVAL_STATE.CANCELLED)
@@ -752,9 +764,27 @@ export async function sessionIdsOutsideScope(actor: Actor, ids: number[]): Promi
   return ids.filter((id) => !inClinic.has(id));
 }
 
+/**
+ * Of `ids`, the bookings approved and still being confirmed (isBeingConfirmed). One
+ * approval lookup for all of them; the sessions are read only for the APPROVED ones,
+ * since an approved booking that is BOOKED cancels like any other.
+ */
+async function idsBeingConfirmed(ids: number[]): Promise<Set<number>> {
+  const approvals = await findApprovals(ids);
+  const approved = [...approvals.values()]
+    .filter((a) => a.state === APPROVAL_STATE.APPROVED)
+    .map((a) => a.appointmentId);
+  if (approved.length === 0) return new Set();
+  const rows = await listSessionsByIds(approved);
+  return new Set(rows.filter((r) => isBeingConfirmed(r.status, approvals.get(r.id))).map((r) => r.id));
+}
+
 export async function bulkCancelSessions(ids: number[], actorId: string | null = null): Promise<number> {
+  const confirming = await idsBeingConfirmed(ids);
   let cancelled = 0;
   for (const id of ids) {
+    // Skipped, and so not counted: the same answer as a cancel that failed.
+    if (confirming.has(id)) continue;
     try {
       await cancelAppointment(id);
       cancelled += 1;
