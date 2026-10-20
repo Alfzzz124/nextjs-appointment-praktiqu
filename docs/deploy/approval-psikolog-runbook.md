@@ -51,6 +51,27 @@ backend aman sendirian:
 5. Admin mengembalikan dana di Xendit/WooCommerce → **Tandai sudah direfund**.
 6. Matikan saklar psikolog uji.
 
+## Operasional
+
+- **Booking menunggu tanpa job pengingat.** Kalau WordPress menolak atau tak terjangkau saat
+  booking masuk antrean (atau saat job pengingat menjadwalkan run berikutnya), booking tetap ada di
+  antrean psikolog, dan email permintaan pertamanya tetap terkirim. Yang hilang: pengingat
+  berikutnya dan eskalasi ke admin klinik. Setiap kejadian dicatat sebagai error:
+  ```sql
+  SELECT resourceId AS appointmentId, occurredAt, metadata
+  FROM log_entries
+  WHERE level = 'ERROR' AND message = 'approval: the reminder job could not be scheduled'
+  ORDER BY occurredAt DESC;
+  ```
+  Untuk appointment yang `session_approvals.state`-nya masih `AWAITING`, beri tahu psikolog atau
+  admin kliniknya, atau putuskan dari antrean.
+- **Penolakan yang setengah jadi** (`REJECTED` + janji temu `PENDING`, misalnya proses mati tepat
+  setelah tombol Tolak) diselesaikan oleh pembacaan antrean/detail atau oleh job pengingat. Hanya
+  jalur job pengingat yang mengirim email penolakan ke klien dan menulis audit
+  `session.approval_decided` (`recovered: true`). Kalau pembacaan lebih dulu, tidak ada email. Yang
+  tertinggal hanya audit `session.status_changed` (`finishedRejection: true`). Kalau perlu, kabari
+  kliennya secara manual.
+
 ## Rollback
 
 - FE dan backend: revert merge, lalu auto-deploy. Tabel baru boleh dibiarkan; backend lama tidak membacanya.

@@ -52,7 +52,7 @@ diterima token `CLIENT` di endpoint sesi staf (lihat di atas).
 | `PENDING` | — | — | Belum dibayar |
 | `PENDING` | `AWAITING` | `NONE` | Lunas · menunggu psikolog |
 | `PENDING` | `APPROVED` | `NONE` | Sementara, lihat catatan di bawah |
-| `PENDING` | `REJECTED` | `NEEDED` | Sementara: penolakan yang status batalnya belum tertulis. Dirapikan menjadi `CANCELLED` saat antrean atau detail dibaca, atau oleh job pengingat. |
+| `PENDING` | `REJECTED` | `NEEDED` | Sementara: penolakan yang status batalnya belum tertulis. Dirapikan menjadi `CANCELLED` saat antrean atau detail dibaca, atau oleh job pengingat. Email penolakan ke klien hanya terkirim kalau job pengingat yang merapikannya. |
 | `BOOKED` / `CHECK_IN` / `CHECK_OUT` | `APPROVED` | `NONE` | Label status biasa (`BOOKED`: Terjadwal · lunas); `approval` tidak mengubah artinya |
 | `CANCELLED` | `REJECTED` | `NEEDED` / `DONE` | Ditolak · perlu refund / sudah direfund |
 | `CANCELLED` | `CANCELLED` | `NEEDED` / `DONE` | Batal · perlu refund / sudah direfund |
@@ -131,6 +131,24 @@ terputus):
 
 Jadi isi dan `counts` bisa berubah di antara dua pemuatan tanpa ada yang menekan tombol. Itu
 disengaja; tampilkan apa adanya.
+
+Pembacaan ini tidak mengirim email. Penolakan yang dirapikan lewat antrean atau detail tidak
+mengirim email penolakan ke klien. Email itu hanya terkirim kalau job pengingat yang lebih dulu
+merapikannya.
+
+**Booking yang sudah ditolak tidak bisa dibuka ulang dari dashboard KiviCare.** Keputusan
+`REJECTED` di catatan tetap dipegang, apa pun yang ditulis di KiviCare setelahnya:
+
+- Kalau statusnya dikembalikan ke **Pending**, catatannya menjadi `REJECTED` + `PENDING` lagi.
+  Pembacaan antrean atau detail berikutnya akan **membatalkannya lagi** (baris ketiga tabel di
+  atas). Biasanya ini terjadi tanpa email. Klien hanya menerima email penolakan lagi kalau job
+  pengingat lama ternyata masih terjadwal.
+- Kalau statusnya diubah ke **Booked**, **Check-in** atau **Check-out**, tidak ada aturan yang
+  merapikannya. Sesinya berjalan, tetapi catatannya tetap `REJECTED` dengan `refundStatus = NEEDED`,
+  jadi booking itu tetap muncul di **Perlu refund**.
+
+Kalau klien jadi dilayani, buat booking baru untuknya. Selesaikan refund booking yang ditolak lewat
+`/refund-done`; catatannya boleh menyebut bahwa dana dipakai untuk booking pengganti.
 
 Peran: psikolog (miliknya saja, `professionalId` diabaikan), `CLINIC_ADMIN` (klinik aktif;
 klinik lain → halaman kosong), `SUPER_ADMIN` (semua, atau `clinicId`). Resepsionis → 403.
