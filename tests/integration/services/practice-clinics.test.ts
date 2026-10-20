@@ -8,7 +8,7 @@ import { prisma } from '@/lib/db';
 import { listPracticeClinics } from '@/services/billing/kc-actor';
 import { assertTestDb } from '../../billing/fixtures';
 
-const BASE = 8_791_000;
+const BASE = 8_710_000;
 const END = BASE + 10_000;
 const ACTIVE_A = BASE + 1;
 const ACTIVE_B = BASE + 2;
@@ -36,7 +36,7 @@ beforeAll(async () => {
     );
   }
   // Out of id order, and ACTIVE_B twice: the answer must still be ascending and unique.
-  let m = BASE + 9000;
+  let m = BASE + 900;
   for (const clinicId of [ACTIVE_B, RETIRED, ACTIVE_A, ACTIVE_B]) {
     m += 1;
     await prisma.kcDoctorClinicMapping.create({

@@ -12,8 +12,8 @@ import { assertTestDb } from '../../billing/fixtures';
 
 const { POST } = await import('@/app/api/v1/services/route');
 
-const BASE = 8_792_000;
-const END = BASE + 5_000;
+const BASE = 8_720_000;
+const END = BASE + 10_000;
 const ACTIVE = BASE + 1;
 const RETIRED = BASE + 2;
 const CATEGORY = BASE + 3;
@@ -22,7 +22,7 @@ const OTHER = BASE + 501; // a colleague at ACTIVE
 const D_CUID = 'prof-create-test-d';
 
 /** Every service this file creates starts with this, so cleanup can find it by name. */
-const NAME_PREFIX = 'Uji E2E Psikolog 8792000';
+const NAME_PREFIX = `Uji E2E Psikolog ${BASE}`;
 
 async function linkAuthUser(cuid: string, wpUserId: number, role: string) {
   await prisma.user.create({
@@ -75,9 +75,9 @@ beforeAll(async () => {
 
   await prisma.kcStaticData.create({
     data: {
-      id: BigInt(CATEGORY), type: 'service_type', label: 'Layanan Uji', value: 'layanan_uji_8792000',
+      id: BigInt(CATEGORY), type: 'service_type', label: 'Layanan Uji', value: `layanan_uji_${BASE}`,
       status: BigInt(1), createdAt: new Date(),
-    } as never,
+    },
   });
 
   await linkAuthUser(D_CUID, D, 'PROFESSIONAL');
@@ -157,7 +157,7 @@ describe('POST /api/v1/services as a PROFESSIONAL (real route, real DB)', () => 
 
     expect(res.status).toBe(201);
     expect(json.name).toBe(name);
-    expect(json.category).toEqual({ id: CATEGORY, label: 'Layanan Uji', value: 'layanan_uji_8792000' });
+    expect(json.category).toEqual({ id: CATEGORY, label: 'Layanan Uji', value: `layanan_uji_${BASE}` });
     expect(json.mappings).toHaveLength(1);
     expect(json.mappings[0].doctorId).toBe(D);
 
