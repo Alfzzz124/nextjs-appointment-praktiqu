@@ -502,7 +502,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `GET` | `/api/v1/prescriptions/{id}` | `prescription_read` |
 | `PUT` | `/api/v1/prescriptions/{id}` | `prescription_manage` |
 
-### `professionals` (23)
+### `professionals` (25)
 
 | Method | Endpoint | Capability (KC) |
 |---|---|---|
@@ -515,6 +515,8 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `DELETE` | `/api/v1/professionals/{id}` | — |
 | `GET` | `/api/v1/professionals/{id}` | — |
 | `PATCH` | `/api/v1/professionals/{id}` | — |
+| `GET` | `/api/v1/professionals/{id}/approval-setting` | — |
+| `PUT` | `/api/v1/professionals/{id}/approval-setting` | — |
 | `GET` | `/api/v1/professionals/{id}/availability` | — |
 | `PUT` | `/api/v1/professionals/{id}/availability` | — |
 | `DELETE` | `/api/v1/professionals/{id}/off-days` | — |
@@ -565,13 +567,14 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `PATCH` | `/api/v1/session-notes/{id}` | — |
 | `POST` | `/api/v1/session-notes/{id}/close` | — |
 
-### `sessions` (23)
+### `sessions` (26)
 
 | Method | Endpoint | Capability (KC) |
 |---|---|---|
 | `GET` | `/api/v1/sessions` | — |
 | `POST` | `/api/v1/sessions` | — |
 | `POST` | `/api/v1/sessions/bulk/delete` | — |
+| `GET` | `/api/v1/sessions/approvals` | — |
 | `GET` | `/api/v1/sessions/calendar` | — |
 | `GET` | `/api/v1/sessions/export` | — |
 | `POST` | `/api/v1/sessions/payment-cancel` | — |
@@ -580,6 +583,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `POST` | `/api/v1/sessions/payment-webhook` | — |
 | `GET` | `/api/v1/sessions/pending` | — |
 | `GET` | `/api/v1/sessions/{id}` | — |
+| `GET` | `/api/v1/sessions/{id}/approval` | — |
 | `POST` | `/api/v1/sessions/{id}/approve` | — |
 | `GET` | `/api/v1/sessions/{id}/attachments/{mediaId}/content` | — |
 | `POST` | `/api/v1/sessions/{id}/cancel` | — |
@@ -589,6 +593,7 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 | `PUT` | `/api/v1/sessions/{id}/custom-fields` | — |
 | `GET` | `/api/v1/sessions/{id}/notes` | — |
 | `GET` | `/api/v1/sessions/{id}/print-invoice` | — |
+| `POST` | `/api/v1/sessions/{id}/refund-done` | — |
 | `POST` | `/api/v1/sessions/{id}/regenerate-video-conference` | — · _stub 501_ |
 | `POST` | `/api/v1/sessions/{id}/reject` | — |
 | `GET` | `/api/v1/sessions/{id}/summary` | — |
