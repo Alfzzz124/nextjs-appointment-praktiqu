@@ -10,11 +10,11 @@ Catatan praktis cara mengakses endpoint yang ada di [`openapi.yaml`](./openapi.y
 
 | | Jumlah |
 |---|---|
-| Total operasi | **265** |
+| Total operasi | **270** |
 | Publik (tanpa token) | **21** |
-| Butuh Bearer token | **244** |
+| Butuh Bearer token | **249** |
 
-> Angka di atas: 260/20/240 saat diverifikasi 2026-07-20, ditambah `POST /api/v1/public/auth/register` yang menyusul pada 2026-08-07, ditambah 4 operasi `encounter-documents` (`GET`/`POST /api/v1/encounters/{id}/documents`, `PATCH /api/v1/patient-medical-reports/{id}`, `GET /api/v1/sessions/{id}/attachments/{mediaId}/content`) yang menyusul pada 2026-08-25 — semuanya butuh Bearer token.
+> Angka di atas: 260/20/240 saat diverifikasi 2026-07-20, ditambah `POST /api/v1/public/auth/register` yang menyusul pada 2026-08-07, ditambah 4 operasi `encounter-documents` (`GET`/`POST /api/v1/encounters/{id}/documents`, `PATCH /api/v1/patient-medical-reports/{id}`, `GET /api/v1/sessions/{id}/attachments/{mediaId}/content`) yang menyusul pada 2026-08-25, ditambah 5 operasi approval psikolog (`GET /api/v1/sessions/approvals`, `GET /api/v1/sessions/{id}/approval`, `POST /api/v1/sessions/{id}/refund-done`, `GET`/`PUT /api/v1/professionals/{id}/approval-setting`) yang menyusul pada 2026-10-20 — semuanya butuh Bearer token.
 
 **Aturan mudah:**
 - Semua yang berawalan **`/api/v1/public/*`** → **publik** (tanpa token).
@@ -573,8 +573,8 @@ Dikelompokkan per modul. Kolom **Capability** hanya untuk modul KC — kalau `�
 |---|---|---|
 | `GET` | `/api/v1/sessions` | — |
 | `POST` | `/api/v1/sessions` | — |
-| `POST` | `/api/v1/sessions/bulk/delete` | — |
 | `GET` | `/api/v1/sessions/approvals` | — |
+| `POST` | `/api/v1/sessions/bulk/delete` | — |
 | `GET` | `/api/v1/sessions/calendar` | — |
 | `GET` | `/api/v1/sessions/export` | — |
 | `POST` | `/api/v1/sessions/payment-cancel` | — |
