@@ -28,6 +28,7 @@ import {
   canTransition,
   findSessionById,
   listSessions as listSessionRows,
+  listSessionsByIds,
   normaliseStatus,
   setSessionStatusDirect,
   toKcStatus,
@@ -45,6 +46,20 @@ import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.r
 import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { syncSessionReminders } from './reminder-schedule';
+import { APPROVAL_STATE, findApproval, findApprovals } from '@/services/approval/store';
+import {
+  approveAwaiting,
+  closeOnCancel,
+  completeApproval,
+  holdForApproval,
+  isBeingConfirmed,
+  rejectAwaiting,
+  shouldHoldForApproval,
+  toPublicApprovalView,
+  withApprovals,
+  type ApprovalView,
+  type PublicApprovalView,
+} from '@/services/approval/service';
 
 export { SESSION_STATUS, canTransition, normaliseStatus };
 export type { SessionStatus };
@@ -89,6 +104,12 @@ export interface SessionWithRelations extends Session {
   professionalName: string;
   clientName: string;
   clientEmail: string;
+  /**
+   * The psychologist-approval record, when this booking was paid for a psychologist who
+   * approves their own bookings. Null for every other booking. See services/approval.
+   * Staff get the whole view; a client only the public one (`forActor`).
+   */
+  approval?: ApprovalView | PublicApprovalView | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -190,6 +211,20 @@ function assertCanRead(kc: KcActor, s: SessionRow): void {
   // Clinic staff, scoped to their own clinic.
   if (kc.clinicId !== null && s.clinicId === Number(kc.clinicId)) return;
   throw new SessionServiceError('forbidden', 'Not authorized for this clinic', 403);
+}
+
+/**
+ * Sessions as this actor may see them. A client's token reaches these endpoints for their
+ * own sessions, but the staff approval view carries the internal reject reason, staff
+ * names and order numbers (spec §2), so a client gets the public view instead. The one
+ * place that decides; every return of sessions with `approval` passes through here.
+ */
+function forActor<S extends { approval: ApprovalView | null }>(
+  actor: Actor,
+  sessions: S[],
+): Array<Omit<S, 'approval'> & { approval: ApprovalView | PublicApprovalView | null }> {
+  if (actor.role !== 'CLIENT') return sessions;
+  return sessions.map((s) => ({ ...s, approval: s.approval ? toPublicApprovalView(s.approval) : null }));
 }
 
 async function loadForActor(kc: KcActor, id: number): Promise<SessionRow> {
@@ -363,7 +398,8 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
 
 export async function getSession(actor: Actor, id: number): Promise<SessionWithRelations> {
   const kc = await resolveKcActor(actor);
-  return toSession(await loadForActor(kc, id));
+  const [session] = forActor(actor, await withApprovals([toSession(await loadForActor(kc, id))]));
+  return session;
 }
 
 export async function listSessions(
@@ -411,7 +447,7 @@ export async function listSessions(
   const { items, total } = await listSessionRows(query);
 
   return {
-    data: items.map(toSession),
+    data: forActor(actor, await withApprovals(items.map(toSession))),
     pagination: {
       currentPage: page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -436,7 +472,9 @@ export async function listPendingForProfessional(
     professionalId: target,
     statuses: [SESSION_STATUS.PENDING],
   });
-  return items.map(toSession);
+  // The pending queue holds both unpaid bookings and paid ones waiting for approval;
+  // `approval` is what tells them apart.
+  return forActor(actor, await withApprovals(items.map(toSession)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -448,10 +486,23 @@ export interface TransitionArgs {
   sessionId: number;
   target: SessionStatus;
   reason?: string;
+  /**
+   * Set by POST /sessions/:id/reject. For a paid booking that waits for its psychologist
+   * a rejection is a decision with its own rules (who may, the client's mail, the refund);
+   * a plain cancel of the same booking is not.
+   */
+  intent?: 'reject';
+}
+
+async function reread(actor: Actor, sessionId: number): Promise<SessionWithRelations> {
+  const updated = await findSessionById(sessionId);
+  if (!updated) throw new SessionServiceError('not_found', 'Session not found', 404);
+  const [session] = forActor(actor, await withApprovals([toSession(updated)]));
+  return session;
 }
 
 export async function transitionSession(args: TransitionArgs): Promise<SessionWithRelations> {
-  const { actor, sessionId, target, reason } = args;
+  const { actor, sessionId, target, reason, intent } = args;
   const kc = await resolveKcActor(actor);
   const row = await loadForActor(kc, sessionId);
 
@@ -478,6 +529,68 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
       400,
     );
   }
+  // A stale reject must not cancel an approved, paid booking as a plain cancel.
+  if (intent === 'reject' && row.status !== SESSION_STATUS.PENDING) {
+    throw new SessionServiceError('invalid_transition', 'Only a pending booking can be rejected', 400);
+  }
+
+  // A PENDING booking may be paid and waiting for its psychologist (session_approvals).
+  // Approving or rejecting it is a decision with its own rules — services/approval.
+  const approval = row.status === SESSION_STATUS.PENDING ? await findApproval(sessionId) : null;
+
+  if (approval?.state === APPROVAL_STATE.AWAITING && (target === SESSION_STATUS.BOOKED || intent === 'reject')) {
+    if (!isAdmin && !isOwningProfessional) {
+      throw new SessionServiceError('forbidden', 'Not authorized to decide this booking', 403);
+    }
+    const actorWpUserId = Number(kc.wpUserId);
+    if (target === SESSION_STATUS.BOOKED) await approveAwaiting({ actor, actorWpUserId, row, approval });
+    else await rejectAwaiting({ actor, actorWpUserId, row, reason: reason ?? '' });
+    return reread(actor, sessionId);
+  }
+
+  if (approval?.state === APPROVAL_STATE.APPROVED && target === SESSION_STATUS.BOOKED) {
+    // An earlier approval claimed the record but never reached the plugin.
+    await completeApproval(approval);
+    return reread(actor, sessionId);
+  }
+
+  if (target === SESSION_STATUS.CANCELLED && isBeingConfirmed(row.status, approval)) {
+    // Approved, and the confirmation has not reached WordPress yet. A cancel or a reject
+    // now would drop the money with no refund flag. It clears in moments.
+    throw new SessionServiceError(
+      'approval_already_decided',
+      'This booking was approved and is being confirmed; reload it',
+      409,
+    );
+  }
+
+  if (
+    target === SESSION_STATUS.BOOKED &&
+    (approval?.state === APPROVAL_STATE.REJECTED || approval?.state === APPROVAL_STATE.CANCELLED)
+  ) {
+    // Decided against, but the CANCELLED write has not landed yet. Booking it now would
+    // book a session whose money is already on the refund list.
+    throw new SessionServiceError(
+      'approval_already_decided',
+      `This booking was already ${approval.state}; reload it`,
+      409,
+    );
+  }
+
+  if (target === SESSION_STATUS.BOOKED && approval === null && (await shouldHoldForApproval(row))) {
+    // "Mark as paid" for a psychologist who approves their own bookings: the payment is
+    // now known, so the booking joins their queue instead of skipping it — unless the
+    // session has already started, in which case it is booked as before.
+    await holdForApproval({ row, paymentOrderId: null, actorId: actor.id });
+    await logging.audit('session.marked_paid', {
+      userId: actor.id,
+      resource: 'session',
+      resourceId: String(sessionId),
+      action: 'session.marked_paid',
+      metadata: { heldForApproval: true },
+    });
+    return reread(actor, sessionId);
+  }
 
   // Through the plugin, so KiviCare's cancellation email and telemed teardown fire.
   await setAppointmentStatus(sessionId, toKcStatus(target));
@@ -500,7 +613,14 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
   // lewat sini saat disetujui, jadi ia tidak butuh kail sendiri.
   await syncSessionReminders(updated);
 
-  return toSession(updated);
+  // A paid booking that waited for its psychologist and was cancelled instead: the money
+  // is in, so it joins the refund list.
+  if (target === SESSION_STATUS.CANCELLED && approval?.state === APPROVAL_STATE.AWAITING) {
+    await closeOnCancel(sessionId, actor.id);
+  }
+
+  const [session] = forActor(actor, await withApprovals([toSession(updated)]));
+  return session;
 }
 
 /* ------------------------------------------------------------------ */
@@ -601,7 +721,12 @@ export async function invalidatePendingForOffDay(
     statuses: [SESSION_STATUS.PENDING],
   });
 
-  for (const s of items) {
+  // A PENDING booking with an approval record is PAID and waits for its psychologist.
+  // Cancelling it here would drop money silently; it stays in the queue to be decided.
+  const held = await findApprovals(items.map((s) => s.id));
+  const unpaid = items.filter((s) => !held.has(s.id));
+
+  for (const s of unpaid) {
     await setSessionStatusDirect(s.id, SESSION_STATUS.CANCELLED);
     await logging.audit('session.status_changed', {
       userId: null,
@@ -617,7 +742,7 @@ export async function invalidatePendingForOffDay(
     });
   }
 
-  return items.length;
+  return unpaid.length;
 }
 
 /**
@@ -641,15 +766,42 @@ export async function sessionIdsOutsideScope(actor: Actor, ids: number[]): Promi
   return ids.filter((id) => !inClinic.has(id));
 }
 
-export async function bulkCancelSessions(ids: number[]): Promise<number> {
+/**
+ * Of `ids`, the bookings approved and still being confirmed (isBeingConfirmed). One
+ * approval lookup for all of them; the sessions are read only for the APPROVED ones,
+ * since an approved booking that is BOOKED cancels like any other.
+ */
+async function idsBeingConfirmed(ids: number[]): Promise<Set<number>> {
+  const approvals = await findApprovals(ids);
+  const approved = [...approvals.values()]
+    .filter((a) => a.state === APPROVAL_STATE.APPROVED)
+    .map((a) => a.appointmentId);
+  if (approved.length === 0) return new Set();
+  const rows = await listSessionsByIds(approved);
+  return new Set(rows.filter((r) => isBeingConfirmed(r.status, approvals.get(r.id))).map((r) => r.id));
+}
+
+export async function bulkCancelSessions(ids: number[], actorId: string | null = null): Promise<number> {
+  const confirming = await idsBeingConfirmed(ids);
   let cancelled = 0;
   for (const id of ids) {
+    // Skipped, and so not counted: the same answer as a cancel that failed.
+    if (confirming.has(id)) continue;
     try {
       await cancelAppointment(id);
       cancelled += 1;
     } catch {
       // Counted, not thrown — the returned number is the caller's signal.
+      continue;
     }
+    // A paid booking that waited for its psychologist now has money to return. A failure
+    // here is logged, not thrown: the cancellation itself already happened.
+    await closeOnCancel(id, actorId).catch((err) =>
+      logging.error('bulk cancel: closing the approval record failed', err, {
+        resource: 'session',
+        resourceId: String(id),
+      }),
+    );
   }
   return cancelled;
 }

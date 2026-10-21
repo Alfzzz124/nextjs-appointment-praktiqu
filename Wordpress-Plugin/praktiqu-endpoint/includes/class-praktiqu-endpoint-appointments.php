@@ -132,6 +132,13 @@ final class Appointments
      * telemed and Google Calendar steps are ones create() does not take for staff
      * bookings either.
      *
+     * `expect_status` (1.8.4) makes the write a compare-and-set: the row moves only if it
+     * still has that status. PraktiQU's psychologist approval sends it, so an approval
+     * whose call lands after a cancellation answers 409 `praktiqu_status_conflict` instead
+     * of rewriting CANCELLED as BOOKED. A row already at the requested status is the
+     * repeat of a call whose answer was lost: 200 with `claimed: false`, and no hook fires
+     * again. Without `expect_status` nothing changes.
+     *
      * @return array<string,mixed>|\WP_Error
      */
     public function set_status(int $appointment_id, int $status, \WP_REST_Request $request): array|\WP_Error
@@ -151,6 +158,46 @@ final class Appointments
         $table = $wpdb->prefix . 'kc_appointments';
 
         $payment = $status === self::STATUS_BOOKED ? $this->payment_data($request) : null;
+
+        $expect = $request->get_param('expect_status');
+        if ($expect !== null) {
+            $expect = (int) $expect;
+            $claimed = $wpdb->query($wpdb->prepare(
+                "UPDATE {$table} SET status = %d WHERE id = %d AND status = %d",
+                $status,
+                $appointment_id,
+                $expect
+            ));
+            if ($claimed === false) {
+                return new \WP_Error('praktiqu_status_update_failed', 'Failed to update status.', ['status' => 500]);
+            }
+            if ((int) $claimed !== 1) {
+                $current = $wpdb->get_var($wpdb->prepare(
+                    "SELECT status FROM {$table} WHERE id = %d",
+                    $appointment_id
+                ));
+                if ($current === null) {
+                    return new \WP_Error('praktiqu_appointment_not_found', 'Appointment not found.', ['status' => 404]);
+                }
+                $current = (int) $current;
+                if ($current !== $status) {
+                    return new \WP_Error(
+                        'praktiqu_status_conflict',
+                        sprintf('Appointment status is %d, not %d.', $current, $expect),
+                        ['status' => 409, 'current_status' => $current]
+                    );
+                }
+                return [
+                    'id'                => $appointment_id,
+                    'status'            => $status,
+                    'cancelled'         => $status === self::STATUS_CANCELLED,
+                    'payment_confirmed' => false,
+                    'claimed'           => false,
+                ];
+            }
+            $paid_now = $payment !== null && $expect === self::STATUS_PENDING;
+            return $this->after_status_write($appointment_id, $status, $appointment, $payment, $paid_now) + ['claimed' => true];
+        }
 
         // Claimed with a conditional UPDATE, not by reading $appointment->status: the
         // payment webhook and the client's status poll can confirm the same order at
@@ -177,6 +224,18 @@ final class Appointments
             }
         }
 
+        return $this->after_status_write($appointment_id, $status, $appointment, $payment, $paid_now);
+    }
+
+    /**
+     * The hooks a committed status write fires, and the answer. $paid_now: this request's
+     * own UPDATE moved the row PENDING → BOOKED with a payment.
+     *
+     * @param array<string,string>|null $payment
+     * @return array<string,mixed>
+     */
+    private function after_status_write(int $appointment_id, int $status, object $appointment, ?array $payment, bool $paid_now): array
+    {
         // Order matters: KiviCare fires the cancellation hook BEFORE the generic
         // status hook (AppointmentsController.php:3887-3891), and the cancellation
         // listener tears down telemed links the status listener may still read.

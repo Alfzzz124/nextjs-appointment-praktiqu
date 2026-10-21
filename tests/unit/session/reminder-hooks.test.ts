@@ -83,6 +83,20 @@ vi.mock('@/repositories/wp/appointments.repo', async (orig) => {
   };
 });
 
+// Psychologist approval (spec 2026-10-19) is out of scope here: no session waits for a
+// psychologist and no psychologist has the switch on.
+vi.mock('@/services/approval/store', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/store')>()),
+  findApproval: async () => null,
+  findApprovals: async () => new Map(),
+  claimDecision: async () => false,
+}));
+vi.mock('@/services/approval/settings', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/settings')>()),
+  requiresApproval: async () => false,
+  professionalsRequiringApproval: async () => new Set<number>(),
+}));
+
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
     id: 7,

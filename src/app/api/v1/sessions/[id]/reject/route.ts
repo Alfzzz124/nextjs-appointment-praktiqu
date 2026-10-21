@@ -41,7 +41,7 @@ export async function POST(
     const { id: rawId } = await params;
     const id = parseSessionId(rawId);
     if (id === null) return invalidSessionId();
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { reason } = rejectSchema.parse(body);
     const actor = await sessionActorFromRequest(req);
 
@@ -52,6 +52,7 @@ export async function POST(
       // status. The reason still reaches the audit log, so the "why" is not lost.
       target: SESSION_STATUS.CANCELLED,
       reason,
+      intent: 'reject',
     });
     return NextResponse.json({ data: session }, { status: 200 });
   } catch (err) {

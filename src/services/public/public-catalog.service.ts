@@ -12,6 +12,7 @@
  * Ids are `number` — `wp_kc_clinics.id`, `wp_users.ID`, `wp_kc_services.id`.
  */
 import { SLOT_HOLD_TTL_MS } from '@/services/booking/slot-hold.service';
+import { professionalsRequiringApproval, requiresApproval } from '@/services/approval/settings';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { getPublicAppointmentById } from '@/services/public/public-booking.service';
 import { findClinicById, listClinics, type WpClinic } from '@/repositories/wp/clinics.repo';
@@ -114,6 +115,11 @@ export interface PublicProfessional {
    * booking list, so it named a time that could already be taken.)
    */
   nextAvailable: { date: string; startTime: string } | null;
+  /**
+   * Paid bookings with this professional wait for their approval (psychologist approval,
+   * spec 2026-10-19). The booking page tells the client before they pay.
+   */
+  requiresApproval: boolean;
 }
 
 /** How far ahead `nextAvailable` looks before giving up. */
@@ -174,8 +180,13 @@ export async function listPublicProfessionals(
     else byDoctor.set(key, [s]);
   }
 
+  // One query for the whole directory, like the clinic sessions above.
+  const needApproval = await professionalsRequiringApproval(doctors.map((d) => Number(d.id)));
+
   const today = new Date();
-  return doctors.map((d) => toPublicProfessional(d, byDoctor.get(d.id.toString()) ?? [], today));
+  return doctors.map((d) =>
+    toPublicProfessional(d, byDoctor.get(d.id.toString()) ?? [], today, needApproval.has(Number(d.id))),
+  );
 }
 
 /**
@@ -193,6 +204,7 @@ function toPublicProfessional(
   d: WpDoctor,
   sessions: Array<{ day: string | null; startTime: string | null }>,
   today: Date,
+  requiresApproval: boolean,
 ): PublicProfessional {
   return {
     id: Number(d.id),
@@ -201,6 +213,7 @@ function toPublicProfessional(
     biography: d.description,
     specialties: d.specialties,
     nextAvailable: nextAvailableFor(sessions, today),
+    requiresApproval,
   };
 }
 
@@ -220,7 +233,7 @@ export async function getPublicProfessional(
   if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
 
   const sessions = await listClinicSessions({ doctorId: doctor.id });
-  return toPublicProfessional(doctor, sessions, new Date());
+  return toPublicProfessional(doctor, sessions, new Date(), await requiresApproval(Number(doctor.id)));
 }
 
 /**

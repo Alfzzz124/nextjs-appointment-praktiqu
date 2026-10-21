@@ -39,6 +39,13 @@ import {
 import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
 import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
 import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
+import {
+  closeOnCancel,
+  isBeingConfirmed,
+  publicApprovalView,
+  type PublicApprovalView,
+} from '@/services/approval/service';
+import { findApproval } from '@/services/approval/store';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -468,6 +475,8 @@ export interface PublicAppointmentView {
   /** See CreatedAppointment.paymentMethods. */
   paymentMethods: PaymentMethod[];
   usd: PublicUsdView | null;
+  /** The psychologist-approval state, when this booking waits for (or was decided by) its psychologist. */
+  approval: PublicApprovalView | null;
 }
 
 export class AppointmentNotFoundError extends Error {
@@ -553,6 +562,7 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
     clinicId: row.clinicId,
     paymentMethods,
     usd,
+    approval: await publicApprovalView(row),
   };
 }
 
@@ -576,10 +586,19 @@ export async function cancelPublicAppointment(id: number): Promise<PublicAppoint
   if (!CANCELLABLE_STATUSES.includes(current.status)) {
     throw new NotCancellableError();
   }
+  // Approved by the psychologist and on its way to BOOKED: a cancel now would drop the
+  // payment with no refund flag. Not cancellable for the moment — the existing answer,
+  // because a public endpoint never answers a new 409.
+  if (current.status === SESSION_STATUS.PENDING && isBeingConfirmed(current.status, await findApproval(id))) {
+    throw new NotCancellableError();
+  }
 
   // Through the plugin: cancelling drives the cancellation email, telemed teardown and
   // Pro's followup cancellation. It also writes status 0 — CANCELLED, not 1.
   await cancelAppointment(id);
+  // A paid booking that waited for its psychologist: the client withdrew and the money is
+  // in, so it joins the refund list for the clinic to settle.
+  await closeOnCancel(id, null);
 
   const updated = await toView(id);
   if (!updated) throw new AppointmentNotFoundError();

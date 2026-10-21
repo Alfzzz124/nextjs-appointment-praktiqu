@@ -1068,6 +1068,49 @@ model ClinicOwner {
   @@map("clinic_owners")
 }
 
+/// A psychologist's switch: paid online bookings wait for their approval.
+/// Table from prisma/manual/2026-10-19-approval-psikolog.sql — never db push.
+model ProfessionalApprovalSetting {
+  /// wp_users.ID of the psychologist
+  doctorWpUserId   BigInt   @id @db.UnsignedBigInt
+  requiresApproval Boolean  @default(false)
+  /// users.id (cuid) of whoever last changed it
+  updatedBy        String?  @db.VarChar(191)
+  updatedAt        DateTime @default(now()) @updatedAt @db.DateTime(3)
+
+  @@map("professional_approval_settings")
+}
+
+/// One paid booking waiting for, or decided by, its psychologist.
+/// Table from prisma/manual/2026-10-19-approval-psikolog.sql — never db push.
+model SessionApproval {
+  /// wp_kc_appointments.id
+  appointmentId  BigInt    @id @db.UnsignedBigInt
+  doctorWpUserId BigInt    @db.UnsignedBigInt
+  clinicId       BigInt    @db.UnsignedBigInt
+  /// payment_orders.id; null when staff marked the booking paid by hand
+  paymentOrderId String?   @db.VarChar(191)
+  /// AWAITING | APPROVED | REJECTED | CANCELLED
+  state          String    @db.VarChar(16)
+  requestedAt    DateTime  @default(now()) @db.DateTime(3)
+  decidedAt      DateTime? @db.DateTime(3)
+  /// users.id; null = the system, or a change made outside the app
+  decidedBy      String?   @db.VarChar(191)
+  rejectReason   String?   @db.VarChar(500)
+  /// NONE | NEEDED | DONE
+  refundStatus   String    @default("NONE") @db.VarChar(8)
+  refundedAt     DateTime? @db.DateTime(3)
+  refundedBy     String?   @db.VarChar(191)
+  refundNote     String?   @db.VarChar(500)
+  lastReminderAt DateTime? @db.DateTime(3)
+  escalatedAt    DateTime? @db.DateTime(3)
+
+  @@index([doctorWpUserId, state], map: "session_approvals_doctor_state_idx")
+  @@index([clinicId, state], map: "session_approvals_clinic_state_idx")
+  @@index([refundStatus], map: "session_approvals_refund_idx")
+  @@map("session_approvals")
+}
+
 /// A client-supplied Idempotency-Key for public booking.
 ///
 /// The gateway gives up at ~8s while the write carries on, so the caller cannot

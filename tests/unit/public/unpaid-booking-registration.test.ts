@@ -25,6 +25,20 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/db', () => db);
 
+// Psychologist approval (spec 2026-10-19) is out of scope here: no session waits for a
+// psychologist and no psychologist has the switch on.
+vi.mock('@/services/approval/store', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/store')>()),
+  findApproval: async () => null,
+  findApprovals: async () => new Map(),
+  claimDecision: async () => false,
+}));
+vi.mock('@/services/approval/settings', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/settings')>()),
+  requiresApproval: async () => false,
+  professionalsRequiringApproval: async () => new Set<number>(),
+}));
+
 const write = vi.hoisted(() => ({
   cancelAppointment: vi.fn().mockResolvedValue({ id: 0, status: 0, cancelled: true }),
   setAppointmentStatus: vi.fn(),
