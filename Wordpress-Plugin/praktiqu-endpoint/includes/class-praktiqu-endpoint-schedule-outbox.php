@@ -107,8 +107,9 @@ final class Schedule_Outbox_Processor
         }
 
         try {
-            ($this->calendarSync)((int) $row['appointment_id'], json_decode((string) $row['payload'], true, 8, JSON_THROW_ON_ERROR));
-            ($this->reminderSync)((int) $row['appointment_id']);
+            $payload = json_decode((string) $row['payload'], true, 8, JSON_THROW_ON_ERROR);
+            ($this->calendarSync)((int) $row['appointment_id'], $payload);
+            ($this->reminderSync)((int) $row['appointment_id'], $payload);
         } catch (\Throwable $e) {
             $this->db->query($this->db->prepare(
                 "UPDATE {$t} SET status = %s, last_error = %s WHERE id = %d",

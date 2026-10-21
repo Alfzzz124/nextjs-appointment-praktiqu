@@ -22,6 +22,7 @@ $due = fn () => $db->query("UPDATE wp_praktiqu_schedule_outbox SET next_attempt_
 $calls = ['cal' => 0, 'rem' => 0];
 $failCalendar = true;
 $attemptsSeen = null;
+$reminderPayload = null;
 $p = new Schedule_Outbox_Processor(
     $db,
     function (int $a, array $payload) use (&$calls, &$failCalendar, &$attemptsSeen, $db, $id): void {
@@ -29,7 +30,7 @@ $p = new Schedule_Outbox_Processor(
         $attemptsSeen = (int) $db->get_var("SELECT attempts FROM wp_praktiqu_schedule_outbox WHERE id=$id");
         if ($failCalendar) throw new RuntimeException('kalender tidak tersedia — provider (MOCK) ✗');
     },
-    function (int $a) use (&$calls): void { $calls['rem']++; }
+    function (int $a, array $payload) use (&$calls, &$reminderPayload): void { $calls['rem']++; $reminderPayload = $payload; }
 );
 
 $r = $p->process($id);
@@ -52,6 +53,7 @@ $other->query("SELECT RELEASE_LOCK('praktiqu_schedule_outbox_$id')");
 $failCalendar = false;
 $r = $p->process($id);
 check($r['ok'] === true && $row()['status'] === 'done' && $row()['last_error'] === null && $row()['done_at'] !== null, 'retry succeeds and clears error');
+check($reminderPayload === ['to' => ['date' => '2099-01-06']], 'the reminder step gets the payload too');
 $due();
 $p->process($id);
 check($calls['cal'] === 2 && $calls['rem'] === 1, 'done row is not re-run (idempotent)');

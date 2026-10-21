@@ -53,6 +53,7 @@ $result=move($writer);
 check($result['appointment_start_date']==='2099-01-06', 'same appointment moved');
 check($result['appointment_start_utc']==='2099-01-06 03:00:00' && $result['appointment_end_utc']==='2099-01-06 04:00:00', 'both UTC columns updated');
 check((int)$db->get_var('SELECT COUNT(*) FROM wp_praktiqu_schedule_outbox')===1, 'outbox committed with schedule');
+check(($result['outbox_id'] ?? null)===(int)$db->get_var('SELECT id FROM wp_praktiqu_schedule_outbox'), 'move returns the outbox row id');
 check($db->get_row('SELECT * FROM payment_orders WHERE id=77')===$paid, 'paid order id amount status unchanged');
 fails(fn()=>move($writer), 'schedule_stale');
 resetFixture($db);
