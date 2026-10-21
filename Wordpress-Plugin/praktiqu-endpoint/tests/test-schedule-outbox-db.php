@@ -71,4 +71,22 @@ $db->query("UPDATE wp_praktiqu_schedule_outbox SET status='pending', attempts=5 
 $due();
 check($p->process($id) === ['ok' => false, 'error' => 'outbox_failed'] && $calls['cal'] === $before && $row()['status'] === 'failed', 'crashed attempts still exhaust');
 
+// The sweep: only pending rows that are due, and nothing else.
+$db->query('DELETE FROM wp_praktiqu_schedule_outbox');
+$queue = function (string $status, string $due) use ($db): int {
+    $db->query("INSERT INTO wp_praktiqu_schedule_outbox (appointment_id, payload, actor, request_id, status, next_attempt_at)
+                VALUES (1, '{\"to\":{\"date\":\"2099-01-06\"}}', 'staff:1', 'r', '$status', $due)");
+
+    return (int) $db->pdo->lastInsertId();
+};
+$dueId = $queue('pending', 'NOW() - INTERVAL 1 MINUTE');
+$laterId = $queue('pending', 'NOW() + INTERVAL 1 HOUR');
+$doneId = $queue('done', 'NOW() - INTERVAL 1 HOUR');
+$failCalendar = false;
+$before = $calls['cal'];
+$swept = $p->sweep();
+$statusOf = fn (int $id) => $db->get_var("SELECT status FROM wp_praktiqu_schedule_outbox WHERE id = $id");
+check($swept === ['processed' => 1, 'ok' => 1] && $calls['cal'] === $before + 1, 'the sweep runs one due row');
+check($statusOf($dueId) === 'done' && $statusOf($laterId) === 'pending' && $statusOf($doneId) === 'done', 'and leaves rows not yet due, and done rows, alone');
+
 echo "ALL PASS (real MySQL outbox state; calendar/reminder providers are MOCKS, no live provider claim)\n";

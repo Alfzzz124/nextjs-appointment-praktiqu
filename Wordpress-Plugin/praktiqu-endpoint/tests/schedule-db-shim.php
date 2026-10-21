@@ -67,6 +67,12 @@ final class Database
         return $this->run($sql, fn () => $this->pdo->query($sql)->fetch(PDO::FETCH_ASSOC) ?: null, null);
     }
 
+    /** @return list<mixed>|null */
+    public function get_col(string $sql): ?array
+    {
+        return $this->run($sql, fn () => $this->pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN), null);
+    }
+
     /** @param array<string,mixed> $data */
     public function insert(string $table, array $data, $format = null): int|false
     {

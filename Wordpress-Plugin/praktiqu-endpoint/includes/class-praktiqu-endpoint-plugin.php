@@ -103,6 +103,8 @@ final class Plugin
         if (function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions('', [], Jobs::GROUP);
         }
+        // The sweep went with the group above; let the next activation schedule it again.
+        delete_option(Jobs::OUTBOX_SWEEP_OPTION);
         flush_rewrite_rules();
     }
 
