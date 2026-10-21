@@ -18,7 +18,7 @@
  */
 import { z } from 'zod';
 import { logging } from '@/lib/logging';
-import { WpConfigError, WpEndpointError, type PaymentMethod } from '@/lib/wp-endpoint';
+import { isWpSlotTaken, WpConfigError, WpEndpointError, type PaymentMethod } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { isTooSoon } from '@/services/booking/booking-policy';
 import { toMinutes } from '@/services/booking/slot-math';
@@ -420,6 +420,11 @@ export async function createPublicAppointment(
       serviceIds: [input.serviceId],
     });
   } catch (err) {
+    // Another booking took the slot after the check above. Same answer as that check.
+    if (isWpSlotTaken(err)) {
+      slotHoldService.consume(input.holdKey);
+      throw new SlotConflictError('Slot no longer available');
+    }
     // The hold is deliberately NOT consumed: nothing was written, so the slot is
     // still the guest's to take on the retry the route is about to invite.
     throw asUpstreamWriteError(err, 'create_appointment');
