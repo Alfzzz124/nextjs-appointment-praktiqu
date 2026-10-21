@@ -316,11 +316,12 @@ describe('deciding', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(APPT_AWAITING, 1, {
-      gateway: 'xendit',
-      wcOrderId: WC_ORDER,
-      transactionId: 'tx-uji',
-    });
+    expect(writes.setAppointmentStatus).toHaveBeenCalledWith(
+      APPT_AWAITING,
+      1,
+      { gateway: 'xendit', wcOrderId: WC_ORDER, transactionId: 'tx-uji' },
+      { expectStatus: 2 },
+    );
     expect(body.data).toMatchObject({ status: 'BOOKED', approval: { state: 'APPROVED', decidedByName: 'Dianda Uji' } });
     expect(jobsClient.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_approval_reminder', args: { appointmentId: APPT_AWAITING } });
   });

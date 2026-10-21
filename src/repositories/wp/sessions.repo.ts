@@ -324,11 +324,19 @@ export async function listSessions(
  * for bulk/maintenance paths that must not emit a notification per row — the service
  * layer decides which to use.
  */
-export async function setSessionStatusDirect(id: number, status: SessionStatus): Promise<boolean> {
+export async function setSessionStatusDirect(
+  id: number,
+  status: SessionStatus,
+  opts: { from?: SessionStatus } = {},
+): Promise<boolean> {
+  // With `from`, a conditional move: false when the row had already left that status, so
+  // of two callers racing on the same row exactly one gets true.
+  const guard = opts.from === undefined ? [] : [toKcStatus(opts.from)];
   const affected = await prisma.$executeRawUnsafe(
-    `UPDATE wp_kc_appointments SET status = ? WHERE id = ?`,
+    `UPDATE wp_kc_appointments SET status = ? WHERE id = ?${guard.length ? ' AND status = ?' : ''}`,
     toKcStatus(status),
     id,
+    ...guard,
   );
   return affected > 0;
 }

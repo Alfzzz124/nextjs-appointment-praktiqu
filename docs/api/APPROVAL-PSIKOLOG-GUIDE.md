@@ -52,7 +52,7 @@ diterima token `CLIENT` di endpoint sesi staf (lihat di atas).
 | `PENDING` | — | — | Belum dibayar |
 | `PENDING` | `AWAITING` | `NONE` | Lunas · menunggu psikolog |
 | `PENDING` | `APPROVED` | `NONE` | Sementara, lihat catatan di bawah |
-| `PENDING` | `REJECTED` | `NEEDED` | Sementara: penolakan yang status batalnya belum tertulis. Dirapikan menjadi `CANCELLED` saat antrean atau detail dibaca, atau oleh job pengingat. |
+| `PENDING` | `REJECTED` | `NEEDED` | Sementara: penolakan yang status batalnya belum tertulis. Dirapikan menjadi `CANCELLED` saat antrean atau detail dibaca, atau oleh job pengingat. Email penolakan ke klien hanya terkirim kalau job pengingat yang merapikannya. |
 | `BOOKED` / `CHECK_IN` / `CHECK_OUT` | `APPROVED` | `NONE` | Label status biasa (`BOOKED`: Terjadwal · lunas); `approval` tidak mengubah artinya |
 | `CANCELLED` | `REJECTED` | `NEEDED` / `DONE` | Ditolak · perlu refund / sudah direfund |
 | `CANCELLED` | `CANCELLED` | `NEEDED` / `DONE` | Batal · perlu refund / sudah direfund |
@@ -132,6 +132,24 @@ terputus):
 Jadi isi dan `counts` bisa berubah di antara dua pemuatan tanpa ada yang menekan tombol. Itu
 disengaja; tampilkan apa adanya.
 
+Pembacaan ini tidak mengirim email. Penolakan yang dirapikan lewat antrean atau detail tidak
+mengirim email penolakan ke klien. Email itu hanya terkirim kalau job pengingat yang lebih dulu
+merapikannya.
+
+**Booking yang sudah ditolak tidak bisa dibuka ulang dari dashboard KiviCare.** Keputusan
+`REJECTED` di catatan tetap dipegang, apa pun yang ditulis di KiviCare setelahnya:
+
+- Kalau statusnya dikembalikan ke **Pending**, catatannya menjadi `REJECTED` + `PENDING` lagi.
+  Pembacaan antrean atau detail berikutnya akan **membatalkannya lagi** (baris ketiga tabel di
+  atas). Biasanya ini terjadi tanpa email. Klien hanya menerima email penolakan lagi kalau job
+  pengingat lama ternyata masih terjadwal.
+- Kalau statusnya diubah ke **Booked**, **Check-in** atau **Check-out**, tidak ada aturan yang
+  merapikannya. Sesinya berjalan, tetapi catatannya tetap `REJECTED` dengan `refundStatus = NEEDED`,
+  jadi booking itu tetap muncul di **Perlu refund**.
+
+Kalau klien jadi dilayani, buat booking baru untuknya. Selesaikan refund booking yang ditolak lewat
+`/refund-done`; catatannya boleh menyebut bahwa dana dipakai untuk booking pengganti.
+
 Peran: psikolog (miliknya saja, `professionalId` diabaikan), `CLINIC_ADMIN` (klinik aktif;
 klinik lain → halaman kosong), `SUPER_ADMIN` (semua, atau `clinicId`). Resepsionis → 403.
 
@@ -183,6 +201,7 @@ ada di bawah tabel.
 | HTTP | Kode (`title`) | Endpoint | Kapan | Yang dilakukan FE |
 |---|---|---|---|---|
 | 409 | `approval_already_decided` | `/approve`, `/reject`, `/cancel` | Kalah balapan: dua keputusan masuk bersamaan dan yang lain menang (`detail` menyebut keputusan dan pengambilnya). Juga: `/approve` pada sesi `PENDING` yang catatannya `REJECTED`/`CANCELLED`; `/reject` atau `/cancel` pada sesi `PENDING` yang catatannya `APPROVED` (sedang dikonfirmasi). | Muat ulang item, tampilkan keputusan yang sudah ada. Jangan diulang. |
+| 409 | `booking_cancelled` | `/approve` | Booking dibatalkan (misalnya dari dashboard KiviCare) di antara klaim persetujuan dan konfirmasinya ke WordPress. Janji temu tetap `CANCELLED`, dan catatannya menjadi `approval.state = CANCELLED`, `refundStatus = NEEDED` (masuk "Perlu refund"). Butuh plugin 1.8.4. | Muat ulang item, tampilkan bahwa booking batal dan dananya perlu direfund. Jangan diulang. |
 | 400 | `invalid_transition` | `/approve`, `/reject` | Sesi sudah bukan `PENDING` saat permintaan sampai (halaman basi): `/approve` pada sesi `BOOKED`, `CHECK_IN`, `CHECK_OUT` atau `CANCELLED`; `/reject` pada sesi mana pun yang bukan `PENDING`: `BOOKED`, `CHECK_IN`, `CHECK_OUT` atau `CANCELLED`. | Muat ulang item dan tampilkan keputusan yang sudah ada; tombol keputusan hilang sendiri. |
 | 422 | `session_already_started` | `/approve` | Jam sesi sudah lewat (`isOverdue`). | Tampilkan bahwa hanya tolak yang mungkin; sembunyikan Setujui. |
 | 502 | `upstream_failed` | `/approve` | Penulisan ke WordPress gagal dan janji temu masih belum `BOOKED`. Klaim keputusan sudah dibatalkan, permintaan kembali `AWAITING`. (Kalau WordPress ternyata sudah menyimpan `BOOKED` walau jawabannya error, `/approve` menjawab 200 biasa.) | Aman diulang. Tampilkan "coba lagi". |

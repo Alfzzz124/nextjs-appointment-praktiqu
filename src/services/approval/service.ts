@@ -19,7 +19,7 @@ import { jobs } from '@/lib/jobs/client';
 import { logging } from '@/lib/logging';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
-import { setAppointmentStatus, type ConfirmedPayment } from '@/repositories/wp/appointments.write';
+import { isStatusConflict, setAppointmentStatus, type ConfirmedPayment } from '@/repositories/wp/appointments.write';
 import { findClinicById } from '@/repositories/wp/clinics.repo';
 import { findServiceById } from '@/repositories/wp/services.repo';
 import {
@@ -52,6 +52,23 @@ export const APPROVAL_REMINDER_EVENT = 'approval.reminder' as const;
  */
 export function approvalReminderArgs(appointmentId: number): { appointmentId: number } {
   return { appointmentId };
+}
+
+/**
+ * Schedule the next reminder run. jobs.enqueue never throws; a booking it failed for is
+ * still in the queue, but nobody is reminded and no admin is escalated to, so the gap is
+ * logged as an error naming the booking. There is no column to mark it: a later read
+ * cannot tell a missing job from one that has not run yet, and Action Scheduler does not
+ * dedupe, so re-scheduling from a read could remind twice.
+ */
+export async function scheduleReminder(appointmentId: number, runAt: Date): Promise<void> {
+  const scheduled = await jobs.enqueue({ hook: APPROVAL_REMINDER_HOOK, runAt, args: approvalReminderArgs(appointmentId) });
+  if (scheduled) return;
+  await logging.error('approval: the reminder job could not be scheduled', undefined, {
+    resource: 'session',
+    resourceId: String(appointmentId),
+    metadata: { hook: APPROVAL_REMINDER_HOOK, runAt: runAt.toISOString() },
+  });
 }
 
 export class ApprovalError extends Error {
@@ -300,11 +317,7 @@ export async function holdForApproval(input: HoldInput): Promise<boolean> {
     metadata: { professionalId: row.professionalId, clinicId: row.clinicId, paymentOrderId: input.paymentOrderId },
   });
 
-  await jobs.enqueue({
-    hook: APPROVAL_REMINDER_HOOK,
-    runAt: firstReminderAt(now, sessionStartsAtUtc(row)),
-    args: approvalReminderArgs(row.id),
-  });
+  await scheduleReminder(row.id, firstReminderAt(now, sessionStartsAtUtc(row)));
 
   const facts = await mailFacts(row);
   if (facts) {
@@ -333,9 +346,51 @@ async function paymentFor(approval: store.ApprovalRecord): Promise<ConfirmedPaym
  * `kc_appointment_payment_completed` exactly once — KiviCare's booking mail to client,
  * psychologist and clinic. A booking marked paid by hand has no order and books without
  * it, which mails nobody (the gap spec §12 keeps).
+ *
+ * Only over PENDING (`expectStatus`, plugin 1.8.4). A cancellation that lands between the
+ * claim and this call would otherwise be rewritten as BOOKED, after the client was already
+ * told it was cancelled and with no refund flagged. The plugin answers 409 instead, and
+ * settleConflict decides what the record becomes.
  */
 async function confirmBooked(approval: store.ApprovalRecord): Promise<void> {
-  await setAppointmentStatus(approval.appointmentId, APPOINTMENT_STATUS.BOOKED, await paymentFor(approval));
+  await setAppointmentStatus(approval.appointmentId, APPOINTMENT_STATUS.BOOKED, await paymentFor(approval), {
+    expectStatus: APPOINTMENT_STATUS.PENDING,
+  });
+}
+
+type ConflictOutcome = 'booked' | 'cancelled' | 'other';
+
+/**
+ * The confirmation found the appointment no longer PENDING (spec 2026-10-20 claim-first):
+ * - BOOKED: an earlier confirmation got there and its answer was lost. Confirmed.
+ * - CANCELLED: cancelled under the approval, so it never became a booking. The money is
+ *   in, so the record joins the refund list.
+ * - anything else (checked in or out by a bill): the approval stands and the session is
+ *   under way, so there is nothing to schedule. Logged, because nothing should get here.
+ */
+async function settleConflict(appointmentId: number, approvedBy: string | null, now: Date): Promise<ConflictOutcome> {
+  const current = await findSessionById(appointmentId);
+  if (current?.status === SESSION_STATUS.BOOKED) return 'booked';
+
+  await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(appointmentId) });
+  if (current?.status === SESSION_STATUS.CANCELLED) {
+    if (await store.cancelApproved(appointmentId, now)) {
+      await logging.audit('session.approval_cancelled', {
+        userId: null,
+        resource: 'session',
+        resourceId: String(appointmentId),
+        action: 'session.approval_cancelled',
+        metadata: { refundStatus: store.REFUND_STATUS.NEEDED, raced: true, approvedBy },
+      });
+    }
+    return 'cancelled';
+  }
+  await logging.warn('approval: the appointment left PENDING before its approval reached it', {
+    resource: 'session',
+    resourceId: String(appointmentId),
+    metadata: { status: current?.status ?? null },
+  });
+  return 'other';
 }
 
 async function afterBooked(appointmentId: number): Promise<void> {
@@ -360,10 +415,16 @@ export function isBeingConfirmed(
 
 /**
  * Finish an approval that was claimed but never reached the plugin (the process died in
- * between). Safe to repeat: the plugin's claim only moves a PENDING row.
+ * between). Safe to repeat: the plugin's claim only moves a PENDING row. An appointment
+ * cancelled in the meantime puts the record on the refund list instead.
  */
-export async function completeApproval(approval: store.ApprovalRecord): Promise<void> {
-  await confirmBooked(approval);
+export async function completeApproval(approval: store.ApprovalRecord, now: Date = new Date()): Promise<void> {
+  try {
+    await confirmBooked(approval);
+  } catch (err) {
+    if (!isStatusConflict(err)) throw err;
+    if ((await settleConflict(approval.appointmentId, approval.decidedBy, now)) !== 'booked') return;
+  }
   await afterBooked(approval.appointmentId);
 }
 
@@ -381,12 +442,14 @@ async function alreadyDecided(appointmentId: number): Promise<ApprovalError> {
 }
 
 async function auditDecision(
-  actor: Actor,
-  row: SessionRow,
+  input: Pick<DecideInput, 'actor' | 'actorWpUserId' | 'row'>,
   decision: 'APPROVED' | 'REJECTED',
   reason: string | null,
 ): Promise<void> {
-  const onBehalf = actor.role !== 'PROFESSIONAL';
+  const { actor, row } = input;
+  // By who decided, not by role: a psychologist who owns the clinic decides as its
+  // CLINIC_ADMIN (owner mode), and deciding their own booking is not on anyone's behalf.
+  const onBehalf = row.professionalId !== input.actorWpUserId;
   await logging.audit('session.approval_decided', {
     userId: actor.id,
     resource: 'session',
@@ -409,6 +472,8 @@ async function auditDecision(
 
 export interface DecideInput {
   actor: Actor;
+  /** The actor's wp_users.ID, which the caller resolved when it checked they may decide. */
+  actorWpUserId: number;
   row: SessionRow;
   now?: Date;
 }
@@ -429,27 +494,39 @@ export async function approveAwaiting(input: DecideInput & { approval: store.App
   });
   if (!claimed) throw await alreadyDecided(row.id);
 
+  let outcome: ConflictOutcome = 'booked';
   try {
     await confirmBooked(approval);
   } catch (err) {
-    // The plugin may have committed before its answer was lost (a timeout, a dropped
-    // connection). Then the booking IS confirmed, and undoing the claim would leave an
-    // AWAITING record on a BOOKED appointment that nothing settles until a read does.
-    // Any other status — still PENDING, or unreadable — and the claim is undone.
-    const current = await findSessionById(row.id).catch(() => null);
-    if (current?.status !== SESSION_STATUS.BOOKED) {
-      await store.revertDecision(row.id, store.APPROVAL_STATE.APPROVED, actor.id);
-      await logging.error('approval: confirming the booking failed', err, { resource: 'session', resourceId: String(row.id) });
-      throw new ApprovalError('upstream_failed', 'The booking could not be confirmed. Try again.', 502);
+    if (isStatusConflict(err)) {
+      outcome = await settleConflict(row.id, actor.id, now);
+    } else {
+      // The plugin may have committed before its answer was lost (a timeout, a dropped
+      // connection). Then the booking IS confirmed, and undoing the claim would leave an
+      // AWAITING record on a BOOKED appointment that nothing settles until a read does.
+      // Any other status — still PENDING, or unreadable — and the claim is undone.
+      const current = await findSessionById(row.id).catch(() => null);
+      if (current?.status !== SESSION_STATUS.BOOKED) {
+        await store.revertDecision(row.id, store.APPROVAL_STATE.APPROVED, actor.id);
+        await logging.error('approval: confirming the booking failed', err, { resource: 'session', resourceId: String(row.id) });
+        throw new ApprovalError('upstream_failed', 'The booking could not be confirmed. Try again.', 502);
+      }
+      await logging.error('approval: the plugin answered with an error, but the booking is BOOKED', err, {
+        resource: 'session',
+        resourceId: String(row.id),
+      });
     }
-    await logging.error('approval: the plugin answered with an error, but the booking is BOOKED', err, {
-      resource: 'session',
-      resourceId: String(row.id),
-    });
   }
 
-  await afterBooked(row.id);
-  await auditDecision(actor, row, 'APPROVED', null);
+  if (outcome === 'cancelled') {
+    throw new ApprovalError(
+      'booking_cancelled',
+      'This booking was cancelled while it was being approved; its payment is on the refund list',
+      409,
+    );
+  }
+  if (outcome === 'booked') await afterBooked(row.id);
+  await auditDecision(input, 'APPROVED', null);
 }
 
 /** The caller (transitionSession) has already checked that the actor may decide. */
@@ -478,22 +555,25 @@ export async function rejectAwaiting(input: DecideInput & { reason: string }): P
   }
 
   await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(row.id) });
-  await auditDecision(actor, row, 'REJECTED', reason);
+  await auditDecision(input, 'REJECTED', reason);
+  await mailRejection(row);
+}
 
+/** The client's rejection mail. It names the clinic to ask about the refund, never the reason. */
+async function mailRejection(row: SessionRow): Promise<void> {
   const facts = await mailFacts(row);
-  if (facts) {
-    const clinic = await findClinicById(BigInt(row.clinicId));
-    await mail(
-      row.clientEmail,
-      buildClientRejectedEmail({
-        ...facts,
-        clinicName: clinic?.name ?? 'klinik',
-        clinicEmail: clinic?.email ?? null,
-        clinicPhone: clinic?.telephone ?? null,
-      }),
-      'approval_client_rejected',
-    );
-  }
+  if (!facts) return;
+  const clinic = await findClinicById(BigInt(row.clinicId));
+  await mail(
+    row.clientEmail,
+    buildClientRejectedEmail({
+      ...facts,
+      clinicName: clinic?.name ?? 'klinik',
+      clinicEmail: clinic?.email ?? null,
+      clinicPhone: clinic?.telephone ?? null,
+    }),
+    'approval_client_rejected',
+  );
 }
 
 /**
@@ -549,10 +629,18 @@ export async function settleExternal(appointmentId: number, status: SessionStatu
  * A rejection claimed on the record whose CANCELLED write never landed: the process died
  * in between, or the write failed and so did undoing the claim. The decision stands, so
  * the slot is released here — directly, as rejectAwaiting does — and the refund stays
- * NEEDED. The client's rejection mail is not sent from here.
+ * NEEDED.
+ *
+ * The write only moves a PENDING appointment, so of a read and the reminder job finishing
+ * the same rejection, exactly one gets true. Nobody is mailed from here, because the queue
+ * and the item call this on a read; the reminder job follows a true with
+ * notifyFinishedRejection.
  */
-export async function finishRejection(approval: store.ApprovalRecord): Promise<void> {
-  await setSessionStatusDirect(approval.appointmentId, SESSION_STATUS.CANCELLED);
+export async function finishRejection(approval: store.ApprovalRecord): Promise<boolean> {
+  const moved = await setSessionStatusDirect(approval.appointmentId, SESSION_STATUS.CANCELLED, {
+    from: SESSION_STATUS.PENDING,
+  });
+  if (!moved) return false;
   await jobs.cancel({ hook: APPROVAL_REMINDER_HOOK, args: approvalReminderArgs(approval.appointmentId) });
   await logging.audit('session.status_changed', {
     userId: approval.decidedBy,
@@ -566,6 +654,23 @@ export async function finishRejection(approval: store.ApprovalRecord): Promise<v
       finishedRejection: true,
     },
   });
+  return true;
+}
+
+/**
+ * What rejectAwaiting would have done after its write: the decision's audit and the
+ * client's mail. For the reminder job only, after its own finishRejection got true — it runs
+ * as the system, once. A rejection that a read finished first goes without the mail.
+ */
+export async function notifyFinishedRejection(approval: store.ApprovalRecord, row: SessionRow): Promise<void> {
+  await logging.audit('session.approval_decided', {
+    userId: approval.decidedBy,
+    resource: 'session',
+    resourceId: String(approval.appointmentId),
+    action: 'session.approval_decided',
+    metadata: { decision: 'REJECTED', reason: approval.rejectReason, professionalId: row.professionalId, recovered: true },
+  });
+  await mailRejection(row);
 }
 
 /* ------------------------------------------------------------------ */
