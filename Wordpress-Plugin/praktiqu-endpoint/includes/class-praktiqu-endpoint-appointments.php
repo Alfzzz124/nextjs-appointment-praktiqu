@@ -84,8 +84,41 @@ final class Appointments
         // already hook this keep working for appointments we create.
         $appointment_data = apply_filters('kivicare_appointment_data', $appointment_data, $params);
 
+        // The slot is checked here, under the professional's schedule lock, and not only in
+        // the backend: that check runs a request earlier, so two bookings for one slot
+        // could both pass it. Schedule_Write::move() takes the same lock, so a booking and
+        // a reschedule cannot land on one slot either. Checked on the filtered data,
+        // because that is what gets written.
+        $holds_slot = in_array((int) $appointment_data['status'], Schedule_Write::ACTIVE_STATUSES, true);
+        if ($holds_slot && $appointment_data['appointmentEndTime'] === '') {
+            return new \WP_Error('praktiqu_missing_field', 'end_time is required.', ['status' => 400]);
+        }
+
         $model = self::MODEL;
-        $appointment = $model::create($appointment_data);
+        global $wpdb;
+        $schedule = new Schedule_Write($wpdb);
+        try {
+            $appointment = !$holds_slot
+                ? $model::create($appointment_data)
+                : $schedule->locked((int) $appointment_data['doctorId'], static function () use ($schedule, $model, $appointment_data) {
+                    $schedule->assertFree(
+                        (int) $appointment_data['doctorId'],
+                        (string) $appointment_data['appointmentStartDate'],
+                        (string) $appointment_data['appointmentStartTime'],
+                        (string) $appointment_data['appointmentEndTime']
+                    );
+
+                    return $model::create($appointment_data);
+                });
+        } catch (\RuntimeException $e) {
+            return match ($e->getMessage()) {
+                'schedule_conflict' => new \WP_Error('praktiqu_schedule_conflict', 'That slot is already booked.', ['status' => 409]),
+                // Nothing was written; the lock is held by another booking or a reschedule.
+                'schedule_busy' => new \WP_Error('praktiqu_schedule_busy', 'The schedule is busy, try again.', ['status' => 503]),
+                'schedule_db_error' => new \WP_Error('praktiqu_schedule_db_error', 'Could not check the slot.', ['status' => 500]),
+                default => throw $e,
+            };
+        }
         if (!$appointment) {
             return new \WP_Error('praktiqu_appointment_failed', 'Failed to create appointment.', ['status' => 500]);
         }

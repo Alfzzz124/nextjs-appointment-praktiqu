@@ -26,7 +26,7 @@ final class Schedule_Write
 {
     private const LOCK_WAIT_SECONDS = 5;
     /** BOOKED, PENDING, CHECK_IN occupy a slot (KCAppointment.php:493). */
-    private const ACTIVE = '1,2,4';
+    public const ACTIVE_STATUSES = [1, 2, 4];
 
     /** @param object $db wpdb-compatible: prefix, last_error, prepare, query, get_var, get_row */
     public function __construct(private object $db)
@@ -57,7 +57,7 @@ final class Schedule_Write
         $t = $this->db->prefix . 'kc_appointments';
         $id = $this->checked($this->db->get_var($this->db->prepare(
             "SELECT id FROM {$t}
-              WHERE doctor_id = %d AND appointment_start_date = %s AND status IN (" . self::ACTIVE . ')
+              WHERE doctor_id = %d AND appointment_start_date = %s AND status IN (" . implode(',', self::ACTIVE_STATUSES) . ')
                 AND appointment_start_time < %s AND appointment_end_time > %s AND id <> %d
               LIMIT 1 FOR UPDATE',
             $doctorId,

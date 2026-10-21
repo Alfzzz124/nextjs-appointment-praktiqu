@@ -38,7 +38,6 @@ if (($argv[1]??'')==='worker') {
 }
 $db=schedule_test_setup();
 // Fixture reset is scoped to the disposable database, never WordPress/dev/prod.
-$db->query('CREATE TABLE IF NOT EXISTS wp_kc_appointments (id BIGINT PRIMARY KEY,doctor_id BIGINT,clinic_id BIGINT,patient_id BIGINT,visit_type VARCHAR(191),status INT,appointment_start_date DATE,appointment_start_time TIME,appointment_end_date DATE,appointment_end_time TIME,appointment_timezone VARCHAR(64),appointment_start_utc DATETIME,appointment_end_utc DATETIME) ENGINE=InnoDB');
 $db->query('CREATE TABLE IF NOT EXISTS payment_orders (id INT PRIMARY KEY, appointmentId INT, wcOrderId INT, amount DECIMAL(12,2), status VARCHAR(20)) ENGINE=InnoDB');
 $db->query("INSERT IGNORE INTO payment_orders VALUES (77,1,900,125000.00,'paid')");
 $paid=$db->get_row('SELECT * FROM payment_orders WHERE id=77');

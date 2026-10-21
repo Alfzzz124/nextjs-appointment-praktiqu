@@ -59,6 +59,22 @@ final class Database
         return $this->run($sql, fn () => $this->pdo->query($sql)->fetch(PDO::FETCH_ASSOC) ?: null, null);
     }
 
+    /** @param array<string,mixed> $data */
+    public function insert(string $table, array $data, $format = null): int|false
+    {
+        $values = implode(', ', array_map(fn ($v) => $v === null ? 'NULL' : $this->pdo->quote((string) $v), $data));
+
+        return $this->query("INSERT INTO {$table} (" . implode(', ', array_keys($data)) . ") VALUES ({$values})");
+    }
+
+    /** @param array<string,mixed> $where */
+    public function delete(string $table, array $where, $format = null): int|false
+    {
+        $clauses = implode(' AND ', array_map(fn ($k, $v) => $k . ' = ' . $this->pdo->quote((string) $v), array_keys($where), $where));
+
+        return $this->query("DELETE FROM {$table} WHERE {$clauses}");
+    }
+
     private function run(string $sql, callable $fn, mixed $onError): mixed
     {
         $this->last_error = '';
@@ -97,11 +113,28 @@ function schedule_test_db(): Database
     return new Database(schedule_test_pdo());
 }
 
-/** Create the disposable database and the outbox table from the real migration file. */
+/**
+ * Create the disposable database: the KiviCare columns the tests touch, recreated fresh
+ * so every test file sees the same shape, and the outbox table from the real migration.
+ */
 function schedule_test_setup(): Database
 {
     schedule_test_pdo(false)->exec('CREATE DATABASE IF NOT EXISTS ' . SCHEDULE_TEST_DB);
     $db = schedule_test_db();
+    $db->pdo->exec('DROP TABLE IF EXISTS wp_kc_appointments, wp_kc_appointment_service_mapping');
+    $db->pdo->exec('CREATE TABLE wp_kc_appointments (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        appointment_start_date DATE, appointment_start_time TIME,
+        appointment_end_date DATE, appointment_end_time TIME,
+        visit_type VARCHAR(191), clinic_id BIGINT, doctor_id BIGINT, patient_id BIGINT,
+        description TEXT, status INT, created_at DATETIME, appointment_report TEXT,
+        appointment_timezone VARCHAR(64) NOT NULL DEFAULT \'UTC\',
+        appointment_start_utc DATETIME, appointment_end_utc DATETIME
+    ) ENGINE=InnoDB');
+    $db->pdo->exec('CREATE TABLE wp_kc_appointment_service_mapping (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        appointment_id BIGINT, service_id BIGINT, status INT, created_at DATETIME
+    ) ENGINE=InnoDB');
     $db->pdo->exec(file_get_contents(__DIR__ . '/../../../prisma/manual/2026-10-19-schedule-sync-outbox.sql'));
 
     return $db;
