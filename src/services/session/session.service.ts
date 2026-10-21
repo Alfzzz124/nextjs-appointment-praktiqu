@@ -21,6 +21,7 @@
  */
 
 import { logging } from '@/lib/logging';
+import { isWpSlotTaken } from '@/lib/wp-endpoint';
 import { resolveKcActor, type KcActor } from '@/services/billing/kc-actor';
 import type { Actor } from '@/lib/auth';
 import {
@@ -366,6 +367,13 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
     endTime,
     serviceIds: [input.serviceId],
     status: toKcStatus(status),
+  }).catch((err: unknown) => {
+    // Another booking took the slot after the check above; the plugin re-checks it
+    // under the professional's schedule lock. Same answer as that check.
+    if (isWpSlotTaken(err)) {
+      throw new SessionServiceError('slot_taken', 'That slot is no longer available', 409);
+    }
+    throw err;
   });
 
   await logging.audit('session.created', {

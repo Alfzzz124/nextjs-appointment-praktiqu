@@ -88,6 +88,15 @@ export class WpEndpointError extends Error {
 }
 
 /**
+ * The plugin's answer when an appointment create found the slot taken. Our own conflict
+ * check runs a request before the write, so another booking can land in between; the
+ * plugin re-checks under the professional's schedule lock (praktiqu-endpoint 1.8.5).
+ */
+export function isWpSlotTaken(err: unknown): boolean {
+  return err instanceof WpEndpointError && err.status === 409 && err.code === 'praktiqu_schedule_conflict';
+}
+
+/**
  * WordPress reports errors as `{ code, message, data: { status } }`. Returns what it
  * can; a PHP fatal or an HTML error page yields nothing.
  */
