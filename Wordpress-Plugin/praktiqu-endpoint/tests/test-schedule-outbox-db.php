@@ -1,56 +1,72 @@
 <?php
-/** Real MariaDB test of the outbox: failure stays visible and retryable; success is idempotent. */
+/** Real MySQL/MariaDB test of the outbox: failure stays visible and retryable; success is idempotent. */
 declare(strict_types=1);
 define('ABSPATH', __DIR__ . '/');
+require_once __DIR__ . '/schedule-db-shim.php';
 require_once __DIR__ . '/../includes/class-praktiqu-endpoint-schedule-outbox.php';
 use PraktiQU\Endpoint\Schedule_Outbox_Processor;
 
-const SOCKET = '/home/malaka/.hermes/cache/scratch/reschedule-db/run/m.sock';
-const DB = 'praktiqu_schedule_foundation_test';
-final class Database {
-    public string $prefix = 'wp_';
-    public function __construct(public PDO $pdo) {}
-    public function prepare(string $sql, ...$args): string {
-        foreach ($args as $a) { $sql = preg_replace('/%[ds]/', is_int($a) ? (string)$a : $this->pdo->quote((string)$a), $sql, 1); }
-        return $sql;
-    }
-    public function query(string $sql): int|false { return $this->pdo->exec($sql); }
-    public function get_row(string $sql, $f = null): ?array { return $this->pdo->query($sql)->fetch(PDO::FETCH_ASSOC) ?: null; }
+/** A WordPress site at UTC+7, like production. The processor must not use this clock. */
+function current_time(string $type): string
+{
+    return (new DateTimeImmutable('now', new DateTimeZone('Asia/Jakarta')))->format('Y-m-d H:i:s');
 }
-function check(bool $ok, string $name): void { if (!$ok) throw new RuntimeException($name); echo "PASS $name\n"; }
 
-$pdo = new PDO('mysql:unix_socket=' . SOCKET . ';dbname=' . DB, 'root', '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-$db = new Database($pdo);
-$pdo->exec(file_get_contents(__DIR__ . '/../../../prisma/manual/2026-10-19-schedule-sync-outbox.sql'));
+$db = schedule_test_setup();
 $db->query('DELETE FROM wp_praktiqu_schedule_outbox');
 $db->query("INSERT INTO wp_praktiqu_schedule_outbox (appointment_id,payload,actor,request_id) VALUES (1,'{\"to\":{\"date\":\"2099-01-06\"}}','staff:1','r1')");
-$id = (int) $pdo->lastInsertId();
+$id = (int) $db->pdo->lastInsertId();
+$row = fn () => $db->get_row("SELECT *, TIMESTAMPDIFF(SECOND, NOW(), next_attempt_at) AS wait FROM wp_praktiqu_schedule_outbox WHERE id=$id");
+$due = fn () => $db->query("UPDATE wp_praktiqu_schedule_outbox SET next_attempt_at = NOW() WHERE id=$id");
 
 $calls = ['cal' => 0, 'rem' => 0];
 $failCalendar = true;
+$attemptsSeen = null;
 $p = new Schedule_Outbox_Processor(
     $db,
-    function (int $a, array $payload) use (&$calls, &$failCalendar): void {
+    function (int $a, array $payload) use (&$calls, &$failCalendar, &$attemptsSeen, $db, $id): void {
         $calls['cal']++;
-        if ($failCalendar) throw new RuntimeException('calendar provider unavailable (MOCK)');
+        $attemptsSeen = (int) $db->get_var("SELECT attempts FROM wp_praktiqu_schedule_outbox WHERE id=$id");
+        if ($failCalendar) throw new RuntimeException('kalender tidak tersedia — provider (MOCK) ✗');
     },
     function (int $a) use (&$calls): void { $calls['rem']++; }
 );
+
 $r = $p->process($id);
-$row = $db->get_row("SELECT * FROM wp_praktiqu_schedule_outbox WHERE id=$id");
-check($r['ok'] === false && $row['status'] === 'pending' && (int)$row['attempts'] === 1, 'failure stays pending with attempt count');
-check(str_contains((string)$row['last_error'], 'calendar provider unavailable'), 'error visible, not swallowed');
+check($r['ok'] === false && $row()['status'] === 'pending' && (int) $row()['attempts'] === 1, 'failure stays pending with attempt count');
+check($attemptsSeen === 1, 'attempt counted before the provider is called');
+check(str_contains((string) $row()['last_error'], 'kalender tidak tersedia'), 'error visible (multibyte intact), not swallowed');
 check($calls['rem'] === 0, 'reminders not marked synced when calendar failed');
+check((int) $row()['wait'] > 240 && (int) $row()['wait'] <= 300, 'backoff measured on the database clock, not WordPress local time');
+
+$r = $p->process($id);
+check($r === ['ok' => false, 'error' => 'outbox_not_due'] && $calls['cal'] === 1, 'not retried before its backoff');
+
+$other = schedule_test_pdo();
+$other->query("SELECT GET_LOCK('praktiqu_schedule_outbox_$id', 0)");
+$due();
+$r = $p->process($id);
+check($r === ['ok' => false, 'error' => 'outbox_busy'] && $calls['cal'] === 1, 'row held by another worker is not run twice');
+$other->query("SELECT RELEASE_LOCK('praktiqu_schedule_outbox_$id')");
+
 $failCalendar = false;
 $r = $p->process($id);
-$row = $db->get_row("SELECT * FROM wp_praktiqu_schedule_outbox WHERE id=$id");
-check($r['ok'] === true && $row['status'] === 'done' && $row['last_error'] === null, 'retry succeeds and clears error');
+check($r['ok'] === true && $row()['status'] === 'done' && $row()['last_error'] === null && $row()['done_at'] !== null, 'retry succeeds and clears error');
+$due();
 $p->process($id);
 check($calls['cal'] === 2 && $calls['rem'] === 1, 'done row is not re-run (idempotent)');
-for ($i = 0; $i < 6; $i++) {
-    $db->query("UPDATE wp_praktiqu_schedule_outbox SET status='pending', attempts=0 WHERE id=$id");
-    $failCalendar = true;
-    for ($k = 0; $k < 5; $k++) $p->process($id);
-}
-check($db->get_row("SELECT status FROM wp_praktiqu_schedule_outbox WHERE id=$id")['status'] === 'failed', 'exhausted retries become visible failed state');
-echo "ALL PASS (real MariaDB outbox state; calendar/reminder providers are MOCKS, no live provider claim)\n";
+
+$db->query("UPDATE wp_praktiqu_schedule_outbox SET status='pending', attempts=0, last_error=NULL WHERE id=$id");
+$failCalendar = true;
+for ($k = 0; $k < 5; $k++) { $due(); $p->process($id); }
+check($row()['status'] === 'failed' && (int) $row()['attempts'] === 5, 'exhausted retries become visible failed state');
+$before = $calls['cal'];
+$due();
+check($p->process($id) === ['ok' => false, 'error' => 'outbox_failed'] && $calls['cal'] === $before, 'failed row is not retried by itself');
+
+// Attempts that died mid-call leave the row pending with attempts used up.
+$db->query("UPDATE wp_praktiqu_schedule_outbox SET status='pending', attempts=5 WHERE id=$id");
+$due();
+check($p->process($id) === ['ok' => false, 'error' => 'outbox_failed'] && $calls['cal'] === $before && $row()['status'] === 'failed', 'crashed attempts still exhaust');
+
+echo "ALL PASS (real MySQL outbox state; calendar/reminder providers are MOCKS, no live provider claim)\n";
