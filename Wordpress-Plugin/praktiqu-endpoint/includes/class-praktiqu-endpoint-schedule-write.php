@@ -6,9 +6,12 @@
  * compare it with what the caller saw, check the target window, update, and queue
  * the external-sync outbox row. Status, bills and payments are never touched.
  *
- * COVERAGE LIMIT (see docs/superpowers/specs/2026-10-19-schedule-write-foundation.md):
- * internal foundation only, NOT wired into any production writer or REST route yet.
- * The lock only protects cooperating writers. KiviCare has no universal pre-save hook.
+ * Every statement fails closed. wpdb does not throw: a failed query sets last_error and
+ * returns null/false, so an unchecked conflict query would read as "slot is free".
+ *
+ * COVERAGE LIMIT: internal foundation only, NOT wired into any production writer or
+ * REST route yet. The lock only protects cooperating writers. KiviCare has no universal
+ * pre-save hook.
  *
  * @package PraktiQU\Endpoint
  */
@@ -25,7 +28,7 @@ final class Schedule_Write
     /** BOOKED, PENDING, CHECK_IN occupy a slot (KCAppointment.php:493). */
     private const ACTIVE = '1,2,4';
 
-    /** @param object $db wpdb-compatible: prefix, prepare, query, get_var, get_row */
+    /** @param object $db wpdb-compatible: prefix, last_error, prepare, query, get_var, get_row */
     public function __construct(private object $db)
     {
     }
@@ -52,7 +55,7 @@ final class Schedule_Write
     public function assertFree(int $doctorId, string $date, string $start, string $end, int $excludeId = 0): void
     {
         $t = $this->db->prefix . 'kc_appointments';
-        $id = $this->db->get_var($this->db->prepare(
+        $id = $this->checked($this->db->get_var($this->db->prepare(
             "SELECT id FROM {$t}
               WHERE doctor_id = %d AND appointment_start_date = %s AND status IN (" . self::ACTIVE . ')
                 AND appointment_start_time < %s AND appointment_end_time > %s AND id <> %d
@@ -62,7 +65,7 @@ final class Schedule_Write
             $end,
             $start,
             $excludeId
-        ));
+        )));
         if ($id) {
             throw new \RuntimeException('schedule_conflict');
         }
@@ -70,7 +73,7 @@ final class Schedule_Write
 
     /**
      * @param array<string,mixed> $expected row values the caller based its decision on
-     * @param callable|string     $bounds   fn(array $row, \DateTimeImmutable $start, \DateTimeImmutable $end): bool
+     * @param callable            $bounds   fn(array $row, \DateTimeImmutable $start, \DateTimeImmutable $end): bool
      *                                      clinic hours / off-days / service check supplied by the caller
      * @return array<string,mixed> the row after the move
      */
@@ -81,7 +84,7 @@ final class Schedule_Write
         string $newStart,
         string $actor,
         string $requestId,
-        callable|string $bounds
+        callable $bounds
     ): array {
         if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $newDate, $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])
             || !preg_match('/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/', $newStart)) {
@@ -89,25 +92,25 @@ final class Schedule_Write
         }
         $t = $this->db->prefix . 'kc_appointments';
         $doctorId = (int) ($expected['doctor_id'] ?? 0);
-        if ($doctorId <= 0 || !is_callable($bounds)) {
+        if ($doctorId <= 0) {
             throw new \RuntimeException('schedule_invalid');
         }
 
         return $this->locked($doctorId, function () use ($appointmentId, $expected, $newDate, $newStart, $actor, $requestId, $bounds, $t, $doctorId) {
             foreach ([$t, $this->db->prefix . 'praktiqu_schedule_outbox'] as $table) {
-                $engine = $this->db->get_var($this->db->prepare(
+                $engine = $this->checked($this->db->get_var($this->db->prepare(
                     'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s', $table
-                ));
+                )));
                 if (strtolower((string) $engine) !== 'innodb') {
                     throw new \RuntimeException('schedule_requires_innodb');
                 }
             }
-            if ($this->db->query('START TRANSACTION') === false) {
+            if ($this->checked($this->db->query('START TRANSACTION')) === false) {
                 throw new \RuntimeException('schedule_transaction_failed');
             }
             $done = false;
             try {
-                $row = $this->db->get_row($this->db->prepare("SELECT * FROM {$t} WHERE id = %d FOR UPDATE", $appointmentId), 'ARRAY_A');
+                $row = $this->checked($this->db->get_row($this->db->prepare("SELECT * FROM {$t} WHERE id = %d FOR UPDATE", $appointmentId), 'ARRAY_A'));
                 if (!$row) {
                     throw new \RuntimeException('schedule_stale');
                 }
@@ -132,6 +135,10 @@ final class Schedule_Write
                 if ($seconds <= 0) {
                     throw new \RuntimeException('schedule_invalid');
                 }
+                if ($newDate === $row['appointment_start_date'] && $start->format('H:i:s') === $row['appointment_start_time']) {
+                    // The UPDATE would change no row and come back as 0 affected: "stale" would be the wrong answer.
+                    throw new \RuntimeException('schedule_unchanged');
+                }
                 $end = $start->modify('+' . $seconds . ' seconds');
                 if ($end->format('Y-m-d') !== $start->format('Y-m-d')) {
                     throw new \RuntimeException('schedule_unavailable'); // no cross-midnight slots
@@ -151,7 +158,7 @@ final class Schedule_Write
                     'appointment_end_utc' => $end->setTimezone($utc)->format('Y-m-d H:i:s'),
                 ];
                 // Status is NOT in this statement: payment state must survive a move.
-                $ok = $this->db->query($this->db->prepare(
+                $ok = $this->checked($this->db->query($this->db->prepare(
                     "UPDATE {$t} SET appointment_start_date = %s, appointment_start_time = %s, appointment_end_date = %s,
                             appointment_end_time = %s, appointment_start_utc = %s, appointment_end_utc = %s
                       WHERE id = %d AND status = %d",
@@ -163,7 +170,7 @@ final class Schedule_Write
                     $new['appointment_end_utc'],
                     $appointmentId,
                     (int) $row['status']
-                ));
+                )));
                 if ($ok !== 1) {
                     throw new \RuntimeException('schedule_stale');
                 }
@@ -172,17 +179,17 @@ final class Schedule_Write
                     'to' => ['date' => $new['appointment_start_date'], 'start' => $new['appointment_start_time'], 'end' => $new['appointment_end_time']],
                     'timezone' => $tz,
                 ], JSON_THROW_ON_ERROR);
-                $inserted = $this->db->query($this->db->prepare(
+                $inserted = $this->checked($this->db->query($this->db->prepare(
                     'INSERT INTO ' . $this->db->prefix . 'praktiqu_schedule_outbox (appointment_id, payload, actor, request_id) VALUES (%d, %s, %s, %s)',
                     $appointmentId,
                     $payload,
                     substr($actor, 0, 64),
                     substr($requestId, 0, 64)
-                ));
+                )));
                 if ($inserted !== 1) {
                     throw new \RuntimeException('schedule_outbox_failed');
                 }
-                $this->db->query('COMMIT');
+                $this->checked($this->db->query('COMMIT'));
                 $done = true;
 
                 return array_merge($row, $new);
@@ -192,5 +199,15 @@ final class Schedule_Write
                 }
             }
         });
+    }
+
+    /** Pass a wpdb result through, throwing when the statement that produced it failed. */
+    private function checked(mixed $result): mixed
+    {
+        if ((string) $this->db->last_error !== '') {
+            throw new \RuntimeException('schedule_db_error');
+        }
+
+        return $result;
     }
 }
