@@ -35,6 +35,33 @@ final class Appointments
     private const MODEL = '\App\models\KCAppointment';
 
     /**
+     * How each way Schedule_Write refuses becomes an answer. Every one of them wrote nothing.
+     * Statuses are the contract the Next.js app maps from (see rescheduleAppointment).
+     */
+    private const SCHEDULE_ERRORS = [
+        'schedule_conflict' => ['praktiqu_schedule_conflict', 'That slot is already booked.', 409],
+        'schedule_stale' => ['praktiqu_schedule_stale', 'The appointment changed since it was read.', 409],
+        'schedule_terminal' => ['praktiqu_schedule_terminal', 'Only a booked or pending appointment can be moved.', 409],
+        'schedule_unchanged' => ['praktiqu_schedule_unchanged', 'The appointment is already at that time.', 400],
+        'schedule_invalid' => ['praktiqu_schedule_invalid', 'That date or time is not valid.', 400],
+        'schedule_unavailable' => ['praktiqu_schedule_unavailable', 'That time has passed or crosses midnight.', 422],
+        // The lock is held by another booking or a reschedule.
+        'schedule_busy' => ['praktiqu_schedule_busy', 'The schedule is busy, try again.', 503],
+        'schedule_db_error' => ['praktiqu_schedule_db_error', 'Could not check the slot.', 500],
+        'schedule_requires_innodb' => ['praktiqu_schedule_db_error', 'Could not check the slot.', 500],
+        'schedule_transaction_failed' => ['praktiqu_schedule_db_error', 'Could not check the slot.', 500],
+        'schedule_outbox_failed' => ['praktiqu_schedule_db_error', 'Could not check the slot.', 500],
+    ];
+
+    /**
+     * @param object|null $sync the external steps of a move: calendar(), reminders() and
+     *                          meeting_url(), as Schedule_Sync has them. Tests pass a double.
+     */
+    public function __construct(private ?object $sync = null)
+    {
+    }
+
+    /**
      * Create an appointment.
      *
      * @param array<string,mixed> $params
@@ -111,13 +138,7 @@ final class Appointments
                     return $model::create($appointment_data);
                 });
         } catch (\RuntimeException $e) {
-            return match ($e->getMessage()) {
-                'schedule_conflict' => new \WP_Error('praktiqu_schedule_conflict', 'That slot is already booked.', ['status' => 409]),
-                // Nothing was written; the lock is held by another booking or a reschedule.
-                'schedule_busy' => new \WP_Error('praktiqu_schedule_busy', 'The schedule is busy, try again.', ['status' => 503]),
-                'schedule_db_error' => new \WP_Error('praktiqu_schedule_db_error', 'Could not check the slot.', ['status' => 500]),
-                default => throw $e,
-            };
+            return $this->schedule_error($e);
         }
         if (!$appointment) {
             return new \WP_Error('praktiqu_appointment_failed', 'Failed to create appointment.', ['status' => 500]);
@@ -365,9 +386,122 @@ final class Appointments
         return ['id' => $appointment_id, 'updated' => array_keys($update_data)];
     }
 
+    /**
+     * Move an appointment to a new slot: Schedule_Write::move() under the professional's
+     * lock, then its outbox row at once (Meet/Zoom, Google Calendar, KiviCare reminders).
+     *
+     * Whether the slot is a bookable one — working hours, closures, the service's length —
+     * is the Next.js app's to check, as for create(). What only this side can guarantee,
+     * under the lock, is that the slot is free and the row is still the one the caller saw
+     * (`expected`). The session keeps its length.
+     *
+     * A failed external step does not fail the move: the schedule has changed, the answer
+     * says so in `sync`, and the outbox sweep retries the row.
+     *
+     * @param array<string,mixed> $params start_date, start_time, actor, request_id, and
+     *        expected{doctor_id, clinic_id, status, start_date, start_time, end_date, end_time}
+     * @return array<string,mixed>|\WP_Error
+     */
+    public function reschedule(int $appointment_id, array $params): array|\WP_Error
+    {
+        $guard = $this->require_kivicare();
+        if (is_wp_error($guard)) {
+            return $guard;
+        }
+        foreach (['start_date', 'start_time'] as $required) {
+            if (empty($params[$required])) {
+                return new \WP_Error('praktiqu_missing_field', sprintf('%s is required.', $required), ['status' => 400]);
+            }
+        }
+
+        global $wpdb;
+        $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$wpdb->prefix}kc_appointments WHERE id = %d", $appointment_id));
+        if ((string) $wpdb->last_error !== '') {
+            return new \WP_Error('praktiqu_schedule_db_error', 'Could not check the slot.', ['status' => 500]);
+        }
+        if (!$exists) {
+            return new \WP_Error('praktiqu_appointment_not_found', 'Appointment not found.', ['status' => 404]);
+        }
+
+        // The caller's view of the row, in the row's own column names and time format, so
+        // "09:00" from the app compares equal to the stored "09:00:00".
+        $expected = (array) ($params['expected'] ?? []);
+        $seen = [
+            'doctor_id' => $expected['doctor_id'] ?? null,
+            'clinic_id' => $expected['clinic_id'] ?? null,
+            'status' => $expected['status'] ?? null,
+            'appointment_start_date' => $expected['start_date'] ?? null,
+            'appointment_start_time' => self::with_seconds((string) ($expected['start_time'] ?? '')),
+            'appointment_end_date' => $expected['end_date'] ?? null,
+            'appointment_end_time' => self::with_seconds((string) ($expected['end_time'] ?? '')),
+        ];
+
+        try {
+            $moved = (new Schedule_Write($wpdb))->move(
+                $appointment_id,
+                $seen,
+                sanitize_text_field((string) $params['start_date']),
+                self::with_seconds(sanitize_text_field((string) $params['start_time'])),
+                sanitize_text_field((string) ($params['actor'] ?? 'unknown')),
+                sanitize_text_field((string) ($params['request_id'] ?? '')),
+                static fn (): bool => true
+            );
+        } catch (\RuntimeException $e) {
+            return $this->schedule_error($e);
+        }
+
+        $this->sync ??= new Schedule_Sync();
+        $sync = ['outbox_id' => (int) $moved['outbox_id'], 'ok' => false];
+        try {
+            $processed = (new Schedule_Outbox_Processor(
+                $wpdb,
+                \Closure::fromCallable([$this->sync, 'calendar']),
+                \Closure::fromCallable([$this->sync, 'reminders'])
+            ))->process((int) $moved['outbox_id']);
+            $sync['ok'] = $processed['ok'];
+            if (!$processed['ok']) {
+                $sync['error'] = (string) ($processed['error'] ?? 'unknown');
+            }
+            // A Meet update can issue a new link; the app mails whichever is current.
+            $sync['meeting_url'] = $this->sync->meeting_url($appointment_id);
+        } catch (\Throwable $e) {
+            $sync['error'] = $e->getMessage();
+        }
+
+        return [
+            'id' => $appointment_id,
+            'start_date' => $moved['appointment_start_date'],
+            'start_time' => $moved['appointment_start_time'],
+            'end_date' => $moved['appointment_end_date'],
+            'end_time' => $moved['appointment_end_time'],
+            'previous' => [
+                'start_date' => $seen['appointment_start_date'],
+                'start_time' => $seen['appointment_start_time'],
+                'end_time' => $seen['appointment_end_time'],
+            ],
+            'sync' => $sync,
+        ];
+    }
+
     /* -------------------------------------------------------------- */
     /* Internals                                                       */
     /* -------------------------------------------------------------- */
+
+    private function schedule_error(\RuntimeException $e): \WP_Error
+    {
+        $known = self::SCHEDULE_ERRORS[$e->getMessage()] ?? null;
+        if ($known === null) {
+            throw $e;
+        }
+
+        return new \WP_Error($known[0], $known[1], ['status' => $known[2]]);
+    }
+
+    /** "09:00" → "09:00:00"; anything else is left for Schedule_Write to judge. */
+    private static function with_seconds(string $time): string
+    {
+        return preg_match('/^\d{2}:\d{2}$/', $time) ? $time . ':00' : $time;
+    }
 
     /**
      * Appointment writes are meaningless without KiviCare: its model derives the UTC
