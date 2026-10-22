@@ -63,6 +63,28 @@ final class Schedule_Outbox_Processor
         }
     }
 
+    /**
+     * Process up to $limit pending rows that are due, oldest first. Run every 5 minutes by
+     * the praktiqu_schedule_outbox_sweep action (Jobs); a row another worker holds is
+     * skipped and picked up by a later run.
+     *
+     * @return array{processed:int,ok:int}
+     */
+    public function sweep(int $limit = 20): array
+    {
+        $t = $this->db->prefix . 'praktiqu_schedule_outbox';
+        $ids = (array) $this->db->get_col($this->db->prepare(
+            "SELECT id FROM {$t} WHERE status = 'pending' AND next_attempt_at <= NOW() ORDER BY next_attempt_at, id LIMIT %d",
+            $limit
+        ));
+        $ok = 0;
+        foreach ($ids as $id) {
+            $ok += $this->process((int) $id)['ok'] ? 1 : 0;
+        }
+
+        return ['processed' => count($ids), 'ok' => $ok];
+    }
+
     /** @return array{ok:bool,error?:string} */
     private function run(int $outboxId): array
     {
@@ -107,8 +129,9 @@ final class Schedule_Outbox_Processor
         }
 
         try {
-            ($this->calendarSync)((int) $row['appointment_id'], json_decode((string) $row['payload'], true, 8, JSON_THROW_ON_ERROR));
-            ($this->reminderSync)((int) $row['appointment_id']);
+            $payload = json_decode((string) $row['payload'], true, 8, JSON_THROW_ON_ERROR);
+            ($this->calendarSync)((int) $row['appointment_id'], $payload);
+            ($this->reminderSync)((int) $row['appointment_id'], $payload);
         } catch (\Throwable $e) {
             $this->db->query($this->db->prepare(
                 "UPDATE {$t} SET status = %s, last_error = %s WHERE id = %d",

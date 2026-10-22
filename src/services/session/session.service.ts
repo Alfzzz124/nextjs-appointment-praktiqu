@@ -228,7 +228,7 @@ function forActor<S extends { approval: ApprovalView | null }>(
   return sessions.map((s) => ({ ...s, approval: s.approval ? toPublicApprovalView(s.approval) : null }));
 }
 
-async function loadForActor(kc: KcActor, id: number): Promise<SessionRow> {
+export async function loadForActor(kc: KcActor, id: number): Promise<SessionRow> {
   const s = await findSessionById(id);
   if (!s) throw new SessionServiceError('not_found', 'Session not found', 404);
   assertCanRead(kc, s);
@@ -242,7 +242,7 @@ async function loadForActor(kc: KcActor, id: number): Promise<SessionRow> {
  * so the caller's slot may still be fine. Treating a partial closure as a full one
  * would refuse bookable slots.
  */
-async function assertNotOffDay(
+export async function assertNotOffDay(
   professionalId: number,
   clinicId: number,
   date: string,
@@ -502,7 +502,7 @@ export interface TransitionArgs {
   intent?: 'reject';
 }
 
-async function reread(actor: Actor, sessionId: number): Promise<SessionWithRelations> {
+export async function reread(actor: Actor, sessionId: number): Promise<SessionWithRelations> {
   const updated = await findSessionById(sessionId);
   if (!updated) throw new SessionServiceError('not_found', 'Session not found', 404);
   const [session] = forActor(actor, await withApprovals([toSession(updated)]));

@@ -124,6 +124,89 @@ export async function updateAppointment(
   });
 }
 
+/** The row as the caller read it, which the plugin compares against before moving it. */
+export type RescheduleExpected = {
+  doctorId: number;
+  clinicId: number;
+  /** Raw KiviCare status (1 BOOKED, 2 PENDING). */
+  status: number;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+};
+
+export type RescheduleInput = {
+  /** `YYYY-MM-DD` in the appointment's own timezone. */
+  startDate: string;
+  /** `HH:MM:SS`. The session keeps its length; the plugin derives the end. */
+  startTime: string;
+  expected: RescheduleExpected;
+  /** Who asked, for the outbox row (e.g. the actor's user id). */
+  actor: string;
+  requestId: string;
+};
+
+export type RescheduledAppointment = {
+  id: number;
+  startDate: string;
+  startTime: string;
+  endTime: string;
+  /** False when moving its Meet/Calendar event failed; the plugin's sweep retries it. */
+  syncOk: boolean;
+  /** The online session link after the move (a Meet update can issue a new one), or null. */
+  meetingUrl: string | null;
+};
+
+type RescheduleResponse = {
+  id: number;
+  start_date: string;
+  start_time: string;
+  end_date: string;
+  end_time: string;
+  sync?: { ok?: boolean; meeting_url?: string | null };
+};
+
+/**
+ * Move an appointment to a new slot (praktiqu-endpoint 1.8.6). The plugin moves it under
+ * the professional's schedule lock, refusing a taken slot (409 praktiqu_schedule_conflict)
+ * and a row that changed since `expected` was read (409 praktiqu_schedule_stale), then
+ * moves its Meet/Calendar event and KiviCare's own reminders.
+ */
+export async function rescheduleAppointment(
+  appointmentId: number,
+  input: RescheduleInput,
+): Promise<RescheduledAppointment> {
+  const e = input.expected;
+  const res = await wpRequestJson<RescheduleResponse>(`/appointments/${appointmentId}/reschedule`, {
+    method: 'POST',
+    body: {
+      start_date: input.startDate,
+      start_time: input.startTime,
+      expected: {
+        doctor_id: e.doctorId,
+        clinic_id: e.clinicId,
+        status: e.status,
+        start_date: e.startDate,
+        start_time: e.startTime,
+        end_date: e.endDate,
+        end_time: e.endTime,
+      },
+      actor: input.actor,
+      request_id: input.requestId,
+    },
+  });
+
+  return {
+    id: res.id,
+    startDate: res.start_date,
+    startTime: res.start_time,
+    endTime: res.end_time,
+    syncOk: res.sync?.ok === true,
+    meetingUrl: res.sync?.meeting_url ?? null,
+  };
+}
+
 /** The payment a BOOKED status write confirms. */
 export type ConfirmedPayment = {
   gateway: string;

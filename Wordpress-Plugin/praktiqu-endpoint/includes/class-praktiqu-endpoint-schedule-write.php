@@ -28,7 +28,7 @@ final class Schedule_Write
     /** BOOKED, PENDING, CHECK_IN occupy a slot (KCAppointment.php:493). */
     public const ACTIVE_STATUSES = [1, 2, 4];
 
-    /** @param object $db wpdb-compatible: prefix, last_error, prepare, query, get_var, get_row */
+    /** @param object $db wpdb-compatible: prefix, last_error, insert_id, prepare, query, get_var, get_row */
     public function __construct(private object $db)
     {
     }
@@ -75,7 +75,7 @@ final class Schedule_Write
      * @param array<string,mixed> $expected row values the caller based its decision on
      * @param callable            $bounds   fn(array $row, \DateTimeImmutable $start, \DateTimeImmutable $end): bool
      *                                      clinic hours / off-days / service check supplied by the caller
-     * @return array<string,mixed> the row after the move
+     * @return array<string,mixed> the row after the move, plus outbox_id: the sync row it queued
      */
     public function move(
         int $appointmentId,
@@ -189,10 +189,12 @@ final class Schedule_Write
                 if ($inserted !== 1) {
                     throw new \RuntimeException('schedule_outbox_failed');
                 }
+                // The caller processes this row right after the commit (wpdb sets insert_id on INSERT).
+                $outboxId = (int) $this->db->insert_id;
                 $this->checked($this->db->query('COMMIT'));
                 $done = true;
 
-                return array_merge($row, $new);
+                return array_merge($row, $new, ['outbox_id' => $outboxId]);
             } finally {
                 if (!$done) {
                     $this->db->query('ROLLBACK');

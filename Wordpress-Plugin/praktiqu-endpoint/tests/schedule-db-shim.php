@@ -21,6 +21,7 @@ final class Database
 {
     public string $prefix = 'wp_';
     public string $last_error = '';
+    public int $insert_id = 0;
     /** A statement matching this regex fails the way wpdb reports a failed query. */
     public ?string $failOn = null;
 
@@ -42,7 +43,14 @@ final class Database
 
     public function query(string $sql): int|false
     {
-        return $this->run($sql, fn () => $this->pdo->exec($sql), false);
+        return $this->run($sql, function () use ($sql) {
+            $affected = $this->pdo->exec($sql);
+            if (preg_match('/^\s*INSERT\b/i', $sql)) {
+                $this->insert_id = (int) $this->pdo->lastInsertId();
+            }
+
+            return $affected;
+        }, false);
     }
 
     public function get_var(string $sql): mixed
@@ -57,6 +65,12 @@ final class Database
     public function get_row(string $sql, $format = null): ?array
     {
         return $this->run($sql, fn () => $this->pdo->query($sql)->fetch(PDO::FETCH_ASSOC) ?: null, null);
+    }
+
+    /** @return list<mixed>|null */
+    public function get_col(string $sql): ?array
+    {
+        return $this->run($sql, fn () => $this->pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN), null);
     }
 
     /** @param array<string,mixed> $data */
