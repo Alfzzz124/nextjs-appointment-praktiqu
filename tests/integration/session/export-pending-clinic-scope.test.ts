@@ -5,6 +5,10 @@
  * passed a clinic filter only for SUPER_ADMIN, and the pending queue took `?professionalId=`
  * as given. Any clinic admin or receptionist could read every clinic's appointments,
  * patients and pending queues (2026-10-16 review of feat/pemilik-klinik).
+ *
+ * GET /professionals/export had the same hole by another route: it passed the JWT's
+ * retired `practiceId` where the service reads `clinicId`, so nothing was filtered and a
+ * clinic admin exported every clinic's professionals, contact details included.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SignJWT } from 'jose';
@@ -16,6 +20,7 @@ import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 const { GET: sessionsExport } = await import('@/app/api/v1/sessions/export/route');
 const { GET: clientsExport } = await import('@/app/api/v1/clients/export/route');
 const { GET: pending } = await import('@/app/api/v1/sessions/pending/route');
+const { GET: professionalsExport } = await import('@/app/api/v1/professionals/export/route');
 
 /** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
 const BASE = 8_860_000;
@@ -41,6 +46,7 @@ const ADMIN_WP = BASE + 500;
 const RECEP_WP = BASE + 501;
 const RECEP_NONE_WP = BASE + 502;
 const SUPER_WP = BASE + 503;
+const ADMIN_NONE_WP = BASE + 504; // a clinic admin who owns no clinic
 const CLIENT_WP = P_OWN;
 
 const PREFIX = 'export-scope-test-';
@@ -49,6 +55,7 @@ const RECEP = `${PREFIX}recep`;
 const RECEP_NONE = `${PREFIX}recep-none`;
 const SUPER = `${PREFIX}super`;
 const CLIENT = `${PREFIX}client`;
+const ADMIN_NONE = `${PREFIX}admin-none`;
 
 const ROLE: Record<string, string> = {
   [ADMIN]: 'CLINIC_ADMIN',
@@ -56,6 +63,7 @@ const ROLE: Record<string, string> = {
   [RECEP_NONE]: 'RECEPTIONIST',
   [SUPER]: 'SUPER_ADMIN',
   [CLIENT]: 'CLIENT',
+  [ADMIN_NONE]: 'CLINIC_ADMIN',
 };
 
 const JWT_SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
@@ -101,6 +109,12 @@ async function pendingIds(sub: string, professionalId: number, clinicHeader?: nu
   return { status: res.status, ids: ownIds(body.data ?? []) };
 }
 
+async function exportProfessionalIds(sub: string, qs = '', clinicHeader?: number) {
+  const res = await professionalsExport(await request(`/professionals/export?${qs}`, sub, clinicHeader));
+  const body = (await res.json()) as { data?: Array<{ id: unknown }> };
+  return { status: res.status, ids: ownIds(body.data ?? []) };
+}
+
 function capabilities(role: string): string {
   return `a:1:{s:${role.length}:"${role}";b:1;}`;
 }
@@ -124,6 +138,30 @@ async function seedPatient(id: number, clinic: number) {
   });
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_patient_clinic_mappings (patient_id, clinic_id, created_at) VALUES (?, ?, NOW())`,
+    id,
+    clinic,
+  );
+}
+
+async function seedDoctor(id: number, clinic: number) {
+  await prisma.kcUser.create({
+    data: {
+      id: BigInt(id),
+      userLogin: `u${id}`,
+      userEmail: `${id}@export-scope.test.local`,
+      displayName: `Professional ${id}`,
+      userRegistered: new Date('2026-01-01T00:00:00Z'),
+    },
+  });
+  await prisma.kcUserMeta.createMany({
+    data: [
+      { userId: BigInt(id), metaKey: 'wp_capabilities', metaValue: capabilities('kiviCare_doctor') },
+      { userId: BigInt(id), metaKey: 'first_name', metaValue: 'Professional' },
+      { userId: BigInt(id), metaKey: 'last_name', metaValue: String(id) },
+    ],
+  });
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO wp_kc_doctor_clinic_mappings (doctor_id, clinic_id, owner, created_at) VALUES (?, ?, 0, NOW())`,
     id,
     clinic,
   );
@@ -154,6 +192,10 @@ async function wipe() {
   );
   await prisma.$executeRawUnsafe(
     `DELETE FROM wp_kc_receptionist_clinic_mappings WHERE receptionist_id >= ? AND receptionist_id < ?`,
+    ...range,
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id >= ? AND doctor_id < ?`,
     ...range,
   );
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_clinics WHERE id >= ? AND id < ?`, ...range);
@@ -198,6 +240,10 @@ beforeAll(async () => {
   await seedPatient(P_OWN2, OWN2);
   await seedPatient(P_FOREIGN, FOREIGN);
 
+  await seedDoctor(DOC_OWN, OWN);
+  await seedDoctor(DOC_OWN2, OWN2);
+  await seedDoctor(DOC_FOREIGN, FOREIGN);
+
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_receptionist_clinic_mappings (receptionist_id, clinic_id, created_at) VALUES (?, ?, NOW())`,
     RECEP_WP,
@@ -209,6 +255,7 @@ beforeAll(async () => {
   await linkAuthUser(RECEP_NONE, RECEP_NONE_WP);
   await linkAuthUser(SUPER, SUPER_WP);
   await linkAuthUser(CLIENT, CLIENT_WP);
+  await linkAuthUser(ADMIN_NONE, ADMIN_NONE_WP);
 });
 
 afterAll(async () => {
@@ -299,5 +346,33 @@ describe('GET /sessions/pending — clinic scope', () => {
 
   it('refuses a client', async () => {
     expect((await pendingIds(CLIENT, DOC_OWN)).status).toBe(403);
+  });
+});
+
+describe('GET /professionals/export — clinic scope', () => {
+  it('confines a clinic admin to their default clinic', async () => {
+    expect(await exportProfessionalIds(ADMIN)).toEqual({ status: 200, ids: [DOC_OWN] });
+  });
+
+  it('follows the X-Praktiqu-Clinic-Id active clinic', async () => {
+    expect(await exportProfessionalIds(ADMIN, '', OWN2)).toEqual({ status: 200, ids: [DOC_OWN2] });
+  });
+
+  it('ignores ?clinicId= and ?practiceId= from a clinic admin', async () => {
+    expect(await exportProfessionalIds(ADMIN, `clinicId=${FOREIGN}`)).toEqual({ status: 200, ids: [DOC_OWN] });
+    expect(await exportProfessionalIds(ADMIN, `practiceId=${FOREIGN}`)).toEqual({ status: 200, ids: [DOC_OWN] });
+  });
+
+  it('gives a clinic admin with no clinic nothing', async () => {
+    expect(await exportProfessionalIds(ADMIN_NONE)).toEqual({ status: 200, ids: [] });
+  });
+
+  it('lets a super admin see every clinic, or filter by one', async () => {
+    expect((await exportProfessionalIds(SUPER)).ids).toEqual([DOC_OWN, DOC_OWN2, DOC_FOREIGN]);
+    expect((await exportProfessionalIds(SUPER, `clinicId=${FOREIGN}`)).ids).toEqual([DOC_FOREIGN]);
+  });
+
+  it('refuses a receptionist', async () => {
+    expect((await exportProfessionalIds(RECEP)).status).toBe(403);
   });
 });
