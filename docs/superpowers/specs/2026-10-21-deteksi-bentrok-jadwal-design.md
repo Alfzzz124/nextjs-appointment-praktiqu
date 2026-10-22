@@ -106,8 +106,9 @@ SELECT a.id AS low_id, b.id AS high_id, a.doctor_id,
 - Kolom tanggal/jam dikembalikan sebagai string lewat `DATE_FORMAT`/`TIME_FORMAT`, bukan lewat
   round-trip Date Prisma, dan kolom zero-date apa pun (`created_at` tabel mapping KiviCare) tidak
   dipilih.
-- `fromDate` = `localDate(now)` dikurangi 1 hari. Batas bawah sengaja longgar supaya klinik di zona waktu
-  lain tidak kehilangan janji temu "hari ini"-nya; penyaringan tepatnya di §4.2.
+- `fromDate` = tanggal UTC sehari sebelum `now` (tidak bergantung pada TZ proses). Batas bawah sengaja
+  longgar supaya klinik di zona waktu mana pun tidak kehilangan janji temu "hari ini"-nya; penyaringan
+  tepatnya di §4.2.
 
 ### 4.2 "Yang akan datang"
 
