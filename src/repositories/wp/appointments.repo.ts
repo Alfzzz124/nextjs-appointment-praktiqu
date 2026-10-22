@@ -307,3 +307,89 @@ export async function findConflictingAppointments(opts: {
     }),
   );
 }
+
+/** One side of an overlapping pair. Times are local `HH:MM:SS` on the pair's date. */
+export type OverlapSide = {
+  id: number;
+  clinicId: number;
+  status: number;
+  startTime: string;
+  endTime: string;
+};
+
+/** Two active appointments of one doctor whose times overlap on one date; `low.id < high.id`. */
+export type OverlapPair = {
+  doctorId: number;
+  /** Local date, `YYYY-MM-DD`. */
+  date: string;
+  /** `appointment_timezone` of the low side; empty when KiviCare left it NULL. */
+  timezone: string;
+  low: OverlapSide;
+  high: OverlapSide;
+};
+
+/**
+ * Every pair of ACTIVE appointments of one doctor that overlap on the same local date, from
+ * `fromDate` on. This is the after-the-fact check for writers that bypass the plugin's
+ * per-doctor schedule lock (KiviCare's WP admin, KiviCare Pro's inbound Google Calendar
+ * reschedule, CSV import) — docs/superpowers/specs/2026-10-21-deteksi-bentrok-jadwal-design.md.
+ *
+ * The predicate is Schedule_Write::assertFree's, column for column: same doctor, same
+ * appointment_start_date, half-open time overlap. Change one, change the other.
+ *
+ * Nothing time-valued is bound — only the date string and the statuses — so the TIME-vs-Date
+ * trap described at assertTime cannot apply. Dates and times come back as strings from
+ * DATE_FORMAT/TIME_FORMAT rather than as Prisma Dates.
+ */
+export async function findOverlappingAppointmentPairs(fromDate: string): Promise<OverlapPair[]> {
+  const from = assertDate(fromDate);
+  const statuses = ACTIVE_STATUSES.map(() => '?').join(',');
+
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT a.id AS low_id, b.id AS high_id, a.doctor_id,
+            DATE_FORMAT(a.appointment_start_date, '%Y-%m-%d') AS date,
+            a.appointment_timezone AS timezone,
+            a.clinic_id AS low_clinic_id, a.status AS low_status,
+            TIME_FORMAT(a.appointment_start_time, '%H:%i:%s') AS low_start,
+            TIME_FORMAT(a.appointment_end_time,   '%H:%i:%s') AS low_end,
+            b.clinic_id AS high_clinic_id, b.status AS high_status,
+            TIME_FORMAT(b.appointment_start_time, '%H:%i:%s') AS high_start,
+            TIME_FORMAT(b.appointment_end_time,   '%H:%i:%s') AS high_end
+       FROM wp_kc_appointments a
+       JOIN wp_kc_appointments b
+         ON b.doctor_id = a.doctor_id
+        AND b.appointment_start_date = a.appointment_start_date
+        AND b.id > a.id
+        -- half-open overlap: back-to-back slots do not conflict
+        AND b.appointment_start_time < a.appointment_end_time
+        AND b.appointment_end_time   > a.appointment_start_time
+      WHERE a.doctor_id > 0
+        AND a.status IN (${statuses})
+        AND b.status IN (${statuses})
+        AND a.appointment_start_date >= ?
+      ORDER BY a.appointment_start_date, a.appointment_start_time, a.id, b.id`,
+    ...ACTIVE_STATUSES,
+    ...ACTIVE_STATUSES,
+    from,
+  );
+
+  return rows.map((r) => ({
+    doctorId: Number(r.doctor_id),
+    date: String(r.date),
+    timezone: (r.timezone as string | null) ?? '',
+    low: {
+      id: Number(r.low_id),
+      clinicId: Number(r.low_clinic_id),
+      status: Number(r.low_status),
+      startTime: String(r.low_start),
+      endTime: String(r.low_end),
+    },
+    high: {
+      id: Number(r.high_id),
+      clinicId: Number(r.high_clinic_id),
+      status: Number(r.high_status),
+      startTime: String(r.high_start),
+      endTime: String(r.high_end),
+    },
+  }));
+}
