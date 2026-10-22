@@ -12,9 +12,9 @@ import {
   listOwnedClinics,
   setClinicOwners,
 } from '@/services/clinic-owner/service';
+import { idBlock } from '../helpers/id-blocks';
 
-const BASE = 8_760_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('services/clinic-owner.service.test.ts');
 const SOLO = BASE + 1; // one active doctor: DOC_A
 const SHARED = BASE + 2; // DOC_A + DOC_B, DOC_B ticked
 const WITH_INACTIVE = BASE + 3; // DOC_A active + DOC_OFF inactive → solo for DOC_A

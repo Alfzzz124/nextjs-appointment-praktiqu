@@ -34,10 +34,9 @@ import { GET as byIdGET } from '@/app/api/v1/public/professionals/[id]/route';
 import { GET as bySlugGET } from '@/app/api/v1/public/professionals/by-slug/[slug]/route';
 import { findDoctorById, listDoctorNames, listDoctors } from '@/repositories/wp/doctors.repo';
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
+import { idBlock } from '../../helpers/id-blocks';
 
-/** Test-owned range, inside this suite's allocation (8_800_000 – 8_849_999). */
-const BASE = 8_830_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/booking/professional-lookup.test.ts');
 
 /** Fifty active doctors below every other seed, so TARGET is at least 51st in the list. */
 const FILLERS = Array.from({ length: 50 }, (_, i) => BASE + 1 + i);

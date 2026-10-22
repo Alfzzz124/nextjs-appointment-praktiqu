@@ -8,9 +8,9 @@ import { prisma } from '@/lib/db';
 import { assertTestDb } from './fixtures';
 import { deleteMedReport, resolveReportFile } from '@/services/billing/patient-medical-report.service';
 import { ENCOUNTER_DOC_MODULE_TYPE, listLinkedReportIds, linkReportToEncounter } from '@/repositories/wp/encounter-documents.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-const BASE = 9_000_000;
-const END = BASE + 1_000;
+const { BASE, END } = idBlock('billing/patient-medical-report-delete-unlink.test.ts');
 const REPORT = BASE + 1;
 const PATIENT = BASE + 50;
 const ENCOUNTER = BASE + 90;

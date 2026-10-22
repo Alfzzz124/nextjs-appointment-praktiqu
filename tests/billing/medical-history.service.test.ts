@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedEncounter, cleanup } from './fixtures';
+import { assertTestDb, seedEncounter, cleanup, useIdBlock } from './fixtures';
 import {
   listMedicalHistory, getMedicalHistory, createMedicalHistory,
   updateMedicalHistory, deleteMedicalHistory,
 } from '@/services/billing/medical-history.service';
 
-const CLINIC = 9_000_851, DOCTOR = 9_000_852, PATIENT = 9_000_853;
-const ENC = 9_000_860;
+const { BASE } = useIdBlock('billing/medical-history.service.test.ts');
+
+const CLINIC = BASE + 851, DOCTOR = BASE + 852, PATIENT = BASE + 853;
+const ENC = BASE + 860;
 const kcSuper = { actor: { id: 'a', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(DOCTOR), clinicId: BigInt(CLINIC) } as any;
 
 describe('medical-history.service', () => {

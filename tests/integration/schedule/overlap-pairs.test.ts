@@ -7,14 +7,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import {
   APPOINTMENT_STATUS,
   findOverlappingAppointmentPairs,
   type OverlapPair,
 } from '@/repositories/wp/appointments.repo';
 
-const BASE = 8_890_000;
-const END = BASE + 5_000;
+const { BASE, END } = idBlock('integration/schedule/overlap-pairs.test.ts');
 const CLINIC = BASE + 1;
 const DOC = BASE + 20;
 const DOC2 = BASE + 21;

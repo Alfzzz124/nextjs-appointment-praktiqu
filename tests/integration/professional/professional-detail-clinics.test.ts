@@ -37,10 +37,9 @@ vi.mock('@/services/billing/kc-actor', async (importOriginal) => ({
 }));
 
 import { GET } from '@/app/api/v1/professionals/[id]/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-/** Test-owned range, inside this suite's allocation (8_800_000 – 8_849_999). */
-const BASE = 8_840_000;
-const END = BASE + 5_000;
+const { BASE, END } = idBlock('integration/professional/professional-detail-clinics.test.ts');
 
 const DOCTOR = BASE + 1;
 const LONE_DOCTOR = BASE + 2;

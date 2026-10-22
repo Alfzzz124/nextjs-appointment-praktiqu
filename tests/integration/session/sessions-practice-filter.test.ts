@@ -11,12 +11,11 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { GET } = await import('@/app/api/v1/sessions/route');
 
-/** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
-const BASE = 8_500_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/session/sessions-practice-filter.test.ts');
 const OWN = BASE + 1;
 const FOREIGN = BASE + 2;
 const ADMIN_WP = BASE + 500;

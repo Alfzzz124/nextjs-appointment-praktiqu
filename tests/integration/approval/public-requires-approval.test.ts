@@ -6,11 +6,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import { getPublicProfessional, listPublicProfessionals } from '@/services/public/public-catalog.service';
 import { setApprovalSetting } from '@/services/approval/settings';
 
-const BASE = 8_860_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/approval/public-requires-approval.test.ts');
 const CLINIC = BASE + 1;
 const DOCTOR = BASE + 20;
 const inRange = { gte: BigInt(BASE), lt: BigInt(END) };

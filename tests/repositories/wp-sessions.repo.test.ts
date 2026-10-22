@@ -19,10 +19,9 @@ import {
   setSessionStatusDirect,
   toKcStatus,
 } from '@/repositories/wp/sessions.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
-const BASE = 8_000_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-sessions.repo.test.ts');
 
 const CLINIC = BASE + 10;
 const DOCTOR = BASE + 20;

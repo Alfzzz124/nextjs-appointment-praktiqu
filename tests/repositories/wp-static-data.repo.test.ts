@@ -17,10 +17,9 @@ import {
   listSpecializations,
   listStaticData,
 } from '@/repositories/wp/static-data.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range, below the billing fixtures' unbounded `>= 9_000_000` cleanup. */
-const BASE = 8_900_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-static-data.repo.test.ts');
 
 async function seed(opts: {
   id: number;

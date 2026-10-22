@@ -15,6 +15,7 @@ import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 
 const { GET: sessionsExport } = await import('@/app/api/v1/sessions/export/route');
@@ -22,9 +23,7 @@ const { GET: clientsExport } = await import('@/app/api/v1/clients/export/route')
 const { GET: pending } = await import('@/app/api/v1/sessions/pending/route');
 const { GET: professionalsExport } = await import('@/app/api/v1/professionals/export/route');
 
-/** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
-const BASE = 8_860_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/session/export-pending-clinic-scope.test.ts');
 
 const OWN = BASE + 1; // the admin's default clinic (lowest owned id)
 const OWN2 = BASE + 2; // the admin's second clinic, reached via X-Praktiqu-Clinic-Id

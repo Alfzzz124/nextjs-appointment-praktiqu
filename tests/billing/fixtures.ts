@@ -1,19 +1,37 @@
 import { prisma } from '@/lib/db';
-
-const TEST_MARKER = 9_000_000; // ids in this range belong to tests
+import { idBlock, type IdBlock } from '../helpers/id-blocks';
 
 /**
- * Upper bound of this suite's id range.
+ * The calling suite's id block, [TEST_MARKER, TEST_MARKER_END), bound by useIdBlock().
+ * Seed defaults are TEST_MARKER + n (highest offset used: + 1300), and cleanup() deletes
+ * nothing outside the block.
  *
- * Cleanup used to delete `id >= TEST_MARKER` with no ceiling. Vitest runs suites
- * concurrently against one shared database, so those deletes reached past this range
- * and wiped other suites' fixtures mid-run — which is why the full-suite failure count
- * moved between runs of identical code while each suite passed alone.
- *
- * Highest offset actually used by these fixtures is TEST_MARKER + 1300, so a 100k
- * window is generous. Other suites own ranges below TEST_MARKER (8.3M-8.9M).
+ * Every billing suite used to share one range, [9_000_000, 9_100_000), so each suite's
+ * cleanup() deleted the fixtures of every other suite; only `fileParallelism: false`
+ * stopped that from happening mid-run. Blocks are allocated in tests/helpers/id-blocks.ts.
  */
-const TEST_MARKER_END = TEST_MARKER + 100_000;
+let TEST_MARKER = NaN;
+let TEST_MARKER_END = NaN;
+
+/**
+ * Bind the seed defaults and cleanup() to this suite's id block. Call it once, at the
+ * top of the suite, with the suite's path under tests/. Returns the block so the suite
+ * can derive its own ids from BASE.
+ */
+export function useIdBlock(file: string): IdBlock {
+  const block = idBlock(file);
+  TEST_MARKER = block.BASE;
+  TEST_MARKER_END = block.END;
+  return block;
+}
+
+/** assertTestDb(), and refuse to seed or clean up before useIdBlock() picked a block. */
+function assertSeedable(): void {
+  assertTestDb();
+  if (!Number.isFinite(TEST_MARKER)) {
+    throw new Error('Call useIdBlock() at the top of the suite before seeding or calling cleanup().');
+  }
+}
 
 export function assertTestDb(): void {
   const url = process.env.DATABASE_URL ?? '';
@@ -23,7 +41,7 @@ export function assertTestDb(): void {
 }
 
 export async function seedClinicAdmin(opts: { userId: number; clinicId: number }) {
-  assertTestDb();
+  assertSeedable();
   await prisma.kcUser.create({
     data: {
       id: BigInt(opts.userId), userLogin: `admin${opts.userId}`,
@@ -50,7 +68,7 @@ export async function seedClinicAdmin(opts: { userId: number; clinicId: number }
  * fallback in `findPatientById`) rather than just a bare `patient_id` foreign key.
  */
 export async function seedPatient(data: Partial<{ id: number; email: string; name: string }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 3;
   const name = data.name ?? 'Test Patient';
   const email = data.email ?? `patient${id}@test.local`;
@@ -69,7 +87,7 @@ export async function seedPatient(data: Partial<{ id: number; email: string; nam
 }
 
 export async function seedTax(data: Partial<{ id: number; name: string; taxType: string; taxValue: string; clinicId: number; status: number }>) {
-  assertTestDb();
+  assertSeedable();
   return prisma.kcTax.create({
     data: {
       id: BigInt(data.id ?? TEST_MARKER + 1),
@@ -84,7 +102,7 @@ export async function seedEncounter(data: Partial<{
   id: number; clinicId: number; doctorId: number; patientId: number;
   status: number; description: string; encounterDate: Date;
 }>) {
-  assertTestDb();
+  assertSeedable();
   return prisma.kcPatientEncounter.create({
     data: {
       id: BigInt(data.id ?? TEST_MARKER + 500),
@@ -104,7 +122,7 @@ export async function seedPrescription(data: Partial<{
   id: number; encounterId: number; patientId: number;
   name: string; frequency: string; duration: string; instruction: string; addedBy: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   return prisma.kcPrescription.create({
     data: {
       id: BigInt(data.id ?? TEST_MARKER + 800),
@@ -125,7 +143,7 @@ export async function seedMedicalHistory(data: Partial<{
   id: number; encounterId: number; patientId: number;
   type: string; title: string; addedBy: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   return prisma.kcMedicalHistory.create({
     data: {
       id: BigInt(data.id ?? TEST_MARKER + 850),
@@ -143,7 +161,7 @@ export async function seedMedicalHistory(data: Partial<{
 export async function seedMedReport(data: Partial<{
   id: number; patientId: number; name: string; uploadReport: string; date: Date;
 }>) {
-  assertTestDb();
+  assertSeedable();
   return prisma.kcPatientMedicalReport.create({
     data: {
       id: BigInt(data.id ?? TEST_MARKER + 900),
@@ -159,7 +177,7 @@ export async function seedMedReport(data: Partial<{
 export async function seedPatientClinicMapping(data: Partial<{
   id: number; patientId: number; clinicId: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_patient_clinic_mappings (id, patient_id, clinic_id, created_at) VALUES (?, ?, ?, ?)`,
     data.id ?? TEST_MARKER + 950,
@@ -176,7 +194,7 @@ export async function seedPatientClinicMapping(data: Partial<{
 export async function seedReceptionist(data: Partial<{
   id: number; email: string; name: string; clinicId: number; status: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 100;
   const name = data.name ?? 'Test Receptionist';
   const email = data.email ?? `recp${id}@test.local`;
@@ -212,7 +230,7 @@ export async function seedClinicSession(data: Partial<{
   id: number; clinicId: number; doctorId: number; day: string;
   startTime: string; endTime: string; timeSlot: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 200;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_clinic_sessions (id, clinic_id, doctor_id, day, start_time, end_time, time_slot, created_at)
@@ -237,7 +255,7 @@ export async function seedClinicSchedule(data: Partial<{
   startDate: string; endDate: string; selectedDates: string; timeSpecific: number;
   startTime: string; endTime: string; timezone: string; description: string; status: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 300;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_clinic_schedule
@@ -269,7 +287,7 @@ export async function seedAppointment(data: Partial<{
   id: number; clinicId: number; doctorId: number; patientId: number;
   status: number; startDate: string; startTime: string;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 400;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_appointments
@@ -295,7 +313,7 @@ export async function seedBill(data: Partial<{
   id: number; clinicId: number; encounterId: number; actualAmount: string; createdAt: string;
   paymentStatus: 'paid' | 'unpaid';
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 600;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_bills
@@ -316,7 +334,7 @@ export async function seedBill(data: Partial<{
 export async function seedDoctorClinicMapping(data: Partial<{
   id: number; doctorId: number; clinicId: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 960;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_doctor_clinic_mappings (id, doctor_id, clinic_id, owner, created_at) VALUES (?, ?, ?, 0, NOW())`,
@@ -331,7 +349,7 @@ export async function seedDoctorClinicMapping(data: Partial<{
 export async function seedRating(data: Partial<{
   id: number; review: number; reviewDescription: string; patientId: number; doctorId: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 970;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_patient_review (id, review, review_description, patient_id, doctor_id, created_at, updated_at)
@@ -353,7 +371,7 @@ export async function seedRating(data: Partial<{
 export async function seedFollowupChain(data: Partial<{
   id: number; clinicId: number; doctorId: number; patientId: number; status: string;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 1000;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_followup_chains
@@ -379,7 +397,7 @@ export async function seedFollowup(data: Partial<{
   id: number; chainId: number; clinicId: number; doctorId: number; patientId: number;
   status: string; reason: string; suggestedDate: string; suggestedDeadline: string;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 1100;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_followups
@@ -406,7 +424,7 @@ export async function seedFollowup(data: Partial<{
 export async function seedConsentVersion(data: Partial<{
   id: number; consentType: string; versionNumber: number; isActive: number;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 1200;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_gdpr_consent_versions
@@ -431,7 +449,7 @@ export async function seedConsentVersion(data: Partial<{
 export async function seedConsent(data: Partial<{
   id: number; userId: number; consentType: string; consentVersionId: string; status: string;
 }>) {
-  assertTestDb();
+  assertSeedable();
   const id = data.id ?? TEST_MARKER + 1300;
   await prisma.$executeRawUnsafe(
     `INSERT INTO wp_kc_gdpr_consents
@@ -470,14 +488,10 @@ async function deleteIfTableExists(sql: string): Promise<void> {
 }
 
 export async function cleanup() {
-  assertTestDb();
-  // Import-created rows use real auto-increment ids (below TEST_MARKER), so they
-  // are matched by their TEST_MARKER-range clinic scope / *.import.test email.
+  assertSeedable();
+  // Import-created rows use real auto-increment ids (outside the block), so they are
+  // matched by their block-range clinic scope; cleanupImportedUsers() takes the users.
   await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE clinic_id >= ${TEST_MARKER} AND clinic_id < ${TEST_MARKER_END}`);
-  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
-  await deleteIfTableExists(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
   await deleteIfTableExists(`DELETE FROM wp_kc_taxes WHERE clinic_id >= ${TEST_MARKER} AND clinic_id < ${TEST_MARKER_END}`);
   // FK-safe order: leaf tables reference encounters, so delete them first.
   await deleteIfTableExists(`DELETE FROM wp_kc_clinic_schedule WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
@@ -489,17 +503,20 @@ export async function cleanup() {
   await deleteIfTableExists(`DELETE FROM wp_kc_receptionist_clinic_mappings WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_patient_review WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // Followups: FK-safe order (activity log + reminders reference followups; followups reference chains).
+  // Followups created through the service get AUTO_INCREMENT ids outside the block, so
+  // their log and reminders are found through the followup's block-range patient.
+  for (const table of ['wp_kc_followup_activity_log', 'wp_kc_followup_reminders']) {
+    await deleteIfTableExists(`DELETE FROM ${table} WHERE followup_id IN (SELECT id FROM wp_kc_followups WHERE patient_id >= ${TEST_MARKER} AND patient_id < ${TEST_MARKER_END})`);
+  }
   await deleteIfTableExists(`DELETE FROM wp_kc_followup_activity_log WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_followup_reminders WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END} OR followup_id >= ${TEST_MARKER} AND followup_id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_followups WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   await deleteIfTableExists(`DELETE FROM wp_kc_followup_chains WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
   // GDPR: consents + consent-versions (TEST_MARKER-range). NEVER touch wp_kc_gdpr_audit_log (checksum chain).
   await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consents WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
-  // Versions created through the service get AUTO_INCREMENT ids, which fall outside the
-  // TEST_MARKER range and so survived cleanup — version_number then kept climbing across
-  // runs (a test expecting 1 saw 11). Also match the test-owned consent_type.
+  // Versions created through the service get AUTO_INCREMENT ids outside the block;
+  // cleanupTestConsentVersions() matches those by consent_type.
   await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE id >= ${TEST_MARKER} AND id < ${TEST_MARKER_END}`);
-  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE consent_type LIKE '%test%'`);
   // Soft-delete markers written by softDeleteSubject on TEST_MARKER-range subjects.
   await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id >= ${TEST_MARKER} AND user_id < ${TEST_MARKER_END} AND meta_key IN ('kivicare_gdpr_erased_at','kivicare_gdpr_erased_by')`);
   await prisma.kcPrescription.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
@@ -514,7 +531,7 @@ export async function cleanup() {
   await prisma.kcClinic.deleteMany({ where: { id: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } } });
   /**
    * Rows created THROUGH THE SERVICES rather than by a seed helper get AUTO_INCREMENT
-   * ids, which fall below TEST_MARKER and so survived every delete above. They then
+   * ids, which fall outside the block and so survived every delete above. They then
    * accumulated across runs and broke any assertion counting rows in scope — 44 stray
    * prescriptions had built up by the time this was found.
    *
@@ -536,9 +553,11 @@ export async function cleanup() {
     ['wp_kc_followups', 'patient_id'],
     ['wp_kc_followup_chains', 'patient_id'],
     ['wp_kc_patient_review', 'patient_id'],
+    // grantConsent() through the service: AUTO_INCREMENT id, block-range subject.
+    ['wp_kc_gdpr_consents', 'user_id'],
     ['wp_kc_clinic_sessions', 'clinic_id'],
-    // Holidays created through addHoliday() get AUTO_INCREMENT ids (below TEST_MARKER)
-    // but their module_id is the practice's TEST_MARKER-range clinic id.
+    // Holidays created through addHoliday() get AUTO_INCREMENT ids (outside the block)
+    // but their module_id is the practice's block-range clinic id.
     ['wp_kc_clinic_schedule', 'module_id'],
     ['wp_kc_doctor_clinic_mappings', 'clinic_id'],
     ['wp_kc_receptionist_clinic_mappings', 'clinic_id'],
@@ -549,5 +568,34 @@ export async function cleanup() {
     );
   }
 
-  await prisma.user.deleteMany({ where: { id: { startsWith: 'test-' } } });
+  // `users` rows from seedClinicAdmin() (and suites' own test-client-* rows) carry the
+  // wp_users id they stand for, so this matches this suite's rows and no other's.
+  await prisma.user.deleteMany({
+    where: { id: { startsWith: 'test-' }, wpUserId: { gte: BigInt(TEST_MARKER), lt: BigInt(TEST_MARKER_END) } },
+  });
+}
+
+/**
+ * Users that importDoctors()/importPatients() created. They get AUTO_INCREMENT ids, so
+ * the block cannot find them; the `.import.test` email domain does. Only the import
+ * suite creates them, so only it calls this; cleanup() would otherwise delete them from
+ * under that suite whenever another billing suite cleaned up at the same time.
+ */
+export async function cleanupImportedUsers() {
+  assertTestDb();
+  await deleteIfTableExists(`DELETE FROM wp_usermeta WHERE user_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_kc_patient_clinic_mappings WHERE patient_id IN (SELECT ID FROM wp_users WHERE user_email LIKE '%.import.test')`);
+  await deleteIfTableExists(`DELETE FROM wp_users WHERE user_email LIKE '%.import.test'`);
+}
+
+/**
+ * Consent versions created through the GDPR service. Their AUTO_INCREMENT ids fall
+ * outside the block and so survived cleanup — version_number then kept climbing across
+ * runs (a test expecting 1 saw 11). The test-owned consent_type finds them. Only the
+ * GDPR suite creates them, so only it calls this.
+ */
+export async function cleanupTestConsentVersions() {
+  assertTestDb();
+  await deleteIfTableExists(`DELETE FROM wp_kc_gdpr_consent_versions WHERE consent_type LIKE '%test%'`);
 }

@@ -17,10 +17,9 @@ import {
   listDoctors,
 } from '@/repositories/wp/doctors.repo';
 import { KIVICARE_ROLES } from '@/repositories/wp/wp-user';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 8_500_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-doctors.repo.test.ts');
 
 function capabilities(role: string): string {
   return `a:1:{s:${role.length}:"${role}";b:1;}`;
@@ -115,6 +114,12 @@ describe('wp doctors repository', () => {
   });
 
   afterAll(async () => {
+    // Tests below insert mappings without an id (AUTO_INCREMENT), so they
+    // are found by doctor_id, which is in this suite's block.
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM wp_kc_doctor_clinic_mappings WHERE doctor_id >= ? AND doctor_id < ?`,
+      BASE, END,
+    );
     await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
     await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
     await prisma.$disconnect();

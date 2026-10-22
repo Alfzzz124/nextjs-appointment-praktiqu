@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { seedTax, cleanup, assertTestDb } from './fixtures';
+import { seedTax, cleanup, assertTestDb, useIdBlock } from './fixtures';
 import { calculateTax, createBill, getBill, getBillByEncounter, updateBill, updateBillItem, deleteBillItem } from '@/services/billing/bill.service';
 import { prisma } from '@/lib/db';
 
+const { BASE } = useIdBlock('billing/bill.service.test.ts');
+
 describe('bill.service calculateTax', () => {
-  beforeAll(async () => { assertTestDb(); await cleanup(); await seedTax({ id: 9000200, name: 'VAT', taxType: 'percentage', taxValue: '10' }); });
+  beforeAll(async () => { assertTestDb(); await cleanup(); await seedTax({ id: BASE + 200, name: 'VAT', taxType: 'percentage', taxValue: '10' }); });
   afterAll(cleanup);
 
   it('returns total tax and per-service breakdown', async () => {
@@ -20,13 +22,13 @@ describe('bill.service calculateTax', () => {
 describe('bill.service create', () => {
   beforeAll(async () => {
     assertTestDb();
-    await prisma.kcPatientEncounter.create({ data: { id: 9000300n, clinicId: 9000001n, doctorId: 9000002n, patientId: 9000003n, appointmentId: 9000004n, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
+    await prisma.kcPatientEncounter.create({ data: { id: BigInt(BASE + 300), clinicId: BigInt(BASE + 1), doctorId: BigInt(BASE + 2), patientId: BigInt(BASE + 3), appointmentId: BigInt(BASE + 4), status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
   });
   afterAll(async () => {
-    const bills = await prisma.kcBill.findMany({ where: { encounterId: 9000300n }, select: { id: true } });
+    const bills = await prisma.kcBill.findMany({ where: { encounterId: BigInt(BASE + 300) }, select: { id: true } });
     for (const b of bills) { await prisma.kcBillItem.deleteMany({ where: { billId: b.id } }); }
-    await prisma.kcBill.deleteMany({ where: { encounterId: 9000300n } });
-    await prisma.kcPatientEncounter.deleteMany({ where: { id: 9000300n } });
+    await prisma.kcBill.deleteMany({ where: { encounterId: BigInt(BASE + 300) } });
+    await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(BASE + 300) } });
     await cleanup();
   });
 
@@ -34,8 +36,8 @@ describe('bill.service create', () => {
     const res = await createBill({
       serviceItems: [{ serviceId: 1, quantity: 1, price: 100, name: 'A' }],
       taxItems: [], discount: 0, status: 'unpaid',
-      clinic: { id: 9000001 }, doctor: { id: 9000002 }, patient: { id: 9000003 },
-      patientEncounter: { id: 9000300, appointmentId: 9000004 },
+      clinic: { id: BASE + 1 }, doctor: { id: BASE + 2 }, patient: { id: BASE + 3 },
+      patientEncounter: { id: BASE + 300, appointmentId: BASE + 4 },
       service_total: 100, total_amount: 100,
     } as any);
     expect(res.id).toBeGreaterThan(0);
@@ -47,8 +49,8 @@ describe('bill.service create', () => {
     await expect(createBill({
       serviceItems: [{ serviceId: 1, quantity: 1, price: 100, name: 'A' }],
       taxItems: [], discount: 0, status: 'unpaid',
-      clinic: { id: 9000001 }, doctor: { id: 9000002 }, patient: { id: 9000003 },
-      patientEncounter: { id: 9000300, appointmentId: 9000004 },
+      clinic: { id: BASE + 1 }, doctor: { id: BASE + 2 }, patient: { id: BASE + 3 },
+      patientEncounter: { id: BASE + 300, appointmentId: BASE + 4 },
       service_total: 100, total_amount: 100,
     } as any)).rejects.toThrow();
   });
@@ -58,24 +60,24 @@ describe('bill.service get', () => {
   beforeAll(async () => {
     assertTestDb();
     // Create encounter + bill for get tests (use a different id to avoid collision with create suite)
-    await prisma.kcPatientEncounter.create({ data: { id: 9000400n, clinicId: 9000001n, doctorId: 9000002n, patientId: 9000003n, appointmentId: null, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
+    await prisma.kcPatientEncounter.create({ data: { id: BigInt(BASE + 400), clinicId: BigInt(BASE + 1), doctorId: BigInt(BASE + 2), patientId: BigInt(BASE + 3), appointmentId: null, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
     await createBill({
       serviceItems: [{ serviceId: 1, quantity: 1, price: 100, name: 'A' }],
       taxItems: [], discount: 0, status: 'unpaid',
-      clinic: { id: 9000001 }, doctor: { id: 9000002 }, patient: { id: 9000003 },
-      patientEncounter: { id: 9000400, appointmentId: null },
+      clinic: { id: BASE + 1 }, doctor: { id: BASE + 2 }, patient: { id: BASE + 3 },
+      patientEncounter: { id: BASE + 400, appointmentId: null },
       service_total: 100, total_amount: 100,
     } as any);
   });
   afterAll(async () => {
-    const bills = await prisma.kcBill.findMany({ where: { encounterId: 9000400n }, select: { id: true } });
+    const bills = await prisma.kcBill.findMany({ where: { encounterId: BigInt(BASE + 400) }, select: { id: true } });
     for (const b of bills) { await prisma.kcBillItem.deleteMany({ where: { billId: b.id } }); }
-    await prisma.kcBill.deleteMany({ where: { encounterId: 9000400n } });
-    await prisma.kcPatientEncounter.deleteMany({ where: { id: 9000400n } });
+    await prisma.kcBill.deleteMany({ where: { encounterId: BigInt(BASE + 400) } });
+    await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(BASE + 400) } });
   });
 
   it('reads back the created bill with serviceItems + recomputed totals', async () => {
-    const created = await prisma.kcBill.findFirst({ where: { encounterId: 9000400n }, select: { id: true } });
+    const created = await prisma.kcBill.findFirst({ where: { encounterId: BigInt(BASE + 400) }, select: { id: true } });
     const bill = await getBill(Number(created!.id));
     expect(bill.serviceItems.length).toBeGreaterThanOrEqual(1);
     expect(bill).toHaveProperty('total_amount');
@@ -89,14 +91,14 @@ describe('bill.service get', () => {
   });
 
   it('by-encounter returns full BillDetail when a bill exists', async () => {
-    const res = await getBillByEncounter(9000400);
+    const res = await getBillByEncounter(BASE + 400);
     expect(res).toHaveProperty('serviceItems');
     expect(Array.isArray((res as any).serviceItems)).toBe(true);
     expect(res).toHaveProperty('total_amount');
   });
 
   it('by-encounter returns a skeleton when no bill exists', async () => {
-    const res = await getBillByEncounter(9000999); // no bill, no encounter → skeleton/empty
+    const res = await getBillByEncounter(BASE + 999); // no bill, no encounter → skeleton/empty
     expect(res).toHaveProperty('status');
   });
 });
@@ -104,24 +106,24 @@ describe('bill.service get', () => {
 describe('bill.service update + items', () => {
   beforeAll(async () => {
     assertTestDb();
-    await prisma.kcPatientEncounter.create({ data: { id: 9000500n, clinicId: 9000001n, doctorId: 9000002n, patientId: 9000003n, appointmentId: null, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
+    await prisma.kcPatientEncounter.create({ data: { id: BigInt(BASE + 500), clinicId: BigInt(BASE + 1), doctorId: BigInt(BASE + 2), patientId: BigInt(BASE + 3), appointmentId: null, status: 1, addedBy: 1n, createdAt: new Date(), encounterDate: new Date() } as any });
     await createBill({
       serviceItems: [{ serviceId: 1, quantity: 2, price: 75, name: 'B' }],
       taxItems: [], discount: 0, status: 'unpaid',
-      clinic: { id: 9000001 }, doctor: { id: 9000002 }, patient: { id: 9000003 },
-      patientEncounter: { id: 9000500, appointmentId: null },
+      clinic: { id: BASE + 1 }, doctor: { id: BASE + 2 }, patient: { id: BASE + 3 },
+      patientEncounter: { id: BASE + 500, appointmentId: null },
       service_total: 150, total_amount: 150,
     } as any);
   });
   afterAll(async () => {
-    const bills = await prisma.kcBill.findMany({ where: { encounterId: 9000500n }, select: { id: true } });
+    const bills = await prisma.kcBill.findMany({ where: { encounterId: BigInt(BASE + 500) }, select: { id: true } });
     for (const b of bills) { await prisma.kcBillItem.deleteMany({ where: { billId: b.id } }); }
-    await prisma.kcBill.deleteMany({ where: { encounterId: 9000500n } });
-    await prisma.kcPatientEncounter.deleteMany({ where: { id: 9000500n } });
+    await prisma.kcBill.deleteMany({ where: { encounterId: BigInt(BASE + 500) } });
+    await prisma.kcPatientEncounter.deleteMany({ where: { id: BigInt(BASE + 500) } });
   });
 
   it('updates a bill item', async () => {
-    const created = await prisma.kcBill.findFirst({ where: { encounterId: 9000500n } });
+    const created = await prisma.kcBill.findFirst({ where: { encounterId: BigInt(BASE + 500) } });
     const item = await prisma.kcBillItem.findFirst({ where: { billId: created!.id } });
     const r = await updateBillItem(Number(item!.id), { serviceId: 2, quantity: 3, price: 50 });
     expect(r.id).toBe(Number(item!.id));
@@ -130,7 +132,7 @@ describe('bill.service update + items', () => {
   });
 
   it('deletes a bill item', async () => {
-    const created = await prisma.kcBill.findFirst({ where: { encounterId: 9000500n } });
+    const created = await prisma.kcBill.findFirst({ where: { encounterId: BigInt(BASE + 500) } });
     const item = await prisma.kcBillItem.create({ data: { billId: created!.id, itemId: 5n, qty: 1, price: '10', createdAt: new Date() } });
     const r = await deleteBillItem(Number(item.id));
     expect(r.id).toBe(Number(item.id));

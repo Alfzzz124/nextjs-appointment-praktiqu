@@ -18,10 +18,9 @@ import {
   listHistoryForEncounters,
   listPrescriptionsForEncounters,
 } from '@/repositories/wp/clinical-records.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range, in the convention the sibling repository suites use. */
-const BASE = 8_700_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-clinical-records.repo.test.ts');
 
 const ENCOUNTER = BASE + 1;
 const OTHER_ENCOUNTER = BASE + 2;

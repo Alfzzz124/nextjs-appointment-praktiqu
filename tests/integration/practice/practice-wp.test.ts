@@ -22,10 +22,9 @@ import {
   removeHoliday,
   updatePractice,
 } from '@/services/practice/service';
+import { idBlock } from '../../helpers/id-blocks';
 
-/** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
-const BASE = 7_900_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('integration/practice/practice-wp.test.ts');
 const CLINIC = BASE + 1;
 
 async function wipe() {

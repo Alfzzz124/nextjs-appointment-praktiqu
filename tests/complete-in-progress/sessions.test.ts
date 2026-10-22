@@ -2,6 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import type { Actor } from '@/lib/auth';
 import { bulkCancelSessions, exportSessions } from '@/services/session/session.service';
+import { idBlock } from '../helpers/id-blocks';
+
+const { BASE } = idBlock('complete-in-progress/sessions.test.ts');
 
 /** exportSessions resolves its actor through the auth mirror, so the super admin needs a row. */
 const SUPER_ID = 'complete-sessions-test-super';
@@ -24,7 +27,7 @@ beforeAll(async () => {
       lastName: 'U',
       displayName: 'Test User',
       role: 'SUPER_ADMIN',
-      wpUserId: BigInt(8_860_900),
+      wpUserId: BigInt(BASE + 900),
       status: 1,
     },
   });

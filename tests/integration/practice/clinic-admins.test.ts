@@ -9,9 +9,9 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { GET } from '@/app/api/v1/practices/clinic-admins/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_620_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/clinic-admins.test.ts');
 const ADMIN_X = BASE + 500; // owns two clinics
 const ADMIN_BROKEN = BASE + 501; // broken capability length prefix, owns none
 const ADMIN_NONAME = BASE + 502; // empty display_name

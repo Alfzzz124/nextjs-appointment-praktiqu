@@ -32,6 +32,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from './fixtures';
 import { GET as attachmentGET } from '@/app/api/v1/sessions/[id]/attachments/[mediaId]/content/route';
+import { idBlock } from '../helpers/id-blocks';
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
@@ -42,8 +43,7 @@ const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-c
 // different table (wp_kc_static_data), and TEST_MARKER (9,000,000+, also
 // wp_kc_appointments via billing/fixtures.ts's seedAppointment) starts right
 // after this suite's END.
-const BASE = 8_950_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('billing/attachment-ownership-guard.integration.test.ts');
 
 const APPOINTMENT_OWNER = BASE + 1; // owns MEDIA_ID in its appointment_report
 const APPOINTMENT_ATTACKER = BASE + 2; // the caller's own, legitimate session — does not own MEDIA_ID

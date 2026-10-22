@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { prisma } from '@/lib/db';
-import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, cleanup, useIdBlock } from './fixtures';
 
 /**
  * Stand in for the WordPress plugin.
@@ -17,17 +17,19 @@ import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
 vi.mock('@/repositories/wp/receptionists.write', () => ({
   createReceptionistViaPlugin: vi.fn(async (input: { name: string; email: string; clinicId: number; password?: string }) => {
     const { prisma: db } = await import('@/lib/db');
+    const { idBlock } = await import('../helpers/id-blocks');
+    const { BASE, END } = idBlock('billing/receptionist.service.test.ts');
     const username = input.email.split('@')[0].slice(0, 60);
     const first = input.name.split(' ')[0];
     const last = input.name.split(' ').slice(1).join(' ') || '-';
 
     return db.$transaction(async (tx) => {
-      // Explicit id inside the fixtures' TEST_MARKER range. Letting AUTO_INCREMENT
-      // assign one produces a low id that cleanup() — bounded to that range — cannot
-      // find, so rows survive the run and the next one fails on a duplicate email.
+      // Explicit id inside this suite's id block. Letting AUTO_INCREMENT assign one
+      // produces an id outside it that cleanup() — bounded to the block — cannot find,
+      // so rows survive the run and the next one fails on a duplicate email.
       const idRow = await tx.$queryRawUnsafe<any[]>(
         `SELECT COALESCE(MAX(ID), ?) + 1 AS id FROM wp_users WHERE ID >= ? AND ID < ?`,
-        9_000_100, 9_000_100, 9_100_000,
+        BASE + 100, BASE + 100, END,
       );
       const wpId = Number(idRow[0].id);
       await tx.$executeRawUnsafe(
@@ -56,11 +58,13 @@ import {
   bulkSetReceptionistStatus, deleteReceptionist,
 } from '@/services/billing/receptionist.service';
 
-const CLINIC = 9_000_001, ADMIN = 9_000_002, OTHER_CLINIC = 9_000_003;
+const { BASE } = useIdBlock('billing/receptionist.service.test.ts');
+
+const CLINIC = BASE + 1, ADMIN = BASE + 2, OTHER_CLINIC = BASE + 3;
 
 // A CLINIC_ADMIN actor scoped to CLINIC — createReceptionist derives clinicId from kc.clinicId.
 const kcAdmin = {
-  actor: { id: 'test-admin-9000002', role: 'CLINIC_ADMIN', practiceId: null },
+  actor: { id: `test-admin-${ADMIN}`, role: 'CLINIC_ADMIN', practiceId: null },
   wpUserId: BigInt(ADMIN),
   clinicId: BigInt(CLINIC),
 } as any;

@@ -1,22 +1,24 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedPatientClinicMapping, cleanup } from './fixtures';
+import { assertTestDb, seedPatientClinicMapping, cleanup, useIdBlock } from './fixtures';
 import {
   listMedReports, getMedReport, createMedReport, deleteMedReport,
   bulkDeleteMedReports, assertPatientInScope, resolveReportFile,
 } from '@/services/billing/patient-medical-report.service';
 import { idsSchema, medReportCreateSchema } from '@/services/billing/validation';
 
-const CLINIC = 9_000_901, PATIENT = 9_000_903, OTHER_PATIENT = 9_000_904;
+const { BASE } = useIdBlock('billing/patient-medical-report.service.test.ts');
+
+const CLINIC = BASE + 901, PATIENT = BASE + 903, OTHER_PATIENT = BASE + 904;
 
 // Staff actor scoped to CLINIC; PATIENT is mapped to CLINIC below.
-const kcStaff = { actor: { id: 'a', role: 'CLINIC_ADMIN', practiceId: null }, wpUserId: BigInt(9_000_902), clinicId: BigInt(CLINIC) } as any;
+const kcStaff = { actor: { id: 'a', role: 'CLINIC_ADMIN', practiceId: null }, wpUserId: BigInt(BASE + 902), clinicId: BigInt(CLINIC) } as any;
 const clinicScope = { clinicId: BigInt(CLINIC) };
 
 describe('patient-medical-report.service', () => {
   beforeAll(async () => {
     assertTestDb();
     await cleanup();
-    await seedPatientClinicMapping({ id: 9_000_950, patientId: PATIENT, clinicId: CLINIC });
+    await seedPatientClinicMapping({ id: BASE + 950, patientId: PATIENT, clinicId: CLINIC });
   });
   afterAll(cleanup);
 
@@ -54,7 +56,7 @@ describe('patient-medical-report.service', () => {
     // Out-of-scope report: patient not mapped to CLINIC (seeded directly, bypassing scope check).
     const outScope = await createMedReport(
       { patientId: OTHER_PATIENT, name: 'OutScope', verifiedMediaId: '0' },
-      { actor: { id: 's', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(9_000_902), clinicId: null } as any,
+      { actor: { id: 's', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(BASE + 902), clinicId: null } as any,
     );
 
     const n = await bulkDeleteMedReports([inScope.id, outScope.id], clinicScope);

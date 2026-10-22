@@ -1,18 +1,20 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedRating, seedDoctorClinicMapping, cleanup } from './fixtures';
+import { assertTestDb, seedRating, seedDoctorClinicMapping, cleanup, useIdBlock } from './fixtures';
 import {
   listRatings, getRating, createRating, deleteRating, ratingStats,
 } from '@/services/billing/rating.service';
 
+const { BASE } = useIdBlock('billing/rating.service.test.ts');
+
 // TEST_MARKER-range ids
-const CLINIC_ID = 9_000_991;
-const DOCTOR = 9_000_992;
-const OTHER_DOCTOR = 9_000_993;
-const PATIENT = 9_000_994;
-const OTHER_PATIENT = 9_000_995;
+const CLINIC_ID = BASE + 991;
+const DOCTOR = BASE + 992;
+const OTHER_DOCTOR = BASE + 993;
+const PATIENT = BASE + 994;
+const OTHER_PATIENT = BASE + 995;
 
 const kcClient = { actor: { id: 'c', role: 'CLIENT', practiceId: null }, wpUserId: BigInt(PATIENT), clinicId: null } as any;
-const kcAdmin = { actor: { id: 'a', role: 'CLINIC_ADMIN', practiceId: null }, wpUserId: BigInt(9_000_990), clinicId: BigInt(CLINIC_ID) } as any;
+const kcAdmin = { actor: { id: 'a', role: 'CLINIC_ADMIN', practiceId: null }, wpUserId: BigInt(BASE + 990), clinicId: BigInt(CLINIC_ID) } as any;
 
 const clinicScope = { clinicId: BigInt(CLINIC_ID) };
 const doctorScope = { doctorId: BigInt(DOCTOR) };
@@ -24,7 +26,7 @@ describe('rating.service', () => {
     assertTestDb();
     await cleanup();
     // Map DOCTOR (but not OTHER_DOCTOR) to CLINIC so clinic-admin scope resolves via the EXISTS join.
-    await seedDoctorClinicMapping({ id: 9_000_961, doctorId: DOCTOR, clinicId: CLINIC_ID });
+    await seedDoctorClinicMapping({ id: BASE + 961, doctorId: DOCTOR, clinicId: CLINIC_ID });
   });
   afterAll(cleanup);
 
@@ -54,9 +56,9 @@ describe('rating.service', () => {
   });
 
   it('get/list are scoped: clinic-admin sees ratings for their clinic doctors only', async () => {
-    const inScope = await seedRating({ id: 9_000_971, review: 5, patientId: PATIENT, doctorId: DOCTOR });
+    const inScope = await seedRating({ id: BASE + 971, review: 5, patientId: PATIENT, doctorId: DOCTOR });
     // OTHER_DOCTOR is not mapped to CLINIC, so this rating is out of the admin's clinic scope.
-    const outScope = await seedRating({ id: 9_000_972, review: 3, patientId: OTHER_PATIENT, doctorId: OTHER_DOCTOR });
+    const outScope = await seedRating({ id: BASE + 972, review: 3, patientId: OTHER_PATIENT, doctorId: OTHER_DOCTOR });
 
     // In clinic scope: visible
     expect((await getRating(inScope.id, clinicScope)).id).toBe(inScope.id);
@@ -72,8 +74,8 @@ describe('rating.service', () => {
   });
 
   it('PROFESSIONAL scope sees only ratings about their doctor_id', async () => {
-    const mine = await seedRating({ id: 9_000_973, review: 5, patientId: PATIENT, doctorId: DOCTOR });
-    const others = await seedRating({ id: 9_000_974, review: 2, patientId: PATIENT, doctorId: OTHER_DOCTOR });
+    const mine = await seedRating({ id: BASE + 973, review: 5, patientId: PATIENT, doctorId: DOCTOR });
+    const others = await seedRating({ id: BASE + 974, review: 2, patientId: PATIENT, doctorId: OTHER_DOCTOR });
 
     expect((await getRating(mine.id, doctorScope)).id).toBe(mine.id);
     // A different doctor's scope does not see it.
@@ -89,8 +91,8 @@ describe('rating.service', () => {
   });
 
   it('CLIENT (patient) scope sees only ratings they authored', async () => {
-    const mine = await seedRating({ id: 9_000_975, review: 4, patientId: PATIENT, doctorId: DOCTOR });
-    const others = await seedRating({ id: 9_000_976, review: 1, patientId: OTHER_PATIENT, doctorId: DOCTOR });
+    const mine = await seedRating({ id: BASE + 975, review: 4, patientId: PATIENT, doctorId: DOCTOR });
+    const others = await seedRating({ id: BASE + 976, review: 1, patientId: OTHER_PATIENT, doctorId: DOCTOR });
 
     expect((await getRating(mine.id, patientScope)).id).toBe(mine.id);
     await expect(getRating(others.id, patientScope)).rejects.toThrow();
@@ -100,14 +102,14 @@ describe('rating.service', () => {
   });
 
   it('deleteRating removes the row', async () => {
-    const { id } = await seedRating({ id: 9_000_977, review: 5, patientId: PATIENT, doctorId: DOCTOR });
+    const { id } = await seedRating({ id: BASE + 977, review: 5, patientId: PATIENT, doctorId: DOCTOR });
     await deleteRating(id, null);
     await expect(getRating(id, null)).rejects.toThrow();
   });
 
   it('ratingStats returns avg + count grouped by doctor', async () => {
-    await seedRating({ id: 9_000_978, review: 4, patientId: PATIENT, doctorId: DOCTOR });
-    await seedRating({ id: 9_000_979, review: 2, patientId: OTHER_PATIENT, doctorId: DOCTOR });
+    await seedRating({ id: BASE + 978, review: 4, patientId: PATIENT, doctorId: DOCTOR });
+    await seedRating({ id: BASE + 979, review: 2, patientId: OTHER_PATIENT, doctorId: DOCTOR });
 
     const { stats } = await ratingStats(null);
     const forDoctor = stats.find((s) => s.doctor_id === DOCTOR);
@@ -115,7 +117,7 @@ describe('rating.service', () => {
     expect(forDoctor!.count).toBe(2);
     expect(forDoctor!.avg_review).toBe(3); // (4 + 2) / 2
 
-    await deleteRating(9_000_978, null);
-    await deleteRating(9_000_979, null);
+    await deleteRating(BASE + 978, null);
+    await deleteRating(BASE + 979, null);
   });
 });

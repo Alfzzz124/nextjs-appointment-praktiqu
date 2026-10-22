@@ -19,11 +19,11 @@ vi.mock('@/lib/email', async (orig) => ({
 
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 import { scanScheduleConflicts } from '@/services/schedule/conflict-scan.service';
 
-const BASE = 8_895_000;
-const END = BASE + 5_000;
+const { BASE, END } = idBlock('integration/schedule/conflict-scan.test.ts');
 const CLINIC_A = BASE + 1; // admin ADMIN_A
 const CLINIC_B = BASE + 2; // admin ADMIN_B
 const CLINIC_NO_ADMIN = BASE + 3;

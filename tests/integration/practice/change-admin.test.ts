@@ -15,9 +15,9 @@ import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { POST } from '@/app/api/v1/practices/[id]/change-admin/route';
 import { GET as practicesGet } from '@/app/api/v1/practices/route';
+import { idBlock } from '../../helpers/id-blocks';
 
-const BASE = 8_690_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/practice/change-admin.test.ts');
 const ADMIN1 = BASE + 500; // owns A and B at the start
 const ADMIN2 = BASE + 501;
 const ADMIN3 = BASE + 502; // capability row with a broken length prefix
