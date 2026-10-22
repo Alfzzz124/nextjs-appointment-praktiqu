@@ -16,6 +16,7 @@ import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 import { WpEndpointError } from '@/lib/wp-endpoint';
 
@@ -45,8 +46,7 @@ import { POST as rejectPost } from '@/app/api/v1/sessions/[id]/reject/route';
 import { POST as cancelPost } from '@/app/api/v1/sessions/[id]/cancel/route';
 import { handleApprovalReminder } from '@/services/approval/reminder-handler';
 
-const BASE = 8_880_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/approval/approval-reconcile.test.ts');
 const CLINIC = BASE + 1;
 const DOCTOR = BASE + 20; // read through the queue
 const OTHER_DOCTOR = BASE + 21; // read one item at a time, never through the queue

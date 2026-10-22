@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import {
   cancelApproved,
   claimDecision,
@@ -32,8 +33,7 @@ import {
   setApprovalSetting,
 } from '@/services/approval/settings';
 
-const BASE = 8_850_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/approval/approval-store.test.ts');
 const DOCTOR_A = BASE + 20;
 const DOCTOR_B = BASE + 21;
 const CLINIC_1 = BASE + 1;

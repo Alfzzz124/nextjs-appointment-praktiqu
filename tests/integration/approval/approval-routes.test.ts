@@ -11,6 +11,7 @@ import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 
 const writes = vi.hoisted(() => ({ setAppointmentStatus: vi.fn(), cancelAppointment: vi.fn() }));
@@ -40,8 +41,7 @@ import { POST as rejectPost } from '@/app/api/v1/sessions/[id]/reject/route';
 import { GET as settingGet, PUT as settingPut } from '@/app/api/v1/professionals/[id]/approval-setting/route';
 import { GET as sessionGet } from '@/app/api/v1/sessions/[id]/route';
 
-const BASE = 8_870_000;
-const END = BASE + 10_000;
+const { BASE, END } = idBlock('integration/approval/approval-routes.test.ts');
 const CLINIC_1 = BASE + 1;
 const CLINIC_2 = BASE + 2;
 const DOCTOR = BASE + 20;
