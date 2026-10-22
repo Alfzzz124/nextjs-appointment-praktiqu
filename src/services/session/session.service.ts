@@ -197,6 +197,8 @@ function actorClinic(kc: KcActor): number | null {
   return kc.clinicId === null ? -1 : Number(kc.clinicId);
 }
 
+const STAFF_ROLES: readonly string[] = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'];
+
 function assertCanRead(kc: KcActor, s: SessionRow): void {
   const role = kc.actor.role;
   if (role === 'SUPER_ADMIN') return;
@@ -470,16 +472,26 @@ export async function listPendingForProfessional(
   professionalId?: number,
 ): Promise<SessionWithRelations[]> {
   const kc = await resolveKcActor(actor);
-  // A professional always sees their own queue, never another's.
-  const target =
-    actor.role === 'PROFESSIONAL' ? Number(kc.wpUserId) : (professionalId ?? Number(kc.wpUserId));
-
-  const { items } = await listSessionRows({
+  const query: Parameters<typeof listSessionRows>[0] = {
     page: 1,
     perPage: 200,
-    professionalId: target,
     statuses: [SESSION_STATUS.PENDING],
-  });
+  };
+
+  // A professional always sees their own queue, never another's. Staff see a
+  // professional's queue only at their own clinic, so naming a professional from
+  // another clinic yields nothing.
+  if (actor.role === 'PROFESSIONAL') {
+    query.professionalId = Number(kc.wpUserId);
+  } else if (STAFF_ROLES.includes(actor.role)) {
+    query.professionalId = professionalId ?? Number(kc.wpUserId);
+    const clinic = actorClinic(kc);
+    if (clinic !== null) query.clinicId = clinic;
+  } else {
+    throw new SessionServiceError('forbidden', 'Not authorized', 403);
+  }
+
+  const { items } = await listSessionRows(query);
   // The pending queue holds both unpaid bookings and paid ones waiting for approval;
   // `approval` is what tells them apart.
   return forActor(actor, await withApprovals(items.map(toSession)));
@@ -819,6 +831,7 @@ export async function bulkCancelSessions(ids: number[], actorId: string | null =
 /* ------------------------------------------------------------------ */
 
 export interface SessionExportParams {
+  /** Honoured for SUPER_ADMIN only; clinic staff are confined to their own clinic. */
   clinicId?: number;
   professionalId?: number;
   status?: SessionStatus;
@@ -828,13 +841,22 @@ export interface SessionExportParams {
 
 const EXPORT_PAGE = 200;
 
-export async function exportSessions(params: SessionExportParams): Promise<SessionWithRelations[]> {
+export async function exportSessions(
+  actor: Actor,
+  params: SessionExportParams,
+): Promise<SessionWithRelations[]> {
+  if (!STAFF_ROLES.includes(actor.role)) {
+    throw new SessionServiceError('forbidden', 'Not authorized', 403);
+  }
+  const kc = await resolveKcActor(actor);
+  const clinicId = actorClinic(kc) ?? params.clinicId;
+
   const out: SessionWithRelations[] = [];
   for (let page = 1; ; page += 1) {
     const { items, total } = await listSessionRows({
       page,
       perPage: EXPORT_PAGE,
-      clinicId: params.clinicId,
+      clinicId,
       professionalId: params.professionalId,
       statuses: params.status ? [params.status] : undefined,
       dateFrom: params.dateFrom,
