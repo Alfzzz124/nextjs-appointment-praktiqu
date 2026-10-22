@@ -82,6 +82,8 @@ export const ID_BLOCKS: readonly Row[] = [
   [8_930_000, 'integration/approval/approval-store.test.ts', 'session_approvals, professional_approval_settings, payment_orders, wp_users'],
   [8_940_000, 'integration/approval/public-requires-approval.test.ts', 'professional_approval_settings, kc_doctor_clinic_mappings, kc_clinics, wp_users, wp_usermeta'],
   [8_950_000, 'billing/attachment-ownership-guard.integration.test.ts', 'kc_appointments, wp_posts'],
+  [8_960_000, 'integration/session/export-pending-clinic-scope.test.ts', 'kc_appointments, kc_patient_clinic_mappings, kc_receptionist_clinic_mappings, kc_doctor_clinic_mappings, kc_clinics, wp_users, wp_usermeta'],
+  [8_970_000, 'complete-in-progress/sessions.test.ts', 'users (one row by id; its unique wpUserId is BASE + 900)'],
   [9_000_000, 'billing/patient-medical-report-delete-unlink.test.ts', 'kc_patient_medical_report, kc_custom_fields_data'],
 
   // Billing suites. Each calls cleanup() from tests/billing/fixtures.ts, which deletes

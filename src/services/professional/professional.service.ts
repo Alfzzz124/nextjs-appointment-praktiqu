@@ -419,6 +419,7 @@ export async function bulkSetProfessionalStatus(
 /* ------------------------------------------------------------------ */
 
 export interface ProfessionalExportParams {
+  /** The route confines a clinic admin to their own clinic; only a SUPER_ADMIN names one. */
   clinicId?: number;
   status?: ProfessionalStatus;
 }

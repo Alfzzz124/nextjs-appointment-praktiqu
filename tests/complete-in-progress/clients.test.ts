@@ -12,6 +12,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../billing/fixtures';
 import { CLIENT_STATUS } from '@/repositories/wp/patients.repo';
+import type { Actor } from '@/lib/auth';
 import { idBlock } from '../helpers/id-blocks';
 
 /**
@@ -53,6 +54,8 @@ const { GET: statisticsGet } = await import('@/app/api/v1/clients/[id]/statistic
 
 const { BASE, END } = idBlock('complete-in-progress/clients.test.ts');
 const CLINIC = BigInt(BASE + 900);
+/** exportClients takes an actor; a super admin may name any clinic. */
+const SUPER = { id: 'clients-test-super', role: 'SUPER_ADMIN' } as Actor;
 
 const JWT_SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
@@ -99,7 +102,7 @@ async function seedPatient(id: number, name: string) {
 }
 
 /** Auth-mirror row linking a JWT subject (cuid) to a WordPress user id. */
-async function linkAuthUser(cuid: string, wpUserId: number, role: 'CLIENT' | 'CLINIC_ADMIN') {
+async function linkAuthUser(cuid: string, wpUserId: number, role: 'CLIENT' | 'CLINIC_ADMIN' | 'SUPER_ADMIN') {
   await prisma.user.create({
     data: {
       id: cuid,
@@ -143,6 +146,7 @@ beforeAll(async () => {
   await linkAuthUser('clients-test-self', BASE + 1, 'CLIENT');
   await linkAuthUser('clients-test-other', BASE + 2, 'CLIENT');
   await linkAuthUser('clients-test-admin', BASE + 800, 'CLINIC_ADMIN');
+  await linkAuthUser('clients-test-super', BASE + 801, 'SUPER_ADMIN');
 });
 
 afterAll(async () => {
@@ -172,11 +176,11 @@ describe('bulkSetClientStatus', () => {
 
 describe('exportClients', () => {
   it('returns an array', async () => {
-    expect(Array.isArray(await exportClients({}))).toBe(true);
+    expect(Array.isArray(await exportClients(SUPER, {}))).toBe(true);
   });
 
   it('filters by clinic', async () => {
-    const rows = await exportClients({ clinicId: Number(CLINIC) });
+    const rows = await exportClients(SUPER, { clinicId: Number(CLINIC) });
     const ids = rows.map((r) => r.id);
 
     expect(ids).toContain(BASE + 1);
@@ -186,7 +190,7 @@ describe('exportClients', () => {
   });
 
   it('returns nothing for a clinic with no patients', async () => {
-    expect(await exportClients({ clinicId: Number(CLINIC) + 12_345 })).toEqual([]);
+    expect(await exportClients(SUPER, { clinicId: Number(CLINIC) + 12_345 })).toEqual([]);
   });
 });
 

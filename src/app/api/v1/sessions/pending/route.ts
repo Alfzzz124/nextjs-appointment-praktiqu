@@ -1,7 +1,7 @@
 /**
  * GET /api/v1/sessions/pending — professional's pending approval requests
  *
- * Auth: SUPER_ADMIN, CLINIC_ADMIN, PROFESSIONAL (own only)
+ * Auth: SUPER_ADMIN, CLINIC_ADMIN, RECEPTIONIST (own clinic only), PROFESSIONAL (own only)
  */
 
 import { NextRequest, NextResponse } from 'next/server';

@@ -20,18 +20,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const rawStatus = searchParams.get('status');
     const statusParsed = z.nativeEnum(SessionStatus).optional().safeParse(rawStatus ?? undefined);
     const params = {
+      // Only a SUPER_ADMIN may name a clinic; the service confines everyone else to
+      // their own via resolveKcActor.
       clinicId:
         actor.role === UserRole.SUPER_ADMIN && searchParams.get('clinicId')
           ? Number(searchParams.get('clinicId'))
           : undefined,
       // normaliseStatus folds the two retired names, so an old client asking for
-      // COMPLETED or REJECTED still gets sensible results.
-      status: statusParsed.success ? (normaliseStatus(statusParsed.data) ?? undefined) : undefined,
+      // COMPLETED or REJECTED still gets sensible results. No status at all means
+      // every status, not a call into normaliseStatus with undefined.
+      status:
+        statusParsed.success && statusParsed.data
+          ? (normaliseStatus(statusParsed.data) ?? undefined)
+          : undefined,
       // Dates stay as YYYY-MM-DD; KiviCare stores local dates.
       dateFrom: searchParams.get('from') ?? undefined,
       dateTo: searchParams.get('to') ?? undefined,
     };
-    const data = await exportSessions(params);
+    const data = await exportSessions(actor, params);
     return NextResponse.json(
       { status: true, message: 'Sessions data retrieved successfully', data },
       { headers: { 'Content-Disposition': 'attachment; filename="sessions-export.json"' } },
