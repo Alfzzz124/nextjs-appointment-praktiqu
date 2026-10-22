@@ -73,14 +73,29 @@ export async function getSchedule(id: number, scope: ScheduleScope | null) {
 }
 
 /** Verify the target module belongs to the actor's scope (for create). */
-export function assertModuleInScope(moduleType: string, moduleId: number, kc: KcActor): void {
+export async function assertModuleInScope(moduleType: string, moduleId: number, kc: KcActor): Promise<void> {
   if (kc.actor.role === 'SUPER_ADMIN') return;
   if (kc.actor.role === 'PROFESSIONAL') {
     if (!(moduleType === 'doctor' && BigInt(moduleId) === kc.wpUserId)) throw new KcError('Cannot manage this schedule', 403);
     return;
   }
-  // CLINIC_ADMIN / RECEPTIONIST: clinic module must be their clinic; doctor module handled leniently (belongs to clinic — checked at DB level on read). Enforce clinic module here:
-  if (moduleType === 'clinic' && BigInt(moduleId) !== (kc.clinicId ?? -1n)) throw new KcError('Cannot manage another clinic\'s schedule', 403);
+  // CLINIC_ADMIN / RECEPTIONIST: a clinic module must be their clinic, and a doctor module a
+  // professional mapped to it. Without the second check an admin could file an off-day
+  // against any psychologist on the install, blocking their bookings everywhere.
+  if (kc.clinicId === null) throw new KcError('Cannot manage this schedule', 403);
+  if (moduleType === 'clinic') {
+    if (BigInt(moduleId) !== kc.clinicId) throw new KcError('Cannot manage another clinic\'s schedule', 403);
+    return;
+  }
+  if (moduleType === 'doctor') {
+    const mapping = await prisma.kcDoctorClinicMapping.findFirst({
+      where: { doctorId: BigInt(moduleId), clinicId: kc.clinicId },
+      select: { id: true },
+    });
+    if (!mapping) throw new KcError('Cannot manage a professional of another clinic', 403);
+    return;
+  }
+  throw new KcError('Cannot manage this schedule', 403);
 }
 
 export interface ScheduleCreateInput {
@@ -90,7 +105,7 @@ export interface ScheduleCreateInput {
   description?: string; status: number;
 }
 export async function createSchedule(input: ScheduleCreateInput, kc: KcActor): Promise<{ id: number }> {
-  assertModuleInScope(input.moduleType, input.moduleId, kc);
+  await assertModuleInScope(input.moduleType, input.moduleId, kc);
   const id = await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(
       `INSERT INTO wp_kc_clinic_schedule

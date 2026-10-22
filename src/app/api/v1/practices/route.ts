@@ -1,10 +1,11 @@
 /**
- * GET /api/v1/practices          — List all practices (paginated)
- * POST /api/v1/practices        — Create a new practice (admin only)
+ * GET  /api/v1/practices — list practices (paginated; a CLINIC_ADMIN sees their own)
+ * POST /api/v1/practices — create a practice (SUPER_ADMIN)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRoles } from '@/lib/auth/route-guards';
-import { listPractices } from '@/services/practice/service';
+import { practiceProblem } from '@/lib/practice-problems';
+import { createPractice, listPractices } from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
 /** GET /api/v1/practices — paginated list */
@@ -31,18 +32,36 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-/** POST /api/v1/practices — create (stub — actual creation deferred to WP-side provisioning) */
-export async function POST(_req: NextRequest): Promise<NextResponse> {
-  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+/**
+ * POST /api/v1/practices — create a clinic, optionally with its admin.
+ *
+ * Body: practiceCreateSchema (src/types/practice.ts). 201 `{ data: PracticeDTO, admin }`.
+ * No `message` key: the Laravel FE's unwrap() would then keep only `data` and drop `admin`.
+ */
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  const gate = await requireRoles(req, ['SUPER_ADMIN']);
   if ('response' in gate) return gate.response;
 
-  return NextResponse.json(
-    {
-      type: '/errors/not-implemented',
-      title: 'Not Implemented',
-      detail: 'Practice creation is delegated to the WordPress provisioning flow. Use PATCH /api/v1/practices/:id to update an existing practice.',
-      status: 501,
-    },
-    { status: 501 },
-  );
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { type: '/errors/bad-request', title: 'Invalid JSON', status: 400, code: 'invalid_json' },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const result = await createPractice(body, { actorId: gate.actor.id });
+    return NextResponse.json({ data: result.practice, admin: result.admin }, { status: 201 });
+  } catch (err) {
+    const mapped = practiceProblem(err);
+    if (mapped) return mapped;
+    await logging.error('createPractice failed', err, { path: '/api/v1/practices', method: 'POST' });
+    return NextResponse.json(
+      { type: '/errors/internal', title: 'Internal Server Error', status: 500 },
+      { status: 500 },
+    );
+  }
 }

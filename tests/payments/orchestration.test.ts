@@ -63,9 +63,36 @@ const logging = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/logging', () => logging);
 
+// Psychologist approval (spec 2026-10-19). Off by default; the describe blocks at the end
+// of this file switch it on.
+const approval = vi.hoisted(() => ({
+  findApproval: vi.fn(),
+  requiresApproval: vi.fn(),
+  holdForApproval: vi.fn(),
+  completeApproval: vi.fn(),
+  publicApprovalFor: vi.fn(),
+}));
+vi.mock('@/services/approval/store', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/store')>()),
+  findApproval: (...a: unknown[]) => approval.findApproval(...a),
+  findApprovals: async () => new Map(),
+  claimDecision: async () => false,
+}));
+vi.mock('@/services/approval/settings', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/settings')>()),
+  requiresApproval: (...a: unknown[]) => approval.requiresApproval(...a),
+}));
+vi.mock('@/services/approval/service', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/service')>()),
+  holdForApproval: (...a: unknown[]) => approval.holdForApproval(...a),
+  completeApproval: (...a: unknown[]) => approval.completeApproval(...a),
+  publicApprovalFor: (...a: unknown[]) => approval.publicApprovalFor(...a),
+}));
+
 import {
   initiatePublicPayment, checkPublicPaymentStatus, ensureSessionPayment,
   applyPaidSideEffectsPublic,
+  cancelIfStillPending,
   AppointmentNotFoundError, AppointmentNotPendingError, PaymentAlreadyInitiatedError,
 } from '@/services/payments/payment.service';
 import { calculateTax, getBill } from '@/services/billing/bill.service';
@@ -116,6 +143,11 @@ function appointmentRow(status: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  approval.findApproval.mockResolvedValue(null);
+  approval.requiresApproval.mockResolvedValue(false);
+  approval.holdForApproval.mockResolvedValue(true);
+  approval.completeApproval.mockResolvedValue(undefined);
+  approval.publicApprovalFor.mockResolvedValue(null);
   // No option rows: every clinic is not international unless a test says otherwise.
   db.kcOption.findMany.mockResolvedValue([]);
   sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
@@ -276,13 +308,13 @@ describe('checkPublicPaymentStatus — verify fallback', () => {
     db.paymentOrder.findFirst.mockResolvedValue(pendingOrder(stale()));
     wpEndpoint.getWcOrderStatus.mockResolvedValue({ orderId: 42, status: 'processing', isPaid: true, transactionId: 'tx-1', amount: 100000 });
     db.paymentOrder.updateMany.mockResolvedValue({ count: 1 });
-    db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'paid', expectedAmount: 100000, source: 'public', appointmentId: String(APPOINTMENT) });
+    db.paymentOrder.findUnique.mockResolvedValue({ wcOrderId: 42, status: 'paid', expectedAmount: 100000, source: 'public', appointmentId: String(APPOINTMENT), gateway: 'xendit', transactionId: 'tx-1' });
 
     const result = await checkPublicPaymentStatus(APPOINTMENT);
 
     expect(result.status).toBe('paid');
-    // Through the plugin: confirming is what sends KiviCare's booking mail.
-    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    // Through the plugin, with the payment: that is what makes it fire KiviCare's booking mail.
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, { gateway: 'xendit', wcOrderId: 42, transactionId: 'tx-1' });
   });
 
   it('does not reconcile a pending order younger than 2 minutes', async () => {
@@ -466,7 +498,7 @@ describe('applyPaidSideEffectsSession — settling a bill without transactions',
 describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
   function paidOrder() {
     return {
-      wcOrderId: 42, status: 'paid', expectedAmount: 100000, createdAt: new Date(),
+      wcOrderId: 42, status: 'paid', expectedAmount: 100000, createdAt: new Date(), gateway: 'paypal', transactionId: 'PAYID-9',
       source: 'public', appointmentId: String(APPOINTMENT), billId: null,
     };
   }
@@ -476,7 +508,7 @@ describe('ensurePaidSideEffectsApplied — crash-window self-heal', () => {
 
     await checkPublicPaymentStatus(APPOINTMENT);
 
-    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, { gateway: 'paypal', wcOrderId: 42, transactionId: 'PAYID-9' });
     expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({
       hook: 'praktiqu_payment_auto_cancel',
       args: { wcOrderId: 42 },
@@ -508,9 +540,9 @@ describe('applyPaidSideEffectsPublic — schedules session reminders', () => {
       .mockResolvedValueOnce(appointmentRow('PENDING'))
       .mockResolvedValueOnce(bookedRowFuture());
 
-    await applyPaidSideEffectsPublic({ appointmentId: String(APPOINTMENT), wcOrderId: 42 } as any);
+    await applyPaidSideEffectsPublic({ appointmentId: String(APPOINTMENT), wcOrderId: 42, gateway: 'xendit', transactionId: 'tx-1' } as any);
 
-    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1);
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, { gateway: 'xendit', wcOrderId: 42, transactionId: 'tx-1' });
     const reminderCalls = jobsClient.jobs.enqueue.mock.calls
       .map((c) => c[0])
       .filter((c) => c.hook === 'praktiqu_session_send_reminder');
@@ -870,5 +902,131 @@ describe('ensureSessionPayment — international gate (paypal/card)', () => {
     expect(result).toMatchObject({ checkoutUrl: null, status: 'pending' });
     expect(db.kcOption.findMany).not.toHaveBeenCalled();
     expect(wpEndpoint.createWcOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyPaidSideEffectsPublic — psychologist approval', () => {
+  /** A session still ahead: one already started is never held (see the last test). */
+  const ahead = () => ({ ...appointmentRow('PENDING'), slotDate: '2099-07-15' });
+  const PAID = {
+    id: 'po_1',
+    source: 'public',
+    status: 'paid',
+    appointmentId: String(APPOINTMENT),
+    wcOrderId: 42,
+    gateway: 'xendit',
+    transactionId: 'tx-1',
+  } as never;
+
+  it('a psychologist with the switch on: queued, not booked', async () => {
+    sessions.findSessionById.mockResolvedValue(ahead());
+    approval.requiresApproval.mockResolvedValue(true);
+
+    await applyPaidSideEffectsPublic(PAID);
+
+    expect(approval.holdForApproval).toHaveBeenCalledWith({ row: ahead(), paymentOrderId: 'po_1' });
+    expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.cancel).toHaveBeenCalledWith({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: 42 } });
+  });
+
+  it('already queued (a repeated webhook or poll): nothing happens', async () => {
+    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
+    approval.findApproval.mockResolvedValue({ state: 'AWAITING' });
+    approval.requiresApproval.mockResolvedValue(true);
+
+    await applyPaidSideEffectsPublic(PAID);
+
+    expect(approval.holdForApproval).not.toHaveBeenCalled();
+    expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
+  });
+
+  it('an approval that died before reaching the plugin is finished', async () => {
+    const approved = { state: 'APPROVED', appointmentId: APPOINTMENT };
+    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
+    approval.findApproval.mockResolvedValue(approved);
+
+    await applyPaidSideEffectsPublic(PAID);
+
+    expect(approval.completeApproval).toHaveBeenCalledWith(approved);
+    expect(appointments.setAppointmentStatus).not.toHaveBeenCalled();
+  });
+
+  it('switch off: booked exactly as before', async () => {
+    sessions.findSessionById.mockResolvedValue(ahead());
+
+    await applyPaidSideEffectsPublic(PAID);
+
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, {
+      gateway: 'xendit',
+      wcOrderId: 42,
+      transactionId: 'tx-1',
+    });
+    expect(approval.holdForApproval).not.toHaveBeenCalled();
+  });
+
+  it('a payment that lands after the session started: booked as before, switch or not', async () => {
+    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING')); // 2026-07-15, past
+    approval.requiresApproval.mockResolvedValue(true);
+
+    await applyPaidSideEffectsPublic(PAID);
+
+    expect(approval.holdForApproval).not.toHaveBeenCalled();
+    expect(appointments.setAppointmentStatus).toHaveBeenCalledWith(APPOINTMENT, 1, {
+      gateway: 'xendit',
+      wcOrderId: 42,
+      transactionId: 'tx-1',
+    });
+  });
+});
+
+describe('cancelIfStillPending — psychologist approval', () => {
+  const EXPIRED = { source: 'public', appointmentId: String(APPOINTMENT), wcOrderId: 41 } as never;
+
+  it('never releases a booking that has an approval record', async () => {
+    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
+    approval.findApproval.mockResolvedValue({ state: 'AWAITING' });
+
+    await cancelIfStillPending(EXPIRED);
+
+    expect(appointments.cancelAppointment).not.toHaveBeenCalled();
+  });
+
+  it('still releases an unpaid one', async () => {
+    sessions.findSessionById.mockResolvedValue(appointmentRow('PENDING'));
+
+    await cancelIfStillPending(EXPIRED);
+
+    expect(appointments.cancelAppointment).toHaveBeenCalledWith(APPOINTMENT);
+  });
+});
+
+describe('checkPublicPaymentStatus — psychologist approval', () => {
+  it('carries the public approval view', async () => {
+    const view = {
+      state: 'AWAITING',
+      requestedAt: '2026-10-20T02:00:00.000Z',
+      decidedAt: null,
+      refundStatus: 'NONE',
+      isOverdue: false,
+    };
+    db.paymentOrder.findFirst.mockResolvedValue({
+      id: 'po_1',
+      source: 'public',
+      status: 'paid',
+      appointmentId: String(APPOINTMENT),
+      wcOrderId: 42,
+      expectedAmount: 100000,
+      chargedAmount: null,
+      chargedCurrency: 'IDR',
+      gateway: 'xendit',
+      transactionId: 'tx-1',
+      createdAt: new Date(),
+    });
+    approval.publicApprovalFor.mockResolvedValue(view);
+
+    const result = await checkPublicPaymentStatus(APPOINTMENT);
+
+    expect(approval.publicApprovalFor).toHaveBeenCalledWith(APPOINTMENT);
+    expect(result.approval).toEqual(view);
   });
 });

@@ -25,6 +25,7 @@ delete_option('praktiqu_endpoint_paypal_idr_rate');
 delete_option('praktiqu_endpoint_paypal_idr_rate_updated');
 delete_option('praktiqu_endpoint_paypal_markup_percent');
 delete_option('praktiqu_endpoint_paypal_markup_percent_updated');
+delete_option('praktiqu_outbox_sweep_registered');
 delete_transient('praktiqu_endpoint_activation_notice');
 
 // One praktiqu_endpoint_clinic_{id}_payment row per clinic (ClinicPaymentSettings). The

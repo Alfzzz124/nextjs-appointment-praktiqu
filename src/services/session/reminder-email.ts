@@ -42,7 +42,7 @@ const BULAN = [
 ];
 
 /** 'Kamis, 10 September 2026' + '09:30', pada zona waktu klinik. */
-function formatWaktu(startsAtUtc: Date, timezone: string): { tanggal: string; jam: string } {
+export function formatWaktu(startsAtUtc: Date, timezone: string): { tanggal: string; jam: string } {
   const [datePart, jam] = formatDateTimeInTz(startsAtUtc, timezone, 'yyyy-MM-dd HH:mm').split(' ');
   const [tahun, bulan, hariAngka] = datePart.split('-').map(Number);
   const hari = HARI[getDayOfWeekInTz(startsAtUtc, timezone)];
@@ -54,7 +54,7 @@ function formatWaktu(startsAtUtc: Date, timezone: string): { tanggal: string; ja
  * memvalidasi panjang (z.string().min(1).max(255)) — tidak ada larangan karakter.
  * Jadi harus di-escape sebelum masuk ke `html`; `text` tetap apa adanya.
  */
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

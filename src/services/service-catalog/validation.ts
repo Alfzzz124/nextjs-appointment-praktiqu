@@ -28,7 +28,10 @@ export const createServiceSchema = z.object({
   price: priceSchema,
   duration: durationSchema,
   doctorIds: z.array(idSchema).min(1, 'At least one professional is required'),
-  /** Ignored for CLINIC_ADMIN, who is pinned to their own clinic. */
+  /**
+   * Ignored for CLINIC_ADMIN, who is pinned to their own clinic. SUPER_ADMIN must send it.
+   * A PROFESSIONAL may omit it only when they practise at exactly one active clinic.
+   */
   clinicId: idSchema.optional(),
   telemedService: z.enum(['yes', 'no']).default('no'),
   status: flag.default(1),

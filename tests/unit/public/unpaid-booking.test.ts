@@ -45,6 +45,12 @@ const log = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/logging', () => log);
 
+const approvalStore = vi.hoisted(() => ({ findApproval: vi.fn() }));
+vi.mock('@/services/approval/store', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/store')>()),
+  findApproval: (...a: unknown[]) => approvalStore.findApproval(...a),
+}));
+
 import { SESSION_STATUS, type SessionStatus } from '@/repositories/wp/sessions.repo';
 import {
   handleUnpaidBookingCancel,
@@ -62,6 +68,7 @@ function row(status: SessionStatus) {
 beforeEach(() => {
   vi.clearAllMocks();
   db.orders.length = 0;
+  approvalStore.findApproval.mockReset().mockResolvedValue(null);
   repo.findSessionById.mockResolvedValue(row(SESSION_STATUS.PENDING));
   delete process.env.PUBLIC_BOOKING_UNPAID_TTL_MINUTES;
 });
@@ -152,6 +159,18 @@ describe('handleUnpaidBookingCancel', () => {
 
     expect(repo.findSessionById).not.toHaveBeenCalled();
     expect(write.cancelAppointment).not.toHaveBeenCalled();
+  });
+
+  it('leaves a booking that waits for its psychologist alone, even with no paid order', async () => {
+    approvalStore.findApproval.mockResolvedValue({ state: 'AWAITING' });
+
+    await handleUnpaidBookingCancel({ appointmentId: APPT });
+
+    expect(write.cancelAppointment).not.toHaveBeenCalled();
+    expect(log.logging.audit).toHaveBeenCalledWith(
+      'booking.unpaid_cancel.skipped',
+      expect.objectContaining({ metadata: { reason: 'approval' } }),
+    );
   });
 });
 

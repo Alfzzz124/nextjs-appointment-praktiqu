@@ -28,6 +28,7 @@ import { logging } from '@/lib/logging';
 import { cancelAppointment } from '@/repositories/wp/appointments.write';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
 import type { PaymentStatus } from '@/services/payments/payment.service';
+import { findApproval } from '@/services/approval/store';
 
 /** Action Scheduler hook. Must match the allow-list in the plugin's Jobs::enqueue(). */
 export const UNPAID_CANCEL_HOOK = 'praktiqu_booking_unpaid_cancel' as const;
@@ -177,6 +178,17 @@ export async function handleUnpaidBookingCancel(data: Record<string, unknown>): 
       resource: 'appointment',
       resourceId,
       metadata: { reason: 'status', status: row.status },
+    });
+    return;
+  }
+
+  // A booking with an approval record is paid and waits for its psychologist. One marked
+  // paid by staff has no `paid` order, so the order check below would not protect it.
+  if (await findApproval(appointmentId)) {
+    await logging.audit(`${UNPAID_CANCEL_EVENT}.skipped`, {
+      resource: 'appointment',
+      resourceId,
+      metadata: { reason: 'approval' },
     });
     return;
   }

@@ -61,6 +61,12 @@ const CLINIC_ID = 1;
 /** 2026-08-31 is a Monday. */
 const MONDAY = '2026-08-31';
 
+/**
+ * The fixture window is a 30-minute grid and the service runs 60 minutes: two whole
+ * sessions, so it may start at any session boundary, each slot still 60 minutes long.
+ */
+const MONDAY_STARTS = ['09:00:00', '09:30:00', '10:00:00', '10:30:00', '11:00:00'];
+
 function happyPath() {
   (doctors.findDoctorById as any).mockResolvedValue({ id: 7n, status: 1 });
   (services.listServicesForDoctor as any).mockResolvedValue([
@@ -88,7 +94,7 @@ describe('getPublicSlots', () => {
       clinicId: CLINIC_ID,
       now: new Date('2026-08-31T00:00:00'),
     });
-    expect(slots?.map((s) => s.startTime)).toEqual(['09:00:00', '10:00:00', '11:00:00']);
+    expect(slots?.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
   });
 
   it('returns null for an inactive professional', async () => {
@@ -123,15 +129,15 @@ describe('getPublicSlots — slots already past', () => {
    * to be able to select one — pinned by the last test in this block.)
    */
   it('keeps the slots that are far enough ahead, and hides the rest', async () => {
-    // 08:59 with a 60-minute notice: 09:00 is one minute away and 10:00 is
-    // an hour and a minute, so only the two later slots survive.
+    // 08:59 with a 60-minute notice: 09:00 is one minute away, 09:30 half an
+    // hour, and 10:00 an hour and a minute, so only 10:00 onwards survives.
     const slots = await getPublicSlots({
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
       now: new Date('2026-08-31T08:59:00'),
     });
-    expect(slots?.map((s) => s.startTime)).toEqual(['10:00:00', '11:00:00']);
+    expect(slots?.map((s) => s.startTime)).toEqual(['10:00:00', '10:30:00', '11:00:00']);
   });
 
   it('hides a slot that starts sooner than the minimum notice allows', async () => {
@@ -168,7 +174,7 @@ describe('getPublicSlots — slots already past', () => {
       date: MONDAY,
       now: new Date('2026-08-30T23:30:00'),
     });
-    expect(slots?.map((s) => s.startTime)).toEqual(['09:00:00', '10:00:00', '11:00:00']);
+    expect(slots?.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
   });
 
 
@@ -199,6 +205,6 @@ describe('getPublicSlots — slots already past', () => {
     // (rather than through getPublicSlots) pins that the guard added to the public
     // reader was not accidentally pushed down into the shared staff path.
     const slots = await generateSlots(DOCTOR_ID, MONDAY, SERVICE_ID, CLINIC_ID);
-    expect(slots.map((s) => s.startTime)).toEqual(['09:00:00', '10:00:00', '11:00:00']);
+    expect(slots.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
   });
 });

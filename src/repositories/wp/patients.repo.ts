@@ -336,3 +336,15 @@ export async function patientInClinic(patientId: bigint, clinicId: bigint): Prom
   );
   return rows.length > 0;
 }
+
+/** `patientInClinic` for many patients at once: of `ids`, those who are patients of `clinicId`. */
+export async function patientIdsInClinic(ids: number[], clinicId: bigint): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await prisma.$queryRawUnsafe<Array<{ patient_id: bigint }>>(
+    `SELECT DISTINCT patient_id FROM wp_kc_patient_clinic_mappings
+     WHERE clinic_id = ? AND patient_id IN (${ids.map(() => '?').join(', ')})`,
+    clinicId,
+    ...ids.map((id) => BigInt(id)),
+  );
+  return new Set(rows.map((r) => Number(r.patient_id)));
+}

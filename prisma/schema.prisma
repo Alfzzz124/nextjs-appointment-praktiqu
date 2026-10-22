@@ -976,6 +976,24 @@ model GoogleConflictWarning {
   @@map("google_conflict_warnings")
 }
 
+/// Bentrok jadwal yang sudah dikabarkan, per penerima. Tabel ditulis tangan:
+/// prisma/manual/2026-10-21-schedule-conflict-notices.sql — jangan `db push`.
+model ScheduleConflictNotice {
+  id                String   @id @default(cuid())
+  /// id janji temu yang lebih kecil dari pasangan itu
+  appointmentLowId  Int
+  appointmentHighId Int
+  /// Alamat email penerima, huruf kecil.
+  recipient         String   @db.VarChar(191)
+  /// `date|lowStart-lowEnd|highStart-highEnd`. Berubah → dikabarkan lagi.
+  fingerprint       String   @db.VarChar(64)
+  notifiedAt        DateTime
+
+  @@unique([appointmentLowId, appointmentHighId, recipient], name: "pairRecipient", map: "schedule_conflict_notices_pair_recipient_key")
+  @@index([notifiedAt])
+  @@map("schedule_conflict_notices")
+}
+
 /// A cached Google free/busy answer for one professional on one local date.
 ///
 /// Without it every render of a booking page for a connected professional costs two
@@ -1049,6 +1067,66 @@ model GoogleCalendarConnection {
 
   @@index([status])
   @@map("google_calendar_connections")
+}
+
+/// A psychologist marked as owner of a clinic. See prisma/manual/2026-10-16-clinic-owners.sql
+/// and src/services/clinic-owner/service.ts — a row grants nothing on its own.
+model ClinicOwner {
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  /// wp_kc_clinics.id
+  clinicId       BigInt   @db.UnsignedBigInt
+  /// wp_users.ID of the psychologist
+  doctorWpUserId BigInt   @db.UnsignedBigInt
+  /// users.id (cuid) of the actor who granted it
+  createdBy      String   @db.VarChar(191)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+
+  @@unique([clinicId, doctorWpUserId])
+  @@index([doctorWpUserId])
+  @@map("clinic_owners")
+}
+
+/// A psychologist's switch: paid online bookings wait for their approval.
+/// Table from prisma/manual/2026-10-19-approval-psikolog.sql — never db push.
+model ProfessionalApprovalSetting {
+  /// wp_users.ID of the psychologist
+  doctorWpUserId   BigInt   @id @db.UnsignedBigInt
+  requiresApproval Boolean  @default(false)
+  /// users.id (cuid) of whoever last changed it
+  updatedBy        String?  @db.VarChar(191)
+  updatedAt        DateTime @default(now()) @updatedAt @db.DateTime(3)
+
+  @@map("professional_approval_settings")
+}
+
+/// One paid booking waiting for, or decided by, its psychologist.
+/// Table from prisma/manual/2026-10-19-approval-psikolog.sql — never db push.
+model SessionApproval {
+  /// wp_kc_appointments.id
+  appointmentId  BigInt    @id @db.UnsignedBigInt
+  doctorWpUserId BigInt    @db.UnsignedBigInt
+  clinicId       BigInt    @db.UnsignedBigInt
+  /// payment_orders.id; null when staff marked the booking paid by hand
+  paymentOrderId String?   @db.VarChar(191)
+  /// AWAITING | APPROVED | REJECTED | CANCELLED
+  state          String    @db.VarChar(16)
+  requestedAt    DateTime  @default(now()) @db.DateTime(3)
+  decidedAt      DateTime? @db.DateTime(3)
+  /// users.id; null = the system, or a change made outside the app
+  decidedBy      String?   @db.VarChar(191)
+  rejectReason   String?   @db.VarChar(500)
+  /// NONE | NEEDED | DONE
+  refundStatus   String    @default("NONE") @db.VarChar(8)
+  refundedAt     DateTime? @db.DateTime(3)
+  refundedBy     String?   @db.VarChar(191)
+  refundNote     String?   @db.VarChar(500)
+  lastReminderAt DateTime? @db.DateTime(3)
+  escalatedAt    DateTime? @db.DateTime(3)
+
+  @@index([doctorWpUserId, state], map: "session_approvals_doctor_state_idx")
+  @@index([clinicId, state], map: "session_approvals_clinic_state_idx")
+  @@index([refundStatus], map: "session_approvals_refund_idx")
+  @@map("session_approvals")
 }
 
 /// A client-supplied Idempotency-Key for public booking.

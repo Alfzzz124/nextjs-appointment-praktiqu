@@ -27,8 +27,9 @@ final class REST_Controller
     private Doctors $doctors;
     private Encounters $encounters;
     private ClinicalRecords $clinical_records;
+    private ClinicAdmins $clinic_admins;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors, Encounters $encounters, ClinicalRecords $clinical_records)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors, Encounters $encounters, ClinicalRecords $clinical_records, ClinicAdmins $clinic_admins)
     {
         $this->service = $service;
         $this->jobs = $jobs;
@@ -40,6 +41,7 @@ final class REST_Controller
         $this->doctors = $doctors;
         $this->encounters = $encounters;
         $this->clinical_records = $clinical_records;
+        $this->clinic_admins = $clinic_admins;
     }
 
     public function register(): void
@@ -149,6 +151,20 @@ final class REST_Controller
             ],
         ]);
 
+        // POST /praktiqu/v1/appointments/{id}/reschedule — move to a new slot under the
+        // professional's schedule lock (Schedule_Write::move), then sync Meet/Calendar
+        register_rest_route($ns, '/appointments/(?P<id>\d+)/reschedule', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_reschedule_appointment'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id'         => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                'start_date' => ['required' => true, 'type' => 'string'],
+                'start_time' => ['required' => true, 'type' => 'string'],
+                'expected'   => ['required' => true, 'type' => 'object'],
+            ],
+        ]);
+
         // POST /praktiqu/v1/appointments/{id}/status — change status; 0 cancels
         register_rest_route($ns, '/appointments/(?P<id>\d+)/status', [
             'methods'             => \WP_REST_Server::CREATABLE,
@@ -158,6 +174,12 @@ final class REST_Controller
                 'id'     => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
                 // 0=CANCELLED 1=BOOKED 2=PENDING 3=CHECK_OUT 4=CHECK_IN (KCAppointment.php:41-45)
                 'status' => ['required' => true, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
+                // { gateway, wc_order_id, transaction_id } when status 1 confirms a paid
+                // booking; makes PENDING → BOOKED fire kc_appointment_payment_completed.
+                'payment' => ['required' => false, 'type' => 'object'],
+                // Compare-and-set (1.8.4): write only if the row still has this status;
+                // 409 praktiqu_status_conflict otherwise. Sent by psychologist approval.
+                'expect_status' => ['required' => false, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
             ],
         ]);
 
@@ -239,6 +261,21 @@ final class REST_Controller
                 // receptionistCreateSchema upstream — declared here without its own
                 // bounds so the two cannot drift apart.
                 'password'  => ['required' => false, 'type' => 'string'],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/clinic-admins — create the admin account of a clinic that has none
+        //
+        // The Next.js app writes the wp_kc_clinics row itself; the account has to come from
+        // wp_insert_user (see ClinicAdmins). Refuses a clinic that already has an admin.
+        register_rest_route($ns, '/clinic-admins', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_clinic_admin'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'email'     => ['required' => true, 'type' => 'string', 'format' => 'email'],
+                'name'      => ['required' => true, 'type' => 'string'],
+                'clinic_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
 
@@ -496,6 +533,19 @@ final class REST_Controller
     }
 
     /**
+     * POST /praktiqu/v1/appointments/{id}/reschedule
+     */
+    public function handle_reschedule_appointment(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id = (int) $request->get_param('id');
+        $result = $this->appointments->reschedule($id, (array) $request->get_json_params());
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
+    }
+
+    /**
      * POST /praktiqu/v1/appointments/{id}/status
      */
     public function handle_appointment_status(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
@@ -592,6 +642,18 @@ final class REST_Controller
     public function handle_create_receptionist(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
     {
         $result = $this->receptionists->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * POST /praktiqu/v1/clinic-admins
+     */
+    public function handle_create_clinic_admin(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->clinic_admins->create((array) $request->get_json_params(), $request);
         if (is_wp_error($result)) {
             return $result;
         }

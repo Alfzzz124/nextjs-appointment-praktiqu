@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { clientIpOrNull } from '@/lib/client-ip';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 import { ACTIVE_CLINIC_HEADER, resolveActiveClinic } from '@/lib/auth/active-clinic';
+import { asClinicManager, isOwnerRoute } from '@/lib/auth/owner-routes';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? 'dev-secret-change-me',
@@ -31,6 +32,13 @@ export interface Actor {
    * without checking again. Undefined means "use the default clinic".
    */
   activeClinicId?: bigint;
+  /**
+   * The clinic a PROFESSIONAL owns and picked with X-Praktiqu-Clinic-Id (owner mode),
+   * already checked by getActor(). On an allowlisted route (owner-routes.ts) getActor()
+   * also turns the actor into that clinic's CLINIC_ADMIN; elsewhere it stays a
+   * PROFESSIONAL and this field is informational only.
+   */
+  ownerClinicId?: bigint;
 }
 
 export interface AuthContext {
@@ -65,6 +73,10 @@ export async function getActor(req: NextRequest): Promise<Actor> {
   const active = await resolveActiveClinic(actor.id, actor.role, req.headers.get(ACTIVE_CLINIC_HEADER));
   if ('code' in active) throw new AuthError(active.code, active.status); // 'in' narrows even with strictNullChecks off, unlike `!active.ok`
   if (active.clinicId !== undefined) actor.activeClinicId = active.clinicId;
+  if (active.ownerClinicId !== undefined) {
+    actor.ownerClinicId = active.ownerClinicId;
+    if (isOwnerRoute(req.method, req.nextUrl.pathname)) actor = asClinicManager(actor, active.ownerClinicId);
+  }
   return actor;
 }
 

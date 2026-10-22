@@ -16,6 +16,8 @@
  *   - praktiqu_log_purge              — daily log retention purge
  *   - praktiqu_payment_auto_cancel    — cancel a WC order whose payment window expired
  *   - praktiqu_booking_unpaid_cancel  — release a guest booking nobody started paying for
+ *   - praktiqu_approval_reminder      — remind a psychologist (and escalate to the clinic admin)
+ *                                       about a paid booking waiting for their approval
  *
  * Action Scheduler is a soft dependency. If WooCommerce / Action Scheduler
  * is not active, the enqueue endpoint returns 503 and the job is dropped
@@ -38,6 +40,12 @@ final class Jobs
     private Payments $payments;
     private Jobs_Webhook $jobs_webhook;
 
+    /** Retries schedule-move side effects (Meet, Google Calendar, KiviCare reminders). */
+    public const OUTBOX_SWEEP_HOOK = 'praktiqu_schedule_outbox_sweep';
+
+    /** Set once the recurring sweep exists; deleted on deactivation, which unschedules it. */
+    public const OUTBOX_SWEEP_OPTION = 'praktiqu_outbox_sweep_registered';
+
     public function __construct(Service $service, Payments $payments, Jobs_Webhook $jobs_webhook)
     {
         $this->service      = $service;
@@ -56,6 +64,9 @@ final class Jobs
         add_action('praktiqu_log_purge', [$this, 'handle_log_purge'], 10, 0);
         add_action('praktiqu_payment_auto_cancel', [$this, 'handle_payment_auto_cancel'], 10, 1);
         add_action('praktiqu_booking_unpaid_cancel', [$this, 'handle_booking_unpaid_cancel'], 10, 1);
+        add_action('praktiqu_approval_reminder', [$this, 'handle_approval_reminder'], 10, 1);
+        add_action(self::OUTBOX_SWEEP_HOOK, [$this, 'handle_schedule_outbox_sweep'], 10, 0);
+        add_action('action_scheduler_init', [$this, 'ensure_outbox_sweep']);
 
         // Daily purge schedule (registers a recurring AS event on activation).
         // The actual schedule registration lives in Plugin::on_activation.
@@ -80,6 +91,7 @@ final class Jobs
             'praktiqu_log_purge',
             'praktiqu_payment_auto_cancel',
             'praktiqu_booking_unpaid_cancel',
+            'praktiqu_approval_reminder',
         ];
         if (!in_array($hook, $allowed, true)) {
             return false;
@@ -103,9 +115,37 @@ final class Jobs
         return true;
     }
 
+    /**
+     * Register the recurring outbox sweep, once. A plugin update does not run the
+     * activation hook, so this cannot live in Plugin::on_activation like the log purge;
+     * the option keeps it to one Action Scheduler query for the plugin's lifetime.
+     */
+    public function ensure_outbox_sweep(): void
+    {
+        if (get_option(self::OUTBOX_SWEEP_OPTION) === '1' || !function_exists('as_schedule_recurring_action')) {
+            return;
+        }
+        if (!as_has_scheduled_action(self::OUTBOX_SWEEP_HOOK, [], self::GROUP)) {
+            as_schedule_recurring_action(time() + 300, 300, self::OUTBOX_SWEEP_HOOK, [], self::GROUP);
+        }
+        update_option(self::OUTBOX_SWEEP_OPTION, '1', true);
+    }
+
     // -------------------------------------------------------------------
     // Handlers
     // -------------------------------------------------------------------
+
+    /** Retry the schedule-move side effects that are due. */
+    public function handle_schedule_outbox_sweep(): void
+    {
+        global $wpdb;
+        $sync = new Schedule_Sync();
+        (new Schedule_Outbox_Processor(
+            $wpdb,
+            \Closure::fromCallable([$sync, 'calendar']),
+            \Closure::fromCallable([$sync, 'reminders'])
+        ))->sweep();
+    }
 
     /**
      * Auto-complete a session 24h after its scheduled end time.
@@ -181,6 +221,22 @@ final class Jobs
     public function handle_booking_unpaid_cancel(int $appointment_id): void
     {
         $this->jobs_webhook->send('booking.unpaid_cancel', [
+            'appointmentId' => $appointment_id,
+        ]);
+    }
+
+    /**
+     * Remind a psychologist about a paid booking that waits for their approval
+     * (plugin 1.8.3). PraktiQU schedules it when the booking is paid and reschedules
+     * it from its own handler until the booking is decided or its start passes.
+     *
+     * Args: [appointmentId (int)]. We only notify PraktiQU. It re-reads the booking and
+     * its approval record and decides there — who to remind, whether to escalate to
+     * the clinic admin, and when to run next — so this handler needs no guard.
+     */
+    public function handle_approval_reminder(int $appointment_id): void
+    {
+        $this->jobs_webhook->send('approval.reminder', [
             'appointmentId' => $appointment_id,
         ]);
     }

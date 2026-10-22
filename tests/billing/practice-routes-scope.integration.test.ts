@@ -57,9 +57,9 @@ describe('GET/PATCH/DELETE /practices/:id', () => {
     expect(res.status).toBe(404);
   });
 
-  it('clinic A cannot DELETE (deactivate) clinic B\'s practice', async () => {
+  it('clinic A cannot DELETE (deactivate) any practice — super admin only', async () => {
     const res = await practiceDelete(reqWith(jwtA, `http://localhost/api/v1/practices/${CLINIC_B}`), { params: { id: String(CLINIC_B) } });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });
 

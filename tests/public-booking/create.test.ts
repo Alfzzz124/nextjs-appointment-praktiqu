@@ -379,6 +379,22 @@ describe('createPublicAppointment', () => {
     expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
+  // The check above and the plugin's write are two requests; another booking can land
+  // between them. The plugin re-checks under the professional's schedule lock and
+  // answers 409 praktiqu_schedule_conflict. That is the same "pick another time" as
+  // above, not an upstream refusal the guest can do nothing about.
+  it('treats a slot the plugin finds taken as SlotConflictError and releases the hold', async () => {
+    vi.mocked(createAppointment).mockRejectedValue(
+      new WpEndpointError('/appointments failed 409: That slot is already booked.', 409, 'praktiqu_schedule_conflict'),
+    );
+    const holdKey = makeHold();
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
+      SlotConflictError,
+    );
+    expect(slotHoldService.get(holdKey)).toBeNull();
+  });
+
   it('reuses a returning guest instead of creating a second patient', async () => {
     vi.mocked(findPatientByEmail).mockResolvedValue({
       id: BigInt(PATIENT),
@@ -515,9 +531,37 @@ describe('createPublicAppointment', () => {
     ).rejects.toBeInstanceOf(WpConfigError);
   });
 
+  /**
+   * Seen in production 2026-10-19: a client who signed up through WooCommerce holds
+   * only `customer`. findPatientByEmail misses them, a plain create answers 409, and
+   * clinic staff could not book them at all. The plugin adopts such an account when
+   * asked; it still refuses staff.
+   */
+  it('asks the plugin to adopt an existing ordinary account instead of refusing it', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue(null);
+    vi.mocked(createPatient).mockResolvedValue({
+      id: 1032,
+      email: INPUT.clientEmail,
+      username: 'dao',
+      firstName: 'Dao',
+      lastName: '',
+      contactNumber: INPUT.clientMobile,
+      patientUniqueId: null,
+    });
+
+    await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(vi.mocked(createPatient).mock.calls[0][0]).toMatchObject({
+      email: INPUT.clientEmail,
+      adoptExisting: true,
+    });
+    expect(vi.mocked(createAppointment).mock.calls[0][0].patientId).toBe(1032);
+  });
+
   it('reports a conflict when the email belongs to a non-patient account', async () => {
     // findPatientByEmail is role-filtered, so it misses a doctor's address and the
-    // plugin answers 409. Booking against that account would be wrong.
+    // plugin answers 409 even with adoptExisting. Booking against that account would
+    // be wrong.
     vi.mocked(findPatientByEmail).mockResolvedValue(null);
     vi.mocked(createPatient).mockRejectedValue(
       new WpEndpointError('That email is already registered.', 409),

@@ -32,6 +32,13 @@ vi.mock('@/services/professional/service-assignment.service', () => ({
   isServiceAssignmentError: vi.fn().mockReturnValue(false),
 }));
 
+// The export now resolves the actor's clinic relationship to the professional; that rule
+// is covered in tests/unit/access-scope. Here the SUPER_ADMIN simply finds the professional.
+vi.mock('@/services/professional/route-scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/professional/route-scope')>()),
+  scopeFor: vi.fn().mockResolvedValue({ kc: { clinicId: null }, isSelf: false, sharesClinic: false }),
+}));
+
 import { POST as bulkDeletePost } from '@/app/api/v1/professionals/[id]/services/bulk/delete/route';
 import { POST as bulkStatusPost } from '@/app/api/v1/professionals/[id]/services/bulk/status/route';
 import { GET as exportGet } from '@/app/api/v1/professionals/[id]/services/export/route';

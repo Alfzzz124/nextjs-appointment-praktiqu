@@ -692,6 +692,15 @@ paths:
           required: false
           name: status
           in: query
+        - schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+            default: oldest
+          required: false
+          name: sort
+          in: query
       responses:
         '200':
           description: Paginated clients
@@ -6973,8 +6982,8 @@ paths:
         **Response envelope:** standard / RFC-7807 problem+json
 
 
-        `international` is read only here: it is changed through
-        `PUT /api/v1/practices/{id}/payment-settings`.
+        `international` is read only here: it is changed through `PUT
+        /api/v1/practices/{id}/payment-settings`.
       requestBody:
         required: false
         content:
@@ -7116,10 +7125,10 @@ paths:
         every other role is a 403. An id with no `wp_kc_clinics` row is a 404.
 
 
-        `stored` is the clinic's own values (`international: false` and every other field null when nothing
-        is stored). `effective` is what a payment would use, with where each value came from, whatever the
-        flag. `example` converts Rp 200,000 with the effective values whenever a usable rate exists, even
-        before the clinic is flagged, so the form can preview the price; otherwise it is null.
+        `stored` is the clinic's own values (`international: false` and every other field null when nothing is
+        stored). `effective` is what a payment would use, with where each value came from, whatever the flag.
+        `example` converts Rp 200,000 with the effective values whenever a usable rate exists, even before the
+        clinic is flagged, so the form can preview the price; otherwise it is null.
 
 
         **Response envelope:** `{ data: PaymentSettingsView }` / RFC-7807 problem+json.
@@ -7160,11 +7169,10 @@ paths:
       description: >-
         Same access rules as GET. Replaces the clinic's whole settings object: every key is required, and
         `null` means "use the global value" for `fxRate` / `markupPercent` and "no fee" for `fixedFeeIdr`.
-        `international: true` needs a usable rate (1,000–100,000 rupiah per 1 USD) from the clinic or from
-        the global WordPress option. The save goes through the praktiqu-endpoint plugin
-        (`PUT /praktiqu/v1/clinics/{id}/payment-settings`) with `updated_by` set from the caller's WordPress
-        link, is audited as `clinic.payment_settings.updated`, and is answered by re-reading the stored
-        option.
+        `international: true` needs a usable rate (1,000–100,000 rupiah per 1 USD) from the clinic or from the
+        global WordPress option. The save goes through the praktiqu-endpoint plugin (`PUT
+        /praktiqu/v1/clinics/{id}/payment-settings`) with `updated_by` set from the caller's WordPress link,
+        is audited as `clinic.payment_settings.updated`, and is answered by re-reading the stored option.
 
 
         **Response envelope:** `{ data: PaymentSettingsView }` / RFC-7807 problem+json.
@@ -7205,10 +7213,10 @@ paths:
         '422':
           description: >-
             `invalid_input` — the body failed validation; `fields` maps each field (or `body`, for an unknown
-            key or a body that is not an object) to its messages. Also when WordPress's own validation
-            refuses the settings: then `fields.body` is `["WordPress rejected the settings"]` and retrying
-            the same body fails the same way. `fx_rate_required` — `international: true` with no usable rate
-            from the clinic or the global option; `fields.fxRate` says so.
+            key or a body that is not an object) to its messages. Also when WordPress's own validation refuses
+            the settings: then `fields.body` is `["WordPress rejected the settings"]` and retrying the same
+            body fails the same way. `fx_rate_required` — `international: true` with no usable rate from the
+            clinic or the global option; `fields.fxRate` says so.
           content:
             application/problem+json:
               schema:
@@ -7227,8 +7235,8 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '503':
           description: >-
-            `payment_settings_unavailable` — the settings could not be read. On PUT this can also come from the
-            read-back AFTER a save that went through, so GET the settings again before retrying.
+            `payment_settings_unavailable` — the settings could not be read. On PUT this can also come from
+            the read-back AFTER a save that went through, so GET the settings again before retrying.
           content:
             application/problem+json:
               schema:
@@ -8460,7 +8468,10 @@ paths:
       summary: Services (DELETE) — professionals
       operationId: delete_api_v1_professionals_id_services
       deprecated: true
-      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `DELETE /api/v1/services/{id}`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
+      description: >-
+        **DIPENSIUNKAN — menjawab 410 Gone.** Pakai `DELETE /api/v1/services/{id}`. Endpoint ini menulis ke
+        tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan
+        layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.
       parameters:
         - name: serviceId
           in: query
@@ -8511,7 +8522,10 @@ paths:
       summary: Services (POST) — professionals
       operationId: post_api_v1_professionals_id_services
       deprecated: true
-      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `POST /api/v1/services`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
+      description: >-
+        **DIPENSIUNKAN — menjawab 410 Gone.** Pakai `POST /api/v1/services`. Endpoint ini menulis ke tabel
+        yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan
+        di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.
       parameters:
         - name: serviceId
           in: query
@@ -8552,7 +8566,10 @@ paths:
       summary: Delete (POST) — professionals
       operationId: post_api_v1_professionals_id_services_bulk_delete
       deprecated: true
-      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `DELETE /api/v1/services/{id}`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
+      description: >-
+        **DIPENSIUNKAN — menjawab 410 Gone.** Pakai `DELETE /api/v1/services/{id}`. Endpoint ini menulis ke
+        tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan
+        layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.
       requestBody:
         required: true
         content:
@@ -8587,7 +8604,10 @@ paths:
       summary: Status (POST) — professionals
       operationId: post_api_v1_professionals_id_services_bulk_status
       deprecated: true
-      description: '**DIPENSIUNKAN — menjawab 410 Gone.** Pakai `PUT /api/v1/services/{id}`. Endpoint ini menulis ke tabel yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.'
+      description: >-
+        **DIPENSIUNKAN — menjawab 410 Gone.** Pakai `PUT /api/v1/services/{id}`. Endpoint ini menulis ke tabel
+        yang sama tanpa pemeriksaan janji temu mendatang, dan tanpa filter klinik sehingga mematikan layanan
+        di semua klinik psikolog tersebut. Dijadwalkan dihapus 2026-12-01.
       requestBody:
         required: true
         content:
@@ -9062,11 +9082,12 @@ paths:
       description: >-
         Guest initiates a WooCommerce checkout (Xendit, PayPal, or card — see `method`) for a pending
         appointment, using the signed appointment token from booking (not a JWT). Fails if the appointment
-        isn't `PENDING`, or if a payment was already initiated and is still pending — poll
-        `POST /api/v1/public/payment-verify` instead in that case.
+        isn't `PENDING`, or if a payment was already initiated and is still pending — poll `POST
+        /api/v1/public/payment-verify` instead in that case.
 
 
-        **Response envelope:** `{ data: { checkoutUrl, chargedAmount, chargedCurrency } }` / RFC-7807 problem+json.
+        **Response envelope:** `{ data: { checkoutUrl, chargedAmount, chargedCurrency } }` / RFC-7807
+        problem+json.
       requestBody:
         required: true
         content:
@@ -9079,12 +9100,15 @@ paths:
                   description: Signed appointment token (see `POST /api/v1/public/booking`).
                 method:
                   type: string
-                  enum: [xendit, paypal, card]
+                  enum:
+                    - xendit
+                    - paypal
+                    - card
                   default: xendit
                   description: >-
-                    Omitted means `xendit` (IDR). `paypal` and `card` both charge in USD via
-                    PayPal's hosted page and differ only in which form it opens on. An
-                    unrecognised value is a 400, never a silent fallback.
+                    Omitted means `xendit` (IDR). `paypal` and `card` both charge in USD via PayPal's hosted
+                    page and differ only in which form it opens on. An unrecognised value is a 400, never a
+                    silent fallback.
               required:
                 - token
       responses:
@@ -9105,6 +9129,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '403':
+          description: >-
+            `payment_method_not_allowed` — `paypal` or `card` on a clinic that is not international, or on a
+            free order. Offer the row's `paymentMethods` instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Appointment not found
           content:
@@ -9113,14 +9145,6 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '409':
           description: Appointment not awaiting payment, or payment already initiated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: >-
-            `payment_method_not_allowed` — `paypal` or `card` on a clinic that is not
-            international, or on a free order. Offer the row's `paymentMethods` instead.
           content:
             application/json:
               schema:
@@ -9242,47 +9266,12 @@ paths:
       summary: Get one active professional
       operationId: get_api_v1_public_professionals_id
       description: >-
-        One ACTIVE professional as `{ data }`, in exactly the shape of one `items` entry of
-        `GET /api/v1/public/professionals` (same `fullName`). Unlike that directory, which
-        returns only the 50 lowest ids, this finds any professional.
+        One ACTIVE professional as `{ data }`, in exactly the shape of one `items` entry of `GET
+        /api/v1/public/professionals` (same `fullName`). Unlike that directory, which returns only the 50
+        lowest ids, this finds any professional.
 
 
         404 for an unknown, non-ACTIVE or non-positive-integer id.
-
-
-        **Response envelope:** standard / RFC-7807 problem+json
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
-      security: []
-  /api/v1/public/professionals/by-slug/{slug}:
-    parameters:
-      - name: slug
-        in: path
-        required: true
-        description: >-
-          Personal-link slug. Normalised with the front end's slugify before matching:
-          ASCII-only lowercase, every run outside `[a-z0-9]` becomes `-`, dashes trimmed.
-        schema:
-          type: string
-    get:
-      tags:
-        - public
-      summary: Resolve a personal link to its professional
-      operationId: get_api_v1_public_professionals_by_slug_slug
-      description: >-
-        The ACTIVE professional whose slugified `fullName` equals the (normalised) slug, as
-        `{ data }` in the same shape as `GET /api/v1/public/professionals/{id}`. Searches
-        every active professional. When several names slugify alike, the lowest id wins.
-
-
-        404 when nothing matches or the slug normalises to nothing.
 
 
         **Response envelope:** standard / RFC-7807 problem+json
@@ -9313,9 +9302,9 @@ paths:
         **Response envelope:** standard / RFC-7807 problem+json
 
 
-        One row per doctor↔service mapping, so a service the professional offers at two clinics appears
-        twice, once per `clinicId`. Each row's `usd` comes from the same computation that charges, so it is
-        what PayPal and card charge — provided the booking is submitted with that row's `clinicId`.
+        One row per doctor↔service mapping, so a service the professional offers at two clinics appears twice,
+        once per `clinicId`. Each row's `usd` comes from the same computation that charges, so it is what
+        PayPal and card charge — provided the booking is submitted with that row's `clinicId`.
       parameters:
         - name: clinicId
           in: query
@@ -9391,6 +9380,41 @@ paths:
                 $ref: '#/components/schemas/StandardResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security: []
+  /api/v1/public/professionals/by-slug/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        description: >-
+          Personal-link slug. Normalised with the front end's slugify before matching: ASCII-only lowercase,
+          every run outside `[a-z0-9]` becomes `-`, dashes trimmed.
+        schema:
+          type: string
+    get:
+      tags:
+        - public
+      summary: Resolve a personal link to its professional
+      operationId: get_api_v1_public_professionals_by_slug_slug
+      description: >-
+        The ACTIVE professional whose slugified `fullName` equals the (normalised) slug, as `{ data }` in the
+        same shape as `GET /api/v1/public/professionals/{id}`. Searches every active professional. When
+        several names slugify alike, the lowest id wins.
+
+
+        404 when nothing matches or the slug normalises to nothing.
+
+
+        **Response envelope:** standard / RFC-7807 problem+json
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
         '404':
           $ref: '#/components/responses/NotFound'
       security: []
@@ -10120,7 +10144,10 @@ paths:
       summary: Create a service
       description: >-
         Creates one `wp_kc_services` row — reused when an identical name and type already exist, because the
-        catalogue is global — plus one mapping per professional. SUPER_ADMIN and CLINIC_ADMIN only.
+        catalogue is global — plus one mapping per professional. SUPER_ADMIN, CLINIC_ADMIN, and a PROFESSIONAL
+        for themselves only, at an active clinic they practise at (`doctorIds` must be their own id; 403
+        otherwise; 422 `clinic_required` when they practise at several and send no `clinicId`; see
+        docs/api/SERVICES-CRUD-GUIDE.md §6).
       security:
         - bearerAuth: []
       requestBody:
@@ -12136,6 +12163,69 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+  /api/v1/sessions/{id}/reschedule:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - sessions
+      summary: Reschedule (POST) — sessions
+      operationId: post_api_v1_sessions_id_reschedule
+      description: >-
+        Move a BOOKED/PENDING session to a new slot, in place (same id, length, payment, approval).
+        SUPER_ADMIN, CLINIC_ADMIN and RECEPTIONIST within their clinic; PROFESSIONAL for own sessions. Client
+        and psychologist are emailed the new time. Refusals are problem+json with the code in `title`:
+        slot_taken, session_changed, same_slot, slot_in_past, not_reschedulable, session_already_started,
+        unavailable, schedule_busy, forbidden, upstream_write_failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - slotDate
+                - startTime
+              properties:
+                slotDate:
+                  type: string
+                  example: '2026-10-22'
+                  description: YYYY-MM-DD, clinic-local date
+                startTime:
+                  type: string
+                  example: '10:00'
+                  description: HH:MM or HH:MM:SS, clinic-local time
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: Optional; included in both emails
+      responses:
+        '200':
+          description: The re-read session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+        '400':
+          description: same_slot, unavailable (closed day / past midnight), invalid id
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: forbidden
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: slot_taken, session_changed, not_reschedulable, session_already_started
+        '422':
+          description: Validation error, or slot_in_past
+        '503':
+          description: schedule_busy, upstream_write_failed
+      security:
+        - bearerAuth: []
   /api/v1/sessions/{id}/summary:
     parameters:
       - name: id
@@ -12363,9 +12453,9 @@ paths:
       operationId: post_api_v1_sessions_payment_verify
       description: >-
         Staff-only. Ensures a payment order exists for a bill: if none exists, or the existing one is
-        `failed`/`expired`/`cancelled`, a fresh WooCommerce checkout (Xendit, PayPal, or card — see
-        `method`) is created and its URL returned; otherwise the existing (non-terminal) order's current
-        status is returned with `checkoutUrl: null`.
+        `failed`/`expired`/`cancelled`, a fresh WooCommerce checkout (Xendit, PayPal, or card — see `method`)
+        is created and its URL returned; otherwise the existing (non-terminal) order's current status is
+        returned with `checkoutUrl: null`.
 
 
         **Response envelope:** `{ data: SessionPaymentEnsureResult }` / RFC-7807 problem+json.
@@ -12380,12 +12470,15 @@ paths:
                   type: string
                 method:
                   type: string
-                  enum: [xendit, paypal, card]
+                  enum:
+                    - xendit
+                    - paypal
+                    - card
                   default: xendit
                   description: >-
-                    Omitted means `xendit` (IDR). `paypal` and `card` both charge in USD via
-                    PayPal's hosted page and differ only in which form it opens on. An
-                    unrecognised value is a 400, never a silent fallback.
+                    Omitted means `xendit` (IDR). `paypal` and `card` both charge in USD via PayPal's hosted
+                    page and differ only in which form it opens on. An unrecognised value is a 400, never a
+                    silent fallback.
               required:
                 - billId
       responses:
@@ -12410,8 +12503,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: >-
-            Role not allowed, or `payment_method_not_allowed` — `paypal` or `card` on a clinic that
-            is not international, or on a free bill.
+            Role not allowed, or `payment_method_not_allowed` — `paypal` or `card` on a clinic that is not
+            international, or on a free bill.
           content:
             application/json:
               schema:
@@ -12423,8 +12516,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '422':
-          description: >-
-            `discount_not_supported` — `paypal` or `card` on a bill with a discount. Use Xendit.
+          description: '`discount_not_supported` — `paypal` or `card` on a bill with a discount. Use Xendit.'
           content:
             application/json:
               schema:
@@ -13096,9 +13188,8 @@ components:
         chargedAmount:
           type: number
           description: >-
-            What the payer was actually billed, in `chargedCurrency`. Display THIS, not
-            `expectedAmount` — for a PayPal payment `expectedAmount` is a rupiah figure the
-            payer never saw.
+            What the payer was actually billed, in `chargedCurrency`. Display THIS, not `expectedAmount` — for
+            a PayPal payment `expectedAmount` is a rupiah figure the payer never saw.
         chargedCurrency:
           type: string
           description: ISO 4217. `IDR` for Xendit; `USD` for paypal/card.
@@ -13149,7 +13240,7 @@ components:
       properties:
         price:
           type: string
-          pattern: '^\d+\.\d{2}$'
+          pattern: ^\d+\.\d{2}$
           example: '12.23'
           description: The service line, markup included.
         taxes:
@@ -13161,19 +13252,19 @@ components:
                 type: string
               amount:
                 type: string
-                pattern: '^\d+\.\d{2}$'
+                pattern: ^\d+\.\d{2}$
             required:
               - name
               - amount
         fee:
           type: string
           nullable: true
-          pattern: '^\d+\.\d{2}$'
+          pattern: ^\d+\.\d{2}$
           example: '1.39'
           description: The "International service fee" line (no markup); null when the clinic has no fixed fee.
         total:
           type: string
-          pattern: '^\d+\.\d{2}$'
+          pattern: ^\d+\.\d{2}$
           example: '13.62'
       required:
         - price
@@ -13183,8 +13274,7 @@ components:
     PaymentSettingsInput:
       type: object
       additionalProperties: false
-      description: >-
-        A clinic's international payment settings. Every key is required (a PUT replaces the whole object).
+      description: A clinic's international payment settings. Every key is required (a PUT replaces the whole object).
       properties:
         international:
           type: boolean
@@ -13282,14 +13372,15 @@ components:
             invalid:
               type: object
               description: >-
-                Present only when a global option is set (non-empty) but is not a plain decimal, such as `1e1`,
-                `.5`, `+10`, `10.` or `16,500`. Each key holds the option's raw text, and the number above it
-                is then null — which is NOT "not set". A global markup that would apply (the clinic has none of
-                its own) and is unusable voids the rate for that clinic, even a rate of its own, so PayPal and
-                card answer 503 `paypal_rate_missing`. An unusable global rate is ignored, so a clinic without a
-                usable rate of its own has none. It is logged for a flagged clinic. Show the admin a warning to
-                correct the option in WordPress; the plugin's wp-admin form (1.7.0) only saves digits with at
-                most 2 decimals, so this means the value predates it or was written some other way.
+                Present only when a global option is set (non-empty) but is not a plain decimal, such as
+                `1e1`, `.5`, `+10`, `10.` or `16,500`. Each key holds the option's raw text, and the number
+                above it is then null — which is NOT "not set". A global markup that would apply (the clinic
+                has none of its own) and is unusable voids the rate for that clinic, even a rate of its own,
+                so PayPal and card answer 503 `paypal_rate_missing`. An unusable global rate is ignored, so a
+                clinic without a usable rate of its own has none. It is logged for a flagged clinic. Show the
+                admin a warning to correct the option in WordPress; the plugin's wp-admin form (1.7.0) only
+                saves digits with at most 2 decimals, so this means the value predates it or was written some
+                other way.
               properties:
                 fxRate:
                   type: string
@@ -13474,8 +13565,8 @@ components:
           type: object
           nullable: true
           description: >-
-            The category to group services under on the booking page, as KiviCare's own widget does.
-            Null when KiviCare cannot name it; fall back to `serviceType` then.
+            The category to group services under on the booking page, as KiviCare's own widget does. Null when
+            KiviCare cannot name it; fall back to `serviceType` then.
           properties:
             value:
               type: string

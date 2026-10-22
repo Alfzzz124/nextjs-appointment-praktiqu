@@ -23,7 +23,8 @@ export type JobHook =
   | 'praktiqu_session_send_reminder'
   | 'praktiqu_log_purge'
   | 'praktiqu_payment_auto_cancel'
-  | 'praktiqu_booking_unpaid_cancel';
+  | 'praktiqu_booking_unpaid_cancel'
+  | 'praktiqu_approval_reminder';
 
 /** Cancel a previously enqueued job by hook + matcher args. */
 export interface CancelJobOptions {
@@ -44,12 +45,15 @@ export { type JobHandler } from './webhook-handler';
  * @example
  *   await jobs.enqueue({ hook: 'praktiqu_session_auto_complete', runAt: session.endTimePlus24h, args: { sessionId } });
  *
- * @returns actionId from Action Scheduler (undefined on failure — WP plugin logs the failure).
+ * Never throws: a failure is logged to the console and reported as false, so a caller
+ * that cannot do without the job can say so somewhere durable.
+ *
+ * @returns true when WordPress accepted the job; false when it was not scheduled.
  */
-export async function enqueue(options: EnqueueJobOptions): Promise<void> {
+export async function enqueue(options: EnqueueJobOptions): Promise<boolean> {
   if (!WP_SERVICE_TOKEN) {
     console.warn('[jobs] WORDPRESS_SERVICE_TOKEN not set — job not scheduled:', options.hook);
-    return;
+    return false;
   }
 
   try {
@@ -69,9 +73,12 @@ export async function enqueue(options: EnqueueJobOptions): Promise<void> {
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);
       console.error(`[jobs] enqueue failed ${res.status}: ${text}`);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error('[jobs] enqueue failed:', err);
+    return false;
   }
 }
 

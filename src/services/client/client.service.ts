@@ -25,6 +25,7 @@ import {
   CLIENT_STATUS,
   findPatientById,
   patientInClinic,
+  patientIdsInClinic,
   listPatients,
   type ClientStatus,
   type ListPatientsQuery,
@@ -534,6 +535,20 @@ async function bulkApplyStatus(ids: number[], status: ClientStatus): Promise<num
     }
   }
   return applied;
+}
+
+/**
+ * Of `ids`, the clients a bulk action by this actor may NOT touch — the same clinic rule
+ * `enforceClientReadAccess` applies to one client (any of the patient's clinics counts).
+ * SUPER_ADMIN touches any; clinic staff only their own clinic's, staff with no clinic none.
+ */
+export async function clientIdsOutsideScope(actor: AuthActor, ids: number[]): Promise<number[]> {
+  if (actor.role === 'SUPER_ADMIN') return [];
+  if (actor.role !== 'CLINIC_ADMIN' && actor.role !== 'RECEPTIONIST') return ids;
+  const kc = await resolveKcActor(actor);
+  if (kc.clinicId === null) return ids;
+  const inClinic = await patientIdsInClinic(ids, kc.clinicId);
+  return ids.filter((id) => !inClinic.has(id));
 }
 
 export async function bulkArchiveClients(ids: number[]): Promise<number> {
