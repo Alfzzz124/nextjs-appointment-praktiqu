@@ -379,6 +379,22 @@ describe('createPublicAppointment', () => {
     expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
+  // The check above and the plugin's write are two requests; another booking can land
+  // between them. The plugin re-checks under the professional's schedule lock and
+  // answers 409 praktiqu_schedule_conflict. That is the same "pick another time" as
+  // above, not an upstream refusal the guest can do nothing about.
+  it('treats a slot the plugin finds taken as SlotConflictError and releases the hold', async () => {
+    vi.mocked(createAppointment).mockRejectedValue(
+      new WpEndpointError('/appointments failed 409: That slot is already booked.', 409, 'praktiqu_schedule_conflict'),
+    );
+    const holdKey = makeHold();
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
+      SlotConflictError,
+    );
+    expect(slotHoldService.get(holdKey)).toBeNull();
+  });
+
   it('reuses a returning guest instead of creating a second patient', async () => {
     vi.mocked(findPatientByEmail).mockResolvedValue({
       id: BigInt(PATIENT),

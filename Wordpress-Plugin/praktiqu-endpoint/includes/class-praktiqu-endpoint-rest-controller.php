@@ -151,6 +151,20 @@ final class REST_Controller
             ],
         ]);
 
+        // POST /praktiqu/v1/appointments/{id}/reschedule — move to a new slot under the
+        // professional's schedule lock (Schedule_Write::move), then sync Meet/Calendar
+        register_rest_route($ns, '/appointments/(?P<id>\d+)/reschedule', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_reschedule_appointment'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id'         => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                'start_date' => ['required' => true, 'type' => 'string'],
+                'start_time' => ['required' => true, 'type' => 'string'],
+                'expected'   => ['required' => true, 'type' => 'object'],
+            ],
+        ]);
+
         // POST /praktiqu/v1/appointments/{id}/status — change status; 0 cancels
         register_rest_route($ns, '/appointments/(?P<id>\d+)/status', [
             'methods'             => \WP_REST_Server::CREATABLE,
@@ -163,6 +177,9 @@ final class REST_Controller
                 // { gateway, wc_order_id, transaction_id } when status 1 confirms a paid
                 // booking; makes PENDING → BOOKED fire kc_appointment_payment_completed.
                 'payment' => ['required' => false, 'type' => 'object'],
+                // Compare-and-set (1.8.4): write only if the row still has this status;
+                // 409 praktiqu_status_conflict otherwise. Sent by psychologist approval.
+                'expect_status' => ['required' => false, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
             ],
         ]);
 
@@ -509,6 +526,19 @@ final class REST_Controller
     {
         $id = (int) $request->get_param('id');
         $result = $this->appointments->update($id, (array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
+    }
+
+    /**
+     * POST /praktiqu/v1/appointments/{id}/reschedule
+     */
+    public function handle_reschedule_appointment(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id = (int) $request->get_param('id');
+        $result = $this->appointments->reschedule($id, (array) $request->get_json_params());
         if (is_wp_error($result)) {
             return $result;
         }

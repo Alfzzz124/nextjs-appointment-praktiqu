@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.2
+Stable tag: 1.8.6
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -54,6 +54,53 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.8.6 =
+* New POST /appointments/{id}/reschedule: moves a booked or pending appointment
+  to a new slot under the professional's schedule lock (Schedule_Write::move),
+  keeping its length, id, payment and approval. The caller sends the row as it
+  read it (`expected`); a row that changed since answers 409
+  praktiqu_schedule_stale, a taken slot 409 praktiqu_schedule_conflict, the
+  same slot 400 praktiqu_schedule_unchanged, a past time 422
+  praktiqu_schedule_unavailable. None of them writes anything.
+* After the move, its Google Meet / Zoom event and KiviCare Pro Google Calendar
+  event (when it has one) are moved too, and a pending KiviCare reminder keeps
+  its distance from the session. A failed step does not undo the move: it is
+  reported in `sync` and retried by the new praktiqu_schedule_outbox_sweep
+  action (every 5 minutes), which registers itself on the first request.
+* Needs the wp_praktiqu_schedule_outbox table
+  (prisma/manual/2026-10-19-schedule-sync-outbox.sql) before it can move
+  anything; without it a reschedule answers 500 and changes nothing.
+
+= 1.8.5 =
+* POST /appointments checks the slot itself, under the professional's schedule
+  lock (MySQL GET_LOCK praktiqu_doc_schedule_<doctor_id>), before KiviCare
+  writes the row. PraktiQU's own check runs a request earlier, so two bookings
+  for one slot could both pass it and both be written. A taken slot now answers
+  409 praktiqu_schedule_conflict, a lock still held after 5 seconds 503
+  praktiqu_schedule_busy, and a failed check 500 praktiqu_schedule_db_error;
+  none of them writes anything or fires a hook. Only BOOKED, PENDING and
+  CHECK_IN bookings are checked, and those now need end_time (400 without).
+  Schedule_Write::move() takes the same lock, so a booking and a reschedule
+  cannot land on one slot either. Safe in either order with the Next.js
+  release: an older PraktiQU reports the 409 as a refused booking instead of
+  "slot no longer available", but nothing is double-booked.
+
+= 1.8.4 =
+* POST /appointments/{id}/status takes an optional expect_status: the write
+  becomes a compare-and-set. A row that no longer has that status answers 409
+  praktiqu_status_conflict (with current_status) and is left alone; a row
+  already at the requested status answers 200 with claimed: false and fires no
+  hook. PraktiQU's psychologist approval sends it, so an approval landing after
+  a cancellation can no longer rewrite CANCELLED as BOOKED. Callers that do not
+  send it behave exactly as in 1.8.3, so this version is safe to deploy first.
+
+= 1.8.3 =
+* New job hook praktiqu_approval_reminder. PraktiQU schedules it when a paid
+  booking waits for its psychologist's approval; when it fires the plugin calls
+  back with approval.reminder and PraktiQU reminds the psychologist, escalates
+  to the clinic admin once, and schedules the next run. Without the new Next.js
+  nothing enqueues it, so this version is safe to deploy first.
 
 = 1.8.2 =
 * POST /patients accepts an optional `adopt_existing` flag. When the email already

@@ -35,6 +35,17 @@ vi.mock('@/lib/logging', () => ({
   },
 }));
 
+const approval = vi.hoisted(() => ({ closeOnCancel: vi.fn(), publicApprovalView: vi.fn(), findApproval: vi.fn() }));
+vi.mock('@/services/approval/store', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/store')>()),
+  findApproval: (...a: unknown[]) => approval.findApproval(...a),
+}));
+vi.mock('@/services/approval/service', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/service')>()),
+  closeOnCancel: (...a: unknown[]) => approval.closeOnCancel(...a),
+  publicApprovalView: (...a: unknown[]) => approval.publicApprovalView(...a),
+}));
+
 import { findSessionById, SESSION_STATUS } from '@/repositories/wp/sessions.repo';
 import { findServiceById, listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { cancelAppointment } from '@/repositories/wp/appointments.write';
@@ -48,6 +59,12 @@ import {
   NotCancellableError,
   AppointmentNotFoundError,
 } from '@/services/public/public-booking.service';
+
+beforeEach(() => {
+  approval.closeOnCancel.mockReset().mockResolvedValue(false);
+  approval.publicApprovalView.mockReset().mockResolvedValue(null);
+  approval.findApproval.mockReset().mockResolvedValue(null);
+});
 
 const APPOINTMENT = 5150;
 
@@ -98,6 +115,7 @@ describe('getPublicAppointmentById', () => {
       clinicId: 3,
       paymentMethods: ['xendit'],
       usd: null,
+      approval: null,
     });
   });
 
@@ -233,5 +251,48 @@ describe('cancelPublicAppointment', () => {
       .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
 
     expect((await cancelPublicAppointment(APPOINTMENT)).status).toBe('CANCELLED');
+  });
+});
+
+describe('psychologist approval', () => {
+  it('the public view carries the approval state', async () => {
+    const view = {
+      state: 'AWAITING',
+      requestedAt: '2026-10-20T02:00:00.000Z',
+      decidedAt: null,
+      refundStatus: 'NONE',
+      isOverdue: false,
+    };
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    approval.publicApprovalView.mockResolvedValue(view);
+
+    expect((await getPublicAppointmentById(APPOINTMENT))?.approval).toEqual(view);
+  });
+
+  it('a client cancelling a booking that waits for approval puts it on the refund list', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(approval.closeOnCancel).toHaveBeenCalledWith(APPOINTMENT, null);
+  });
+
+  it('a booking approved and still being confirmed is not cancellable (no new 409 code)', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    approval.findApproval.mockResolvedValue({ appointmentId: APPOINTMENT, state: 'APPROVED' });
+
+    await expect(cancelPublicAppointment(APPOINTMENT)).rejects.toBeInstanceOf(NotCancellableError);
+
+    expect(cancelAppointment).not.toHaveBeenCalled();
+    expect(approval.closeOnCancel).not.toHaveBeenCalled();
+  });
+
+  it('once it is BOOKED, an approved booking cancels like any other', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.BOOKED));
+    approval.findApproval.mockResolvedValue({ appointmentId: APPOINTMENT, state: 'APPROVED' });
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(cancelAppointment).toHaveBeenCalledWith(APPOINTMENT);
   });
 });

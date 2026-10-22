@@ -12163,6 +12163,69 @@ paths:
           $ref: '#/components/responses/ValidationError'
       security:
         - bearerAuth: []
+  /api/v1/sessions/{id}/reschedule:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - sessions
+      summary: Reschedule (POST) — sessions
+      operationId: post_api_v1_sessions_id_reschedule
+      description: >-
+        Move a BOOKED/PENDING session to a new slot, in place (same id, length, payment, approval).
+        SUPER_ADMIN, CLINIC_ADMIN and RECEPTIONIST within their clinic; PROFESSIONAL for own sessions. Client
+        and psychologist are emailed the new time. Refusals are problem+json with the code in `title`:
+        slot_taken, session_changed, same_slot, slot_in_past, not_reschedulable, session_already_started,
+        unavailable, schedule_busy, forbidden, upstream_write_failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - slotDate
+                - startTime
+              properties:
+                slotDate:
+                  type: string
+                  example: '2026-10-22'
+                  description: YYYY-MM-DD, clinic-local date
+                startTime:
+                  type: string
+                  example: '10:00'
+                  description: HH:MM or HH:MM:SS, clinic-local time
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: Optional; included in both emails
+      responses:
+        '200':
+          description: The re-read session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+        '400':
+          description: same_slot, unavailable (closed day / past midnight), invalid id
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: forbidden
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: slot_taken, session_changed, not_reschedulable, session_already_started
+        '422':
+          description: Validation error, or slot_in_past
+        '503':
+          description: schedule_busy, upstream_write_failed
+      security:
+        - bearerAuth: []
   /api/v1/sessions/{id}/summary:
     parameters:
       - name: id
