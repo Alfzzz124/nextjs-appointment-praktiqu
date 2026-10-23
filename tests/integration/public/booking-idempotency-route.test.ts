@@ -22,6 +22,7 @@ vi.mock('@/services/public/public-booking.service', () => ({
   ServiceNotFoundError: class ServiceNotFoundError extends Error {},
   SlotConflictError: class SlotConflictError extends Error {},
   BookingTooSoonError: class BookingTooSoonError extends Error {},
+  BookingTooFarError: class BookingTooFarError extends Error {},
   UpstreamWriteError: class UpstreamWriteError extends Error {
     upstreamStatus = 400;
     operation = 'test';

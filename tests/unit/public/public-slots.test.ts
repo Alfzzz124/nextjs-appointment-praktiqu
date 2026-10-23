@@ -46,6 +46,16 @@ vi.mock('@/repositories/wp/appointments.repo', () => ({
   listAppointments: vi.fn(),
 }));
 
+// Google Calendar busy blocks: no connection, so nothing busy. Unmocked it reaches
+// the real Prisma client for the connection row.
+vi.mock('@/services/integrations/google-busy.service', () => ({
+  googleBusyForRange: vi.fn(async () => ({})),
+}));
+// KiviCare's "Restrict Appointment" option. Empty by default: KiviCare's defaults.
+vi.mock('@/repositories/wp/options.repo', () => ({
+  getWpOptions: vi.fn(),
+}));
+
 import { getPublicSlots } from '@/services/public/public-catalog.service';
 import { generateSlots } from '@/services/professional/availability.service';
 import * as doctors from '@/repositories/wp/doctors.repo';
@@ -53,6 +63,7 @@ import * as services from '@/repositories/wp/services.repo';
 import * as sessions from '@/repositories/wp/clinic-sessions.repo';
 import * as offDays from '@/repositories/wp/off-days.repo';
 import * as appts from '@/repositories/wp/appointments.repo';
+import * as options from '@/repositories/wp/options.repo';
 
 const DOCTOR_ID = 7;
 const SERVICE_ID = 3;
@@ -78,6 +89,7 @@ function happyPath() {
   (offDays.listDoctorOffDays as any).mockResolvedValue([]);
   (offDays.isOffOn as any).mockReturnValue(false);
   (appts.listAppointments as any).mockResolvedValue({ items: [] });
+  (options.getWpOptions as any).mockResolvedValue(new Map());
 }
 
 beforeEach(() => {
@@ -206,5 +218,51 @@ describe('getPublicSlots — slots already past', () => {
     // reader was not accidentally pushed down into the shared staff path.
     const slots = await generateSlots(DOCTOR_ID, MONDAY, SERVICE_ID, CLINIC_ID);
     expect(slots.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
+  });
+});
+
+describe('getPublicSlots — KiviCare booking window', () => {
+  beforeEach(() => {
+    // H-1, as KiviCare's settings page saves it.
+    (options.getWpOptions as any).mockResolvedValue(
+      new Map([['kiviCare_restrict_appointment', 'a:2:{s:4:"post";i:365;s:3:"pre";i:1;}']]),
+    );
+  });
+
+  it('returns [] for today under H-1, even with the whole day ahead', async () => {
+    const slots = await getPublicSlots({
+      professionalId: DOCTOR_ID,
+      serviceId: SERVICE_ID,
+      date: MONDAY,
+      now: new Date('2026-08-31T00:00:00'),
+    });
+    expect(slots).toEqual([]);
+  });
+
+  it('offers the day once it is far enough ahead', async () => {
+    const slots = await getPublicSlots({
+      professionalId: DOCTOR_ID,
+      serviceId: SERVICE_ID,
+      date: MONDAY,
+      now: new Date('2026-08-30T23:00:00'),
+    });
+    expect(slots?.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
+  });
+
+  it('still answers null for an unknown professional, not []', async () => {
+    (doctors.findDoctorById as any).mockResolvedValue(null);
+    const slots = await getPublicSlots({
+      professionalId: DOCTOR_ID,
+      serviceId: SERVICE_ID,
+      date: MONDAY,
+      now: new Date('2026-08-31T00:00:00'),
+    });
+    expect(slots).toBeNull();
+  });
+
+  it('leaves the staff reader alone: walk-ins and same-day bookings stay possible', async () => {
+    const slots = await generateSlots(DOCTOR_ID, MONDAY, SERVICE_ID, CLINIC_ID);
+    expect(slots.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
+    expect(options.getWpOptions).not.toHaveBeenCalled();
   });
 });

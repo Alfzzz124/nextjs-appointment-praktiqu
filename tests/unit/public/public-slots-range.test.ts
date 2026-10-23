@@ -42,6 +42,16 @@ vi.mock('@/repositories/wp/appointments.repo', () => ({
   listAppointments: vi.fn(),
 }));
 
+// Google Calendar busy blocks: no connection, so nothing busy. Unmocked it reaches
+// the real Prisma client for the connection row.
+vi.mock('@/services/integrations/google-busy.service', () => ({
+  googleBusyForRange: vi.fn(async () => ({})),
+}));
+// KiviCare's "Restrict Appointment" option. Empty by default: KiviCare's defaults.
+vi.mock('@/repositories/wp/options.repo', () => ({
+  getWpOptions: vi.fn(),
+}));
+
 import {
   getPublicSlotsForRange,
   getPublicProfessionalSummary,
@@ -51,6 +61,7 @@ import * as services from '@/repositories/wp/services.repo';
 import * as sessions from '@/repositories/wp/clinic-sessions.repo';
 import * as offDays from '@/repositories/wp/off-days.repo';
 import * as appts from '@/repositories/wp/appointments.repo';
+import * as options from '@/repositories/wp/options.repo';
 
 const DOCTOR_ID = 7;
 const SERVICE_ID = 3;
@@ -83,11 +94,69 @@ function happyPath() {
   (offDays.listDoctorOffDays as any).mockResolvedValue([]);
   (offDays.isOffOn as any).mockReturnValue(false);
   (appts.listAppointments as any).mockResolvedValue({ items: [] });
+  (options.getWpOptions as any).mockResolvedValue(new Map());
 }
+
+/** Saves KiviCare's restriction the way its settings page does. */
+function restrict(pre: number, post: number, sameDay = 'off') {
+  (options.getWpOptions as any).mockResolvedValue(
+    new Map([
+      ['kiviCare_restrict_appointment', `a:2:{s:4:"post";i:${post};s:3:"pre";i:${pre};}`],
+      ['kiviCare_restrict_only_same_day_book_appointment', sameDay],
+    ]),
+  );
+}
+
+const SUNDAY_EVENING = new Date('2026-08-30T21:00:00');
 
 beforeEach(() => {
   vi.clearAllMocks();
   happyPath();
+});
+
+describe('getPublicSlotsForRange — KiviCare booking window', () => {
+  it('H-1 empties today and leaves tomorrow open', async () => {
+    restrict(1, 365);
+    const sameDay = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: MONDAY_MIDNIGHT,
+    });
+    expect(sameDay?.[0].slots).toEqual([]);
+
+    const dayBefore = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: SUNDAY_EVENING,
+    });
+    expect(dayBefore?.[0].slots.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
+  });
+
+  it('empties days beyond post_book', async () => {
+    restrict(0, 0);
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
+      now: SUNDAY_EVENING,
+    });
+    expect(days?.[0].slots).toEqual([]);
+  });
+
+  it('same-day only keeps today and nothing after', async () => {
+    restrict(0, 365, 'on');
+    const days = await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: '2026-09-07',
+      now: MONDAY_MIDNIGHT,
+    });
+    expect(days?.[0].slots.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
+    // The next Monday has the same session, and is still closed.
+    expect(days?.at(-1)?.slots).toEqual([]);
+  });
+
+  it('reads the setting once for the whole range', async () => {
+    await getPublicSlotsForRange({
+      professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: '2026-09-13',
+      now: MONDAY_MIDNIGHT,
+    });
+    expect((options.getWpOptions as any).mock.calls).toHaveLength(1);
+  });
 });
 
 describe('getPublicSlotsForRange', () => {

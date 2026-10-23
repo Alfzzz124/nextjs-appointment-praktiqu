@@ -33,9 +33,11 @@ import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service'
 import { buildDaySlots, eachDate, toMinutes } from '@/services/booking/slot-math';
 import {
   MIN_BOOKING_NOTICE_MINUTES,
+  bookingDateVerdict,
   isTooSoon,
   localDate,
 } from '@/services/booking/booking-policy';
+import { getBookingWindow } from '@/services/booking/booking-window';
 import type { PaymentMethod } from '@/lib/wp-endpoint';
 import {
   resolveClinicPaymentForDisplay,
@@ -486,6 +488,10 @@ export async function getPublicSlots(opts: {
   const { mapping } = resolved;
   const now = opts.now ?? new Date();
 
+  // A day outside the admin's booking window (KiviCare's "Restrict Appointment") is
+  // an open day with nothing on offer, the same `[]` as a day already gone by.
+  if (bookingDateVerdict(opts.date, now, await getBookingWindow()) !== 'ok') return [];
+
   // Which clinic the slots belong to comes from the mapping: a doctor may work at
   // several, and the service they were asked about says which one this is.
   const slots = await generateSlots(
@@ -543,7 +549,8 @@ export async function getPublicSlotsForRange(opts: {
   const clinicId = BigInt(mapping.clinicId);
   const now = opts.now ?? new Date();
 
-  const [sessions, blockedByDate] = await Promise.all([
+  const [window, sessions, blockedByDate] = await Promise.all([
+    getBookingWindow(),
     listClinicSessions({ clinicId, doctorId }),
     // One collector owns off days, bookings and Google Calendar busy blocks, so
     // this page and the staff calendar cannot disagree. The timezone is the
@@ -562,6 +569,7 @@ export async function getPublicSlotsForRange(opts: {
     // open day with nothing blocked.
     const blocked = blockedByDate[date];
     if (blocked === null) return { date, slots: [] };
+    if (bookingDateVerdict(date, now, window) !== 'ok') return { date, slots: [] };
 
     const day = dayOfWeekFor(date);
     const windows = sessions
@@ -645,14 +653,23 @@ export async function getPublicStaticData(): Promise<StaticDataResponse> {
 export interface PublicBookingConfig {
   slotHoldTtlMs: number;
   minBookingNoticeMinutes: number;
+  /** KiviCare `pre_book`: 1 means the earliest bookable day is tomorrow. */
+  minAdvanceDays: number;
+  /** KiviCare `post_book`: the furthest bookable day, counted from today. */
   maxAdvanceDays: number;
+  /** KiviCare `only_same_day_book`: today only, whatever the two numbers say. */
+  sameDayOnly: boolean;
 }
 
-export function getPublicBookingConfig(): PublicBookingConfig {
+/** The booking window comes from the same setting the slot readers obey, read fresh. */
+export async function getPublicBookingConfig(): Promise<PublicBookingConfig> {
+  const window = await getBookingWindow();
   return {
     slotHoldTtlMs: SLOT_HOLD_TTL_MS,
     minBookingNoticeMinutes: MIN_BOOKING_NOTICE_MINUTES,
-    maxAdvanceDays: 60,
+    minAdvanceDays: window.minDaysAhead,
+    maxAdvanceDays: window.maxDaysAhead,
+    sameDayOnly: window.sameDayOnly,
   };
 }
 

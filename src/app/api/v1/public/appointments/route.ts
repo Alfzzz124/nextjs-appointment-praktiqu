@@ -11,6 +11,7 @@ import {
   ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
+  BookingTooFarError,
   BookingTooSoonError,
   UpstreamWriteError,
 } from '@/services/public/public-booking.service';
@@ -229,6 +230,13 @@ export async function POST(req: NextRequest) {
       const p = conflict(
         'booking_too_soon',
         'That time is too close to book online — please choose a later slot, or call the practice.',
+      );
+      return NextResponse.json(p, { status: p.status });
+    }
+    if (err instanceof BookingTooFarError) {
+      const p = conflict(
+        'booking_too_far',
+        'That date is not open for online booking yet — please choose an earlier date, or call the practice.',
       );
       return NextResponse.json(p, { status: p.status });
     }

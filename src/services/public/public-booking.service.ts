@@ -20,7 +20,8 @@ import { z } from 'zod';
 import { logging } from '@/lib/logging';
 import { isWpSlotTaken, WpConfigError, WpEndpointError, type PaymentMethod } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
-import { isTooSoon } from '@/services/booking/booking-policy';
+import { bookingDateVerdict, isTooSoon } from '@/services/booking/booking-policy';
+import { getBookingWindow } from '@/services/booking/booking-window';
 import { toMinutes } from '@/services/booking/slot-math';
 import { googleBusyForRange } from '@/services/integrations/google-busy.service';
 import { signAppointmentToken } from '@/lib/public/appointment-token';
@@ -87,7 +88,9 @@ export class ServiceNotFoundError extends Error {
 
 /** Raised when the requested slot conflicts with an existing appointment. */
 /**
- * Raised when the slot is real and free, but too close to now.
+ * Raised when the slot is real and free, but too close to now: inside the hour's
+ * notice, or before the first day the admin's booking window opens (KiviCare
+ * `pre_book`, e.g. H-1).
  *
  * Separate from SlotConflictError because the advice differs: a conflict means pick
  * another slot, this means pick a later one — or ring the practice, which can still
@@ -95,6 +98,15 @@ export class ServiceNotFoundError extends Error {
  */
 export class BookingTooSoonError extends Error {
   readonly code = 'BOOKING_TOO_SOON';
+}
+
+/**
+ * Raised when the date lies beyond the booking window an admin set in KiviCare
+ * (`post_book`, or "same day only"). The near side of that window is BookingTooSoonError:
+ * "book a later day" is the same advice whether the limit is an hour or a day.
+ */
+export class BookingTooFarError extends Error {
+  readonly code = 'BOOKING_TOO_FAR';
 }
 
 export class SlotConflictError extends Error {
@@ -320,8 +332,16 @@ export async function createPublicAppointment(
   // Checked here as well as in the readers, because hiding a slot is not enforcing
   // it: a caller can post straight to this service, and a patient whose page loaded
   // an hour ago is choosing from a list that has since gone stale.
-  if (isTooSoon(input.date, input.startTime, new Date())) {
+  const now = new Date();
+  if (isTooSoon(input.date, input.startTime, now)) {
     throw new BookingTooSoonError('That time is too soon to book online');
+  }
+  const verdict = bookingDateVerdict(input.date, now, await getBookingWindow());
+  if (verdict === 'too_soon') {
+    throw new BookingTooSoonError('That date is too soon to book online');
+  }
+  if (verdict === 'too_far') {
+    throw new BookingTooFarError('That date is too far ahead to book online');
   }
 
   const doctor = await findDoctorById(BigInt(input.professionalId));

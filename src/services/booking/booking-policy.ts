@@ -72,3 +72,51 @@ export function isTooSoon(
   if (until <= 0) return true;
   return until < noticeMinutes;
 }
+
+/**
+ * Which calendar days a public booking may fall on, counted from today.
+ *
+ * KiviCare's own "Restrict Appointment" setting (`pre_book` / `post_book` /
+ * `only_same_day_book`), so an admin sets it once and both KiviCare's widget and ours
+ * obey it. Read by `getBookingWindow`; the defaults are KiviCare's for an install where
+ * nobody has saved the setting.
+ */
+export type BookingWindow = {
+  /** `pre_book`: 1 means booking closes the day before ("H-1"). */
+  minDaysAhead: number;
+  /** `post_book`: the furthest day ahead that can be booked. */
+  maxDaysAhead: number;
+  /** `only_same_day_book`: today only. Overrides the two numbers, as in KiviCare. */
+  sameDayOnly: boolean;
+};
+
+export const DEFAULT_BOOKING_WINDOW: BookingWindow = Object.freeze({
+  minDaysAhead: 0,
+  maxDaysAhead: 365,
+  sameDayOnly: false,
+});
+
+/**
+ * Whether a date falls inside the booking window, and if not, on which side.
+ *
+ * Whole days, both ends inclusive, exactly as KiviCare compares them
+ * (`today + pre <= date <= today + post`). The hour-level notice is `isTooSoon`'s job;
+ * the two apply together, so with `minDaysAhead` 0 today's slots still need an hour.
+ *
+ * A `minDaysAhead` larger than `maxDaysAhead` closes every day. That is what KiviCare
+ * does with the same numbers, and matching it beats second-guessing the admin.
+ */
+export function bookingDateVerdict(
+  date: string,
+  now: Date,
+  window: BookingWindow,
+): 'ok' | 'too_soon' | 'too_far' {
+  const days = daysBetween(localDate(now), date);
+  if (window.sameDayOnly) {
+    if (days < 0) return 'too_soon';
+    return days > 0 ? 'too_far' : 'ok';
+  }
+  if (days < window.minDaysAhead) return 'too_soon';
+  if (days > window.maxDaysAhead) return 'too_far';
+  return 'ok';
+}

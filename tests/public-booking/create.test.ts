@@ -39,6 +39,9 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
   createAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
 }));
+vi.mock('@/repositories/wp/options.repo', () => ({
+  getWpOptions: vi.fn(),
+}));
 vi.mock('@/services/payments/clinic-payment.service', () => ({
   resolveClinicPaymentForDisplay: vi.fn(),
 }));
@@ -55,6 +58,7 @@ import { findPatientByEmail } from '@/repositories/wp/patients.repo';
 import { createPatient, updatePatient } from '@/repositories/wp/patients.write';
 import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
 import { createAppointment } from '@/repositories/wp/appointments.write';
+import { getWpOptions } from '@/repositories/wp/options.repo';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
 import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
@@ -67,6 +71,7 @@ import {
   ProfessionalNotFoundError,
   ServiceNotFoundError,
   SlotConflictError,
+  BookingTooFarError,
   UpstreamWriteError,
   BookingTooSoonError,
 } from '@/services/public/public-booking.service';
@@ -129,7 +134,15 @@ function slotIn(minutes: number): { date: string; startTime: string } {
   };
 }
 
+/** KiviCare's "Restrict Appointment" option, as its settings page saves it. */
+function restrict(pre: number, post: number) {
+  vi.mocked(getWpOptions).mockResolvedValue(
+    new Map([['kiviCare_restrict_appointment', `a:2:{s:4:"post";i:${post};s:3:"pre";i:${pre};}`]]),
+  );
+}
+
 function primeHappyPath() {
+  vi.mocked(getWpOptions).mockResolvedValue(new Map());
   vi.mocked(findDoctorById).mockResolvedValue({
     id: BigInt(DOCTOR),
     firstName: 'Dewi',
@@ -322,6 +335,34 @@ describe('createPublicAppointment', () => {
       createPublicAppointment({ ...INPUT, date, startTime, holdKey }),
     ).rejects.toBeInstanceOf(BookingTooSoonError);
     expect(vi.mocked(createAppointment)).not.toHaveBeenCalled();
+  });
+
+  describe('KiviCare booking window', () => {
+    // Whole days ahead, so these hold whatever hour the suite runs at.
+    it('refuses a date before pre_book opens', async () => {
+      restrict(2, 365);
+      const { date, startTime } = slotIn(24 * 60);
+      await expect(
+        createPublicAppointment({ ...INPUT, date, startTime, holdKey: makeHold(date, startTime) }),
+      ).rejects.toBeInstanceOf(BookingTooSoonError);
+      expect(vi.mocked(createAppointment)).not.toHaveBeenCalled();
+    });
+
+    it('refuses a date past post_book', async () => {
+      restrict(0, 1);
+      const { date, startTime } = slotIn(3 * 24 * 60);
+      await expect(
+        createPublicAppointment({ ...INPUT, date, startTime, holdKey: makeHold(date, startTime) }),
+      ).rejects.toBeInstanceOf(BookingTooFarError);
+      expect(vi.mocked(createAppointment)).not.toHaveBeenCalled();
+    });
+
+    it('accepts a date inside the window', async () => {
+      restrict(1, 30);
+      const { date, startTime } = slotIn(2 * 24 * 60);
+      await createPublicAppointment({ ...INPUT, date, startTime, holdKey: makeHold(date, startTime) });
+      expect(vi.mocked(createAppointment)).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('accepts a booking sitting exactly on the notice boundary', async () => {
