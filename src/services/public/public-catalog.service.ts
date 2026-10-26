@@ -543,7 +543,7 @@ export async function getPublicSlotsForRange(opts: {
   const clinicId = BigInt(mapping.clinicId);
   const now = opts.now ?? new Date();
 
-  const [sessions, blockedByDate] = await Promise.all([
+  const [sessions, blockedByDate, crossBreaks] = await Promise.all([
     listClinicSessions({ clinicId, doctorId }),
     // One collector owns off days, bookings and Google Calendar busy blocks, so
     // this page and the staff calendar cannot disagree. The timezone is the
@@ -555,6 +555,9 @@ export async function getPublicSlotsForRange(opts: {
       to: opts.to,
       timeZone: doctor.timezone ?? undefined,
     }),
+    // Same rule as generateSlots: only a psychologist who approves each booking gets
+    // long services that run on through their breaks.
+    requiresApproval(opts.professionalId),
   ]);
 
   return eachDate(opts.from, opts.to).map((date) => {
@@ -576,6 +579,7 @@ export async function getPublicSlotsForRange(opts: {
       windows,
       blocked,
       durationMinutes: mapping.durationMinutes ?? undefined,
+      crossBreaks,
     });
 
     return {
