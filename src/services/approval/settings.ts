@@ -1,7 +1,9 @@
 /**
  * `professional_approval_settings` — a psychologist's own switch: "paid online bookings
  * wait for my approval". No row means off, so every psychologist behaves exactly as
- * before until someone turns it on. Read when a payment lands, never cached.
+ * before until someone turns it on. Read when a payment lands, never cached — and when
+ * slots are built, since only these psychologists get long services that run on through
+ * their breaks (generateSlots).
  *
  * Spec: docs/superpowers/specs/2026-10-19-approval-psikolog-design.md §4.1
  */

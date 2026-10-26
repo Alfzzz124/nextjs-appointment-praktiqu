@@ -215,6 +215,76 @@ describe('buildDaySlots — layanan sepanjang beberapa sesi', () => {
   });
 });
 
+describe('buildDaySlots — crossBreaks: layanan boleh menembus jeda', () => {
+  // Bentuk jadwal psikolog 34 hari Senin: sesi 60′ dengan jeda 60′ di antaranya.
+  const sesiBerjeda = [
+    { startTime: '09:00:00', endTime: '10:00:00', slotDurationMinutes: 60 },
+    { startTime: '11:00:00', endTime: '12:00:00', slotDurationMinutes: 60 },
+    { startTime: '13:00:00', endTime: '14:00:00', slotDurationMinutes: 60 },
+    { startTime: '15:00:00', endTime: '16:00:00', slotDurationMinutes: 60 },
+  ];
+
+  it('menembus jeda, tapi tidak melewati jam kerja terakhir hari itu', () => {
+    const slots = buildDaySlots({
+      windows: sesiBerjeda, blocked: [], durationMinutes: 180, crossBreaks: true,
+    });
+    // 15:00 akan selesai 18:00, dua jam lewat sesi terakhir (16:00): tidak ditawarkan.
+    expect(slots.map((s) => `${s.startTime}-${s.endTime}`)).toEqual([
+      '09:00:00-12:00:00', '11:00:00-14:00:00', '13:00:00-16:00:00',
+    ]);
+  });
+
+  it('jam mulainya tetap di dalam sesi, tidak pernah di tengah jeda', () => {
+    const slots = buildDaySlots({
+      windows: sesiBerjeda, blocked: [], durationMinutes: 90, crossBreaks: true,
+    });
+    expect(slots.map((s) => s.startTime)).toEqual(['09:00:00', '11:00:00', '13:00:00']);
+  });
+
+  it('tetap tidak menembus janji atau blok lain yang jatuh di jam jeda', () => {
+    // Mis. acara Google Calendar psikolog di jam istirahat.
+    const slots = buildDaySlots({
+      windows: sesiBerjeda,
+      blocked: [{ start: 10 * 60 + 15, end: 10 * 60 + 45 }],
+      durationMinutes: 180,
+      crossBreaks: true,
+    });
+    expect(slots.map((s) => s.startTime)).toEqual(['11:00:00', '13:00:00']);
+  });
+
+  it('tanpa crossBreaks, jeda tetap tembok', () => {
+    expect(buildDaySlots({ windows: sesiBerjeda, blocked: [], durationMinutes: 180 })).toEqual([]);
+    expect(
+      buildDaySlots({ windows: sesiBerjeda, blocked: [], durationMinutes: 180, crossBreaks: false }),
+    ).toEqual([]);
+  });
+
+  it('layanan yang muat di bentangannya sendiri tidak menyeberang dari situ', () => {
+    // 120′ muat di 09:00–12:00, jadi 11:00–13:00 (memakan jeda 12–13) tidak perlu.
+    // Dari sesi 13:00–14:00 ia memang terlalu panjang, tapi 15:00 lewat jam terakhir.
+    const slots = buildDaySlots({
+      windows: [
+        { startTime: '09:00:00', endTime: '12:00:00', slotDurationMinutes: 60 },
+        { startTime: '13:00:00', endTime: '14:00:00', slotDurationMinutes: 60 },
+      ],
+      blocked: [],
+      durationMinutes: 120,
+      crossBreaks: true,
+    });
+    expect(slots.map((s) => `${s.startTime}-${s.endTime}`)).toEqual([
+      '09:00:00-11:00:00', '10:00:00-12:00:00',
+    ]);
+  });
+
+  it('layanan yang muat di satu sesi tidak berubah', () => {
+    const tanpa = buildDaySlots({ windows: sesiBerjeda, blocked: [], durationMinutes: 50 });
+    const dengan = buildDaySlots({
+      windows: sesiBerjeda, blocked: [], durationMinutes: 50, crossBreaks: true,
+    });
+    expect(dengan).toEqual(tanpa);
+  });
+});
+
 describe('blockedRangesFor', () => {
   it('returns null when a full-day off day covers the date', () => {
     const blocked = blockedRangesFor({

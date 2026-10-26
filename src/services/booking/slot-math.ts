@@ -58,13 +58,19 @@ export function toTime(minutes: number): string {
  * from the window start. And windows that touch with no gap between them are
  * one continuous stretch of working time, so a slot may run on into the next.
  * Both only ever add starts: every slot the narrower rule offered is still here.
+ *
+ * `crossBreaks` lets a service too long for the stretch it starts in run on through
+ * the breaks after it, as long as it starts inside a window and ends by the day's
+ * last working minute. Off unless the caller turns it on; see `generateSlots` for
+ * who gets it.
  */
 export function buildDaySlots(input: {
   windows: TimeWindow[];
   blocked: BlockedRange[];
   durationMinutes?: number;
+  crossBreaks?: boolean;
 }): DaySlot[] {
-  const { windows, blocked, durationMinutes } = input;
+  const { windows, blocked, durationMinutes, crossBreaks = false } = input;
   const found: { start: number; end: number }[] = [];
   const seen = new Set<string>();
 
@@ -83,13 +89,21 @@ export function buildDaySlots(input: {
   const stretches = continuousStretches(
     usable.map((w) => ({ start: toMinutes(w.startTime), end: toMinutes(w.endTime) })),
   );
+  // Bentangan sudah urut dan tidak bertumpuk, jadi yang terakhir berakhir paling akhir.
+  const dayEnd = stretches.length > 0 ? stretches[stretches.length - 1].end : 0;
 
   for (const w of usable) {
     const duration = override ?? w.slotDurationMinutes;
     const windowStart = toMinutes(w.startTime);
     const windowEnd = toMinutes(w.endTime);
-    const stretchEnd =
-      stretches.find((s) => s.start <= windowStart && windowStart < s.end)?.end ?? windowEnd;
+    const own = stretches.find((s) => s.start <= windowStart && windowStart < s.end);
+    const ownEnd = own?.end ?? windowEnd;
+    // Hanya layanan yang memang tidak muat di bentangannya sendiri yang menembus jeda;
+    // layanan 50′ di sesi 60′ tidak perlu memakan istirahat psikolog. Melewati jam
+    // kerja terakhir hari itu tetap tidak boleh: janji tidak pernah berjalan sampai di
+    // luar jam yang psikolog atur sendiri.
+    const tooLongForOwn = own !== undefined && duration > own.end - own.start;
+    const stretchEnd = crossBreaks && tooLongForOwn ? dayEnd : ownEnd;
 
     // Kisi sesi hanya dipakai bila layanan pas sejumlah sesi utuh. Layanan 90′ di
     // kisi 60′ tetap melompat selebar durasinya sendiri (09:00, 10:30, …) — dicampur

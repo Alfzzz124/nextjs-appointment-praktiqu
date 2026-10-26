@@ -46,6 +46,14 @@ vi.mock('@/repositories/wp/appointments.repo', () => ({
   listAppointments: vi.fn(),
 }));
 
+vi.mock('@/services/approval/settings', () => ({
+  // Off, as for every psychologist without a row: these tests are about the normal rules.
+  requiresApproval: vi.fn(async () => false),
+  professionalsRequiringApproval: vi.fn(async () => new Set()),
+  getApprovalSetting: vi.fn(),
+  setApprovalSetting: vi.fn(),
+}));
+
 import { getPublicSlots } from '@/services/public/public-catalog.service';
 import { generateSlots } from '@/services/professional/availability.service';
 import * as doctors from '@/repositories/wp/doctors.repo';

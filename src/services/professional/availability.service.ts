@@ -30,6 +30,7 @@ import {
 } from '@/repositories/wp/off-days.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.repo';
+import { requiresApproval } from '@/services/approval/settings';
 import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service';
 import { buildDaySlots, toMinutes, toTime } from '@/services/booking/slot-math';
 
@@ -259,6 +260,10 @@ export async function removeOffDay(doctorId: number, offDayId: number): Promise<
  * off-day row matched the date. That is wrong now that time-specific closures exist in
  * the data — a 13:00–17:00 closure would have hidden the whole morning. A full-day
  * closure still clears the date; a time-specific one only blocks the range it covers.
+ *
+ * A service too long for any one session may run on through the breaks — but only for a
+ * psychologist who approves their own bookings, since every booking of theirs waits for
+ * them to say yes before it is confirmed. Never past their last working minute of the day.
  */
 export async function generateSlots(
   doctorId: number,
@@ -309,6 +314,7 @@ export async function generateSlots(
       })),
     blocked,
     durationMinutes: service.durationMinutes ?? undefined,
+    crossBreaks: await requiresApproval(doctorId),
   });
 
   return daySlots.map((s) => ({
