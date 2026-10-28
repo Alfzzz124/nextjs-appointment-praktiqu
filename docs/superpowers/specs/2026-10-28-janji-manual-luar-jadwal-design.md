@@ -37,7 +37,11 @@ and the system creates the Sesi Dadakan and books the appointment together.
   - admin: clinic forced from the profile, the professional must be on that clinic's roster,
     and owner mode (`pemilik`) is re-checked against the backend;
   - super: anyone;
-  - anyone else (receptionist): 403.
+  - anyone else: 403.
+
+  The FE has only three roles. `AuthController::roleOf` folds `CLINIC_ADMIN` **and
+  `RECEPTIONIST`** into `admin`, so receptionists already create Sesi Dadakan today, with the
+  admin rules. A psikolog in owner mode (`pemilik`) also acts as `admin`.
 
   It also rejects overlap with another Sesi Dadakan for the same professional and date.
 
@@ -45,8 +49,8 @@ and the system creates the Sesi Dadakan and books the appointment together.
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Who may book outside the schedule | **Same as Sesi Dadakan**: psikolog for themselves, admin for professionals at their clinic, super for anyone. Receptionist may not |
-| 2 | Safeguard for the professional | Admin and super must tick **"Sudah dikonfirmasi dengan psikolog"** before booking. A psikolog booking for themselves does not |
+| 1 | Who may book outside the schedule | **Same as Sesi Dadakan**: psikolog for themselves, admin (which includes receptionists, see above) for professionals at their clinic, super for anyone. Corrected 2026-10-28: the user first picked this believing receptionists were excluded; told that they are folded into `admin`, the user chose to keep them allowed, with no new role |
+| 2 | Safeguard for the professional | Admin (incl. receptionist and owner mode) and super must tick **"Sudah dikonfirmasi dengan psikolog"** before booking. A psikolog booking for themselves does not |
 | 3 | Orchestration | One request. The server creates the session and books; if booking fails the session is deleted (approach A below) |
 
 ## Approaches considered
@@ -76,8 +80,11 @@ Move the rules out of `CustomSessionController::store` into a small service, e.g
   - The `periksaModePemilik` and `rosterKlinik` helpers move with it.
 - `bentrok(int $doctorId, string $date, int $startMin, int $endMin): ?CustomSession`
   - Returns the overlapping Sesi Dadakan, if any.
-- `penampung(int $doctorId, string $date, int $startMin, int $endMin): ?CustomSession`
-  - Returns a Sesi Dadakan that fully contains the range, if any.
+- `penampung(int $doctorId, ?int $clinicId, string $date, int $startMin, int $endMin): ?CustomSession`
+  - Returns a Sesi Dadakan that fully contains the range, if any. Its clinic must be null or
+    `$clinicId`, the same filter `jamCustom()` applies.
+- `periksaModePemilik(array $profile): ?JsonResponse` is public, because the menu's `destroy`
+  still needs it.
 
 `CustomSessionController::store` keeps its own request validation, its response messages and its
 behaviour. Only the bodies move. `tests/Feature/CustomSessionTest.php` must pass unchanged.
@@ -95,23 +102,30 @@ When `luarJadwal` is false or missing, `store()` behaves exactly as today.
 
 When it is true, after the existing `tolakPsikologDiLuarCakupan` and `klinikPesanan` steps:
 
-1. **Who.** Call `SesiDadakan::periksaPembuat`. A receptionist gets 403
-   *"Resepsionis tidak bisa memesan di luar jadwal. Minta admin klinik atau psikolognya."*
-2. **Confirmation.** For role `admin` or `super`, `konfirmasiPsikolog` must be true. Otherwise
+1. **Who.** Call `SesiDadakan::periksaPembuat` and return its rejection unchanged. For an
+   admin this asks for the clinic roster a second time (`tolakPsikologDiLuarCakupan` already
+   did). That is accepted: it only happens on this path.
+2. **Confirmation.** For every role except `psikolog`, `konfirmasiPsikolog` must be true. Otherwise
    422 *"Centang konfirmasi bahwa jam ini sudah disepakati dengan psikolog."*
 3. **Time.**
    - `startTime` must be `HH:MM` on a 5-minute step.
    - Date + time must be in the future in Asia/Jakarta.
    - Start + service duration must not pass midnight.
    - The duration comes from `BookingApi::fetchServices` for that professional and clinic, the
-     same source `jamCustom()` uses. If the duration is unknown or ≤ 0, answer `self::UPSTREAM_REJECTED` (as the other upstream failures in this controller)
-     *"Durasi layanan tidak diketahui. Coba lagi."* and create nothing.
+     same source `jamCustom()` uses.
+   - If that call fails, answer `self::UPSTREAM_REJECTED` (424, as the other upstream failures
+     in this controller) *"Durasi layanan gagal dimuat. Coba lagi."*.
+   - If the service is not in the list, answer 422 *"Layanan ini tidak dibuka psikolog
+     tersebut."*. (`mapServices` defaults a missing duration to 60, so a listed service always
+     has one.)
+   - Nothing is written in any of these cases.
 4. **Session.**
    - If `penampung()` finds a Sesi Dadakan that already covers the whole range, use it and
      create nothing.
    - Else, if `bentrok()` finds a partial overlap, answer 422 *"Bentrok dengan Sesi Dadakan lain
      pada jam yang sama."*
-   - Else create a `CustomSession` with:
+   - Else create a `CustomSession`, right before booking (after the client has been read, so
+     a client error such as a missing phone number never leaves a row), with:
 
      | Column | Value |
      |---|---|
@@ -148,8 +162,9 @@ change, and modal open.
 
 - **Entry point.**
   - A link **"+ Jam lain (di luar jadwal)"** under the slot buttons.
+  - No role check: every FE role (`super`, `admin`, `psikolog`) may use it, and the server
+    enforces the scope.
   - It is shown when:
-    - `peranUi` is `psikolog`, `admin` or `super`;
     - a professional, a service and a date are chosen;
     - the slot status is `ada` or `kosong`, not `idle`, `memuat`, `lampau` or `tidak-dilayani`.
   - In the `kosong` box the same action appears as a button, next to "Pakai tanggal ini".
@@ -163,7 +178,7 @@ change, and modal open.
 - **Same as an existing slot.** If the typed time is in `manualSlots`, select that slot
   instead: `manualLuarJadwal = false`, `manualForm.startTime = t`. Show no out-of-schedule
   note.
-- **Confirmation.** For `admin` and `super`, show the checkbox **"Sudah dikonfirmasi dengan
+- **Confirmation.** For every `peranUi` except `psikolog`, show the checkbox **"Sudah dikonfirmasi dengan
   psikolog"**. The Pesan button is disabled until it is ticked. Psikolog do not see it.
 - **Submit.**
   - `manualForm.startTime = manualJamLain`.
@@ -171,8 +186,8 @@ change, and modal open.
   - Client-side checks mirror the server, for a quick message: time present, in the future,
     not past midnight.
   - The server stays the authority.
-- After a successful booking the existing reload shows the new time as a normal slot, because
-  `jamCustom()` now returns it.
+- The next time slots are loaded for that professional, service and date, the time shows as a
+  normal slot, because `jamCustom()` now returns it.
 
 ### 4. After the appointment
 
@@ -191,10 +206,11 @@ menu. No link column between session and appointment is added (YAGNI).
 
 | Case | Status | Session row |
 |---|---|---|
-| Receptionist, or professional outside the actor's scope | 403 | none created |
-| Admin/super without confirmation | 422 | none created |
+| Professional outside the actor's scope | 403 | none created |
+| Admin (incl. receptionist) or super without confirmation | 422 | none created |
 | Time invalid, in the past, or past midnight | 422 | none created |
-| Service duration unknown | `UPSTREAM_REJECTED` | none created |
+| Service list fails to load | 424 (`UPSTREAM_REJECTED`) | none created |
+| Service not offered by the professional | 422 | none created |
 | Partial overlap with another Sesi Dadakan | 422 | none created |
 | Booking rejected (clash, too soon, email conflict, upstream error) | as today | created row deleted |
 | Success | 201 | created, or existing one reused |
@@ -206,17 +222,17 @@ menu. No link column between session and appointment is added (YAGNI).
     service duration;
   - psikolog for another professional → 403, no row;
   - admin without `konfirmasiPsikolog` → 422, no row; with it → 201;
-  - receptionist → 403, no row;
+  - time not on a 5-minute step, or past midnight → 422, no row;
   - booking upstream answers slot conflict → 409 and the created row is gone;
   - an existing Sesi Dadakan covers the range → 201 and no second row;
   - a partial overlap → 422, no row;
   - past time → 422;
   - `luarJadwal` absent → request and behaviour identical to today (regression).
-- **`tests/Feature/CustomSessionTest.php`** passes unchanged after the extraction.
+- **`tests/Feature/CustomSessionTest.php`**: existing tests pass unchanged after the extraction; one new test pins the overlap rejection, which nothing covered before.
 - **JS:** extend `tests/js/janji-manual-jam.test.mjs` for:
-  - when the link shows, per role and per slot status;
+  - when the link shows, per slot status;
   - typed time equal to a slot switches to that slot;
-  - the button stays disabled without confirmation for admin/super.
+  - the button stays disabled without confirmation for every role except psikolog, and not for psikolog.
 
   Run the full JS test loop before the PR. CI does not run these tests.
 - **Browser smoke test** with the local stub setup:
