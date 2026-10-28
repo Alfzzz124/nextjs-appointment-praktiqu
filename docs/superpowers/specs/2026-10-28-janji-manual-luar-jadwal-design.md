@@ -52,6 +52,7 @@ and the system creates the Sesi Dadakan and books the appointment together.
 | 1 | Who may book outside the schedule | **Same as Sesi Dadakan**: psikolog for themselves, admin (which includes receptionists, see above) for professionals at their clinic, super for anyone. Corrected 2026-10-28: the user first picked this believing receptionists were excluded; told that they are folded into `admin`, the user chose to keep them allowed, with no new role |
 | 2 | Safeguard for the professional | Admin (incl. receptionist and owner mode) and super must tick **"Sudah dikonfirmasi dengan psikolog"** before booking. A psikolog booking for themselves does not |
 | 3 | Orchestration | One request. The server creates the session and books; if booking fails the session is deleted (approach A below) |
+| 4 | Clinic on the auto-created row (added during review, 2026-10-28) | The clinic of the appointment, not the psikolog's main clinic. A psikolog at two clinics booking at the second gets the Sesi Dadakan there, so `jamCustom()` offers it again at that clinic. The Sesi Dadakan menu keeps its own rule |
 
 ## Approaches considered
 
@@ -131,7 +132,7 @@ When it is true, after the existing `tolakPsikologDiLuarCakupan` and `klinikPesa
      |---|---|
      | `kind` | `dadakan` |
      | `duration` | the service duration |
-     | `clinic_id` | from step 1 |
+     | `clinic_id` | the booking's clinic (`klinikPesanan`); from step 1 only when the form has none |
      | `note` | `Otomatis dari Janji Manual` |
      | `created_by_role`, `created_by_id` | as in the menu |
 
