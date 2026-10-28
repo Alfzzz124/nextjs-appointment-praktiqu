@@ -167,7 +167,8 @@ change, and modal open.
   - It is shown when:
     - a professional, a service and a date are chosen;
     - the slot status is `ada` or `kosong`, not `idle`, `memuat`, `lampau` or `tidak-dilayani`.
-  - In the `kosong` box the same action appears as a button, next to "Pakai tanggal ini".
+  - The link sits after the slot list and the `kosong` box, so it also shows right under "Tidak
+    ada jam kosong". There is no second button inside the box.
 - **Input.**
   - Clicking the link sets `manualLuarJadwal = true`, clears any picked slot, and shows
     `<input type="time" step="300">`.
