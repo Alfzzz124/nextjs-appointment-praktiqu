@@ -1276,8 +1276,10 @@ Tanpa bearer (FE memakai `getPublic` / `postPublic`). Keputusan dicatat atas nam
 dengan audit `via: "email_link"`. Error: `404 approval_link_invalid` (token rusak, booking tanpa
 catatan approval, atau booking milik psikolog lain — sengaja tidak dibedakan),
 `409 approval_already_decided`, `422 session_already_started` (setujui setelah sesi mulai), `422`
-validasi alasan, `429 rate_limited` (30 tautan tidak sah per alamat per 15 menit),
-`500 approval_actor_missing`.
+validasi alasan, `429 rate_limited` (hanya untuk token yang tanda tangannya palsu: 30 per alamat per
+15 menit; tautan asli tidak pernah terkunci), `500 approval_actor_missing`. Tautan juga dijawab
+`404 approval_link_invalid` bila akun psikolognya dinonaktifkan (status akun WordPress, status
+profesional `INACTIVE`, atau akun app nonaktif) — menonaktifkan akun adalah cara mencabut tautan.
 ````
 
 - [ ] **Step 2: OpenAPI**
@@ -1311,6 +1313,8 @@ Di `docs/api/openapi.yaml`, tambahkan blok berikut tepat sebelum baris `  /api/v
                     $ref: '#/components/schemas/PublicApprovalLinkView'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          description: Too many forged tokens from this address (rate_limited). Genuine links are never limited.
       security: []
   /api/v1/public/approvals/{token}/approve:
     parameters:
@@ -1337,6 +1341,8 @@ Di `docs/api/openapi.yaml`, tambahkan blok berikut tepat sebelum baris `  /api/v
                     $ref: '#/components/schemas/PublicApprovalLinkView'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          description: Too many forged tokens from this address (rate_limited).
       security: []
   /api/v1/public/approvals/{token}/reject:
     parameters:
@@ -1377,6 +1383,8 @@ Di `docs/api/openapi.yaml`, tambahkan blok berikut tepat sebelum baris `  /api/v
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+        '429':
+          description: Too many forged tokens from this address (rate_limited).
       security: []
 ```
 
@@ -1436,10 +1444,17 @@ Rollback: revert backend dulu (email kembali tanpa tautan). Tautan yang sudah te
 404 oleh backend lama, dan halaman FE menampilkan "tidak berlaku" dengan tombol login. FE boleh dibiarkan.
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Koreksi satu kalimat di spec**
+
+Di `docs/superpowers/specs/2026-10-29-approval-tautan-email-design.md`, view tautan juga menampilkan nominal
+yang dibayar (email tidak). Perbaiki setiap kalimat yang menyebut tautan/halaman hanya memuat "data yang sudah
+ada di email" (§3 dan baris "Email diteruskan / bocor" di tabel §8) menjadi: data booking yang sama dengan di
+email ditambah nominal yang dibayar — tanpa data klien lain. Jangan ubah bagian spec lain.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add docs/api/APPROVAL-PSIKOLOG-GUIDE.md docs/api/openapi.yaml docs/deploy/approval-psikolog-runbook.md
+git add docs/api/APPROVAL-PSIKOLOG-GUIDE.md docs/api/openapi.yaml docs/deploy/approval-psikolog-runbook.md docs/superpowers/specs/2026-10-29-approval-tautan-email-design.md
 git commit -m "docs(approval): kontrak, openapi, dan urutan rilis tautan email tanpa login
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
