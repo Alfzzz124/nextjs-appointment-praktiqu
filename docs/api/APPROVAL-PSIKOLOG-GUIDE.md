@@ -189,12 +189,70 @@ Body `{ "note": "Transfer BCA 21/10" }` (opsional, ≤ 500). Hanya `CLINIC_ADMIN
 
 `GET /public/professionals`, `/public/professionals/{id}`, `/public/professionals/by-slug/{slug}`: setiap psikolog membawa `requiresApproval: boolean`.
 
+## Tautan email tanpa login
+
+Email "Booking baru" dan setiap email pengingat ke psikolog membawa dua tautan ke halaman FE
+`/persetujuan/t/{token}` (yang kedua dengan `?aksi=tolak`). Token ditandatangani backend untuk
+satu booking dan psikolognya, tanpa kedaluwarsa: ia berhenti berguna begitu booking diputuskan,
+sesinya mulai (hanya bisa ditolak), atau booking dipindah ke psikolog lain. Membuka tautan tidak
+memutuskan apa pun — keputusan selalu lewat POST.
+
+| Endpoint | Badan | Sukses |
+|---|---|---|
+| `GET /api/v1/public/approvals/{token}` | — | `200 { data: PublicApprovalLinkView }` |
+| `POST /api/v1/public/approvals/{token}/approve` | — | `200 { data: PublicApprovalLinkView }` |
+| `POST /api/v1/public/approvals/{token}/reject` | `{ "reason": "…" }` (1–500 setelah trim, internal) | `200 { data: PublicApprovalLinkView }` |
+
+```json
+{
+  "clientName": "Ada Lovelace",
+  "professionalName": "Dianda Psikolog",
+  "serviceName": "Konseling Individu",
+  "slotDate": "2026-11-05",
+  "startTime": "10:00:00",
+  "timezone": "Asia/Jakarta",
+  "amount": { "value": 350000, "currency": "IDR" },
+  "state": "AWAITING",
+  "decidedByName": null,
+  "decidedAt": null,
+  "isOverdue": false,
+  "canApprove": true,
+  "canReject": true
+}
+```
+
+Tanpa bearer (FE memakai `getPublic` / `postPublic`). Keputusan dicatat atas nama akun psikolog,
+dengan audit `via: "email_link"`. Error: `404 approval_link_invalid` (token rusak, booking tidak
+ada, booking tanpa catatan approval, atau booking milik psikolog lain — sengaja tidak dibedakan),
+`409 approval_already_decided`, `422 session_already_started` (setujui setelah sesi mulai), `422`
+validasi alasan, `429 rate_limited`, `500 approval_actor_missing`. Tautan juga dijawab
+`404 approval_link_invalid` bila akun psikolognya dinonaktifkan (status akun WordPress, status
+profesional `INACTIVE`, atau akun app nonaktif) — menonaktifkan akun adalah cara mencabut tautan.
+
+Dari fungsi keputusan yang sama dengan dashboard, kode berikut ikut diteruskan apa adanya:
+`409 booking_cancelled` (`/approve`, booking dibatalkan di antara klaim dan konfirmasinya),
+`502 upstream_failed` (`/approve`, penulisan ke WordPress gagal) dan `500 status_write_failed`
+(`/reject`, penulisan status batal gagal). Arti dan penanganannya sama seperti di tabel "Kode
+error" di bawah; dua yang terakhir aman diulang.
+
+Badan `429` bukan bentuk di tabel di bawah: `{ "title": "Too Many Requests", "code": "rate_limited", … }`,
+jadi kodenya ada di `code`, bukan di `title`, dan jawabannya membawa header `Retry-After`. FE
+memetakan 429 dari status HTTP-nya.
+
+Batas 429 hanya berlaku untuk token yang tanda tangannya palsu: 30 per alamat per 15 menit, dan
+tautan asli tidak pernah terkunci. Catatan: selama `FE_FORWARDER_SECRET` belum diisi di kedua sisi
+(BE dan FE; lihat `src/lib/client-ip.ts`), "alamat" itu sebenarnya alamat host FE, jadi batasnya
+berlaku per host FE, bukan per pengunjung. Karena hanya token palsu yang dibatasi, ini tidak pernah
+mengunci tautan asli.
+
 ## Kode error
 
 Jalur approval (`GET /sessions/approvals`, `GET /sessions/{id}/approval`, dan `POST` ke `/approve`,
 `/reject`, `/refund-done` di bawah `/sessions/{id}`) menjawab error dengan badan bergaya RFC 7807:
 `{ "type": "/errors/<kode>", "title": "<kode>", "status": <HTTP>, "detail": "<pesan Inggris>" }`.
 Kodenya ada di `title` (dan di `type`), bukan di field `code`; cocokkan `title`, jangan `detail`.
+(Pengecualian: `429 rate_limited` dari tautan email memakai `title` `Too Many Requests` dan kodenya
+di `code`; lihat bagian "Tautan email tanpa login".)
 Header `Content-Type`-nya `application/json`, bukan `application/problem+json`. Pengecualiannya
 ada di bawah tabel.
 
@@ -217,7 +275,8 @@ Selain tabel itu:
 - 400 `Invalid session id` (`type` `/errors/validation-error`): id di path bukan bilangan bulat positif.
 - `POST /public/appointments/{token}/cancel` tidak memakai kode di atas: booking yang sedang
   dikonfirmasi (`PENDING` + `APPROVED`) dijawab seperti booking lain yang tidak bisa dibatalkan,
-  409 `not_cancellable` yang sudah ada. Endpoint publik tidak pernah menjawab 409 baru.
+  409 `not_cancellable` yang sudah ada. `/public/appointments/{token}/cancel` tidak pernah menjawab
+  409 baru; endpoint `/public/approvals/*` memang menjawab 409 (lihat "Tautan email tanpa login").
 - 401: token tidak ada atau kedaluwarsa. Bentuknya problem+json lengkap dengan field `code` terpisah
   dan header `application/problem+json`.
 - 500 `{ "error": "Internal server error" }` tanpa kode: kegagalan tak terduga. Muat ulang item untuk

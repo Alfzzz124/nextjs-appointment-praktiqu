@@ -17,6 +17,7 @@ import type { Actor } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 import { jobs } from '@/lib/jobs/client';
 import { logging } from '@/lib/logging';
+import { signApprovalToken } from '@/lib/public/approval-token';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 import { isStatusConflict, setAppointmentStatus, type ConfirmedPayment } from '@/repositories/wp/appointments.write';
@@ -86,6 +87,15 @@ export class ApprovalError extends Error {
 export function approvalLink(appointmentId?: number): string {
   const tail = appointmentId !== undefined ? `/${appointmentId}` : '';
   return `${getPublicAppUrl()}/dashboard/persetujuan${tail}`;
+}
+
+/**
+ * The no-login page for one request (spec 2026-10-29 §6.5), signed for the booking and the
+ * psychologist it belongs to now. Each call signs a fresh token; any of them works until
+ * the booking is decided or its session starts.
+ */
+export function approvalActionLink(appointmentId: number, doctorWpUserId: number): string {
+  return `${getPublicAppUrl()}/persetujuan/t/${signApprovalToken({ appointmentId, doctorWpUserId })}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -324,7 +334,12 @@ export async function holdForApproval(input: HoldInput): Promise<boolean> {
     await mail(row.clientEmail, buildClientAwaitingEmail(facts), 'approval_client_awaiting');
     await mail(
       row.professionalEmail,
-      buildProfessionalRequestEmail({ ...facts, link: approvalLink(row.id), waitingSince: null }),
+      buildProfessionalRequestEmail({
+        ...facts,
+        link: approvalLink(row.id),
+        actionLink: approvalActionLink(row.id, row.professionalId),
+        waitingSince: null,
+      }),
       'approval_professional_request',
     );
   }
@@ -442,7 +457,7 @@ async function alreadyDecided(appointmentId: number): Promise<ApprovalError> {
 }
 
 async function auditDecision(
-  input: Pick<DecideInput, 'actor' | 'actorWpUserId' | 'row'>,
+  input: Pick<DecideInput, 'actor' | 'actorWpUserId' | 'row' | 'via'>,
   decision: 'APPROVED' | 'REJECTED',
   reason: string | null,
 ): Promise<void> {
@@ -455,7 +470,13 @@ async function auditDecision(
     resource: 'session',
     resourceId: String(row.id),
     action: 'session.approval_decided',
-    metadata: { decision, reason, onBehalf, professionalId: row.professionalId },
+    metadata: {
+      decision,
+      reason,
+      onBehalf,
+      professionalId: row.professionalId,
+      ...(input.via ? { via: input.via } : {}),
+    },
   });
   await logging.audit('session.status_changed', {
     userId: actor.id,
@@ -476,9 +497,17 @@ export interface DecideInput {
   actorWpUserId: number;
   row: SessionRow;
   now?: Date;
+  /** How the decision arrived when it was not the dashboard (spec 2026-10-29): the email link. */
+  via?: 'email_link';
 }
 
-/** The caller (transitionSession) has already checked that the actor may decide. */
+/**
+ * Approve a waiting booking. Callers are transitionSession (the dashboard) and the email link
+ * (email-link.ts). Whoever calls must already have guaranteed that the actor may decide this
+ * booking, that its approval record is AWAITING, and that the appointment is PENDING. This
+ * checks only what can change between that read and the write: the session not having
+ * started, and winning the claim.
+ */
 export async function approveAwaiting(input: DecideInput & { approval: store.ApprovalRecord }): Promise<void> {
   const now = input.now ?? new Date();
   const { actor, row, approval } = input;
@@ -529,7 +558,11 @@ export async function approveAwaiting(input: DecideInput & { approval: store.App
   await auditDecision(input, 'APPROVED', null);
 }
 
-/** The caller (transitionSession) has already checked that the actor may decide. */
+/**
+ * Reject a waiting booking. Same callers and the same duty as approveAwaiting: the actor may
+ * decide this booking, the record is AWAITING and the appointment is PENDING. Only winning
+ * the claim is checked here; a session that has started can still be rejected.
+ */
 export async function rejectAwaiting(input: DecideInput & { reason: string }): Promise<void> {
   const now = input.now ?? new Date();
   const { actor, row, reason } = input;
@@ -790,8 +823,9 @@ async function toItems(records: store.ApprovalRecord[], now: Date): Promise<Appr
  *
  * AWAITING on an appointment that is no longer PENDING → settleExternal. REJECTED on one
  * that still is → finishRejection. Best effort: a failure is logged and the read goes on.
+ * Exported for the email link (email-link.ts), which reads one record the same way.
  */
-async function reconcile(records: store.ApprovalRecord[], now: Date): Promise<void> {
+export async function reconcile(records: store.ApprovalRecord[], now: Date): Promise<void> {
   const open = records.filter(
     (a) => a.state === store.APPROVAL_STATE.AWAITING || a.state === store.APPROVAL_STATE.REJECTED,
   );

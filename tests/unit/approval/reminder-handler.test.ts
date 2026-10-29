@@ -5,6 +5,7 @@
  * (completeApproval, settleExternal) are mocked: here we pin WHEN the handler calls them.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { verifyApprovalToken } from '@/lib/public/approval-token';
 import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo';
 import type { ApprovalRecord } from '@/services/approval/store';
 
@@ -125,6 +126,22 @@ describe('handleApprovalReminder', () => {
       runAt: at(48),
       args: { appointmentId: 7 },
     });
+  });
+
+  it('the reminder carries a no-login link for this booking and its psychologist', async () => {
+    await handleApprovalReminder({ appointmentId: 7 }, at(24));
+
+    const toPsychologist = email.sendEmail.mock.calls
+      .map(([m]) => m as { to: string; html: string })
+      .find((m) => m.to === 'dianda@klinik.test');
+    const found = toPsychologist!.html.match(/\/persetujuan\/t\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"/);
+    expect(found).not.toBeNull();
+    expect(verifyApprovalToken(found![1])).toEqual({ appointmentId: 7, doctorWpUserId: 34 });
+
+    const toAdmin = email.sendEmail.mock.calls
+      .map(([m]) => m as { to: string; html: string })
+      .find((m) => m.to === 'admin@klinik.test');
+    expect(toAdmin!.html).not.toContain('/persetujuan/t/');
   });
 
   it('the next run could not be scheduled: logged as an error', async () => {

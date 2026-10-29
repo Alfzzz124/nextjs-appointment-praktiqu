@@ -14,6 +14,7 @@ import { buildAdminEscalationEmail, buildProfessionalRequestEmail } from './emai
 import { planReminder } from './schedule';
 import {
   APPROVAL_REMINDER_EVENT,
+  approvalActionLink,
   approvalLink,
   clinicAdminContact,
   completeApproval,
@@ -105,7 +106,12 @@ export async function handleApprovalReminder(data: Record<string, unknown>, now:
   if (plan.remindProfessional && facts) {
     reminded = await mail(
       row.professionalEmail,
-      buildProfessionalRequestEmail({ ...facts, link, waitingSince: approval.requestedAt }),
+      buildProfessionalRequestEmail({
+        ...facts,
+        link,
+        actionLink: approvalActionLink(appointmentId, row.professionalId),
+        waitingSince: approval.requestedAt,
+      }),
       'approval_professional_reminder',
     );
     await store.touchReminder(appointmentId, now);

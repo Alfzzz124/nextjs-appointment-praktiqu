@@ -57,14 +57,24 @@ Kalau psikolog tidak dapat menerima jadwal ini, klinik akan mengembalikan dana A
 }
 
 export interface ProfessionalRequestInput extends SessionMailFacts {
+  /** The dashboard page for this request (login required). */
   link: string;
+  /**
+   * The no-login page for this request (spec 2026-10-29): `?aksi=tolak` opens it on the
+   * reject form. Opening it decides nothing — the page needs a button press.
+   */
+  actionLink: string;
   /** Null for the first mail; when the booking was paid, for a reminder. */
   waitingSince: Date | null;
 }
 
 export function buildProfessionalRequestEmail(f: ProfessionalRequestInput): BuiltEmail {
   const r = rincian(f);
-  const t = tautan(f.link, 'Buka permintaan');
+  const t = tautan(f.link, 'Buka di dashboard');
+  const tolakLink = `${f.actionLink}?aksi=tolak`;
+  const aksiHtml = `<p><a href="${escapeHtml(f.actionLink)}">Setujui jadwal</a> · <a href="${escapeHtml(tolakLink)}">Tolak permintaan</a></p>`;
+  const aksiText = `Setujui jadwal: ${f.actionLink}\nTolak permintaan: ${tolakLink}`;
+  const peringatan = 'Tautan ini khusus untuk Anda, jangan diteruskan. Berlaku sampai booking diputuskan atau sesi dimulai.';
   const { tanggal, jam } = formatWaktu(f.startsAtUtc, f.timezone);
 
   let subject: string;
@@ -85,6 +95,8 @@ export function buildProfessionalRequestEmail(f: ProfessionalRequestInput): Buil
   const html = `<p>Halo ${escapeHtml(f.professionalName)},</p>
 <p>${pembukaHtml}</p>
 ${r.html}
+${aksiHtml}
+<p>${peringatan}</p>
 ${t.html}
 <p>${penutup}</p>`;
   const text = `Halo ${f.professionalName},
@@ -92,6 +104,10 @@ ${t.html}
 ${pembukaText}
 
 ${r.text}
+
+${aksiText}
+
+${peringatan}
 
 ${t.text}
 
