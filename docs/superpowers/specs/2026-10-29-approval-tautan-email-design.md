@@ -33,8 +33,8 @@ dulu sebelum bisa memutuskan, padahal keputusannya hanya satu klik.
 - **Membuka tautan tidak pernah memutuskan apa pun.** Banyak layanan email (Outlook Safe Links, pemindai
   Gmail, antivirus kantor) membuka setiap tautan di email secara otomatis. Keputusan selalu butuh menekan
   tombol (POST) di halaman yang dibuka tautan itu.
-- Tautan hanya memberi akses ke **satu booking** milik **satu psikolog**, dan hanya ke data yang sudah ada
-  di email itu. Tidak memberi sesi login, tidak membuka dashboard, tidak memperlihatkan klien lain.
+- Tautan hanya memberi akses ke **satu booking** milik **satu psikolog**, dan hanya ke data booking yang sama
+  dengan di email itu, ditambah nominal yang dibayar. Tidak memberi sesi login, tidak membuka dashboard, tidak memperlihatkan klien lain.
 
 ## 4. Alur psikolog
 
@@ -215,7 +215,7 @@ tautan asli.
 | Risiko | Penanganan |
 |---|---|
 | Pemindai email membuka tautan | GET hanya menampilkan; keputusan hanya lewat POST dengan CSRF. |
-| Email diteruskan / bocor | Akses terbatas pada satu booking yang masih menunggu, dan hanya data yang sudah ada di email. Tidak ada sesi login. Kalimat "jangan diteruskan" di email. Setelah diputuskan, tautan tidak bisa mengubah apa pun. Menonaktifkan akun psikolog membatalkan tautannya (§6.2 langkah 4). |
+| Email diteruskan / bocor | Akses terbatas pada satu booking yang masih menunggu, dan hanya data booking yang sama dengan di email, ditambah nominal yang dibayar, tanpa data klien lain. Tidak ada sesi login. Kalimat "jangan diteruskan" di email. Setelah diputuskan, tautan tidak bisa mengubah apa pun. Menonaktifkan akun psikolog membatalkan tautannya (§6.2 langkah 4). |
 | Token bocor lewat Referer / cache / mesin pencari | `no-referrer`, `no-store`, `noindex`. |
 | Tebak/palsukan token | HMAC-SHA256 256 bit, constant-time; token palsu dibatasi lajunya di BE (§6.4) dan FE. |
 | Token dipakai lintas fitur | Pemisah tujuan `p: "approval"`. |

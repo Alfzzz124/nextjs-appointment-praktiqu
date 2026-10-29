@@ -189,6 +189,47 @@ Body `{ "note": "Transfer BCA 21/10" }` (opsional, ≤ 500). Hanya `CLINIC_ADMIN
 
 `GET /public/professionals`, `/public/professionals/{id}`, `/public/professionals/by-slug/{slug}`: setiap psikolog membawa `requiresApproval: boolean`.
 
+## Tautan email tanpa login
+
+Email "Booking baru" dan setiap email pengingat ke psikolog membawa dua tautan ke halaman FE
+`/persetujuan/t/{token}` (yang kedua dengan `?aksi=tolak`). Token ditandatangani backend untuk
+satu booking dan psikolognya, tanpa kedaluwarsa: ia berhenti berguna begitu booking diputuskan,
+sesinya mulai (hanya bisa ditolak), atau booking dipindah ke psikolog lain. Membuka tautan tidak
+memutuskan apa pun — keputusan selalu lewat POST.
+
+| Endpoint | Badan | Sukses |
+|---|---|---|
+| `GET /api/v1/public/approvals/{token}` | — | `200 { data: PublicApprovalLinkView }` |
+| `POST /api/v1/public/approvals/{token}/approve` | — | `200 { data: PublicApprovalLinkView }` |
+| `POST /api/v1/public/approvals/{token}/reject` | `{ "reason": "…" }` (1–500 setelah trim, internal) | `200 { data: PublicApprovalLinkView }` |
+
+```json
+{
+  "clientName": "Ada Lovelace",
+  "professionalName": "Dianda Psikolog",
+  "serviceName": "Konseling Individu",
+  "slotDate": "2026-11-05",
+  "startTime": "10:00:00",
+  "timezone": "Asia/Jakarta",
+  "amount": { "value": 350000, "currency": "IDR" },
+  "state": "AWAITING",
+  "decidedByName": null,
+  "decidedAt": null,
+  "isOverdue": false,
+  "canApprove": true,
+  "canReject": true
+}
+```
+
+Tanpa bearer (FE memakai `getPublic` / `postPublic`). Keputusan dicatat atas nama akun psikolog,
+dengan audit `via: "email_link"`. Error: `404 approval_link_invalid` (token rusak, booking tanpa
+catatan approval, atau booking milik psikolog lain — sengaja tidak dibedakan),
+`409 approval_already_decided`, `422 session_already_started` (setujui setelah sesi mulai), `422`
+validasi alasan, `429 rate_limited` (hanya untuk token yang tanda tangannya palsu: 30 per alamat per
+15 menit; tautan asli tidak pernah terkunci), `500 approval_actor_missing`. Tautan juga dijawab
+`404 approval_link_invalid` bila akun psikolognya dinonaktifkan (status akun WordPress, status
+profesional `INACTIVE`, atau akun app nonaktif) — menonaktifkan akun adalah cara mencabut tautan.
+
 ## Kode error
 
 Jalur approval (`GET /sessions/approvals`, `GET /sessions/{id}/approval`, dan `POST` ke `/approve`,

@@ -8936,6 +8936,105 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
       security: []
+  /api/v1/public/approvals/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Signed approval-link token from the psychologist's email.
+        schema:
+          type: string
+    get:
+      tags:
+        - public
+      summary: Approval link (GET) — public
+      operationId: get_api_v1_public_approvals_token
+      description: 'The booking behind an email approval link and the buttons it may offer. Decides nothing. **Response envelope:** standard / RFC-7807 problem+json'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicApprovalLinkView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          description: Too many forged tokens from this address (rate_limited). Genuine links are never limited.
+      security: []
+  /api/v1/public/approvals/{token}/approve:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - public
+      summary: Approve from the email link (POST) — public
+      operationId: post_api_v1_public_approvals_token_approve
+      description: 'Approve as the psychologist. 409 approval_already_decided, 422 session_already_started. **Response envelope:** standard / RFC-7807 problem+json'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicApprovalLinkView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          description: Too many forged tokens from this address (rate_limited).
+      security: []
+  /api/v1/public/approvals/{token}/reject:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - public
+      summary: Reject from the email link (POST) — public
+      operationId: post_api_v1_public_approvals_token_reject
+      description: 'Reject as the psychologist; the reason is internal. 409 approval_already_decided. **Response envelope:** standard / RFC-7807 problem+json'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicApprovalLinkView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          description: Too many forged tokens from this address (rate_limited).
+      security: []
   /api/v1/public/booking:
     post:
       tags:
@@ -13588,6 +13687,28 @@ components:
             above 0. Show USD as the main figure then, with `price` in rupiah underneath.
           allOf:
             - $ref: '#/components/schemas/PublicUsdView'
+    PublicApprovalLinkView:
+      type: object
+      required: [clientName, professionalName, serviceName, slotDate, startTime, timezone, amount, state, decidedByName, decidedAt, isOverdue, canApprove, canReject]
+      properties:
+        clientName: { type: string }
+        professionalName: { type: string }
+        serviceName: { type: string }
+        slotDate: { type: string, nullable: true, example: '2026-11-05' }
+        startTime: { type: string, nullable: true, example: '10:00:00' }
+        timezone: { type: string, example: Asia/Jakarta }
+        amount:
+          type: object
+          nullable: true
+          properties:
+            value: { type: number }
+            currency: { type: string, enum: [IDR, USD] }
+        state: { type: string, enum: [AWAITING, APPROVED, REJECTED, CANCELLED] }
+        decidedByName: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        isOverdue: { type: boolean }
+        canApprove: { type: boolean }
+        canReject: { type: boolean }
     PublicAppointmentView:
       type: object
       properties:

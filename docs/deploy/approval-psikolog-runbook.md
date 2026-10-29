@@ -86,3 +86,23 @@ backend aman sendirian:
   - Yang ditandai lunas manual (tanpa order) tertinggal `PENDING`, dan job auto-cancel lama bisa melepasnya.
 - Plugin: kembalikan backup versi sebelumnya (mekanismenya: `docs/deploy/international-clinic-runbook.md`, bagian Rollback). Tanpa Next.js baru, tidak ada yang meng-enqueue hook baru. Kembali ke 1.8.3 dengan backend baru tetap jalan: `expect_status` diabaikan, dan race batal-vs-setujui terbuka lagi.
 - Job pengingat yang sudah di-enqueue dengan hook `praktiqu_approval_reminder` tetap ada di Action Scheduler. Setelah plugin kembali ke 1.8.2, yang tidak lagi mendaftarkan hook itu, job tersebut tidak melakukan apa-apa: tidak ada callback dan tidak ada webhook ke Next.js. Action Scheduler boleh mencatatnya selesai atau gagal (tergantung versinya); biarkan saja.
+
+## Tautan email tanpa login (spec 2026-10-29)
+
+Urutan rilis **FE dulu, baru backend** (kebalikan biasanya):
+
+1. Merge PR FE `feat/approval-tautan-email` → deploy GitHub Actions. Aman sendirian: belum ada
+   email yang membawa tautan baru; kalaupun halaman dibuka, backend lama menjawab 404 dan halaman
+   menampilkan "Tautan ini tidak berlaku".
+2. Merge PR backend `feat/approval-tautan-email` → Hostinger auto-deploy. **Cek build benar-benar
+   berjalan**: hPanel → Penempatan, atau `ls -t ~/domains/endpoint.praktiqu.com/hbuilds/logs | head -3`
+   lalu `grep "Checking out commit"` di log terbaru; harus sama dengan `git log -1 origin/main`.
+   Tidak ada SQL, tidak ada plugin.
+3. Verifikasi tanpa data nyata: `GET https://endpoint.praktiqu.com/api/v1/public/approvals/rusak`
+   → `404` dengan `"title":"approval_link_invalid"`; halaman
+   `https://appointment.praktiqu.com/persetujuan/t/xxxxxxxxxxxxxxxxxxxxxxxx` → "Tautan ini tidak berlaku".
+4. Uji coba (user): booking nyata ke psikolog uji → setujui dari tautan email asli; booking kedua →
+   tolak dari tautan; buka ulang tautan pertama → "Sudah disetujui oleh …".
+
+Rollback: revert backend dulu (email kembali tanpa tautan). Tautan yang sudah terkirim lalu dijawab
+404 oleh backend lama, dan halaman FE menampilkan "tidak berlaku" dengan tombol login. FE boleh dibiarkan.
