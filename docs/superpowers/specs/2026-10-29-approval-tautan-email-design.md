@@ -116,18 +116,29 @@ Urutan, berhenti di yang pertama gagal:
 1. `verifyApprovalToken` → null ⇒ **404 `approval_link_invalid`**.
 2. Sesi (`findSessionById(appointmentId)`) dan catatan `session_approvals` ada ⇒ selain itu 404 `approval_link_invalid`.
 3. Psikolog sesi **saat ini** sama dengan `doctorWpUserId` di token ⇒ selain itu 404 `approval_link_invalid`
-   (booking yang dipindah ke psikolog lain membatalkan tautan lama). Tiga kegagalan ini sengaja
-   dijawab sama.
-4. Sebelum membangun view, jalankan rekonsiliasi yang sama dengan antrean (`settleExternal` untuk catatan
+   (booking yang dipindah ke psikolog lain membatalkan tautan lama).
+4. Psikolog di token **masih aktif** ⇒ selain itu 404 `approval_link_invalid`. Tautan tidak berlaku bila
+   salah satu dari ini benar:
+   - akun aplikasinya (`ensureUserFromWordPress(row.professionalEmail)`, lihat §6.3) berstatus `users.status === 0`;
+   - akun WordPress-nya bukan `'active'` menurut `findWpAccountStatus(doctorWpUserId)`. Dibaca langsung dari
+     WordPress, karena `users.status` hanya disinkronkan saat login;
+   - status profesionalnya `INACTIVE` (`findDoctorById(...)?.status`, yang diset aksi admin "nonaktifkan
+     profesional").
+
+   Tautan tidak kedaluwarsa, jadi menonaktifkan akun psikolog adalah satu-satunya cara klinik mencabut tautan
+   yang bocor atau diteruskan (§8). Empat kegagalan ini sengaja dijawab sama. Akun aplikasi yang `wpUserId`-nya
+   berbeda dari token bukan "tautan tidak berlaku" melainkan 500 (§6.3).
+5. Sebelum membangun view, jalankan rekonsiliasi yang sama dengan antrean (`settleExternal` untuk catatan
    AWAITING yang sesinya sudah bukan PENDING), supaya halaman tidak menawarkan tombol untuk booking yang
-   sebenarnya sudah selesai di luar app.
+   sebenarnya sudah selesai di luar app. Rekonsiliasi berjalan setelah langkah 4, jadi tautan yang tidak
+   berlaku tidak mengubah apa pun.
 
 ### 6.3 Keputusan
 
 - Aktor = `ensureUserFromWordPress(row.professionalEmail)` (`src/services/auth/service.ts`; membuat baris
-  `users` dari WordPress bila belum ada, seperti lupa sandi dan OTP). Hasilnya wajib punya
-  `wpUserId === doctorWpUserId`. `null` atau `wpUserId` berbeda ⇒ **500** dengan log; jangan memutuskan
-  tanpa aktor yang cocok.
+  `users` dari WordPress bila belum ada, seperti lupa sandi dan OTP). Dicari sekali, di langkah §6.2.4, dan
+  dibawa ke keputusan. Hasilnya wajib punya `wpUserId === doctorWpUserId`. `null` atau `wpUserId` berbeda ⇒
+  **500 `approval_actor_missing`** dengan log; jangan memutuskan tanpa aktor yang cocok.
 - `approve` → `approveAwaiting({ actor, actorWpUserId: doctorWpUserId, row, approval })`;
   `reject` → `rejectAwaiting({ actor, actorWpUserId: doctorWpUserId, row, reason })`. Tidak ada jalur
   keputusan baru: klaim bersyarat (`claimDecision`, yang pertama menang), penulisan status, email ke klien,
@@ -137,13 +148,31 @@ Urutan, berhenti di yang pertama gagal:
   `approval_already_decided`**; setujui setelah sesi mulai → **422 `session_already_started`**; alasan
   kosong/terlalu panjang → 422 validasi; plugin gagal → 502/500 seperti staf. 409 di endpoint publik aman
   karena hanya halaman baru (§7) yang memanggil endpoint ini.
+- Fungsi keputusan masih bisa mengembalikan kode lain di endpoint ini: **409 `booking_cancelled`** (booking
+  dibatalkan selagi disetujui; pembayarannya masuk daftar refund), **502 `upstream_failed`** (plugin gagal
+  mengonfirmasi, klaim dibatalkan, boleh dicoba lagi) dan **500 `status_write_failed`** (gagal membatalkan
+  saat menolak). FE memetakan menurut status HTTP (§7), jadi 409 mana pun dibaca "sudah diputuskan" dan
+  5xx mana pun "belum jelas apakah tersimpan".
 
 ### 6.4 Pembatasan laju
 
-`createRateLimiter` per IP klien (`clientIpOrNull`), seperti `public/appointments`: tautan tidak berlaku
-dicatat `recordFailure`, jawaban sukses `recordSuccess`; kunci 15 menit setelah 30 kegagalan → 429
-`rate_limited`. Catatan: selama FE belum meneruskan IP pengguna (lihat memori "FE forwards its own IP"),
-IP yang terlihat adalah host FE, jadi pembatas utamanya adalah `throttle` di FE (§7).
+Satu `createRateLimiter` bersama untuk ketiga rute (`{ lockoutAfter: 30, windowMs: 15 menit }`), kunci
+`clientIpOrNull(req.headers) ?? 'unknown'`. **Hanya token palsu yang dihitung dan dibatasi:**
+
+- Token yang tanda tangannya tidak lolos `verifyApprovalToken` lewat pembatas: bila kunci sedang terkunci ⇒
+  **429** dengan `Retry-After`; selain itu `recordFailure` dan jawaban 404 `approval_link_invalid`, tanpa
+  menyentuh database.
+- Token yang tanda tangannya benar **tidak pernah** diperiksa atau dihitung pembatas, walaupun kemudian
+  ternyata tidak berlaku karena alasan lain (booking dipindah, catatan tidak ada, akun nonaktif: tetap 404,
+  hanya tidak dihitung). Menebak tanda tangan tidak mungkin, jadi token sah tidak perlu dibatasi.
+- Tidak ada `recordSuccess`: membuka tautan sah tidak menghapus hitungan siapa pun.
+- Badan 429: `{ title: "Too Many Requests", status: 429, code: "rate_limited", ... }` plus header `Retry-After`.
+
+Alasannya: selama FE belum meneruskan IP pengguna (lihat memori "FE forwards its own IP"), IP yang terlihat
+adalah host FE, jadi semua pengunjung berbagi satu kunci. `throttle` di FE (§7) per pengunjung, sehingga tidak
+menolong di sini. Bila tautan sah ikut dihitung atau diperiksa, tiga puluh tautan sembarang dari siapa pun
+mengunci semua psikolog. Karena hanya token palsu yang dibatasi, satu kunci bersama tidak bisa mengunci
+tautan asli.
 
 ### 6.5 Email
 
@@ -186,9 +215,9 @@ IP yang terlihat adalah host FE, jadi pembatas utamanya adalah `throttle` di FE 
 | Risiko | Penanganan |
 |---|---|
 | Pemindai email membuka tautan | GET hanya menampilkan; keputusan hanya lewat POST dengan CSRF. |
-| Email diteruskan / bocor | Akses terbatas pada satu booking yang masih menunggu, dan hanya data yang sudah ada di email. Tidak ada sesi login. Kalimat "jangan diteruskan" di email. Setelah diputuskan, tautan tidak bisa mengubah apa pun. |
+| Email diteruskan / bocor | Akses terbatas pada satu booking yang masih menunggu, dan hanya data yang sudah ada di email. Tidak ada sesi login. Kalimat "jangan diteruskan" di email. Setelah diputuskan, tautan tidak bisa mengubah apa pun. Menonaktifkan akun psikolog membatalkan tautannya (§6.2 langkah 4). |
 | Token bocor lewat Referer / cache / mesin pencari | `no-referrer`, `no-store`, `noindex`. |
-| Tebak/palsukan token | HMAC-SHA256 256 bit, constant-time; pembatasan laju di BE dan FE. |
+| Tebak/palsukan token | HMAC-SHA256 256 bit, constant-time; token palsu dibatasi lajunya di BE (§6.4) dan FE. |
 | Token dipakai lintas fitur | Pemisah tujuan `p: "approval"`. |
 | Booking dipindah ke psikolog lain | Cek psikolog saat ini (§6.2 langkah 3). |
 | Klik di tautan dan dashboard bersamaan | `claimDecision` yang sudah ada: yang pertama menang, yang kedua 409. |
@@ -201,8 +230,10 @@ IP yang terlihat adalah host FE, jadi pembatas utamanya adalah `throttle` di FE 
   - Route publik: 404 untuk token rusak, sesi tidak ada, catatan approval tidak ada, psikolog berbeda;
     GET untuk AWAITING / APPROVED / REJECTED / sesi lewat (flag `canApprove`/`canReject` benar); POST
     approve/reject memanggil `approveAwaiting`/`rejectAwaiting` dengan aktor psikolog dan audit
-    `via: 'email_link'`; 409 / 422 diteruskan; alasan kosong dan 501 karakter → 422; pembatasan laju 429;
-    view tidak memuat field yang dilarang di §6.1.
+    `via: 'email_link'`; 409 / 422 diteruskan; alasan kosong dan 501 karakter → 422; psikolog nonaktif
+    (akun aplikasi, akun WordPress, atau status profesional) → 404 di GET dan kedua POST; akun aplikasi
+    dengan `wpUserId` berbeda → 500; pembatasan laju: 30 token palsu → 429, sedangkan token sah dari IP yang
+    sama tetap 200; view tidak memuat field yang dilarang di §6.1.
   - Email: booking baru dan pengingat memuat kedua tautan dengan token yang terverifikasi ke booking dan
     psikolog itu, plus kalimat "jangan diteruskan"; email eskalasi admin tidak berubah (snapshot lama tetap).
   - Database uji: keputusan lewat tautan dan lewat dashboard bersamaan → tepat satu sukses.

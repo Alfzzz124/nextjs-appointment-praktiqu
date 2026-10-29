@@ -10,5 +10,5 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }): Promise<NextResponse> {
   const { token } = await params;
-  return linkResponse(req, '[POST /public/approvals/:token/approve]', () => approveByLink(token));
+  return linkResponse(req, '[POST /public/approvals/:token/approve]', token, () => approveByLink(token));
 }

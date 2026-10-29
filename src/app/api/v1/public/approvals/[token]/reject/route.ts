@@ -13,7 +13,7 @@ const rejectBody = z.object({ reason: z.string().trim().min(1).max(500) });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }): Promise<NextResponse> {
   const { token } = await params;
-  return linkResponse(req, '[POST /public/approvals/:token/reject]', async () => {
+  return linkResponse(req, '[POST /public/approvals/:token/reject]', token, async () => {
     const { reason } = rejectBody.parse(await req.json().catch(() => ({})));
     return rejectByLink(token, reason);
   });

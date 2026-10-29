@@ -11,5 +11,5 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }): Promise<NextResponse> {
   const { token } = await params;
-  return linkResponse(req, '[GET /public/approvals/:token]', () => linkView(token));
+  return linkResponse(req, '[GET /public/approvals/:token]', token, () => linkView(token));
 }

@@ -5,6 +5,10 @@
  * Same boundaries mocked as approval-routes.test.ts: the plugin write (setAppointmentStatus
  * writes the status straight into wp_kc_appointments, as the plugin's UPDATE would), jobs
  * and email. The tests run in order and build on each other's state.
+ *
+ * Who may use a link is decided from the live account: a psychologist who was deactivated
+ * (app account, WordPress account or professional status) no longer opens it. Only forged
+ * tokens count against the rate limit, so the tests below never lock out a genuine one.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignJWT } from 'jose';
@@ -42,6 +46,9 @@ const { BASE, END } = idBlock('integration/approval/approval-email-link.test.ts'
 const CLINIC = BASE + 1;
 const DOCTOR = BASE + 20;
 const OTHER_DOCTOR = BASE + 21;
+const DOCTOR_GONE = BASE + 22; // gets deactivated, step by step
+const DOCTOR_MISMATCH = BASE + 23; // its app account (same e-mail) belongs to another WordPress user
+const MISMATCH_WP_ID = BASE + 24; // the wpUserId that app account carries
 const PATIENT = BASE + 30;
 const APPT_APPROVE = BASE + 100; // waiting, paid by order → approved through the link
 const APPT_REJECT = BASE + 101; // waiting → rejected through the link
@@ -51,9 +58,13 @@ const APPT_MOVED = BASE + 104; // held for DOCTOR, the appointment now belongs t
 const APPT_RACE = BASE + 105; // two clicks on the link at the same moment
 const APPT_RACE2 = BASE + 107; // link and dashboard approve at the same moment
 const APPT_NONE = BASE + 106; // PENDING, never held for approval
+const APPT_GONE = BASE + 108; // waiting, held for DOCTOR_GONE
+const APPT_MISMATCH = BASE + 109; // waiting, held for DOCTOR_MISMATCH
 const WC_ORDER = BASE + 500;
 
 const PSI = 'approval-link-test-psi';
+const GONE_USER = 'approval-link-test-gone';
+const MISMATCH_USER = 'approval-link-test-mismatch';
 const FUTURE = `${new Date().getUTCFullYear() + 1}-03-10`;
 const PAST = `${new Date().getUTCFullYear() - 1}-03-10`;
 const inRange = { gte: BigInt(BASE), lt: BigInt(END) };
@@ -125,7 +136,9 @@ const statusOf = async (id: number) =>
   );
 
 async function wipe() {
-  const ids = [APPT_APPROVE, APPT_REJECT, APPT_DONE, APPT_PAST, APPT_MOVED, APPT_RACE, APPT_RACE2, APPT_NONE].map(String);
+  const ids = [
+    APPT_APPROVE, APPT_REJECT, APPT_DONE, APPT_PAST, APPT_MOVED, APPT_RACE, APPT_RACE2, APPT_NONE, APPT_GONE, APPT_MISMATCH,
+  ].map(String);
   await prisma.logEntry.deleteMany({ where: { resourceId: { in: ids } } });
   await prisma.sessionApproval.deleteMany({ where: { appointmentId: inRange } });
   await prisma.paymentOrder.deleteMany({ where: { wcOrderId: { gte: BASE, lt: END } } });
@@ -148,8 +161,15 @@ beforeAll(async () => {
   );
   await wpUser(DOCTOR, 'kiviCare_doctor', 'Dianda');
   await wpUser(OTHER_DOCTOR, 'kiviCare_doctor', 'Pamela');
+  await wpUser(DOCTOR_GONE, 'kiviCare_doctor', 'Gina');
+  await wpUser(DOCTOR_MISMATCH, 'kiviCare_doctor', 'Mira');
   await wpUser(PATIENT, 'kiviCare_patient', 'Klien');
-  for (const [mapId, doctor] of [[BASE + 900, DOCTOR], [BASE + 901, OTHER_DOCTOR]] as const) {
+  for (const [mapId, doctor] of [
+    [BASE + 900, DOCTOR],
+    [BASE + 901, OTHER_DOCTOR],
+    [BASE + 902, DOCTOR_GONE],
+    [BASE + 903, DOCTOR_MISMATCH],
+  ] as const) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO wp_kc_doctor_clinic_mappings (id, doctor_id, clinic_id, owner, created_at) VALUES (?, ?, ?, 0, NOW())`,
       mapId,
@@ -171,6 +191,33 @@ beforeAll(async () => {
       status: 1,
     },
   });
+  await prisma.user.create({
+    data: {
+      id: GONE_USER,
+      email: wpEmail(DOCTOR_GONE),
+      username: GONE_USER,
+      firstName: 'Gina',
+      lastName: 'Uji',
+      displayName: 'Gina',
+      role: 'PROFESSIONAL',
+      wpUserId: BigInt(DOCTOR_GONE),
+      status: 1,
+    },
+  });
+  // The e-mail finds this account, but it is the app account of a different WordPress user.
+  await prisma.user.create({
+    data: {
+      id: MISMATCH_USER,
+      email: wpEmail(DOCTOR_MISMATCH),
+      username: MISMATCH_USER,
+      firstName: 'Mira',
+      lastName: 'Uji',
+      displayName: 'Mira',
+      role: 'PROFESSIONAL',
+      wpUserId: BigInt(MISMATCH_WP_ID),
+      status: 1,
+    },
+  });
 
   for (const id of [APPT_APPROVE, APPT_REJECT, APPT_RACE, APPT_RACE2, APPT_NONE]) {
     await appointment(id, DOCTOR, APPOINTMENT_STATUS.PENDING, FUTURE);
@@ -178,6 +225,8 @@ beforeAll(async () => {
   await appointment(APPT_DONE, DOCTOR, APPOINTMENT_STATUS.BOOKED, FUTURE);
   await appointment(APPT_PAST, DOCTOR, APPOINTMENT_STATUS.PENDING, PAST);
   await appointment(APPT_MOVED, OTHER_DOCTOR, APPOINTMENT_STATUS.PENDING, FUTURE);
+  await appointment(APPT_GONE, DOCTOR_GONE, APPOINTMENT_STATUS.PENDING, FUTURE);
+  await appointment(APPT_MISMATCH, DOCTOR_MISMATCH, APPOINTMENT_STATUS.PENDING, FUTURE);
 
   const order = await prisma.paymentOrder.create({
     data: {
@@ -192,9 +241,9 @@ beforeAll(async () => {
       transactionId: 'tx-tautan',
     },
   });
-  const waiting = (id: number, paymentOrderId: string | null = null) => ({
+  const waiting = (id: number, paymentOrderId: string | null = null, doctor = DOCTOR) => ({
     appointmentId: BigInt(id),
-    doctorWpUserId: BigInt(DOCTOR),
+    doctorWpUserId: BigInt(doctor),
     clinicId: BigInt(CLINIC),
     paymentOrderId,
     state: 'AWAITING',
@@ -207,6 +256,8 @@ beforeAll(async () => {
       waiting(APPT_MOVED),
       waiting(APPT_RACE),
       waiting(APPT_RACE2),
+      waiting(APPT_GONE, null, DOCTOR_GONE),
+      waiting(APPT_MISMATCH, null, DOCTOR_MISMATCH),
       { ...waiting(APPT_DONE), state: 'APPROVED', decidedAt: new Date(), decidedBy: PSI },
     ],
   });
@@ -252,6 +303,20 @@ describe('GET /public/approvals/{token}', () => {
       canApprove: true,
       canReject: true,
     });
+  });
+
+  it('opening the link decides nothing: no write, still PENDING and AWAITING', async () => {
+    for (const id of [APPT_APPROVE, APPT_REJECT]) {
+      const token = linkFor(id);
+      expect((await linkGet(getReq(token), ctx(token))).status).toBe(200);
+    }
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(email.sendEmail).not.toHaveBeenCalled();
+    for (const id of [APPT_APPROVE, APPT_REJECT]) {
+      expect(await statusOf(id)).toBe(APPOINTMENT_STATUS.PENDING);
+      const record = await prisma.sessionApproval.findUnique({ where: { appointmentId: BigInt(id) } });
+      expect(record).toMatchObject({ state: 'AWAITING', decidedBy: null });
+    }
   });
 
   it('a link that does not verify, or names a booking without a record, is 404 approval_link_invalid', async () => {
@@ -371,14 +436,103 @@ describe('POST /public/approvals/{token}/reject', () => {
   });
 });
 
+describe('rejecting after the session started', () => {
+  it('is still allowed: the approve above was refused with 422, the reject goes through', async () => {
+    const token = linkFor(APPT_PAST);
+    const res = await linkReject(postReq(token, 'reject', { reason: 'Sudah lewat' }), ctx(token));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toMatchObject({ state: 'REJECTED', canApprove: false, canReject: false });
+    expect(await statusOf(APPT_PAST)).toBe(APPOINTMENT_STATUS.CANCELLED);
+    const record = await prisma.sessionApproval.findUnique({ where: { appointmentId: BigInt(APPT_PAST) } });
+    expect(record).toMatchObject({ state: 'REJECTED', rejectReason: 'Sudah lewat', decidedBy: PSI });
+  });
+});
+
+describe('who may use a link', () => {
+  const notValid = async (res: Response) => {
+    expect(res.status).toBe(404);
+    expect((await res.json()).title).toBe('approval_link_invalid');
+  };
+
+  it('a deactivated psychologist loses the link, whichever way they were deactivated', async () => {
+    const token = linkFor(APPT_GONE, DOCTOR_GONE);
+    const open = () => linkGet(getReq(token), ctx(token));
+
+    // 1. The app account: users.status 0.
+    await prisma.user.update({ where: { id: GONE_USER }, data: { status: 0 } });
+    await notValid(await open());
+    await prisma.user.update({ where: { id: GONE_USER }, data: { status: 1 } });
+
+    // 2. The WordPress account: users.status is only synced at login, so this is read live.
+    await prisma.kcUserMeta.create({
+      data: { userId: BigInt(DOCTOR_GONE), metaKey: 'praktiqu_user_status', metaValue: 'inactive' },
+    });
+    await notValid(await open());
+    await prisma.kcUserMeta.deleteMany({ where: { userId: BigInt(DOCTOR_GONE), metaKey: 'praktiqu_user_status' } });
+
+    // 3. The professional status, which is what the admin's "deactivate professional" sets.
+    await prisma.kcUserMeta.updateMany({
+      where: { userId: BigInt(DOCTOR_GONE), metaKey: 'praktiqu_professional_status' },
+      data: { metaValue: 'INACTIVE' },
+    });
+    await notValid(await open());
+    await notValid(await linkApprove(postReq(token, 'approve'), ctx(token)));
+    await notValid(await linkReject(postReq(token, 'reject', { reason: 'Tidak jadi' }), ctx(token)));
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(await statusOf(APPT_GONE)).toBe(APPOINTMENT_STATUS.PENDING);
+    await prisma.kcUserMeta.updateMany({
+      where: { userId: BigInt(DOCTOR_GONE), metaKey: 'praktiqu_professional_status' },
+      data: { metaValue: 'ACTIVE' },
+    });
+
+    // Everything back as it was: the very same link works again.
+    const res = await open();
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toMatchObject({ state: 'AWAITING', canApprove: true, canReject: true });
+  });
+
+  it('an app account that belongs to another WordPress user: 500 approval_actor_missing, nothing decided', async () => {
+    const token = linkFor(APPT_MISMATCH, DOCTOR_MISMATCH);
+    const res = await linkApprove(postReq(token, 'approve'), ctx(token));
+    expect(res.status).toBe(500);
+    expect((await res.json()).title).toBe('approval_actor_missing');
+    expect(writes.setAppointmentStatus).not.toHaveBeenCalled();
+    expect(await statusOf(APPT_MISMATCH)).toBe(APPOINTMENT_STATUS.PENDING);
+    const record = await prisma.sessionApproval.findUnique({ where: { appointmentId: BigInt(APPT_MISMATCH) } });
+    expect(record).toMatchObject({ state: 'AWAITING', decidedBy: null });
+  });
+});
+
 describe('rate limit', () => {
-  it('30 bad links from one address lock it out with 429 rate_limited', async () => {
+  it('only forged tokens count: 30 of them lock the address out, a genuine link still opens', async () => {
     const ip = '203.0.113.50';
     for (let i = 0; i < 30; i++) {
-      expect((await linkGet(getReq(`rusak-${i}`, ip), ctx(`rusak-${i}`))).status).toBe(404);
+      const res = await linkGet(getReq(`rusak-${i}`, ip), ctx(`rusak-${i}`));
+      expect(res.status).toBe(404);
+      expect((await res.json()).title).toBe('approval_link_invalid');
     }
-    const res = await linkGet(getReq(linkFor(APPT_DONE), ip), ctx(linkFor(APPT_DONE)));
-    expect(res.status).toBe(429);
-    expect(res.headers.get('Retry-After')).not.toBeNull();
+
+    const locked = await linkGet(getReq('rusak-lagi', ip), ctx('rusak-lagi'));
+    expect(locked.status).toBe(429);
+    expect(Number(locked.headers.get('Retry-After'))).toBeGreaterThan(0);
+    const problem = await locked.json();
+    expect(problem).toMatchObject({ code: 'rate_limited', title: 'Too Many Requests', status: 429 });
+
+    const post = await linkApprove(postReq('rusak-lagi', 'approve', undefined, ip), ctx('rusak-lagi'));
+    expect(post.status).toBe(429);
+
+    // The same address, a correctly signed token: never checked against the limiter.
+    const done = linkFor(APPT_DONE);
+    const ok = await linkGet(getReq(done, ip), ctx(done));
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).data).toMatchObject({ state: 'APPROVED' });
+  });
+
+  it('a signed link that no longer works (no record) is 404 and is not counted', async () => {
+    const ip = '203.0.113.51';
+    const stale = linkFor(APPT_NONE);
+    for (let i = 0; i < 35; i++) expect((await linkGet(getReq(stale, ip), ctx(stale))).status).toBe(404);
+    const done = linkFor(APPT_DONE);
+    expect((await linkGet(getReq(done, ip), ctx(done))).status).toBe(200);
   });
 });

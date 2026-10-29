@@ -501,7 +501,13 @@ export interface DecideInput {
   via?: 'email_link';
 }
 
-/** The caller (transitionSession) has already checked that the actor may decide. */
+/**
+ * Approve a waiting booking. Callers are transitionSession (the dashboard) and the email link
+ * (email-link.ts). Whoever calls must already have guaranteed that the actor may decide this
+ * booking, that its approval record is AWAITING, and that the appointment is PENDING. This
+ * checks only what can change between that read and the write: the session not having
+ * started, and winning the claim.
+ */
 export async function approveAwaiting(input: DecideInput & { approval: store.ApprovalRecord }): Promise<void> {
   const now = input.now ?? new Date();
   const { actor, row, approval } = input;
@@ -552,7 +558,11 @@ export async function approveAwaiting(input: DecideInput & { approval: store.App
   await auditDecision(input, 'APPROVED', null);
 }
 
-/** The caller (transitionSession) has already checked that the actor may decide. */
+/**
+ * Reject a waiting booking. Same callers and the same duty as approveAwaiting: the actor may
+ * decide this booking, the record is AWAITING and the appointment is PENDING. Only winning
+ * the claim is checked here; a session that has started can still be rejected.
+ */
 export async function rejectAwaiting(input: DecideInput & { reason: string }): Promise<void> {
   const now = input.now ?? new Date();
   const { actor, row, reason } = input;
