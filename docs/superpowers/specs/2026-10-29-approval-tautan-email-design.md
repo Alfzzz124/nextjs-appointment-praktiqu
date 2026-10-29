@@ -1,7 +1,7 @@
 # Approval Psikolog — Setujui atau Tolak dari Tautan Email — Desain
 
 **Tanggal:** 2026-10-29
-**Status:** Disetujui per bagian oleh user (2026-10-29). Menunggu review spec tertulis.
+**Status:** Disetujui (2026-10-29); diimplementasikan di branch feat/approval-tautan-email (BE) dan feat/approval-tautan-email (FE), belum dirilis.
 **Dibangun di atas:** `docs/superpowers/specs/2026-10-19-approval-psikolog-design.md` (fitur sudah live
 2026-10-21: plugin 1.8.4, tabel `session_approvals` / `professional_approval_settings`, BE PR #63, FE PR #61).
 **Repo yang tersentuh:**
@@ -94,8 +94,8 @@ interface PublicApprovalLinkView {
   clientName: string;
   professionalName: string;
   serviceName: string;
-  slotDate: string;        // YYYY-MM-DD, zona klinik
-  startTime: string;       // HH:mm:ss, zona klinik
+  slotDate: string | null;   // YYYY-MM-DD, zona klinik
+  startTime: string | null;  // HH:mm:ss, zona klinik
   timezone: string;
   amount: { value: number; currency: 'IDR' | 'USD' } | null;   // null = ditandai lunas manual
   state: 'AWAITING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
@@ -124,6 +124,10 @@ Urutan, berhenti di yang pertama gagal:
      WordPress, karena `users.status` hanya disinkronkan saat login;
    - status profesionalnya `INACTIVE` (`findDoctorById(...)?.status`, yang diset aksi admin "nonaktifkan
      profesional").
+
+   Urutan pengecekannya: akun WordPress dan status profesional diperiksa **sebelum** akun aplikasi, jadi
+   tautan psikolog yang dinonaktifkan tidak pernah membuat baris akun aplikasi (`ensureUserFromWordPress`
+   baru dipanggil setelah keduanya lolos).
 
    Tautan tidak kedaluwarsa, jadi menonaktifkan akun psikolog adalah satu-satunya cara klinik mencabut tautan
    yang bocor atau diteruskan (§8). Empat kegagalan ini sengaja dijawab sama. Akun aplikasi yang `wpUserId`-nya

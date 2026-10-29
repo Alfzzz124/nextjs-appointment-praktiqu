@@ -8964,6 +8964,11 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           description: Too many forged tokens from this address (rate_limited). Genuine links are never limited.
+          headers:
+            Retry-After:
+              description: Seconds until the address may try again.
+              schema:
+                type: integer
       security: []
   /api/v1/public/approvals/{token}/approve:
     parameters:
@@ -8990,8 +8995,31 @@ paths:
                     $ref: '#/components/schemas/PublicApprovalLinkView'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: approval_already_decided or booking_cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: session_already_started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '429':
           description: Too many forged tokens from this address (rate_limited).
+          headers:
+            Retry-After:
+              description: Seconds until the address may try again.
+              schema:
+                type: integer
+        '500':
+          description: approval_actor_missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security: []
   /api/v1/public/approvals/{token}/reject:
     parameters:
@@ -9030,10 +9058,27 @@ paths:
                     $ref: '#/components/schemas/PublicApprovalLinkView'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: approval_already_decided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':
           description: Too many forged tokens from this address (rate_limited).
+          headers:
+            Retry-After:
+              description: Seconds until the address may try again.
+              schema:
+                type: integer
+        '500':
+          description: approval_actor_missing or status_write_failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       security: []
   /api/v1/public/booking:
     post:

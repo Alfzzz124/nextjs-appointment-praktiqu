@@ -95,14 +95,22 @@ Urutan rilis **FE dulu, baru backend** (kebalikan biasanya):
    email yang membawa tautan baru; kalaupun halaman dibuka, backend lama menjawab 404 dan halaman
    menampilkan "Tautan ini tidak berlaku".
 2. Merge PR backend `feat/approval-tautan-email` → Hostinger auto-deploy. **Cek build benar-benar
-   berjalan**: hPanel → Penempatan, atau `ls -t ~/domains/endpoint.praktiqu.com/hbuilds/logs | head -3`
-   lalu `grep "Checking out commit"` di log terbaru; harus sama dengan `git log -1 origin/main`.
-   Tidak ada SQL, tidak ada plugin.
+   berjalan**: hPanel → Penempatan, atau lewat SSH. Log deploy ada per build di
+   `~/domains/endpoint.praktiqu.com/hbuilds/logs/<build_id>/…_deploy.log`: ambil direktori build
+   terbaru (`ls -t ~/domains/endpoint.praktiqu.com/hbuilds/logs | head -3`), lalu
+   `grep -r "Checking out commit" ~/domains/endpoint.praktiqu.com/hbuilds/logs/<build_id>`; hash-nya
+   harus sama dengan `git log -1 origin/main` di mesin lokal. Tidak ada SQL, tidak ada plugin.
 3. Verifikasi tanpa data nyata: `GET https://endpoint.praktiqu.com/api/v1/public/approvals/rusak`
    → `404` dengan `"title":"approval_link_invalid"`; halaman
    `https://appointment.praktiqu.com/persetujuan/t/xxxxxxxxxxxxxxxxxxxxxxxx` → "Tautan ini tidak berlaku".
 4. Uji coba (user): booking nyata ke psikolog uji → setujui dari tautan email asli; booking kedua →
    tolak dari tautan; buka ulang tautan pertama → "Sudah disetujui oleh …".
 
+Batas 429 "30 per alamat per 15 menit" untuk token palsu sebenarnya per host FE sampai
+`FE_FORWARDER_SECRET` diisi di kedua sisi (`src/lib/client-ip.ts`); hanya token palsu yang dibatasi,
+jadi tautan asli tidak pernah terkunci.
+
 Rollback: revert backend dulu (email kembali tanpa tautan). Tautan yang sudah terkirim lalu dijawab
 404 oleh backend lama, dan halaman FE menampilkan "tidak berlaku" dengan tombol login. FE boleh dibiarkan.
+Token tidak pernah kedaluwarsa, jadi begitu backend dirilis lagi, semua tautan yang sudah terkirim
+berfungsi kembali.
