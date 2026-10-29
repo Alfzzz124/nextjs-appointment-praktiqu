@@ -457,7 +457,7 @@ async function alreadyDecided(appointmentId: number): Promise<ApprovalError> {
 }
 
 async function auditDecision(
-  input: Pick<DecideInput, 'actor' | 'actorWpUserId' | 'row'>,
+  input: Pick<DecideInput, 'actor' | 'actorWpUserId' | 'row' | 'via'>,
   decision: 'APPROVED' | 'REJECTED',
   reason: string | null,
 ): Promise<void> {
@@ -470,7 +470,13 @@ async function auditDecision(
     resource: 'session',
     resourceId: String(row.id),
     action: 'session.approval_decided',
-    metadata: { decision, reason, onBehalf, professionalId: row.professionalId },
+    metadata: {
+      decision,
+      reason,
+      onBehalf,
+      professionalId: row.professionalId,
+      ...(input.via ? { via: input.via } : {}),
+    },
   });
   await logging.audit('session.status_changed', {
     userId: actor.id,
@@ -491,6 +497,8 @@ export interface DecideInput {
   actorWpUserId: number;
   row: SessionRow;
   now?: Date;
+  /** How the decision arrived when it was not the dashboard (spec 2026-10-29): the email link. */
+  via?: 'email_link';
 }
 
 /** The caller (transitionSession) has already checked that the actor may decide. */
@@ -805,8 +813,9 @@ async function toItems(records: store.ApprovalRecord[], now: Date): Promise<Appr
  *
  * AWAITING on an appointment that is no longer PENDING → settleExternal. REJECTED on one
  * that still is → finishRejection. Best effort: a failure is logged and the read goes on.
+ * Exported for the email link (email-link.ts), which reads one record the same way.
  */
-async function reconcile(records: store.ApprovalRecord[], now: Date): Promise<void> {
+export async function reconcile(records: store.ApprovalRecord[], now: Date): Promise<void> {
   const open = records.filter(
     (a) => a.state === store.APPROVAL_STATE.AWAITING || a.state === store.APPROVAL_STATE.REJECTED,
   );
