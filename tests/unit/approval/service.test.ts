@@ -6,6 +6,7 @@
  * The store's own SQL is pinned by tests/integration/approval/approval-store.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { verifyApprovalToken } from '@/lib/public/approval-token';
 import { SESSION_STATUS, type SessionRow } from '@/repositories/wp/sessions.repo';
 import type { ApprovalRecord } from '@/services/approval/store';
 import { WpEndpointError } from '@/lib/wp-endpoint';
@@ -217,6 +218,11 @@ describe('holdForApproval', () => {
     expect((email.sendEmail.mock.calls[1][0] as { html: string }).html).toContain(
       'https://appointment.praktiqu.test/dashboard/persetujuan/7',
     );
+    const html = (email.sendEmail.mock.calls[1][0] as { html: string }).html;
+    const found = html.match(/https:\/\/appointment\.praktiqu\.test\/persetujuan\/t\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"/);
+    expect(found).not.toBeNull();
+    expect(verifyApprovalToken(found![1])).toEqual({ appointmentId: 7, doctorWpUserId: 34 });
+    expect(html).toContain(`/persetujuan/t/${found![1]}?aksi=tolak`);
     expect(log.logging.audit).toHaveBeenCalledWith(
       'session.approval_requested',
       expect.objectContaining({ resourceId: '7' }),

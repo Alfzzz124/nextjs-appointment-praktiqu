@@ -20,6 +20,7 @@ const FACTS: SessionMailFacts = {
   timezone: 'Asia/Jakarta',
 };
 const LINK = 'https://appointment.praktiqu.test/dashboard/persetujuan/7';
+const ACTION = 'https://appointment.praktiqu.test/persetujuan/t/tok.sig';
 
 describe('buildClientAwaitingEmail', () => {
   it('says the payment arrived and the psychologist still has to confirm', () => {
@@ -41,22 +42,34 @@ describe('buildClientAwaitingEmail', () => {
 });
 
 describe('buildProfessionalRequestEmail', () => {
-  it('first mail: new booking, with the link', () => {
-    const m = buildProfessionalRequestEmail({ ...FACTS, link: LINK, waitingSince: null });
+  it('first mail: new booking, the no-login links first, then the dashboard', () => {
+    const m = buildProfessionalRequestEmail({ ...FACTS, link: LINK, actionLink: ACTION, waitingSince: null });
     expect(m.subject).toBe('Booking baru menunggu persetujuan Anda: Kamis, 22 Oktober 2026 pukul 10:00');
-    expect(m.html).toContain(`<a href="${LINK}">Buka permintaan</a>`);
-    expect(m.text).toContain(`Buka permintaan: ${LINK}`);
+    expect(m.html).toContain(
+      `<p><a href="${ACTION}">Setujui jadwal</a> · <a href="${ACTION}?aksi=tolak">Tolak permintaan</a></p>`,
+    );
+    expect(m.html).toContain(
+      '<p>Tautan ini khusus untuk Anda, jangan diteruskan. Berlaku sampai booking diputuskan atau sesi dimulai.</p>',
+    );
+    expect(m.html).toContain(`<a href="${LINK}">Buka di dashboard</a>`);
+    expect(m.html.indexOf('Setujui jadwal')).toBeLessThan(m.html.indexOf('Buka di dashboard'));
+    expect(m.text).toContain(`Setujui jadwal: ${ACTION}`);
+    expect(m.text).toContain(`Tolak permintaan: ${ACTION}?aksi=tolak`);
+    expect(m.text).toContain('jangan diteruskan');
+    expect(m.text).toContain(`Buka di dashboard: ${LINK}`);
     expect(m.text).toContain('sudah membayar sesi berikut');
   });
 
-  it('reminder: names the client and how long it has waited', () => {
+  it('reminder: names the client and how long it has waited, and carries the links too', () => {
     const m = buildProfessionalRequestEmail({
       ...FACTS,
       link: LINK,
+      actionLink: ACTION,
       waitingSince: new Date('2026-10-20T02:00:00.000Z'),
     });
     expect(m.subject).toBe('Pengingat: booking Ada <b>Lovelace</b> masih menunggu persetujuan Anda');
     expect(m.text).toContain('sejak Selasa, 20 Oktober 2026 pukul 09:00');
+    expect(m.html).toContain(`<a href="${ACTION}?aksi=tolak">Tolak permintaan</a>`);
   });
 });
 
@@ -72,6 +85,8 @@ describe('buildAdminEscalationEmail', () => {
     expect(m.text).toContain('Halo Rina,');
     expect(m.text).toContain('sejak Selasa, 20 Oktober 2026 pukul 09:00');
     expect(m.text).toContain('atas nama psikolog');
+    expect(m.html).not.toContain('/persetujuan/t/');
+    expect(m.html).toContain('Buka antrean persetujuan');
   });
 });
 

@@ -17,6 +17,7 @@ import type { Actor } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 import { jobs } from '@/lib/jobs/client';
 import { logging } from '@/lib/logging';
+import { signApprovalToken } from '@/lib/public/approval-token';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 import { isStatusConflict, setAppointmentStatus, type ConfirmedPayment } from '@/repositories/wp/appointments.write';
@@ -86,6 +87,15 @@ export class ApprovalError extends Error {
 export function approvalLink(appointmentId?: number): string {
   const tail = appointmentId !== undefined ? `/${appointmentId}` : '';
   return `${getPublicAppUrl()}/dashboard/persetujuan${tail}`;
+}
+
+/**
+ * The no-login page for one request (spec 2026-10-29 §6.5), signed for the booking and the
+ * psychologist it belongs to now. Each call signs a fresh token; any of them works until
+ * the booking is decided or its session starts.
+ */
+export function approvalActionLink(appointmentId: number, doctorWpUserId: number): string {
+  return `${getPublicAppUrl()}/persetujuan/t/${signApprovalToken({ appointmentId, doctorWpUserId })}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -324,7 +334,12 @@ export async function holdForApproval(input: HoldInput): Promise<boolean> {
     await mail(row.clientEmail, buildClientAwaitingEmail(facts), 'approval_client_awaiting');
     await mail(
       row.professionalEmail,
-      buildProfessionalRequestEmail({ ...facts, link: approvalLink(row.id), waitingSince: null }),
+      buildProfessionalRequestEmail({
+        ...facts,
+        link: approvalLink(row.id),
+        actionLink: approvalActionLink(row.id, row.professionalId),
+        waitingSince: null,
+      }),
       'approval_professional_request',
     );
   }
