@@ -48,12 +48,25 @@ Jangan menilai dari daftar itu. Yang membuktikan adalah lognya:
 ssh praktiqu-hostinger 'tail -5 ~/gcal-event-sync.log'
 ```
 
-### Catatan
+### Jangan percaya information_schema.table_rows
 
-`google_calendar_connections` masih 0 baris. Belum ada satu psikolog pun yang
-menghubungkan Google Calendar-nya, jadi arah baca yang live sejak September pun
-belum pernah dipakai orang sungguhan. Uji coba nanti sekaligus jadi uji pertama
-untuk kedua arah.
+Angka baris dari `information_schema.tables` untuk InnoDB adalah **perkiraan**,
+dan di sini ia menjawab 0 untuk tabel yang berisi. Sempat membuat catatan ini
+menyatakan "belum ada satu psikolog pun yang menghubungkan kalendernya" —
+padahal `COUNT(*)` menunjukkan ada satu sambungan sejak 15 September. Pakai
+`COUNT(*)` kalau angkanya dipakai untuk menyimpulkan sesuatu.
+
+### Keadaan sebenarnya per 2026-11-03
+
+- `google_calendar_connections`: **1 baris**, dari 15 September, izinnya
+  **hanya baca** (`calendar.freebusy`, `userinfo.email`, `openid`) — sambungan
+  uji dari masa arah baca dibangun, bukan sambungan dengan izin tulis
+- `appCalendarId` masih NULL: kalender "PraktiQu" belum pernah dibuat
+- `google_calendar_event_sync`: **0 baris**
+
+Jadi arah tulisnya terpasang dan penjadwalnya terbukti jalan, tapi **belum ada
+satu janji pun yang benar-benar mendarat di Google Calendar siapa pun**. Uji
+dengan akun psikolog sungguhan masih menjadi bukti yang belum ada.
 
 ---
 
