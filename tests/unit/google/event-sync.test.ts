@@ -62,7 +62,8 @@ vi.mock('@/services/integrations/google-calendar-connection.service', () => ({
 }));
 
 type Opts = Record<string, unknown>;
-const createEvent = vi.fn(async (_opts: Opts): Promise<string> => 'evt-new');
+const dibuat = (id: string) => ({ id, htmlLink: null, hangoutLink: null, conferenceError: null });
+const createEvent = vi.fn(async (_opts: Opts) => dibuat('evt-new'));
 const createAppCalendar = vi.fn(async (_opts: Opts): Promise<string> => 'cal-baru');
 const updateEvent = vi.fn(async (_opts: Opts): Promise<void> => {});
 const deleteEvent = vi.fn(async (_opts: Opts): Promise<void> => {});
@@ -116,7 +117,7 @@ beforeEach(() => {
   rows.length = 0;
   updates.length = 0;
   connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: CAL };
-  createEvent.mockClear().mockResolvedValue('evt-new');
+  createEvent.mockClear().mockResolvedValue(dibuat('evt-new'));
   createAppCalendar.mockClear().mockResolvedValue('cal-baru');
   updateEvent.mockClear().mockResolvedValue(undefined);
   deleteEvent.mockClear().mockResolvedValue(undefined);

@@ -49,7 +49,7 @@ const ours = { status: 'confirmed', extendedProperties: { private: { [MARKER_KEY
 describe('createEvent', () => {
   it('returns the id Google assigns', async () => {
     const fetchImpl = replies([{ id: 'evt-1' }]);
-    expect(await createEvent({ ...CALL, body: BODY, fetchImpl })).toBe('evt-1');
+    expect(await createEvent({ ...CALL, body: BODY, fetchImpl })).toMatchObject({ id: 'evt-1' });
   });
 
   it('asks Google to notify the attendees', async () => {
@@ -198,5 +198,70 @@ describe('createAppCalendar', () => {
     await expect(
       createAppCalendar({ accessToken: 'at', timeZone: 'Asia/Jakarta', fetchImpl }),
     ).rejects.toBeInstanceOf(GoogleOAuthError);
+  });
+});
+
+describe('Meet untuk sesi online', () => {
+  const BODY_MEET = {
+    ...BODY,
+    conferenceData: {
+      createRequest: {
+        requestId: 'praktiqu-4821',
+        conferenceSolutionKey: { type: 'hangoutsMeet' as const },
+      },
+    },
+  };
+
+  it('memakai conferenceDataVersion=1, tanpa itu Google diam-diam membuangnya', async () => {
+    // Inilah kegagalan yang paling sulit didiagnosis: permintaannya diterima,
+    // acaranya jadi, dan Meet-nya hilang tanpa pesan galat apa pun.
+    const fetchImpl = replies([{ id: 'evt-1', hangoutLink: 'https://meet.google.com/abc-defg-hij' }]);
+    await createEvent({ ...CALL, body: BODY_MEET, fetchImpl });
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('conferenceDataVersion=1');
+  });
+
+  it('tidak meminta conferenceDataVersion untuk sesi tatap muka', async () => {
+    const fetchImpl = replies([{ id: 'evt-1' }]);
+    await createEvent({ ...CALL, body: BODY, fetchImpl });
+    expect(String(fetchImpl.mock.calls[0][0])).not.toContain('conferenceDataVersion');
+  });
+
+  it('mengembalikan tautan Meet dan tautan acaranya', async () => {
+    const fetchImpl = replies([
+      { id: 'evt-1', hangoutLink: 'https://meet.google.com/abc-defg-hij', htmlLink: 'https://cal/e/1' },
+    ]);
+    expect(await createEvent({ ...CALL, body: BODY_MEET, fetchImpl })).toEqual({
+      id: 'evt-1',
+      htmlLink: 'https://cal/e/1',
+      hangoutLink: 'https://meet.google.com/abc-defg-hij',
+      conferenceError: null,
+    });
+  });
+
+  it('melaporkan Meet yang diminta tapi tidak jadi, tanpa menggagalkan acaranya', async () => {
+    // Kemungkinan terbesar: izin yang lebih sempit dari milik kita. Acaranya
+    // tetap benar dan tetap harus ada; yang hilang cuma tautan rapatnya.
+    const fetchImpl = replies([
+      { id: 'evt-1', conferenceData: { createRequest: { status: { statusCode: 'failure' } } } },
+    ]);
+    const hasil = await createEvent({ ...CALL, body: BODY_MEET, fetchImpl });
+    expect(hasil.id).toBe('evt-1');
+    expect(hasil.hangoutLink).toBeNull();
+    expect(hasil.conferenceError).toContain('failure');
+  });
+
+  it('tidak melaporkan galat Meet untuk acara yang memang tidak memintanya', async () => {
+    // Tanpa pembedaan ini, setiap sesi tatap muka akan tercatat seolah gagal
+    // membuat Meet.
+    const fetchImpl = replies([{ id: 'evt-1' }]);
+    expect((await createEvent({ ...CALL, body: BODY, fetchImpl })).conferenceError).toBeNull();
+  });
+
+  it('mempertahankan Meet saat janji dipindah', async () => {
+    // PUT mengganti seluruh isi acara. Tanpa conferenceDataVersion, sesi online
+    // yang dijadwal ulang kembali tanpa tautan yang sudah dipegang kliennya.
+    const fetchImpl = replies([ours], [{ id: 'evt-1' }]);
+    await updateEvent({ ...CALL, eventId: 'evt-1', body: BODY_MEET, fetchImpl, expectMarker: '4821' });
+    expect(String(fetchImpl.mock.calls[1][0])).toContain('conferenceDataVersion=1');
   });
 });

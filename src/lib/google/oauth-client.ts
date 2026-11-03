@@ -51,15 +51,33 @@ export const GOOGLE_WRITE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.app.created',
 ] as const;
 
+const BROAD_CALENDAR = 'https://www.googleapis.com/auth/calendar';
+
 /** Did this grant actually include the write scope? */
 export function grantsWriteScope(scopeGranted: string): boolean {
   const granted = new Set(scopeGranted.split(/\s+/).filter(Boolean));
-  // `calendar` is the broad read-write scope. A professional who once went through
-  // KiviCare's consent may still hold it, and it subsumes what we need.
-  return (
-    GOOGLE_WRITE_SCOPES.every((s) => granted.has(s)) ||
-    granted.has('https://www.googleapis.com/auth/calendar')
-  );
+  return GOOGLE_WRITE_SCOPES.every((s) => granted.has(s)) || granted.has(BROAD_CALENDAR);
+}
+
+/**
+ * The grant is WIDER than what this application asks for.
+ *
+ * Google carries previously-granted scopes forward through
+ * `include_granted_scopes`, so someone who once allowed the broad `calendar`
+ * scope — through an older integration, or an earlier version of this one — keeps
+ * handing us read-write over their entire real calendar even though we now only
+ * request `calendar.app.created`.
+ *
+ * That still works, and refusing it outright would strand events we already
+ * created with nothing able to update or delete them. But it must not pass
+ * silently: the settings page tells people their personal calendar cannot be
+ * touched, and for these connections that sentence is not true until they revoke
+ * and reconnect. Disconnecting alone does not clear it — the grant lives on
+ * Google's side.
+ */
+export function usesBroadCalendarScope(scopeGranted: string): boolean {
+  const granted = new Set(scopeGranted.split(/\s+/).filter(Boolean));
+  return granted.has(BROAD_CALENDAR) && !GOOGLE_WRITE_SCOPES.every((s) => granted.has(s));
 }
 
 export interface GoogleOAuthConfig {

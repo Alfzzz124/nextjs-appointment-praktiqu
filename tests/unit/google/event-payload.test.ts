@@ -145,3 +145,30 @@ describe('fingerprintEvent', () => {
     expect(fingerprintEvent(buildEventBody(APPT))).not.toBe(ABSENT_FINGERPRINT);
   });
 });
+
+describe('sesi online', () => {
+  it('meminta Meet hanya ketika layanannya online', () => {
+    expect(buildEventBody({ ...APPT, isTelemed: true }).conferenceData).toMatchObject({
+      createRequest: { conferenceSolutionKey: { type: 'hangoutsMeet' } },
+    });
+    expect(buildEventBody(APPT).conferenceData).toBeUndefined();
+    expect(buildEventBody({ ...APPT, isTelemed: false }).conferenceData).toBeUndefined();
+  });
+
+  it('memakai requestId yang tetap per janji, bukan acak', () => {
+    // Google memperlakukan requestId sebagai kunci idempotensi. Kalau berubah
+    // tiap sinkron, setiap pembaruan akan meminta Meet baru dan tautan yang
+    // sudah dipegang klien berhenti jadi tautan yang benar.
+    const a = buildEventBody({ ...APPT, isTelemed: true }).conferenceData?.createRequest.requestId;
+    const b = buildEventBody({ ...APPT, isTelemed: true }).conferenceData?.createRequest.requestId;
+    expect(a).toBe(b);
+    expect(a).toContain('4821');
+  });
+
+  it('sidik jarinya berubah saat layanan berubah jadi online', () => {
+    // Kalau tidak, janji yang diubah jadi sesi online tidak akan pernah
+    // disinkronkan ulang dan selamanya tanpa tautan rapat.
+    expect(fingerprintEvent(buildEventBody({ ...APPT, isTelemed: true })))
+      .not.toBe(fingerprintEvent(buildEventBody(APPT)));
+  });
+});
