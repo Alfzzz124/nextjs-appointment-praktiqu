@@ -208,3 +208,57 @@ Jawabannya memuat `created`, `updated`, `deleted`, `alreadyCurrent`, `failed` da
 
 Arah tulis yang gagal tidak pernah menggagalkan pemesanan dan tidak pernah
 memengaruhi arah baca. Keduanya berbagi sambungan, bukan nasib.
+
+---
+
+## Temuan terbuka, 2026-11-03
+
+### 1. Jam acara pertama tidak cocok dengan data — BELUM DIPASTIKAN
+
+Janji 3373 tersimpan `16:30:00 → 17:20:00` dengan `appointment_timezone`
+`Asia/Jakarta` (layanan Konseling online, 50 menit). Tangkapan layar acaranya
+di Google Calendar menunjukkan **17:00 – 17:30**.
+
+Itu bukan pergeseran zona waktu: awalnya geser +30 menit, akhirnya +10, dan
+durasinya berubah dari 50 jadi 30 menit. Tidak ada zona yang menghasilkan pola
+itu.
+
+Belum dipastikan apakah yang salah tampilan di perangkat atau isi acaranya
+sendiri. Kalau yang tersimpan memang 17:00–17:30, tiga klien pertama menerima
+undangan dengan jam yang keliru.
+
+Cara memastikan tanpa menebak: buka acara itu di Google Calendar versi browser
+dan bandingkan, atau baca acaranya lewat API — itu kalender PraktiQu buatan
+kita sendiri, jadi membacanya tidak melanggar janji apa pun soal kalender
+pribadi psikolog.
+
+Psikolog yang bersangkutan belum berkomentar, jadi ini dicatat dulu, bukan
+diperbaiki buta-buta.
+
+### 2. Sesi online tidak punya tautan pertemuan sejak 4 Agustus 2026
+
+Addon `kivicare-google-meet` masih aktif dan secara historis membuat 537
+tautan Meet. Tapi baris terakhirnya tertanggal **3 Agustus 2026**
+(janji 3226, dokter 34). Setelah itu berhenti sama sekali.
+
+Akibatnya setiap janji "Konseling online" sejak 4 Agustus tidak punya tautan
+Meet — termasuk 3373 yang baru saja tersinkron dan kliennya sudah menerima
+undangan kalender tanpa tautan pertemuan apa pun:
+
+```
+id    tgl         status  ada_meet
+3378  2026-11-06  2       0
+3377  2026-11-06  2       0
+3373  2026-11-04  1       0
+3368  2026-10-31  2       0
+3366  2026-10-29  2       0
+3365  2026-10-29  2       0
+```
+
+Ini celah layanan yang sudah berjalan tiga bulan tanpa ketahuan, bukan
+permintaan fitur.
+
+Datanya sendiri sudah siap untuk membedakan mana yang online:
+`wp_kc_service_doctor_mapping.telemed_service` berisi `yes`/`no`, dan backend
+sudah mengenalnya lewat `telemedService`. Yang belum: loader kalender tidak
+membacanya, dan tidak ada kode `conferenceData` sama sekali di sisi kita.
