@@ -11,6 +11,8 @@ import { KcError } from '@/lib/kc-response';
 import {
   readScopeFor,
   canWrite,
+  canEdit,
+  canCreate,
   parseServiceId,
   scopeForRequest,
 } from '@/services/service-catalog/scope';
@@ -94,6 +96,32 @@ describe('canWrite', () => {
     expect(canWrite('RECEPTIONIST')).toBe(false);
     expect(canWrite('PROFESSIONAL')).toBe(false);
     expect(canWrite('CLIENT')).toBe(false);
+  });
+});
+
+describe('canEdit', () => {
+  it('admits the two admin roles plus a psychologist editing their own rows', () => {
+    expect(canEdit('SUPER_ADMIN')).toBe(true);
+    expect(canEdit('CLINIC_ADMIN')).toBe(true);
+    // Their reach is narrowed to their own mappings by readScopeFor, not here.
+    expect(canEdit('PROFESSIONAL')).toBe(true);
+    expect(canEdit('RECEPTIONIST')).toBe(false);
+    expect(canEdit('CLIENT')).toBe(false);
+  });
+});
+
+describe('canCreate', () => {
+  it('admits the two admin roles plus a psychologist adding for themselves', () => {
+    expect(canCreate('SUPER_ADMIN')).toBe(true);
+    expect(canCreate('CLINIC_ADMIN')).toBe(true);
+    // Narrowed to their own name and clinics by resolveOwnCreateTarget, not here.
+    expect(canCreate('PROFESSIONAL')).toBe(true);
+    expect(canCreate('RECEPTIONIST')).toBe(false);
+    expect(canCreate('CLIENT')).toBe(false);
+  });
+
+  it('leaves deleting to the admins', () => {
+    expect(canWrite('PROFESSIONAL')).toBe(false);
   });
 });
 

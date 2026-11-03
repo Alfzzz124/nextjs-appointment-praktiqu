@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedFollowupChain, seedFollowup, cleanup } from './fixtures';
+import { assertTestDb, seedFollowupChain, seedFollowup, cleanup, useIdBlock } from './fixtures';
 import { prisma } from '@/lib/db';
 import {
   createChain, getChain, createFollowup, getFollowup, listFollowups,
@@ -7,8 +7,10 @@ import {
   createReminder, sendReminderNow,
 } from '@/services/billing/followup.service';
 
-const CLINIC = 9_000_001, DOCTOR = 9_000_002, PATIENT = 9_000_003;
-const OTHER_DOCTOR = 9_000_012;
+const { BASE } = useIdBlock('billing/followup.service.test.ts');
+
+const CLINIC = BASE + 1, DOCTOR = BASE + 2, PATIENT = BASE + 3;
+const OTHER_DOCTOR = BASE + 12;
 
 // KcActor shapes (see encounter.service.test.ts). SUPER_ADMIN → null scope.
 const kcSuper = { actor: { id: 'a', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(DOCTOR), clinicId: BigInt(CLINIC) } as any;
@@ -50,7 +52,7 @@ describe('followup.service', () => {
     expect(got.status).toBe('pending');
 
     // assertChainInScope: a PROFESSIONAL not owning the chain's doctor cannot create in it.
-    const otherChain = await seedFollowupChain({ id: 9_000_020, clinicId: CLINIC, doctorId: OTHER_DOCTOR, patientId: PATIENT });
+    const otherChain = await seedFollowupChain({ id: BASE + 20, clinicId: CLINIC, doctorId: OTHER_DOCTOR, patientId: PATIENT });
     await expect(createFollowup({
       chainId: otherChain.id, patientId: PATIENT,
       reason: 'x', priority: 'routine',
@@ -59,8 +61,8 @@ describe('followup.service', () => {
   });
 
   it('list/get is scoped by doctor_id for PROFESSIONAL', async () => {
-    const chain = await seedFollowupChain({ id: 9_000_030, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const f = await seedFollowup({ id: 9_000_031, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const chain = await seedFollowupChain({ id: BASE + 30, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const f = await seedFollowup({ id: BASE + 31, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
 
     const mine = await listFollowups({ page: 1, perPage: 10 } as any, scopePro);
     expect(mine.followups.some((x) => x.id === Number(f.id))).toBe(true);
@@ -72,8 +74,8 @@ describe('followup.service', () => {
   });
 
   it('completeFollowup sets status/completed_at_utc and writes an activity_log row', async () => {
-    const chain = await seedFollowupChain({ id: 9_000_040, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const f = await seedFollowup({ id: 9_000_041, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const chain = await seedFollowupChain({ id: BASE + 40, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const f = await seedFollowup({ id: BASE + 41, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
 
     await completeFollowup(Number(f.id), 'done', kcSuper, scopeSuper);
     const got = await getFollowup(Number(f.id), scopeSuper);
@@ -85,9 +87,9 @@ describe('followup.service', () => {
   });
 
   it('bulkSetFollowupStatus updates only in-scope rows', async () => {
-    const chain = await seedFollowupChain({ id: 9_000_050, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const a = await seedFollowup({ id: 9_000_051, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const b = await seedFollowup({ id: 9_000_052, chainId: chain.id, clinicId: CLINIC, doctorId: OTHER_DOCTOR, patientId: PATIENT });
+    const chain = await seedFollowupChain({ id: BASE + 50, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const a = await seedFollowup({ id: BASE + 51, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const b = await seedFollowup({ id: BASE + 52, chainId: chain.id, clinicId: CLINIC, doctorId: OTHER_DOCTOR, patientId: PATIENT });
 
     const n = await bulkSetFollowupStatus([Number(a.id), Number(b.id)], 'scheduled', 'batch', kcPro, scopePro);
     expect(n).toBe(1); // only the DOCTOR-owned row
@@ -96,13 +98,13 @@ describe('followup.service', () => {
   });
 
   it('listDueFollowups returns pending followups past their deadline', async () => {
-    const chain = await seedFollowupChain({ id: 9_000_060, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const chain = await seedFollowupChain({ id: BASE + 60, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
     const due = await seedFollowup({
-      id: 9_000_061, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT,
+      id: BASE + 61, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT,
       status: 'pending', suggestedDeadline: '2020-01-01 09:00:00',
     });
     const notDue = await seedFollowup({
-      id: 9_000_062, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT,
+      id: BASE + 62, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT,
       status: 'pending', suggestedDeadline: '2099-01-01 09:00:00',
     });
 
@@ -112,8 +114,8 @@ describe('followup.service', () => {
   });
 
   it('createReminder + sendReminderNow: email dev-logs ok and marks processed_at', async () => {
-    const chain = await seedFollowupChain({ id: 9_000_070, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const f = await seedFollowup({ id: 9_000_071, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const chain = await seedFollowupChain({ id: BASE + 70, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const f = await seedFollowup({ id: BASE + 71, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
 
     const { id: reminderId } = await createReminder(
       Number(f.id), { reminderType: 'deadline', offsetDays: 0, channel: 'email' }, scopeSuper,
@@ -129,8 +131,8 @@ describe('followup.service', () => {
   });
 
   it('sendReminderNow throws KcError 501 for an sms reminder', async () => {
-    const chain = await seedFollowupChain({ id: 9_000_080, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const f = await seedFollowup({ id: 9_000_081, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const chain = await seedFollowupChain({ id: BASE + 80, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const f = await seedFollowup({ id: BASE + 81, chainId: chain.id, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
     await createReminder(Number(f.id), { reminderType: 'sms-alert', offsetDays: 0, channel: 'sms' }, scopeSuper);
 
     await expect(sendReminderNow(Number(f.id), kcSuper, scopeSuper)).rejects.toMatchObject({ httpStatus: 501 });

@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
-import { seedTax, seedClinicAdmin, cleanup, assertTestDb } from './fixtures';
+import { seedTax, seedClinicAdmin, cleanup, assertTestDb, useIdBlock } from './fixtures';
 import { GET as taxesGet, POST as taxesPost } from '@/app/api/v1/taxes/route';
+
+const { BASE } = useIdBlock('billing/routes.integration.test.ts');
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
-async function token(role: string, sub = 'test-admin-9000001') {
+async function token(role: string, sub = `test-admin-${BASE + 1}`) {
   return new SignJWT({ role }).setProtectedHeader({ alg: 'HS256' }).setSubject(sub).setExpirationTime('1h').sign(SECRET);
 }
 function reqWith(jwt: string, url = 'http://localhost/api/v1/taxes', init: RequestInit = {}) {
@@ -14,7 +16,7 @@ function reqWith(jwt: string, url = 'http://localhost/api/v1/taxes', init: Reque
 }
 
 describe('taxes routes', () => {
-  beforeAll(async () => { assertTestDb(); await cleanup(); await seedClinicAdmin({ userId: 9000001, clinicId: 9000001 }); await seedTax({ id: 9000400, name: 'VAT' }); });
+  beforeAll(async () => { assertTestDb(); await cleanup(); await seedClinicAdmin({ userId: BASE + 1, clinicId: BASE + 1 }); await seedTax({ id: BASE + 400, name: 'VAT' }); });
   afterAll(cleanup);
 
   it('GET /taxes returns the {status,message,data} envelope', async () => {

@@ -38,10 +38,17 @@ export type CreatePatientInput = {
   /** PraktiQU-only fields — KiviCare's basic_data blob has no slot for these. */
   emergencyContact?: string;
   notes?: string;
+  /**
+   * When the email already has a WordPress account holding only ordinary site roles
+   * (WooCommerce `customer`, `subscriber`), make that account a patient instead of
+   * answering 409. Staff accounts still answer 409. Plugin >= 1.8.2; older plugins
+   * ignore the key and keep answering 409, so this is safe to send before they update.
+   */
+  adoptExisting?: boolean;
 };
 
 /** Every field optional — the plugin merges into `basic_data` rather than replacing. */
-export type UpdatePatientInput = Partial<Omit<CreatePatientInput, 'password'>>;
+export type UpdatePatientInput = Partial<Omit<CreatePatientInput, 'password' | 'adoptExisting'>>;
 
 export type WrittenPatient = {
   id: number;
@@ -87,6 +94,7 @@ function toRequestBody(input: CreatePatientInput | UpdatePatientInput): Record<s
     ['status', 'client_status'],
     ['emergencyContact', 'emergency_contact'],
     ['notes', 'notes'],
+    ['adoptExisting', 'adopt_existing'],
   ];
 
   const body: Record<string, unknown> = {};

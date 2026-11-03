@@ -29,6 +29,12 @@ final class Patients
     private const ROLE = 'kiviCare_patient';
 
     /**
+     * Site roles an existing account may hold and still be made a patient by
+     * create() with `adopt_existing` — see adopt(). Ordinary sign-ups only.
+     */
+    private const ADOPTABLE_ROLES = ['customer', 'subscriber'];
+
+    /**
      * Fields KiviCare packs into the `basic_data` usermeta JSON blob.
      * Order and keys mirror KCPatient::save (KCPatient.php:128-137) so a record we
      * write is indistinguishable from one KiviCare wrote.
@@ -56,7 +62,11 @@ final class Patients
         if ($email === '' || !is_email($email)) {
             return new \WP_Error('praktiqu_invalid_email', 'A valid email is required.', ['status' => 400]);
         }
-        if (email_exists($email)) {
+        $owner = email_exists($email);
+        if ($owner) {
+            if (!empty($params['adopt_existing'])) {
+                return $this->adopt((int) $owner, $params, $request);
+            }
             return new \WP_Error('praktiqu_email_taken', 'That email is already registered.', ['status' => 409]);
         }
 
@@ -168,6 +178,77 @@ final class Patients
         do_action('kc_patient_update', $patient_data, $request);
 
         return $patient_data;
+    }
+
+    /**
+     * Turn an existing ordinary account into a patient, for create() with `adopt_existing`.
+     *
+     * Seen in production (2026-10-19): clients who signed up through WooCommerce hold
+     * only the `customer` role. The booking path looks patients up by role, finds none,
+     * tries a create, and gets 409 — so neither the client nor clinic staff could ever
+     * book that address. The account is theirs, so the patient role is ADDED to it (the
+     * WooCommerce role stays; their orders and login keep working).
+     *
+     * Only accounts whose every role is in ADOPTABLE_ROLES qualify. A psikolog, a clinic
+     * admin, a site editor — or an account with no role, which is what a disabled one
+     * can look like — still answers 409: attaching a booking there would hand clinical
+     * records to a staff login.
+     *
+     * Profile fields only fill gaps: the account owner's own name is not overwritten
+     * by whatever a booking form typed. No welcome email: they already have a login.
+     *
+     * @param array<string,mixed> $params
+     * @return array<string,mixed>|\WP_Error
+     */
+    private function adopt(int $user_id, array $params, \WP_REST_Request $request): array|\WP_Error
+    {
+        $user = get_user_by('id', $user_id);
+        if (!$user instanceof \WP_User) {
+            return new \WP_Error('praktiqu_email_taken', 'That email is already registered.', ['status' => 409]);
+        }
+
+        $roles = array_values((array) $user->roles);
+        $already_patient = in_array(self::ROLE, $roles, true);
+        $ordinary = $roles !== [] && array_diff($roles, self::ADOPTABLE_ROLES) === [];
+        if (!$already_patient && !$ordinary) {
+            return new \WP_Error('praktiqu_email_taken', 'That email is already registered.', ['status' => 409]);
+        }
+
+        if (!$already_patient) {
+            $user->add_role(self::ROLE);
+        }
+
+        $names = ['ID' => $user_id];
+        foreach (['first_name', 'last_name'] as $key) {
+            $given = sanitize_text_field((string) ($params[$key] ?? ''));
+            if ($given !== '' && trim((string) $user->$key) === '') {
+                $names[$key] = $given;
+            }
+        }
+        if (count($names) > 1) {
+            $result = wp_update_user($names);
+            if (is_wp_error($result)) {
+                return $result;
+            }
+        }
+
+        $raw = get_user_meta($user_id, 'basic_data', true);
+        $basic = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
+        if (trim((string) ($basic['mobile_number'] ?? '')) === '' && !empty($params['contact_number'])) {
+            $this->write_profile_meta($user_id, ['contact_number' => $params['contact_number']], true);
+        }
+
+        if (!empty($params['clinic_id'])) {
+            $this->map_to_clinic($user_id, (int) $params['clinic_id']);
+        }
+
+        $patient_data = $this->build_payload($user_id, $params, null);
+
+        // kc_patient_update, not kc_patient_save: the save listeners send the welcome
+        // email with a temporary password, and this account already has a password.
+        do_action('kc_patient_update', $patient_data, $request);
+
+        return $patient_data + ['adopted' => !$already_patient];
     }
 
     /* -------------------------------------------------------------- */

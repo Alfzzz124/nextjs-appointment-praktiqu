@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedClinicAdmin, seedClinicSchedule, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedClinicSchedule, cleanup, useIdBlock } from './fixtures';
 import {
   createSchedule, getSchedule, listSchedules, updateSchedule, deleteSchedule,
   assertModuleInScope, getUnavailableSchedule, scheduleModule,
 } from '@/services/billing/clinic-schedule.service';
 
-const CLINIC = 9_000_001, ADMIN = 9_000_002, OTHER_CLINIC = 9_000_501;
+const { BASE } = useIdBlock('billing/clinic-schedule.service.test.ts');
+
+const CLINIC = BASE + 1, ADMIN = BASE + 2, OTHER_CLINIC = BASE + 501;
 
 // CLINIC_ADMIN actor scoped to CLINIC — create derives clinicId from kc.clinicId.
 const kcAdmin = {
-  actor: { id: 'test-admin-9000002', role: 'CLINIC_ADMIN', practiceId: null },
+  actor: { id: `test-admin-${ADMIN}`, role: 'CLINIC_ADMIN', practiceId: null },
   wpUserId: BigInt(ADMIN),
   clinicId: BigInt(CLINIC),
 } as any;
@@ -25,12 +27,10 @@ describe('clinic-schedule.service', () => {
     expect(m.selectionModes).toEqual(['single', 'range', 'multiple']);
   });
 
-  it('assertModuleInScope rejects a CLINIC_ADMIN targeting another clinic (403)', () => {
-    expect(() =>
-      assertModuleInScope('clinic', OTHER_CLINIC, kcAdmin),
-    ).toThrow();
+  it('assertModuleInScope rejects a CLINIC_ADMIN targeting another clinic (403)', async () => {
+    await expect(assertModuleInScope('clinic', OTHER_CLINIC, kcAdmin)).rejects.toThrow();
     // targeting own clinic is allowed
-    expect(() => assertModuleInScope('clinic', CLINIC, kcAdmin)).not.toThrow();
+    await expect(assertModuleInScope('clinic', CLINIC, kcAdmin)).resolves.toBeUndefined();
   });
 
   describe('DB-backed lifecycle', () => {
@@ -71,7 +71,7 @@ describe('clinic-schedule.service', () => {
 
     it('scope isolation: another clinic scope cannot see the schedule', async () => {
       const { id } = await seedClinicSchedule({
-        id: 9_000_310, moduleType: 'clinic', moduleId: CLINIC, selectionMode: 'range', status: 1,
+        id: BASE + 310, moduleType: 'clinic', moduleId: CLINIC, selectionMode: 'range', status: 1,
       });
       // in-scope sees it
       expect((await getSchedule(id, scopeClinic)).id).toBe(id);
@@ -85,7 +85,7 @@ describe('clinic-schedule.service', () => {
 
     it('getUnavailableSchedule returns the active block for the module', async () => {
       const { id } = await seedClinicSchedule({
-        id: 9_000_320, moduleType: 'clinic', moduleId: CLINIC, selectionMode: 'range',
+        id: BASE + 320, moduleType: 'clinic', moduleId: CLINIC, selectionMode: 'range',
         startDate: '2026-08-01', endDate: '2026-08-10', status: 1,
       });
       const { unavailable } = await getUnavailableSchedule(

@@ -60,16 +60,42 @@ Pakai `accessToken` sebagai `Authorization: Bearer <token>`.
 > menghasilkan 400/404 yang membingungkan. Detailnya di
 > [`docs/handover/2026-07-31-frontend-breaking-changes.md`](../handover/2026-07-31-frontend-breaking-changes.md).
 
+### Klinik aktif (admin yang memegang beberapa klinik)
+
+Sejak 2026-10, satu `CLINIC_ADMIN` boleh memegang beberapa klinik (beberapa baris
+`wp_kc_clinics` dengan `clinic_admin_id` yang sama). Respons login dan `GET /auth/me`
+untuk CLINIC_ADMIN membawa daftarnya, klinik default lebih dulu:
+
+```json
+{ "user": { "role": "CLINIC_ADMIN", "clinicId": 4,
+            "clinics": [ { "id": 4, "name": "Klinik A", "active": true },
+                         { "id": 20, "name": "Klinik B", "active": true } ] } }
+```
+
+Pilih klinik untuk satu request dengan header **`X-Praktiqu-Clinic-Id: <id>`**. Tanpa header =
+klinik default (`clinicId`). Header hanya dibaca untuk CLINIC_ADMIN; role lain mengabaikannya.
+
+| Kasus | Jawaban |
+|---|---|
+| Format bukan bilangan bulat positif | 400, body memuat `invalid_clinic_header` |
+| Klinik bukan milik admin ini, atau tidak ada | 403, body memuat `clinic_not_in_scope` |
+
+Setiap endpoint ter-scope (daftar, detail, bills, pasien, laporan, pengaturan pembayaran)
+mengikuti klinik aktif ini. Klinik di luar klinik aktif tetap 404 seperti biasa.
+
 ---
 
 ## 3. Ringkasan hak akses
 
 | Endpoint | SUPER_ADMIN | CLINIC_ADMIN | PROFESSIONAL | RECEPTIONIST |
 |---|---|---|---|---|
-| `GET/POST /practices` | ✅ | ✅ | ❌ | ❌ |
-| `GET/PATCH/DELETE /practices/{id}` | ✅ | ✅ | ❌ | ❌ |
+| `GET /practices` | ✅ | 🔸 kliniknya sendiri | ❌ | ❌ |
+| `POST /practices` | ✅ | ❌ | ❌ | ❌ |
+| `GET/PATCH /practices/{id}` | ✅ | 🔸 kliniknya sendiri, `PATCH` tanpa `status` | ❌ | ❌ |
+| `DELETE /practices/{id}`, `POST /practices/{id}/activate` | ✅ | ❌ | ❌ | ❌ |
 | `/practices/{id}/settings` | ✅ | ✅ | ❌ | ❌ |
 | `/practices/{id}/holidays` | ✅ | ✅ | ❌ | ❌ |
+| `GET/PUT /practices/{id}/payment-settings` | ✅ | 🔸 kliniknya sendiri | ❌ | ❌ |
 | `GET /practices/{id}/users` | ✅ | ✅ | ❌ | ❌ |
 | `POST /practices/{id}/change-admin` | ✅ | ❌ | ❌ | ❌ |
 | `/practices/bulk/*`, `/practices/export` | ✅ | ❌ | ❌ | ❌ |
@@ -77,7 +103,7 @@ Pakai `accessToken` sebagai `Authorization: Bearer <token>`.
 | `GET /professionals/{id}/services/export` | ✅ | ⚠️ tanpa cek klinik | ❌ | ❌ |
 | `POST/DELETE /professionals/{id}/services` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
 | `/professionals/{id}/services/bulk/*` | ⛔ 410 | ⛔ 410 | ⛔ 410 | ⛔ 410 |
-| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | baca saja | baca saja |
+| `/api/v1/services` (CRUD katalog) | ✅ | 🔸 kliniknya | 🔸 baca; `POST` untuk dirinya sendiri; `PUT` miliknya | baca saja |
 
 ⛔ = dipensiunkan, menjawab `410 Gone` tanpa memeriksa token sama sekali.
 
@@ -85,9 +111,6 @@ Pakai `accessToken` sebagai `Authorization: Bearer <token>`.
 `wp_kc_doctor_clinic_mappings` — **bukan** dari `practiceId` di JWT (field itu cuid
 peninggalan skema lama dan tidak bisa dibandingkan dengan id klinik KiviCare). Lihat
 [`route-scope.ts`](../../src/services/professional/route-scope.ts).
-
-⚠️ Endpoint `/practices/*` **tidak** membatasi CLINIC_ADMIN ke klinik miliknya sendiri —
-role check-nya hanya mengecek role. Lihat §9.
 
 ---
 
@@ -123,6 +146,7 @@ curl https://staging2.praktiqu.com/api/v1/practices?page=1&limit=20 \
       "businessHours": [
         { "dayOfWeek": 1, "open": true, "startTime": "08:00", "endTime": "17:00" }
       ],
+      "international": false,
       "createdAt": "2026-01-10T03:00:00.000Z",
       "updatedAt": "2026-01-10T03:00:00.000Z"
     }
@@ -144,21 +168,90 @@ Catatan yang perlu diketahui sebelum dipakai:
   query param itu.
 - `updatedAt` selalu sama dengan `createdAt`. `wp_kc_clinics` tidak punya kolom
   `updated_at`, dan ini sengaja tidak dikarang.
+- `international` (read only) adalah flag Klinik Internasional yang tersimpan — untuk
+  badge admin saja. Diubah lewat §4.16, bukan lewat PATCH. Nilainya `false` kalau
+  pengaturannya gagal dibaca. Field ini juga ada di §4.3, jawaban §4.4, dan §4.15.
 
-### 4.2 `POST /api/v1/practices` — ❌ belum ada
+> CLINIC_ADMIN hanya melihat **klinik aktifnya** (header `X-Praktiqu-Clinic-Id`, atau klinik
+> default bila tanpa header) — satu baris, walau ia memegang beberapa klinik. Daftar lengkap
+> klinik miliknya ada di `user.clinics` respons `/auth/me` (§2).
 
-Selalu balas **501 Not Implemented**:
+### Klinik praktik (PROFESSIONAL)
+
+`/auth/me` dan respons login untuk psikolog membawa `user.practiceClinics`: setiap klinik
+**aktif** tempat ia dipetakan, `[{ "id": 4, "name": "AzaniDianda.com" }]`, urut id naik.
+Selalu berupa larik (boleh kosong); role lain tidak membawa field ini. Inilah pilihan klinik
+saat psikolog menambah layanannya sendiri (`POST /api/v1/services`). Berbeda dari
+`ownedClinics`, daftar ini tidak memberi akses admin apa pun.
+
+### Mode pemilik (PROFESSIONAL)
+
+Psikolog juga boleh mengirim `X-Praktiqu-Clinic-Id`, tetapi hanya untuk klinik yang ia **miliki**
+(`ownedClinics` di `/auth/me`). Pemilik = psikolog aktif di klinik itu yang dicentang di
+`PUT /practices/{id}/owners`, atau satu-satunya psikolog aktif di klinik itu. Klinik lain → `403
+clinic_not_in_scope`, format salah → `400 invalid_clinic_header`.
+
+Dalam mode ini, dan **hanya** pada route di `src/lib/auth/owner-routes.ts` (layanan, jadwal,
+janji temu tanpa catatan, klien tanpa data klinis, billing baca, dashboard), ia bertindak
+sebagai admin klinik itu. Semua route lain, termasuk encounter, catatan sesi, hasil klien,
+riwayat medis, resep, laporan medis, pengaturan klinik, resepsionis, dan pemilik, tetap
+melihatnya sebagai psikolog biasa.
+
+`/sessions/export`, `/sessions/pending`, dan `/clients/export` sengaja **tidak** ikut mode pemilik: handler-nya belum men-scope admin klinik ke kliniknya.
+
+| Endpoint | Peran | Isi |
+| --- | --- | --- |
+| `GET /practices/{id}/owners` | SUPER_ADMIN, CLINIC_ADMIN (klinik aktifnya) | `{ clinic: {id,name}, data: [{doctorId,name,owner,source}] }`; `source` = `manual` \| `solo` \| `null`. Id klinik yang salah format atau tidak ada dijawab `404` (SUPER_ADMIN juga) |
+| `PUT /practices/{id}/owners` | sama | body `{ doctorIds: number[] }` = set pemilik manual lengkap; psikolog asing → 422 `fields.doctorIds`. Id klinik yang salah format atau tidak ada dijawab `404` (SUPER_ADMIN juga) |
+
+### 4.2 `POST /api/v1/practices` — tambah klinik (SUPER_ADMIN)
+
+```bash
+curl -X POST https://endpoint.praktiqu.com/api/v1/practices \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Klinik Sehat Cimahi",
+    "email": "cimahi@kliniksehat.id",
+    "telephoneNo": "0226651234",
+    "address": "Jl. Amir Machmud 12",
+    "city": "Cimahi",
+    "country": "Indonesia",
+    "admin": { "mode": "new", "name": "Dewi Lestari", "email": "dewi@kliniksehat.id" }
+  }'
+```
+
+Field klinik sama dengan §4.4, tetapi `name` **wajib** dan `timezone`/`logoUrl`/`businessHours`
+tidak diterima (isi lewat `PATCH`). `status` bawaan `1`. Skema `.strict()`.
+
+`admin` (bawaan `{ "mode": "none" }`):
+
+| `mode` | Field lain | Hasil |
+|---|---|---|
+| `none` | — | `clinic_admin_id = 0`; atur nanti lewat §4.11 |
+| `existing` | `wpUserId` (id WordPress akun clinic admin, dari §4.17) | klinik milik akun itu |
+| `new` | `name`, `email` | plugin `praktiqu-endpoint` ≥ 1.8.0 membuat akun `kiviCare_clinic_admin` dan mengirim email selamat datang |
+
+Nama klinik menentukan link booking publik `/{slug}`, jadi nama ditolak (409
+`clinic_name_conflict`) bila slug-nya kosong (`empty_slug`), hanya angka (`numeric_slug`), kata
+route FE (`reserved_slug`), sama dengan klinik lain termasuk yang nonaktif
+(`clinic_slug_taken`, dengan `conflictId`/`conflictName`), atau sama dengan link pribadi
+psikolog aktif (`professional_slug_taken`).
+
+Respons **201** (tanpa `message`):
 
 ```json
 {
-  "type": "/errors/not-implemented",
-  "title": "Not Implemented",
-  "detail": "Practice creation is delegated to the WordPress provisioning flow. Use PATCH /api/v1/practices/:id to update an existing practice.",
-  "status": 501
+  "data": { "id": 57, "name": "Klinik Sehat Cimahi", "status": 1, "...": "PracticeDTO" },
+  "admin": { "mode": "new", "wpUserId": 912, "emailSent": true }
 }
 ```
 
-Pembuatan klinik baru lewat provisioning WordPress.
+`emailSent: false` berarti akun jadi tetapi email gagal terkirim — admin memakai "Lupa sandi".
+
+Error: 422 `validation_error`, 409 `clinic_name_conflict` / `clinic_email_conflict` /
+`admin_email_taken`, 422 `not_a_clinic_admin`, 502 `admin_provision_failed` (akun gagal dibuat;
+klinik **sudah dihapus lagi**, aman untuk dicoba ulang). Semua pengecekan berjalan sebelum
+apa pun ditulis.
 
 ### 4.3 `GET /api/v1/practices/{id}`
 
@@ -172,6 +265,11 @@ Balas `{ "data": { ...PracticeDTO } }`, atau 404 kalau tidak ada.
 
 Semua field opsional (semantik PATCH). Skemanya `.strict()` — **kirim field yang tidak
 dikenal → 422**, bukan diabaikan diam-diam.
+
+CLINIC_ADMIN hanya untuk kliniknya sendiri dan **tidak boleh mengirim key `status`** sama
+sekali (403 `status_change_forbidden`, walaupun nilainya sama). Nama dan email yang berubah
+dicek seperti saat tambah (409 `clinic_name_conflict` / `clinic_email_conflict`). Ingat:
+**mengganti nama mengganti link booking publik**, link lama menjadi 404.
 
 ```bash
 curl -X PATCH https://staging2.praktiqu.com/api/v1/practices/1 \
@@ -220,10 +318,22 @@ Respons 200 `{ "data": { ...PracticeDTO } }`. Validasi gagal → 422:
 }
 ```
 
-### 4.5 `DELETE /api/v1/practices/{id}` — nonaktifkan
+### 4.5 `DELETE /api/v1/practices/{id}` — nonaktifkan / hapus permanen (SUPER_ADMIN)
 
-**Soft delete**, bukan hapus permanen — cuma set `status = 0`. Balas **204 No Content**
-tanpa body. Untuk mengaktifkan lagi: `PATCH` dengan `{"status": 1}`.
+Tanpa query: **nonaktifkan** (`status = 0`), semua data tetap. Balas **204**. Aktifkan lagi
+dengan §4.18.
+
+`?permanent=true`: **hapus baris klinik**, hanya bila klinik belum punya data sama sekali
+(appointment, tagihan, encounter, mapping psikolog/pasien/resepsionis, sesi, layanan,
+follow-up, pajak, notifikasi). Hari libur dan pengaturan pembayaran internasional klinik itu
+ikut terhapus; akun admin tidak. Balas **204**, atau **409**:
+
+```json
+{ "type": "/errors/clinic-not-empty", "status": 409, "code": "clinic_not_empty",
+  "counts": { "appointments": 12, "doctors": 3 } }
+```
+
+`counts` hanya memuat kunci yang > 0.
 
 ### 4.6 `GET` / `PATCH /api/v1/practices/{id}/settings`
 
@@ -300,18 +410,34 @@ Semua orang yang terpetakan ke praktik itu, digabung dari tiga tabel mapping Kiv
 { "data": [ { "userId": 204, "role": "doctor" }, { "userId": 512, "role": "receptionist" } ] }
 ```
 
-### 4.11 `POST /api/v1/practices/{id}/change-admin` — ⚠️ rusak
+### 4.11 `POST /api/v1/practices/{id}/change-admin` — SUPER_ADMIN
 
-SUPER_ADMIN saja. Body: `{ "newAdminId": "<string>" }`.
+Menjadikan seorang admin klinik sebagai admin klinik `{id}`. Satu klinik punya satu admin;
+satu admin boleh memegang beberapa klinik. Admin lama kehilangan klinik ini seketika.
 
-Endpoint ini punya id yang saling bertabrakan dan **tidak bisa berhasil dengan input apa
-pun**: `newAdminId` dicari di tabel auth `User` (id-nya cuid), lalu nilai yang sama
-di-`Number()`-kan untuk ditulis ke `wp_kc_clinics.clinic_admin_id` (butuh integer).
+Body: `{ "newAdminId": 911 }` — `wp_users.ID` (angka atau string angka) yang punya
+capability `kiviCare_clinic_admin`.
 
-- Kirim cuid → lolos lookup, lalu `Number(cuid)` = `NaN` masuk ke SQL.
-- Kirim `wpUserId` numerik → lookup gagal duluan → 404.
+| Kasus | Jawaban |
+|---|---|
+| Bukan SUPER_ADMIN | 403 |
+| Klinik tidak ada / id bukan angka | 404 |
+| Body bukan JSON | 400 |
+| `newAdminId` hilang/tidak sah | 422 |
+| Akun bukan admin klinik / tidak ada | 422, `code: "not_a_clinic_admin"` |
 
-Pakai SQL langsung sampai ini diperbaiki. Lihat §9.
+Sukses (200):
+
+```json
+{ "message": "Practice admin updated",
+  "data": { "clinicId": 20, "adminId": 911, "previousAdminId": 512,
+            "previousAdminClinicCount": 0, "unchanged": false } }
+```
+
+`previousAdminClinicCount` = jumlah klinik yang masih dipegang admin lama; `0` berarti ia
+kini tidak memegang klinik apa pun. `unchanged: true` = akun itu sudah admin klinik ini
+(tidak ada yang ditulis, tidak ada audit). Perubahan dicatat di audit log
+`practice.admin_changed`.
 
 ### 4.12 `POST /api/v1/practices/{id}/resend-credentials` — belum ada
 
@@ -338,6 +464,103 @@ Balas `{"message":"Practice statuses updated","data":{"updated":2}}`.
 Unduhan JSON (`Content-Disposition: attachment; filename="practices-export.json"`),
 isinya array `PracticeDTO` tanpa pembungkus. Query `?status=0` atau `?status=1` menyaring
 hasilnya — dan di sini filternya benar-benar bekerja dua arah, beda dengan §4.1.
+
+### 4.16 `GET` / `PUT /api/v1/practices/{id}/payment-settings` — pembayaran internasional
+
+Pengaturan **Klinik Internasional**: klinik yang ditandai menerima PayPal & kartu (USD),
+dengan kurs, markup persen, dan fee flat rupiah miliknya sendiri. Klinik lain hanya Xendit.
+
+- **Akses:** SUPER_ADMIN untuk klinik mana pun; CLINIC_ADMIN hanya kliniknya sendiri
+  (klinik lain → **404**, bukan 403); role lain → **403**. Id yang tidak ada di
+  `wp_kc_clinics` → 404, dan PUT-nya tidak pernah sampai ke plugin.
+- **Disimpan** di `wp_options` `praktiqu_endpoint_clinic_{id}_payment` (string JSON), ditulis
+  lewat plugin `PUT /praktiqu/v1/clinics/{id}/payment-settings`. Setiap simpan dicatat di
+  `log_entries` (AUDIT, action `clinic.payment_settings.updated`, berisi `before`/`after`).
+- Sengaja **terpisah** dari §4.6: pengaturan uang butuh jejak audit yang jelas.
+
+`PUT` — semua key **wajib** (PUT mengganti seluruh objek); `null` artinya "pakai nilai
+global" untuk kurs/markup dan "tanpa fee" untuk fee:
+
+```bash
+curl -X PUT https://endpoint.praktiqu.com/api/v1/practices/4/payment-settings \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"international":true,"fxRate":18000,"markupPercent":10,"fixedFeeIdr":25000}'
+```
+
+| Field | Aturan |
+|---|---|
+| `international` | boolean |
+| `fxRate` | `null`, atau 1.000–100.000 **rupiah per 1 USD**, maks 2 desimal |
+| `markupPercent` | `null`, atau 0–100, maks 2 desimal |
+| `fixedFeeIdr` | `null`, atau bilangan bulat 0–10.000.000 |
+| silang | `international: true` butuh kurs yang bisa dipakai — dari klinik atau dari opsi global WordPress |
+
+`GET` dan jawaban `PUT` (PUT membaca ulang opsi yang tersimpan, bukan menggemakan input):
+
+```json
+{
+  "data": {
+    "clinicId": 4,
+    "stored": { "international": true, "fxRate": 18000, "markupPercent": 10, "fixedFeeIdr": 25000 },
+    "effective": {
+      "international": true,
+      "methods": ["xendit", "paypal", "card"],
+      "fxRate": "18000", "markupPercent": "10", "fixedFeeIdr": "25000",
+      "source": { "fxRate": "clinic", "markupPercent": "clinic", "fixedFeeIdr": "clinic" }
+    },
+    "globalDefaults": { "fxRate": 16500, "markupPercent": 5 },
+    "example": { "price": "12.23", "taxes": [], "fee": "1.39", "total": "13.62", "idr": 200000 },
+    "updatedAt": "2026-10-06T08:00:00+00:00",
+    "updatedBy": { "wpUserId": 123, "name": "Dewi Admin" }
+  }
+}
+```
+
+- `stored` = nilai milik klinik; tanpa pengaturan: `international: false`, sisanya `null`.
+- `effective` = yang akan dipakai pembayaran, beserta sumbernya (`clinic` / `global` /
+  `default`), apa pun flag-nya. `fxRate` bisa `null` kalau tidak ada kurs yang bisa dipakai
+  (termasuk saat markup global yang akan dipakai terisi tapi tidak valid, lihat di bawah).
+- `globalDefaults` = kurs & markup global, untuk placeholder form. Angkanya hanya hasil
+  baca, belum tentu bisa dipakai (kurs 1.000–100.000, markup 0–100, maks 2 desimal).
+  Kalau sebuah opsi global **terisi tapi bukan desimal biasa** (mis. `1e1`, `.5`, `+10`),
+  objek ini membawa `invalid` berisi teks mentahnya, misalnya
+  `"globalDefaults": { "fxRate": 16500, "markupPercent": null, "invalid": { "markupPercent": "1e1" } }`.
+  Itu **bukan** "belum diisi": markup global yang tidak valid (dan klinik tidak punya markup
+  sendiri) mengosongkan kurs klinik itu, termasuk kurs miliknya sendiri, sehingga PayPal/kartu
+  menjawab 503 `paypal_rate_missing`; kurs global yang tidak valid diabaikan, jadi klinik tanpa
+  kurs sendiri juga tanpa kurs. Tampilkan peringatan ke admin supaya opsinya dibetulkan di
+  WordPress; `invalid` tidak ada kalau semuanya terbaca.
+- `example` = Rp 200.000 dalam USD dengan nilai efektif; dihitung selama ada kurs, bahkan
+  sebelum klinik ditandai, supaya admin bisa melihat pratinjau. `null` kalau tidak ada kurs.
+- `updatedBy` = `null`, atau nama dari `users.displayName` (cadangan `wp_users.display_name`).
+
+Error (`problem+json` dengan `code`):
+
+| Status | `code` | Kapan |
+|---|---|---|
+| 400 | `invalid_json` | Body bukan JSON |
+| 404 | `practice_not_found` | Klinik tidak ada / di luar scope CLINIC_ADMIN |
+| 422 | `invalid_input` | Gagal validasi; `fields` berisi pesan per field (`body` untuk key tak dikenal). Juga saat validasi WordPress sendiri menolak: `fields.body` = `["WordPress rejected the settings"]`, mengulang body yang sama akan gagal lagi |
+| 422 | `fx_rate_required` | `international: true` tanpa kurs yang bisa dipakai; `fields.fxRate` |
+| 500 | `internal_error` | Kegagalan tak terduga; tercatat di log |
+| 502 | `payment_settings_save_failed` | WordPress gagal menyimpan; tidak ada audit |
+| 503 | `payment_settings_unavailable` | Pengaturan gagal dibaca. Pada PUT bisa juga berarti simpan sudah berhasil tapi baca ulang gagal: GET ulang dulu sebelum mencoba lagi |
+
+### 4.17 `GET /api/v1/practices/clinic-admins` — SUPER_ADMIN
+
+Semua akun WordPress yang ber-capability `kiviCare_clinic_admin`, urut nama — termasuk yang
+belum pernah login ke API.
+
+```json
+{ "data": [ { "wpUserId": 911, "name": "Admin Satu", "email": "a@klinik.co", "clinicIds": [4, 20] } ],
+  "total": 1 }
+```
+
+`clinicIds` = klinik yang `clinic_admin_id`-nya akun ini. Role lain: 403.
+
+### 4.18 `POST /api/v1/practices/{id}/activate` — aktifkan kembali (SUPER_ADMIN)
+
+Tanpa body. Balas **200** `{ "data": { ...PracticeDTO, "status": 1 } }`, atau 404.
 
 ---
 
@@ -503,14 +726,17 @@ Klinik **aktif saja**, diurutkan menurut nama, **dibatasi 100 dan tanpa paginasi
       "id": 1, "name": "PraktiQU Jakarta", "email": "halo@praktiqu.com",
       "telephoneNo": "+62211234567", "address": "Jl. Sudirman No. 1",
       "city": "Jakarta", "state": "DKI Jakarta", "country": "Indonesia",
-      "postalCode": "10220", "specialties": ["Psikologi Klinis"]
+      "postalCode": "10220", "specialties": ["Psikologi Klinis"],
+      "international": false, "paymentMethods": ["xendit"]
     }
   ]
 }
 ```
 
 Field internal seperti `status`, `timezone`, `logoUrl`, dan `businessHours` sengaja tidak
-ikut. Sebagai gantinya ada `specialties`.
+ikut. Sebagai gantinya ada `specialties`. `paymentMethods` adalah metode bayar klinik itu
+(`["xendit"]` kecuali klinik internasional dengan kurs yang bisa dipakai); `international`
+hanya untuk badge — lihat [`PAYMENT-METHODS-GUIDE.md`](PAYMENT-METHODS-GUIDE.md).
 
 ### `GET /api/v1/public/practices/{id}`
 
@@ -523,7 +749,9 @@ klinik itu memang harus tidak ada.
 {
   "data": [
     { "id": 12, "name": "Konsultasi Psikologi", "price": "350000",
-      "durationMinutes": 60, "serviceType": "consultation" }
+      "durationMinutes": 60, "serviceType": "consultation",
+      "clinicId": 4, "paymentMethods": ["xendit", "paypal", "card"],
+      "usd": { "price": "21.39", "taxes": [], "fee": "1.39", "total": "22.78" } }
   ]
 }
 ```
@@ -535,6 +763,12 @@ Beda dari §5.1, dan bedanya penting:
 - `price` adalah tarif si dokter (`charges`), bukan harga katalog — itu yang dibayar
   pasien. Default `"0"` kalau kosong.
 - Dokter nonaktif / tidak ada → 404.
+- **Satu baris per klinik.** Service yang sama di dua klinik muncul dua kali, masing-masing
+  dengan `clinicId`-nya. Booking harus dikirim dengan `clinicId` baris yang dipilih, supaya
+  USD yang ditampilkan sama dengan yang ditagih.
+- `paymentMethods` dan `usd` per baris: `usd` hanya terisi untuk klinik internasional dengan
+  kurs yang bisa dipakai dan harga di atas Rp 0. Semua angka USD berupa string 2 desimal dan
+  dihitung dengan fungsi yang sama dengan penagihan — FE tidak pernah mengonversi sendiri.
 
 ---
 
@@ -560,9 +794,15 @@ Error validasi menambahkan `issues`:
 | 401 | Token tidak ada / kedaluwarsa |
 | 403 | Role tidak cukup, atau di luar scope klinik |
 | 404 | Resource tidak ada (juga dipakai agar keberadaan resource tidak bocor lewat 403) |
-| 409 | Konflik penugasan service |
+| 409 | Konflik penugasan service; nama/email klinik bentrok; email admin sudah terdaftar; klinik masih punya data (§4.2, §4.5) |
 | 422 | Gagal validasi skema |
-| 501 | Endpoint stub (§4.2, §4.12) |
+| 501 | Endpoint stub (§4.12) |
+| 502 | Plugin WordPress gagal membuat akun admin (§4.2) |
+
+Error dari route `/practices/*` membawa field **`code`** (slug stabil, aman untuk dicocokkan
+FE): `validation_error`, `practice_not_found`, `clinic_name_conflict` (+ `reason`, `slug`),
+`clinic_email_conflict`, `admin_email_taken`, `not_a_clinic_admin`, `clinic_not_empty`
+(+ `counts`), `admin_provision_failed`, `status_change_forbidden`, `forbidden`.
 
 Perlu diingat: **rute service bulk (§5.4–§5.6) tidak memakai format ini.** Mereka membalas
 `{"error": "..."}` polos. Kalau front-end punya error handler terpusat, siapkan
@@ -601,7 +841,7 @@ Semua sudah diverifikasi dari kode per 2026-08-05, bukan dugaan.
 |---|---|---|
 | 1 | `POST /practices` balas 501 | Klinik baru harus lewat provisioning WordPress |
 | 2 | Rute `[holidayId]` tidak ada (§4.9) | Hapus hari libur mustahil lewat API — 404 atau 500 |
-| 3 | `change-admin` mencampur id cuid dan integer (§4.11) | Endpoint gagal untuk input apa pun |
+| 3 | ~~`change-admin` mencampur id cuid dan integer~~ — **diperbaiki 2026-10** (§4.11) | — |
 | 4 | `?status=0` di `GET /practices` tidak menyaring (§4.1) | Diam-diam mengembalikan semua baris |
 | 5 | `search` tidak tersambung di `GET /practices` | Pencarian harus di sisi klien |
 | 6 | `bulk/status` menerima mapping id lewat field `serviceIds` (§5.5) | Kirim service id → 0 baris berubah, tanpa error |
@@ -631,6 +871,8 @@ di-generate.
 | Logika penugasan service | [`src/services/professional/service-assignment.service.ts`](../../src/services/professional/service-assignment.service.ts) |
 | Scope & RBAC professionals | [`src/services/professional/route-scope.ts`](../../src/services/professional/route-scope.ts) |
 | Katalog publik | [`src/services/public/public-catalog.service.ts`](../../src/services/public/public-catalog.service.ts) |
+| Pembayaran internasional (§4.16) | [`src/app/api/v1/practices/[id]/payment-settings/route.ts`](../../src/app/api/v1/practices/%5Bid%5D/payment-settings/route.ts), [`src/services/practice/payment-settings.service.ts`](../../src/services/practice/payment-settings.service.ts) |
+| Hitungan USD | [`src/services/payments/intl-pricing.ts`](../../src/services/payments/intl-pricing.ts) |
 | Tabel yang dipakai | `wp_kc_clinics`, `wp_kc_clinic_schedule`, `wp_kc_services`, `wp_kc_service_doctor_mapping` |
 
 Dokumen terkait: [`API-ACCESS-GUIDE.md`](API-ACCESS-GUIDE.md) ·

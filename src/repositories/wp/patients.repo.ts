@@ -322,3 +322,29 @@ export async function listPatients(query: ListPatientsQuery): Promise<PaginatedP
     perPage,
   };
 }
+
+/**
+ * Whether the patient has a mapping row for this clinic, i.e. is a patient of it. Any of
+ * their clinics counts, not just the first: the same rule as the `clinicIds` filter in
+ * listPatients (EXISTS over wp_kc_patient_clinic_mappings).
+ */
+export async function patientInClinic(patientId: bigint, clinicId: bigint): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ one: number }>>(
+    `SELECT 1 AS one FROM wp_kc_patient_clinic_mappings WHERE patient_id = ? AND clinic_id = ? LIMIT 1`,
+    patientId,
+    clinicId,
+  );
+  return rows.length > 0;
+}
+
+/** `patientInClinic` for many patients at once: of `ids`, those who are patients of `clinicId`. */
+export async function patientIdsInClinic(ids: number[], clinicId: bigint): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await prisma.$queryRawUnsafe<Array<{ patient_id: bigint }>>(
+    `SELECT DISTINCT patient_id FROM wp_kc_patient_clinic_mappings
+     WHERE clinic_id = ? AND patient_id IN (${ids.map(() => '?').join(', ')})`,
+    clinicId,
+    ...ids.map((id) => BigInt(id)),
+  );
+  return new Set(rows.map((r) => Number(r.patient_id)));
+}

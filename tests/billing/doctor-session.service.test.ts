@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedDoctorClinicMapping, cleanup, useIdBlock } from './fixtures';
 import { prisma } from '@/lib/db';
 import {
   createDoctorSession, getDoctorSession, listDoctorSessions,
@@ -8,11 +8,13 @@ import {
   getDoctorSessionWeek, deleteDoctorSessionWeek, listDoctorSessionGroups,
 } from '@/services/billing/doctor-session.service';
 
-const CLINIC = 9_000_001, ADMIN = 9_000_002, DOCTOR = 9_000_010, OTHER_DOCTOR = 9_000_011;
+const { BASE } = useIdBlock('billing/doctor-session.service.test.ts');
+
+const CLINIC = BASE + 1, ADMIN = BASE + 2, DOCTOR = BASE + 10, OTHER_DOCTOR = BASE + 11;
 
 // CLINIC_ADMIN actor scoped to CLINIC — create derives clinicId from kc.clinicId.
 const kcAdmin = {
-  actor: { id: 'test-admin-9000002', role: 'CLINIC_ADMIN', practiceId: null },
+  actor: { id: `test-admin-${ADMIN}`, role: 'CLINIC_ADMIN', practiceId: null },
   wpUserId: BigInt(ADMIN),
   clinicId: BigInt(CLINIC),
 } as any;
@@ -39,6 +41,8 @@ describe('doctor-session.service', () => {
       assertTestDb();
       await cleanup();
       await seedClinicAdmin({ userId: ADMIN, clinicId: CLINIC });
+      // A CLINIC_ADMIN may only write sessions for a doctor mapped to their clinic.
+      await seedDoctorClinicMapping({ id: BASE + 971, doctorId: DOCTOR, clinicId: CLINIC });
     });
     afterAll(cleanup);
 
@@ -157,7 +161,7 @@ describe('weekly doctor sessions', () => {
   });
 
   describe('DB-backed', () => {
-    const WEEK_CLINIC = 9_000_101, WEEK_ADMIN = 9_000_102, WEEK_DOCTOR = 9_000_110;
+    const WEEK_CLINIC = BASE + 101, WEEK_ADMIN = BASE + 102, WEEK_DOCTOR = BASE + 110;
     const kcWeekAdmin = {
       actor: { id: `test-admin-${WEEK_ADMIN}`, role: 'CLINIC_ADMIN', practiceId: null },
       wpUserId: BigInt(WEEK_ADMIN), clinicId: BigInt(WEEK_CLINIC),
@@ -168,6 +172,9 @@ describe('weekly doctor sessions', () => {
       assertTestDb();
       await cleanup();
       await seedClinicAdmin({ userId: WEEK_ADMIN, clinicId: WEEK_CLINIC });
+      // A CLINIC_ADMIN may only write sessions for doctors mapped to their clinic.
+      await seedDoctorClinicMapping({ id: BASE + 972, doctorId: WEEK_DOCTOR, clinicId: WEEK_CLINIC });
+      await seedDoctorClinicMapping({ id: BASE + 973, doctorId: WEEK_DOCTOR + 5, clinicId: WEEK_CLINIC }); // LEGACY_DOCTOR
     });
     afterAll(cleanup);
 

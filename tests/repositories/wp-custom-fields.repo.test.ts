@@ -21,10 +21,9 @@ import {
   toKcModuleType,
   updateCustomField,
 } from '@/repositories/wp/custom-fields.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range, in the same convention as the sibling repository suites. */
-const BASE = 8_600_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-custom-fields.repo.test.ts');
 const ENTITY = BASE + 42;
 
 async function wipe() {

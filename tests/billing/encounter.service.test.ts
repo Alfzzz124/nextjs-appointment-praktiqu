@@ -45,13 +45,15 @@ vi.mock('@/repositories/wp/encounters.write', async (importOriginal) => {
   };
 });
 
-import { assertTestDb, seedEncounter, cleanup } from './fixtures';
+import { assertTestDb, seedEncounter, cleanup, useIdBlock } from './fixtures';
 import {
   listEncounters, getEncounter, createEncounter, updateEncounter,
   deleteEncounter, bulkSetEncounterStatus, bulkDeleteEncounters,
 } from '@/services/billing/encounter.service';
 
-const CLINIC = 9_000_701, DOCTOR = 9_000_702, PATIENT = 9_000_703;
+const { BASE } = useIdBlock('billing/encounter.service.test.ts');
+
+const CLINIC = BASE + 701, DOCTOR = BASE + 702, PATIENT = BASE + 703;
 const kcSuper = { actor: { id: 'a', role: 'SUPER_ADMIN', practiceId: null }, wpUserId: BigInt(DOCTOR), clinicId: BigInt(CLINIC) } as any;
 
 describe('encounter.service', () => {
@@ -79,8 +81,8 @@ describe('encounter.service', () => {
   });
 
   it('bulk deletes only rows within scope', async () => {
-    const a = await seedEncounter({ id: 9_000_705, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
-    const b = await seedEncounter({ id: 9_000_706, clinicId: CLINIC + 1, doctorId: DOCTOR, patientId: PATIENT });
+    const a = await seedEncounter({ id: BASE + 705, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const b = await seedEncounter({ id: BASE + 706, clinicId: CLINIC + 1, doctorId: DOCTOR, patientId: PATIENT });
     const n = await bulkDeleteEncounters([Number(a.id), Number(b.id)], { clinicId: BigInt(CLINIC) });
     expect(n).toBe(1);
     await expect(getEncounter(Number(a.id), null)).rejects.toThrow();
@@ -89,7 +91,7 @@ describe('encounter.service', () => {
   });
 
   it('scopes reads: a CLIENT cannot see another patient\'s encounter', async () => {
-    const seeded = await seedEncounter({ id: 9_000_710, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
+    const seeded = await seedEncounter({ id: BASE + 710, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT });
     await expect(getEncounter(Number(seeded.id), { patientId: BigInt(PATIENT + 999) })).rejects.toThrow();
   });
 });

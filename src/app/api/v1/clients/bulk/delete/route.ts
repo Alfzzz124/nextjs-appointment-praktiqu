@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
-import { bulkArchiveClients } from '@/services/client/client.service';
+import { bulkArchiveClients, clientIdsOutsideScope } from '@/services/client/client.service';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +33,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           detail: parsed.error.issues[0]?.message,
         },
         { status: 400 },
+      );
+    }
+    // All or nothing: one id outside the actor's clinic refuses the batch, so nothing is
+    // half-applied and the single-id clinic rule cannot be bypassed in bulk.
+    const outside = await clientIdsOutsideScope(actor, parsed.data.ids);
+    if (outside.length > 0) {
+      return NextResponse.json(
+        {
+          type: '/errors/forbidden',
+          title: 'Forbidden',
+          status: 403,
+          detail: `${outside.length} of the selected clients are outside your clinic`,
+        },
+        { status: 403 },
       );
     }
     const count = await bulkArchiveClients(parsed.data.ids);

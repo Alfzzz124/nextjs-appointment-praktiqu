@@ -1,20 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { seedTax, cleanup, assertTestDb } from './fixtures';
+import { seedTax, cleanup, assertTestDb, useIdBlock } from './fixtures';
 import { listTaxes, getTax, createTax, updateTax, deleteTax, setTaxStatus, bulkSetTaxStatus, bulkDeleteTaxes, exportTaxes } from '@/services/billing/tax.service';
 import { prisma } from '@/lib/db';
 
+const { BASE } = useIdBlock('billing/tax.service.test.ts');
+
 describe('tax.service list/get', () => {
-  beforeAll(async () => { assertTestDb(); await cleanup(); await seedTax({ id: 9000001, name: 'VAT', taxValue: '10' }); });
+  beforeAll(async () => { assertTestDb(); await cleanup(); await seedTax({ id: BASE + 1, name: 'VAT', taxValue: '10' }); });
   afterAll(cleanup);
 
   it('lists taxes with pagination meta', async () => {
     const res = await listTaxes({ page: 1, perPage: 10 } as any, null);
     expect(res.total).toBeGreaterThanOrEqual(1);
-    expect(res.taxes.find((t) => t.id === 9000001)?.name).toBe('VAT');
+    expect(res.taxes.find((t) => t.id === BASE + 1)?.name).toBe('VAT');
   });
 
   it('gets a single tax with parsed value', async () => {
-    const tax = await getTax(9000001);
+    const tax = await getTax(BASE + 1);
     expect(tax.taxValue).toBe(10);
   });
 
@@ -41,7 +43,7 @@ describe('tax.service create', () => {
 
 describe('tax.service mutate', () => {
   let id: number;
-  beforeAll(async () => { const t = await seedTax({ id: 9000050, name: 'MUT', taxValue: '5' }); id = Number(t.id); });
+  beforeAll(async () => { const t = await seedTax({ id: BASE + 50, name: 'MUT', taxValue: '5' }); id = Number(t.id); });
   afterAll(cleanup);
 
   it('updates value', async () => { await updateTax(id, { rateValue: 12 } as any); const t = await getTax(id); expect(t.taxValue).toBe(12); });
@@ -49,5 +51,5 @@ describe('tax.service mutate', () => {
   it('bulk status', async () => { await bulkSetTaxStatus([id], 1); expect((await getTax(id)).status).toBe(1); });
   it('exports shaped rows', async () => { const r = await exportTaxes({ page: 1, perPage: 'all' } as any, null); expect(r.taxes[0]).toHaveProperty('tax_rate'); });
   it('deletes', async () => { await deleteTax(id); await expect(getTax(id)).rejects.toThrow(); });
-  it('rejects bad status', async () => { await expect(setTaxStatus(9000050, 5 as any)).rejects.toThrow(); });
+  it('rejects bad status', async () => { await expect(setTaxStatus(BASE + 50, 5 as any)).rejects.toThrow(); });
 });

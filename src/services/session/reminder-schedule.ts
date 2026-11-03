@@ -48,7 +48,9 @@ export function reminderArgs(
 }
 
 /** Jam mulai sesi dalam UTC, atau null bila tanggal/jamnya tidak lengkap. */
-export function sessionStartsAtUtc(row: SessionRow): Date | null {
+export function sessionStartsAtUtc(
+  row: Pick<SessionRow, 'slotDate' | 'startTime' | 'timezone'>,
+): Date | null {
   if (!row.slotDate || !row.startTime) return null;
   return buildUtcDateTime(row.slotDate, timeToMinutes(row.startTime), row.timezone);
 }

@@ -12,16 +12,20 @@
  * Ids are `number` — `wp_kc_clinics.id`, `wp_users.ID`, `wp_kc_services.id`.
  */
 import { SLOT_HOLD_TTL_MS } from '@/services/booking/slot-hold.service';
+import { professionalsRequiringApproval, requiresApproval } from '@/services/approval/settings';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { getPublicAppointmentById } from '@/services/public/public-booking.service';
 import { findClinicById, listClinics, type WpClinic } from '@/repositories/wp/clinics.repo';
 import { listServicesForDoctor, type WpDoctorService } from '@/repositories/wp/services.repo';
+import { parseServiceCategory } from '@/repositories/wp/service-category';
 import {
   PROFESSIONAL_STATUS,
   findDoctorById,
+  listDoctorNames,
   listDoctors,
   type WpDoctor,
 } from '@/repositories/wp/doctors.repo';
+import { slugifyName } from '@/lib/public/professional-slug';
 import { STATIC_DATA_TYPE, listStaticData } from '@/repositories/wp/static-data.repo';
 import { listClinicSessions } from '@/repositories/wp/clinic-sessions.repo';
 import { dayOfWeekFor, generateSlots } from '@/services/professional/availability.service';
@@ -32,6 +36,17 @@ import {
   isTooSoon,
   localDate,
 } from '@/services/booking/booking-policy';
+import type { PaymentMethod } from '@/lib/wp-endpoint';
+import {
+  resolveClinicPaymentForDisplay,
+  resolveClinicPaymentManyForDisplay,
+} from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import {
+  notInternational,
+  type ClinicPaymentSettings,
+  type PublicUsdView,
+} from '@/services/payments/intl-pricing';
 
 export interface PublicClinic {
   id: number;
@@ -44,9 +59,13 @@ export interface PublicClinic {
   country: string | null;
   postalCode: string | null;
   specialties: string[];
+  /** The stored International flag — the admin badge only. False when the read fails. */
+  international: boolean;
+  /** What a booking at this clinic may be paid with: `['xendit']` unless it takes USD. */
+  paymentMethods: PaymentMethod[];
 }
 
-function toPublicClinic(c: WpClinic): PublicClinic {
+function toPublicClinic(c: WpClinic, payment: ClinicPaymentSettings): PublicClinic {
   return {
     id: Number(c.id),
     name: c.name ?? '',
@@ -58,13 +77,19 @@ function toPublicClinic(c: WpClinic): PublicClinic {
     country: c.country,
     postalCode: c.postalCode,
     specialties: c.specialties,
+    international: payment.international,
+    paymentMethods: [...payment.methods],
   };
 }
 
 /** Active clinics only — an inactive one must not appear on a public booking page. */
 export async function listPublicPractices(): Promise<PublicClinic[]> {
   const { items } = await listClinics({ page: 1, perPage: 100 });
-  return items.map(toPublicClinic).sort((a, b) => a.name.localeCompare(b.name));
+  // One settings read for the whole list; never throws (a failed read is Xendit only).
+  const payment = await resolveClinicPaymentManyForDisplay(items.map((c) => Number(c.id)));
+  return items
+    .map((c) => toPublicClinic(c, payment.get(Number(c.id)) ?? notInternational(Number(c.id))))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getPublicPractice(id: number): Promise<PublicClinic | null> {
@@ -72,7 +97,7 @@ export async function getPublicPractice(id: number): Promise<PublicClinic | null
   // Checked here rather than left to the caller: this endpoint is unauthenticated, so
   // a deactivated clinic must simply not exist to the public.
   if (!clinic || !clinic.isActive) return null;
-  return toPublicClinic(clinic);
+  return toPublicClinic(clinic, await resolveClinicPaymentForDisplay(id));
 }
 
 export interface PublicProfessional {
@@ -90,26 +115,48 @@ export interface PublicProfessional {
    * booking list, so it named a time that could already be taken.)
    */
   nextAvailable: { date: string; startTime: string } | null;
+  /**
+   * Paid bookings with this professional wait for their approval (psychologist approval,
+   * spec 2026-10-19). The booking page tells the client before they pay.
+   */
+  requiresApproval: boolean;
 }
 
 /** How far ahead `nextAvailable` looks before giving up. */
 const NEXT_AVAILABLE_HORIZON_DAYS = 14;
 
+/** `listDoctors` clamps perPage to 100; ask for exactly that. */
+const DIRECTORY_PAGE_SIZE = 100;
+
+/** Emergency brake: 5,000 professionals, far beyond the roster that exists. */
+const DIRECTORY_MAX_PAGES = 50;
+
 /**
- * Active professionals for the public directory.
+ * Every active professional, optionally of one clinic or specialty.
  *
- * Capped at 50, as before — this is a browse page, not an export.
+ * Used to stop at 50. Staff forms fill their psikolog dropdown from `?clinicId=`, so
+ * a clinic's 51st professional could not be booked at all. The repository caps a page
+ * at 100, so the whole list is read page by page. The loop stops at the reported total,
+ * at an empty page, or at the brake — whichever comes first.
+ *
+ * Still a directory, not a lookup: to find ONE professional use `getPublicProfessional`
+ * or `findPublicProfessionalBySlug`, which build the full entry only for the match.
  */
 export async function listPublicProfessionals(
   opts: { specialty?: string; clinicId?: number } = {},
 ): Promise<PublicProfessional[]> {
-  const { items } = await listDoctors({
-    page: 1,
-    perPage: 50,
-    statuses: [PROFESSIONAL_STATUS.ACTIVE],
-    specialty: opts.specialty,
-    clinicIds: opts.clinicId !== undefined ? [BigInt(opts.clinicId)] : undefined,
-  });
+  const items: WpDoctor[] = [];
+  for (let page = 1; page <= DIRECTORY_MAX_PAGES; page += 1) {
+    const res = await listDoctors({
+      page,
+      perPage: DIRECTORY_PAGE_SIZE,
+      statuses: [PROFESSIONAL_STATUS.ACTIVE],
+      specialty: opts.specialty,
+      clinicIds: opts.clinicId !== undefined ? [BigInt(opts.clinicId)] : undefined,
+    });
+    items.push(...res.items);
+    if (res.items.length === 0 || items.length >= res.total) break;
+  }
 
   // The repository's specialty filter is a LIKE over the whole basic_data blob and can
   // over-match; re-check against the decoded list so the answer is exact.
@@ -118,7 +165,7 @@ export async function listPublicProfessionals(
     ? items.filter((d) => d.specialties.some((s) => s.toLowerCase() === specialty))
     : items;
 
-  // One query for the whole page. Per-doctor lookups here were 50 round-trips.
+  // One query for the whole list. Per-doctor lookups here were one round-trip each.
   const sessions =
     doctors.length === 0
       ? []
@@ -133,16 +180,101 @@ export async function listPublicProfessionals(
     else byDoctor.set(key, [s]);
   }
 
+  // One query for the whole directory, like the clinic sessions above.
+  const needApproval = await professionalsRequiringApproval(doctors.map((d) => Number(d.id)));
+
   const today = new Date();
-  return doctors.map((d) => ({
+  return doctors.map((d) =>
+    toPublicProfessional(d, byDoctor.get(d.id.toString()) ?? [], today, needApproval.has(Number(d.id))),
+  );
+}
+
+/**
+ * The name a professional is listed under — and therefore the one the FE slugifies into
+ * their personal link. Shared by the directory and both single-professional lookups so
+ * the three cannot drift: a link built from the list must resolve to the same person.
+ */
+function publicFullName(
+  d: Pick<WpDoctor, 'firstName' | 'lastName' | 'displayName' | 'email'>,
+): string {
+  return [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.displayName || d.email;
+}
+
+function toPublicProfessional(
+  d: WpDoctor,
+  sessions: Array<{ day: string | null; startTime: string | null }>,
+  today: Date,
+  requiresApproval: boolean,
+): PublicProfessional {
+  return {
     id: Number(d.id),
-    fullName:
-      [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.displayName || d.email,
+    fullName: publicFullName(d),
     professionalType: d.professionalType,
     biography: d.description,
     specialties: d.specialties,
-    nextAvailable: nextAvailableFor(byDoctor.get(d.id.toString()) ?? [], today),
-  }));
+    nextAvailable: nextAvailableFor(sessions, today),
+    requiresApproval,
+  };
+}
+
+/**
+ * One active professional, in exactly the shape of a directory entry.
+ *
+ * The directory is capped at 50, lowest ids first, so it cannot be how a caller finds a
+ * particular professional. The Laravel FE did exactly that for personal links, and every
+ * professional past the 50th — including every newly registered one — was a 404.
+ *
+ * `null` for an unknown or non-ACTIVE professional, so the route can 404.
+ */
+export async function getPublicProfessional(
+  professionalId: number,
+): Promise<PublicProfessional | null> {
+  const doctor = await findDoctorById(BigInt(professionalId));
+  if (!doctor || doctor.status !== PROFESSIONAL_STATUS.ACTIVE) return null;
+
+  const sessions = await listClinicSessions({ doctorId: doctor.id });
+  return toPublicProfessional(doctor, sessions, new Date(), await requiresApproval(Number(doctor.id)));
+}
+
+/**
+ * The active professional whose personal-link slug this is.
+ *
+ * The match rule is the FE's own: its slugify applied to the `fullName` the directory
+ * returns. The incoming slug is normalised the same way, so a hand-typed capital or a
+ * trailing dash still resolves, and one that normalises to nothing is simply not found.
+ *
+ * Every active doctor is considered, not the directory's 50 — that cap is the bug this
+ * replaces. Only name fields are read for the scan; the full entry (clinic sessions,
+ * `nextAvailable`) is built once, for the match. Two names can slugify alike: the
+ * lowest id wins, which is what the FE's `first()` over the id-ascending directory
+ * picked, so an existing link keeps pointing at the same person.
+ */
+export async function findPublicProfessionalBySlug(
+  slug: string,
+): Promise<PublicProfessional | null> {
+  const wanted = slugifyName(slug);
+  if (wanted === '') return null;
+
+  // listDoctorNames is id-ascending, so find() yields the lowest id among the matches.
+  const match = (await listDoctorNames()).find(
+    (d) => d.status === PROFESSIONAL_STATUS.ACTIVE && slugifyName(publicFullName(d)) === wanted,
+  );
+  return match ? getPublicProfessional(Number(match.id)) : null;
+}
+
+/**
+ * Every personal-link slug an active professional holds — the same rule
+ * findPublicProfessionalBySlug matches on. A clinic must not take one of these: the FE
+ * resolves /{slug} to a clinic first, so the professional's link would stop working.
+ */
+export async function listActiveProfessionalSlugs(): Promise<Set<string>> {
+  const slugs = new Set<string>();
+  for (const d of await listDoctorNames()) {
+    if (d.status !== PROFESSIONAL_STATUS.ACTIVE) continue;
+    const slug = slugifyName(publicFullName(d));
+    if (slug !== '') slugs.add(slug);
+  }
+  return slugs;
 }
 
 function nextAvailableFor(
@@ -173,9 +305,25 @@ function nextAvailableFor(
 export interface PublicService {
   id: number;
   name: string;
+  /** Rupiah, unchanged — the current FE keeps working. */
   price: string;
   durationMinutes: number | null;
   serviceType: string | null;
+  /**
+   * The category the booking page groups services under, as KiviCare's own widget
+   * does ("Couple/Family Session Bahasa Indonesia", "Tes Psikologi"). `null` when the
+   * service has no category KiviCare can name — the FE then falls back to `serviceType`.
+   */
+  category: { value: string; label: string } | null;
+  /**
+   * The clinic this row is offered at. A service id repeats across a professional's
+   * clinics, so the booking must be submitted with this id for the charge to match the
+   * USD shown here (spec §5).
+   */
+  clinicId: number;
+  paymentMethods: PaymentMethod[];
+  /** USD figures, only for an international clinic with a usable rate and a non-free row. */
+  usd: PublicUsdView | null;
 }
 
 /**
@@ -200,14 +348,73 @@ export async function getPublicProfessionalServices(
     publicOnly: true,
   });
 
-  return rows.map((s) => ({
-    id: Number(s.serviceId),
-    name: s.nameAlias ?? s.name,
+  // One settings read for every clinic in the list. The USD quote per row is built by
+  // the same computePublicAmount + buildUsdQuote that charges, so shown and charged match.
+  const payment = await resolveClinicPaymentManyForDisplay(rows.map((s) => Number(s.clinicId)));
+  const categoryOf = await serviceCategoryLabeller(rows);
+
+  // Sequential on purpose: a row of an international clinic runs a tax query, and the
+  // MySQL user is capped at a handful of connections.
+  const services: PublicService[] = [];
+  for (const s of rows) {
+    const clinicId = Number(s.clinicId);
+    // The catalogue name. Not `nameAlias`: that column holds the category slug — see
+    // WpDoctorService.nameAlias.
+    const name = s.name;
     // The doctor's charge, not the catalogue list price — that is what a patient pays.
-    price: s.charges ?? '0',
-    durationMinutes: s.durationMinutes,
-    serviceType: s.type,
-  }));
+    const price = s.charges ?? '0';
+    const { paymentMethods, usd } = await rowPaymentForDisplay(
+      { clinicId, doctorId: professionalId, serviceId: Number(s.serviceId), name, price },
+      payment.get(clinicId) ?? notInternational(clinicId),
+    );
+    services.push({
+      id: Number(s.serviceId),
+      name,
+      price,
+      durationMinutes: s.durationMinutes,
+      serviceType: s.type,
+      category: categoryOf(s),
+      clinicId,
+      paymentMethods,
+      usd,
+    });
+  }
+  return services;
+}
+
+/**
+ * Names each row's category the way KiviCare's booking widget does: the label in the
+ * service's own category snapshot first, then the live `service_type` static-data row
+ * whose value is the service's `type`. The snapshot is what KiviCare writes today; rows
+ * created by an older KiviCare (or migrated in) carry only `type`, hence the fallback.
+ *
+ * The static-data read happens only when some row needs it, and includes inactive
+ * categories: retiring a category in KiviCare does not rename the services still in it.
+ */
+async function serviceCategoryLabeller(
+  rows: WpDoctorService[],
+): Promise<(s: WpDoctorService) => PublicService['category']> {
+  const fromSnapshot = (s: WpDoctorService) => {
+    const c = parseServiceCategory(s.category);
+    const label = c?.label?.trim();
+    return label ? { value: c?.value || s.type || label, label } : null;
+  };
+
+  const byValue = new Map<string, string>();
+  if (rows.some((s) => !fromSnapshot(s) && s.type)) {
+    const types = await listStaticData({ type: STATIC_DATA_TYPE.SERVICE_TYPE, includeInactive: true });
+    for (const t of types) {
+      const label = t.label?.trim();
+      if (t.value && label && !byValue.has(t.value)) byValue.set(t.value, label);
+    }
+  }
+
+  return (s) => {
+    const snap = fromSnapshot(s);
+    if (snap) return snap;
+    const label = s.type ? byValue.get(s.type) : undefined;
+    return label && s.type ? { value: s.type, label } : null;
+  };
 }
 
 export interface PublicSlot {
@@ -336,7 +543,7 @@ export async function getPublicSlotsForRange(opts: {
   const clinicId = BigInt(mapping.clinicId);
   const now = opts.now ?? new Date();
 
-  const [sessions, blockedByDate] = await Promise.all([
+  const [sessions, blockedByDate, crossBreaks] = await Promise.all([
     listClinicSessions({ clinicId, doctorId }),
     // One collector owns off days, bookings and Google Calendar busy blocks, so
     // this page and the staff calendar cannot disagree. The timezone is the
@@ -348,6 +555,9 @@ export async function getPublicSlotsForRange(opts: {
       to: opts.to,
       timeZone: doctor.timezone ?? undefined,
     }),
+    // Same rule as generateSlots: only a psychologist who approves each booking gets
+    // long services that run on through their breaks.
+    requiresApproval(opts.professionalId),
   ]);
 
   return eachDate(opts.from, opts.to).map((date) => {
@@ -369,6 +579,7 @@ export async function getPublicSlotsForRange(opts: {
       windows,
       blocked,
       durationMinutes: mapping.durationMinutes ?? undefined,
+      crossBreaks,
     });
 
     return {

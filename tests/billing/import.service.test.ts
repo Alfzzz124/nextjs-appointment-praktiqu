@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
-import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, cleanup, cleanupImportedUsers, useIdBlock } from './fixtures';
 import { runImport } from '@/services/billing/import/engine';
+
+const { BASE } = useIdBlock('billing/import.service.test.ts');
 
 // DB-BACKED: only run against a real test DB (assertTestDb guards fixtures).
 // Not run in the live-DB dev environment.
-const CLINIC = 9_000_001, ADMIN = 9_000_002;
+const CLINIC = BASE + 1, ADMIN = BASE + 2;
 
 // A CLINIC_ADMIN actor scoped to CLINIC — clinic_id is forced to kc.clinicId on every row.
 const kcAdmin = {
-  actor: { id: 'test-admin-9000002', role: 'CLINIC_ADMIN', practiceId: null },
+  actor: { id: `test-admin-${ADMIN}`, role: 'CLINIC_ADMIN', practiceId: null },
   wpUserId: BigInt(ADMIN),
   clinicId: BigInt(CLINIC),
 } as any;
@@ -18,9 +20,13 @@ describe('import.service (DB-backed)', () => {
   beforeAll(async () => {
     assertTestDb();
     await cleanup();
+    await cleanupImportedUsers();
     await seedClinicAdmin({ userId: ADMIN, clinicId: CLINIC });
   });
-  afterAll(cleanup);
+  afterAll(async () => {
+    await cleanup();
+    await cleanupImportedUsers();
+  });
 
   it('imports 2 tax rows (imported=2)', async () => {
     const rows = [

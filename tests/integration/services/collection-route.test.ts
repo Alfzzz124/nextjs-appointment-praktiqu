@@ -7,11 +7,14 @@ vi.mock('@/lib/auth', () => ({
     handler(req, { actor: auth.actor, params: ctx?.params ?? {} }),
 }));
 
-const scope = vi.hoisted(() => ({ scopeForRequest: vi.fn(), canWrite: vi.fn() }));
+const scope = vi.hoisted(() => ({ scopeForRequest: vi.fn(), canWrite: vi.fn(), canCreate: vi.fn() }));
 vi.mock('@/services/service-catalog/scope', async (orig) => ({
   ...(await orig<any>()),
   ...scope,
 }));
+
+const own = vi.hoisted(() => ({ resolveOwnCreateTarget: vi.fn() }));
+vi.mock('@/services/service-catalog/own-create', () => own);
 
 const svc = vi.hoisted(() => ({ listServices: vi.fn(), createService: vi.fn() }));
 vi.mock('@/services/service-catalog/service', async (orig) => ({
@@ -42,6 +45,8 @@ beforeEach(() => {
   auth.actor = { id: 'actor-1', role: 'CLINIC_ADMIN', practiceId: null };
   scope.scopeForRequest.mockReset();
   scope.canWrite.mockReset();
+  scope.canCreate.mockReset();
+  own.resolveOwnCreateTarget.mockReset();
   svc.listServices.mockReset();
   svc.createService.mockReset();
 
@@ -49,6 +54,7 @@ beforeEach(() => {
     scope: { clinicId: 3n, doctorId: null, empty: false },
   });
   scope.canWrite.mockReturnValue(true);
+  scope.canCreate.mockReturnValue(true);
   svc.listServices.mockResolvedValue({ services: [], total: 0, page: 1, perPage: 20 });
   svc.createService.mockResolvedValue({
     serviceId: 101,
@@ -92,8 +98,8 @@ describe('POST /api/v1/services', () => {
     expect(svc.createService).toHaveBeenCalledWith(expect.any(Object), 3, 'actor-1');
   });
 
-  it('refuses a role that cannot write with 403', async () => {
-    scope.canWrite.mockReturnValue(false);
+  it('refuses a role that cannot create with 403', async () => {
+    scope.canCreate.mockReturnValue(false);
 
     const res = await POST(post(validBody));
 
@@ -190,5 +196,72 @@ describe('POST /api/v1/services', () => {
     });
 
     expect((await POST(post(validBody))).status).toBe(422);
+  });
+});
+
+describe('POST /api/v1/services — a psychologist adding for themselves', () => {
+  const SELF = 34n;
+
+  beforeEach(() => {
+    auth.actor = { id: 'doc-34', role: 'PROFESSIONAL', practiceId: null };
+    scope.scopeForRequest.mockResolvedValue({ scope: { clinicId: null, doctorId: SELF, empty: false } });
+  });
+
+  it('creates at the resolved clinic with themselves as the only professional', async () => {
+    own.resolveOwnCreateTarget.mockResolvedValue({ clinicId: 4 });
+
+    const res = await POST(post({ ...validBody, doctorIds: [34] }));
+
+    expect(res.status).toBe(201);
+    expect(own.resolveOwnCreateTarget).toHaveBeenCalledWith({ self: SELF, doctorIds: [34], clinicId: undefined });
+    expect(svc.createService).toHaveBeenCalledWith(
+      expect.objectContaining({ doctorIds: [34] }),
+      4,
+      'doc-34',
+    );
+  });
+
+  it('passes a named clinic on to the resolver', async () => {
+    own.resolveOwnCreateTarget.mockResolvedValue({ clinicId: 44 });
+
+    await POST(post({ ...validBody, doctorIds: [34], clinicId: 44 }));
+
+    expect(own.resolveOwnCreateTarget).toHaveBeenCalledWith({ self: SELF, doctorIds: [34], clinicId: 44 });
+    expect(svc.createService).toHaveBeenCalledWith(expect.any(Object), 44, 'doc-34');
+  });
+
+  it.each([
+    ['not_self', 403, 'Psychologists can only add services for themselves'],
+    ['no_clinic', 403, 'Professional is not assigned to an active clinic'],
+    ['clinic_not_yours', 403, 'Not a clinic this professional practises at'],
+  ])('maps %s to %i', async (refusal, status, message) => {
+    own.resolveOwnCreateTarget.mockResolvedValue({ refusal });
+
+    const res = await POST(post({ ...validBody, doctorIds: [34] }));
+
+    expect(res.status).toBe(status);
+    expect(JSON.stringify(await res.json())).toContain(message);
+    expect(svc.createService).not.toHaveBeenCalled();
+  });
+
+  it('asks for a clinic with 422 clinic_required when they practise at several', async () => {
+    own.resolveOwnCreateTarget.mockResolvedValue({ refusal: 'clinic_required' });
+
+    const res = await POST(post({ ...validBody, doctorIds: [34] }));
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('clinic_required');
+    expect(body.fields).toHaveProperty('clinicId');
+    expect(svc.createService).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the scope carries no doctor id', async () => {
+    scope.scopeForRequest.mockResolvedValue({ scope: { clinicId: null, doctorId: null, empty: false } });
+
+    const res = await POST(post({ ...validBody, doctorIds: [34] }));
+
+    expect(res.status).toBe(403);
+    expect(own.resolveOwnCreateTarget).not.toHaveBeenCalled();
   });
 });

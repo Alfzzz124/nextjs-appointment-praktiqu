@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vites
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { assertTestDb, seedClinicAdmin, seedEncounter, seedPatient, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedEncounter, seedPatient, cleanup, useIdBlock } from './fixtures';
 import { createBill } from '@/services/billing/bill.service';
 
 // Only the send is stubbed. The rest of the module stays real on purpose: the route's
@@ -20,6 +20,8 @@ vi.mock('puppeteer', () => ({ default: { launch: vi.fn().mockResolvedValue({
 
 import { POST as emailPost } from '@/app/api/v1/bills/[id]/email/route';
 import { sendEmail } from '@/lib/email';
+
+const { BASE } = useIdBlock('billing/bill-email-route.test.ts');
 
 /**
  * `POST /bills/:id/email` reads the recipient from the request body behind a
@@ -49,8 +51,8 @@ function reqWith(jwt: string, url: string, body?: unknown) {
   });
 }
 
-const CLINIC = 9_021_001, DOCTOR = 9_021_002, PATIENT = 9_021_003, OTHER_PATIENT = 9_021_004;
-const ENC = 9_021_101;
+const CLINIC = BASE + 1, DOCTOR = BASE + 2, PATIENT = BASE + 3, OTHER_PATIENT = BASE + 4;
+const ENC = BASE + 101;
 const PATIENT_EMAIL = `patient${PATIENT}@test.local`;
 let billId: number;
 

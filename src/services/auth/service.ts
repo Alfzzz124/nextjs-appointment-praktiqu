@@ -7,8 +7,16 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Prisma, RefreshTokenStatus, UserRole, WebhookEventName } from '@prisma/client';
 import { prisma } from '@/lib/db';
-import { resolveClinicId } from '@/services/billing/kc-actor';
+import {
+  listAdminClinics,
+  listPracticeClinics,
+  resolveClinicId,
+  type AdminClinic,
+  type PracticeClinic,
+} from '@/services/billing/kc-actor';
+import { listOwnedClinics, type OwnedClinic } from '@/services/clinic-owner/service';
 import { getClientIp } from '@/lib/client-ip';
+import { logging } from '@/lib/logging';
 import { findWpAccountStatus } from '@/repositories/wp/account-status.repo';
 import {
   issueAccessToken,
@@ -155,8 +163,14 @@ export interface LoginResult {
     displayName: string;
     role: UserRole;
     wpUserId: bigint | null;
-    /** See `scopeClinicId`. */
+    /** See `scopeClinics`. */
     clinicId: number | null;
+    /** See `scopeClinics`. Only a CLINIC_ADMIN carries it. */
+    clinics?: AdminClinic[];
+    /** See `scopeClinics`. Only a PROFESSIONAL carries it. */
+    ownedClinics?: OwnedClinic[];
+    /** See `scopeClinics`. Only a PROFESSIONAL carries it. */
+    practiceClinics?: PracticeClinic[];
   };
   accessToken: string;
   accessTokenExpiresAt: Date;
@@ -247,26 +261,76 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       displayName: user.displayName,
       role: user.role,
       wpUserId: user.wpUserId,
-      clinicId: await scopeClinicId(user.role, user.wpUserId),
+      ...(await scopeClinics(user.role, user.wpUserId)),
     },
     ...tokens,
   };
 }
 
 /**
- * The clinic a single-clinic staff role is bound to, for clients that scope by it.
- *
- * Only CLINIC_ADMIN and RECEPTIONIST get one. Without it the Laravel FE guessed an
- * admin's clinic by sweeping /practices for a matching email (which stopped at the
- * first page) and never found a receptionist's at all, so their dashboards came up
- * empty. A PROFESSIONAL deliberately gets `null`: they can work at several clinics,
- * and the FE treats this value as a clinic override (schedule saves, service lists),
- * so a first-mapping guess would lock them out of every clinic but one.
+ * A psychologist's clinic list must never take a login or /auth/me down: a failing query (a
+ * missing `clinic_owners` table, a half-migrated DB) is logged and answered with [], and the
+ * FE retries on its next refresh. Each list fails on its own.
  */
-export async function scopeClinicId(role: UserRole, wpUserId: bigint | null): Promise<number | null> {
-  if (wpUserId === null || (role !== 'CLINIC_ADMIN' && role !== 'RECEPTIONIST')) return null;
-  const clinicId = await resolveClinicId(role, wpUserId);
-  return clinicId === null ? null : Number(clinicId);
+async function optionalClinicList<T>(what: string, wpUserId: bigint, load: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await load();
+  } catch (err) {
+    await logging.error(`Could not load the ${what} for a psychologist`, err, {
+      metadata: { wpUserId: wpUserId.toString() },
+    });
+    return [];
+  }
+}
+
+/**
+ * The clinic(s) a staff role is bound to, for clients that scope by them.
+ *
+ * `clinicId`: CLINIC_ADMIN and RECEPTIONIST get one. Without it the Laravel FE guessed an
+ * admin's clinic by sweeping /practices for a matching email (which stopped at the first
+ * page) and never found a receptionist's at all, so their dashboards came up empty. For a
+ * CLINIC_ADMIN it is their default clinic, i.e. the first entry of `clinics`.
+ *
+ * `clinics`: CLINIC_ADMIN only. Every clinic they may pick with the X-Praktiqu-Clinic-Id
+ * header, default first. Other roles do not get the field at all, so a client can tell
+ * "no clinic switcher" apart from "a switcher with nothing in it".
+ *
+ * A PROFESSIONAL deliberately gets `clinicId: null`: they can work at several clinics, and
+ * the FE treats this value as a clinic override (schedule saves, service lists), so a
+ * first-mapping guess would lock them out of every clinic but one.
+ *
+ * `ownedClinics`: PROFESSIONAL only. Clinics they own (manually ticked, or the only active
+ * psychologist there), each usable as X-Praktiqu-Clinic-Id for owner mode. Always an array.
+ *
+ * `practiceClinics`: PROFESSIONAL only. Every active clinic they practise at, ascending by
+ * id — where they may add a service of their own. Always an array.
+ */
+export async function scopeClinics(
+  role: UserRole,
+  wpUserId: bigint | null,
+): Promise<{
+  clinicId: number | null;
+  clinics?: AdminClinic[];
+  ownedClinics?: OwnedClinic[];
+  practiceClinics?: PracticeClinic[];
+}> {
+  if (role === 'CLINIC_ADMIN') {
+    const clinics = wpUserId === null ? [] : await listAdminClinics(wpUserId);
+    return { clinicId: clinics[0]?.id ?? null, clinics };
+  }
+  if (role === 'RECEPTIONIST' && wpUserId !== null) {
+    const clinicId = await resolveClinicId(role, wpUserId);
+    return { clinicId: clinicId === null ? null : Number(clinicId) };
+  }
+  if (role === 'PROFESSIONAL') {
+    if (wpUserId === null) return { clinicId: null, ownedClinics: [], practiceClinics: [] };
+    const [ownedClinics, practiceClinics] = await Promise.all([
+      optionalClinicList('owned clinics', wpUserId, () => listOwnedClinics(wpUserId)),
+      optionalClinicList('practice clinics', wpUserId, () => listPracticeClinics(wpUserId)),
+    ]);
+    return { clinicId: null, ownedClinics, practiceClinics };
+  }
+  return { clinicId: null };
 }
 
 // ─── Token issuance (shared) ────────────────────────────────────────────
@@ -475,7 +539,7 @@ export async function getMeFromAccessToken(accessToken: string) {
     displayName: user.displayName,
     role: user.role,
     wpUserId: user.wpUserId,
-    clinicId: await scopeClinicId(user.role, user.wpUserId),
+    ...(await scopeClinics(user.role, user.wpUserId)),
     emailVerified: user.emailVerified,
   };
 }
@@ -774,7 +838,7 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
       displayName: user.displayName,
       role: user.role,
       wpUserId: user.wpUserId,
-      clinicId: await scopeClinicId(user.role, user.wpUserId),
+      ...(await scopeClinics(user.role, user.wpUserId)),
     },
     ...tokens,
   };

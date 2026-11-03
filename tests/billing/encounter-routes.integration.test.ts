@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
-import { assertTestDb, cleanup, seedClinicAdmin, seedEncounter } from './fixtures';
+import { assertTestDb, cleanup, seedClinicAdmin, seedEncounter, useIdBlock } from './fixtures';
 import { GET as listGET, POST as createPOST } from '@/app/api/v1/encounters/route';
 import { GET as getOneGET } from '@/app/api/v1/encounters/[id]/route';
 
+const { BASE } = useIdBlock('billing/encounter-routes.integration.test.ts');
+
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? 'dev-secret-change-me');
 
-async function token(role: string, sub = 'test-admin-9000001') {
+async function token(role: string, sub = `test-admin-${BASE + 1}`) {
   return new SignJWT({ role }).setProtectedHeader({ alg: 'HS256' }).setSubject(sub).setExpirationTime('1h').sign(SECRET);
 }
 function reqWith(jwt: string, url = 'http://localhost/api/v1/encounters', init: RequestInit = {}) {
@@ -18,8 +20,8 @@ describe('encounter routes auth matrix', () => {
   beforeAll(async () => {
     assertTestDb();
     await cleanup();
-    await seedClinicAdmin({ userId: 9000001, clinicId: 9000001 });
-    await seedEncounter({ id: 9_000_720, clinicId: 9000001 });
+    await seedClinicAdmin({ userId: BASE + 1, clinicId: BASE + 1 });
+    await seedEncounter({ id: BASE + 720, clinicId: BASE + 1 });
   });
   afterAll(cleanup);
 
@@ -52,12 +54,12 @@ describe('encounter routes auth matrix', () => {
   // `[id]` route with a real actor and checks the row comes back.
   it('GET /encounters/:id returns the seeded encounter for CLINIC_ADMIN (200)', async () => {
     const res = await getOneGET(
-      reqWith(await token('CLINIC_ADMIN'), 'http://localhost/api/v1/encounters/9000720'),
-      { params: { id: '9000720' } } as any,
+      reqWith(await token('CLINIC_ADMIN'), `http://localhost/api/v1/encounters/${BASE + 720}`),
+      { params: { id: String(BASE + 720) } } as any,
     );
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toHaveProperty('status', true);
-    expect(json.data).toMatchObject({ id: 9_000_720, clinic_id: 9000001 });
+    expect(json.data).toMatchObject({ id: BASE + 720, clinic_id: BASE + 1 });
   });
 });

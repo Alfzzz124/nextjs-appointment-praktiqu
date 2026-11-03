@@ -13,10 +13,9 @@ import {
   getWeeklyAvailability,
   listClinicSessions,
 } from '@/repositories/wp/clinic-sessions.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 8_800_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-clinic-sessions.repo.test.ts');
 
 const CLINIC = BigInt(BASE + 10);
 const DOCTOR = BigInt(BASE + 20);

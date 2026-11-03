@@ -51,9 +51,7 @@ function toAssigned(m: DoctorServiceRow): AssignedService {
     id: Number(m.mappingId),
     doctorId: Number(m.doctorId),
     serviceId: Number(m.serviceId),
-    // A doctor-specific alias wins over the catalogue name, which is what KiviCare
-    // displays when one is set.
-    serviceName: m.nameAlias ?? m.name,
+    serviceName: m.name,
     durationMinutes: m.durationMinutes,
     charges: m.charges,
     isPublic: m.isPublic,

@@ -9,6 +9,15 @@ vi.mock('@/services/payments/payment.service', () => ({
   PaymentAlreadyInitiatedError: class PaymentAlreadyInitiatedError extends Error {},
   UnknownOrderError: class UnknownOrderError extends Error {},
 }));
+vi.mock('@/lib/logging', () => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 // Tokens carry wp_kc_appointments.id now; a non-numeric payload fails closed.
 vi.mock('@/lib/public/appointment-token', () => ({
   verifyAppointmentIdToken: vi.fn((t: string) => (t === 'bad' ? null : 5150)),
@@ -17,6 +26,13 @@ vi.mock('@/lib/public/appointment-token', () => ({
 import { POST as initiate } from '@/app/api/v1/public/payments/route';
 import { POST as verify } from '@/app/api/v1/public/payment-verify/route';
 import * as svc from '@/services/payments/payment.service';
+import {
+  ChargeMismatchError,
+  PaymentMethodNotAllowedError,
+  PaypalRateMissingError,
+} from '@/services/payments/payment-errors';
+import { PaymentSettingsUnavailableError } from '@/repositories/wp/clinic-payment-settings.repo';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 
 function req(body: unknown) {
   return new NextRequest('http://x/api/v1/public/payments', { method: 'POST', body: JSON.stringify(body) });
@@ -112,5 +128,53 @@ describe('POST /public/payments — method', () => {
     const res = await initiate(req({ token: 'good', method: 'gopay' }));
     expect(res.status).toBe(400);
     expect(svc.initiatePublicPayment).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /public/payments — international payment errors', () => {
+  it.each([
+    ['a clinic that is not international', 403, 'payment_method_not_allowed', () => new PaymentMethodNotAllowedError('no')],
+    ['an international clinic with no usable rate', 503, 'paypal_rate_missing', () => new PaypalRateMissingError('no rate')],
+    ['a settings read error', 503, 'payment_settings_unavailable', () => new PaymentSettingsUnavailableError('db down')],
+    ['the backstop', 502, 'charge_mismatch', () => new ChargeMismatchError('13.61 != 13.62')],
+  ])('answers %s with %i %s', async (_label, status, code, makeErr) => {
+    (svc.initiatePublicPayment as any).mockRejectedValue(makeErr());
+    const res = await initiate(req({ token: 'good', method: 'paypal' }));
+    expect(res.status).toBe(status);
+    expect(await res.json()).toMatchObject({ status, code });
+    // The 503 configuration states carry no Retry-After.
+    expect(res.headers.get('Retry-After')).toBeNull();
+  });
+
+  it.each([
+    ['clinic_not_international', 409, 403, 'payment_method_not_allowed'],
+    ['charge_mismatch', 502, 502, 'charge_mismatch'],
+    ['paypal_rate_missing', 503, 503, 'paypal_rate_missing'],
+    ['gateway_missing', 503, 503, 'payment_method_unavailable'],
+    ['woocommerce_missing', 503, 503, 'payment_unavailable'],
+    ['invalid_charge', 400, 502, 'payment_gateway_rejected'],
+    ['order_create_failed', 500, 502, 'payment_start_failed'],
+  ])('maps plugin code %s (WP %i) to %i %s, without the WordPress message', async (wpCode, wpStatus, status, code) => {
+    (svc.initiatePublicPayment as any).mockRejectedValue(
+      new WpEndpointError(`WC order create failed ${wpStatus}: secret wp detail`, wpStatus, wpCode),
+    );
+    const res = await initiate(req({ token: 'good', method: 'paypal' }));
+    expect(res.status).toBe(status);
+    const body = await res.json();
+    expect(body).toMatchObject({ status, code });
+    expect(JSON.stringify(body)).not.toContain('secret wp detail');
+  });
+
+  it('maps an unreachable WordPress to 503 payment_unavailable', async () => {
+    (svc.initiatePublicPayment as any).mockRejectedValue(new WpEndpointError('/payments/order unreachable', 0));
+    const res = await initiate(req({ token: 'good', method: 'card' }));
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('payment_unavailable');
+  });
+
+  it('still answers 500 for an error nobody recognises', async () => {
+    (svc.initiatePublicPayment as any).mockRejectedValue(new Error('boom'));
+    const res = await initiate(req({ token: 'good' }));
+    expect(res.status).toBe(500);
   });
 });

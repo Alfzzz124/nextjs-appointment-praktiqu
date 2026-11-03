@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedClinicAdmin, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, cleanup, useIdBlock } from './fixtures';
 import { PracticeNotFoundError, assertPracticeInScope } from '@/services/practice/service';
 import type { Actor } from '@/lib/auth';
+
+const { BASE } = useIdBlock('billing/practice-scope.test.ts');
 
 /**
  * Cross-tenant row-scope regression suite (Critical finding, feat/encounter-documents
@@ -12,7 +14,7 @@ import type { Actor } from '@/lib/auth';
  * through unrestricted.
  */
 
-const CLINIC_A = 9_040_001, CLINIC_B = 9_040_002;
+const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
 
 beforeAll(async () => {
   assertTestDb();
