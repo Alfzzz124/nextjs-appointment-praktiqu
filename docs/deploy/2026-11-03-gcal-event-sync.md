@@ -6,27 +6,54 @@ verifikasi Google yang perlu ditunggu.
 
 Rancangannya: `docs/superpowers/specs/2026-11-03-google-calendar-dua-arah-design.md`
 
-## Yang sudah dikerjakan di produksi, 2026-11-03
+## SELESAI dan berjalan di produksi, 2026-11-03
 
-- [x] **Langkah 1 & 2** — empat scope dicentang di Data Access oleh pemilik proyek
-- [x] **Langkah 3** — kedua berkas SQL dijalankan di `u580667380_nnmkapn`, tabel
-      dan kolomnya diverifikasi ada (lihat di bawah)
-- [x] **Skrip cron** `~/gcal-event-sync.sh` dibuat (700), sudah diuji dan benar
-      membaca `CRON_SECRET`
-- [ ] **Langkah 4** — merge BE lalu FE, dan periksa build-nya
-- [ ] **Langkah 5** — tambahkan entri cron di hPanel yang memanggil skrip itu
-- [ ] **Langkah 6** — nyalakan `PRAKTIQU_KALENDER_TULIS` untuk satu akun uji
+Seluruh langkah di bawah sudah dikerjakan. Yang tersisa hanya uji coba dengan
+satu akun psikolog sungguhan.
 
-`CRON_SECRET` sudah ada di env produksi: endpoint `conflict-scan` menjawab 401,
-bukan 503.
+- [x] Empat scope dicentang di Data Access, semuanya non-sensitive
+- [x] Kedua berkas SQL dijalankan di `u580667380_nnmkapn` dan diverifikasi
+- [x] BE di-merge, build naik, rute `event-sync` terdaftar
+- [x] FE di-merge (PR #68)
+- [x] Cron per jam terpasang, **terbukti menembak sendiri** pukul 08:00:08 UTC
+      dengan HTTP 200
+- [x] `PRAKTIQU_KALENDER_TULIS` diatur di env FE
+- [ ] Uji dengan satu akun psikolog sungguhan
 
-Basis datanya dipastikan dulu sebelum disentuh — tabel `google_calendar_connections`
-dan `wp_kc_appointments` sama-sama ada di sana, jadi itu memang basis data yang
-dipakai aplikasi, bukan sekadar basis data yang namanya mirip.
+### Bukti bahwa rangkaiannya utuh
 
-Catatan: `google_calendar_connections` masih **0 baris**. Belum ada satu psikolog
-pun yang menghubungkan Google Calendar-nya di produksi, jadi arah baca yang sudah
-live pun belum pernah benar-benar dipakai orang.
+```
+[2026-11-03T08:00:08+00:00] HTTP 200 {"data":{"enqueuedMissing":0,
+  "flippedToAbsent":0,"examined":0,"created":0,"updated":0,"deleted":0,
+  "alreadyCurrent":0,"failed":0,"skippedNoWriteScope":0}}
+```
+
+Angka nolnya wajar: `google_calendar_connections` masih kosong, jadi memang
+tidak ada yang perlu dikerjakan. Yang membuktikan sesuatu justru **200**-nya —
+penyapu mengueri `google_calendar_event_sync` sebagai langkah pertamanya, jadi
+kalau tabelnya tidak ada atau klien Prisma di produksi tidak mengenalnya, ia
+akan menjawab 500. SQL tangan dan klien hasil build memang sepakat.
+
+### Cron tidak terlihat di daftar hPanel yang biasa
+
+Daftar Cron Job yang muncul untuk `api-appointment.praktiqu.com` hanya memuat
+`wp-cron.php`, dan `crontab -l` di shell **kosong sama sekali**. Keduanya bukan
+tanda cron-nya hilang: `google-conflict-scan` juga tidak muncul di situ padahal
+lognya membuktikan ia berjalan tiap hari pukul 00:00. Cron untuk
+`endpoint.praktiqu.com` dikelola di panel situs yang berbeda.
+
+Jangan menilai dari daftar itu. Yang membuktikan adalah lognya:
+
+```bash
+ssh praktiqu-hostinger 'tail -5 ~/gcal-event-sync.log'
+```
+
+### Catatan
+
+`google_calendar_connections` masih 0 baris. Belum ada satu psikolog pun yang
+menghubungkan Google Calendar-nya, jadi arah baca yang live sejak September pun
+belum pernah dipakai orang sungguhan. Uji coba nanti sekaligus jadi uji pertama
+untuk kedua arah.
 
 ---
 
