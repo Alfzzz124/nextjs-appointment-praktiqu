@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panduan Janji di Luar Jadwal</title>
+<style>
+  :root {
+    --ink: #1E2236; --muted: #6B7186; --line: #E2E8F0; --soft: #F8FAFC;
+    --brand: #3858D6; --brand-soft: #EEF2FF; --accent: #F97316; --warn-bg: #FFF6E5; --warn: #9A6B00;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 15px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 40px 24px 56px; }
+  header { border-bottom: 3px solid var(--brand); padding-bottom: 18px; margin-bottom: 28px; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
+  h1 { font-size: 30px; line-height: 1.2; margin: 6px 0 6px; letter-spacing: -.01em; }
+  .lead { color: var(--muted); margin: 0; }
+  h2 { font-size: 20px; margin: 36px 0 12px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .card b { display: block; font-size: 13px; color: var(--brand); margin-bottom: 4px; }
+  .card p { margin: 0; font-size: 14px; }
+  .step { margin: 26px 0 34px; break-inside: avoid; page-break-inside: avoid; }
+  .step-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+  .num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+  .step h3 { margin: 0; font-size: 17px; }
+  .step p { margin: 4px 0 10px 42px; }
+  figure { margin: 0; }
+  figure img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 18px rgba(30,34,54,.08); }
+  figure.email img { max-width: 560px; margin: 0 auto; }
+  ul.auto { padding-left: 20px; }
+  ul.auto li { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; break-inside: avoid; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--brand-soft); color: var(--brand); font-size: 13px; }
+  td:first-child { font-weight: 600; width: 46%; }
+  .note { background: var(--warn-bg); border: 1px solid #F3E2BE; color: var(--warn); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } .step p { margin-left: 0; } }
+  @media print { main { padding: 0 6px; } h2 { break-after: avoid; } footer { margin-top: 12px; padding-top: 8px; } .note ul { line-height: 1.5; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Dashboard PraktiQu · Panduan staf</div>
+    <h1>Janji Temu di Luar Jadwal</h1>
+    <p class="lead">Cara membuat Janji Manual untuk jam di luar jam praktik psikolog, cukup dalam satu langkah. Sistem otomatis mencatat Sesi Dadakan untuk jam itu, jadi Anda tidak perlu membuatnya lebih dulu.</p>
+  </header>
+
+  <div class="cards">
+    <div class="card"><b>Siapa yang bisa</b><p>Admin klinik dan resepsionis untuk psikolog di kliniknya, dengan mencentang konfirmasi dari psikolog. Psikolog untuk dirinya sendiri, tanpa centang. Super admin juga bisa, dengan centang yang sama.</p></div>
+    <div class="card"><b>Kapan dipakai</b><p>Saat klien butuh jam yang tidak ada di daftar, misalnya malam hari atau hari libur, dan psikolog sudah menyetujuinya.</p></div>
+    <div class="card"><b>Yang dibuat otomatis</b><p>Sebuah Sesi Dadakan selama durasi layanan, di klinik tempat janji temu itu dibuat.</p></div>
+  </div>
+
+  <h2>Langkah-langkah</h2>
+
+  <section class="step">
+    <div class="step-head"><span class="num">1</span><h3>Klik "Add Appointment"</h3></div>
+    <p>Di menu <b>Appointments</b>, klik tombol <b>Add Appointment</b> di kanan atas. Jendela <b>Buat Janji Temu Manual</b> terbuka.</p>
+    <figure><img src="01-tombol-add-appointment.png" alt="Tombol Add Appointment di halaman All Appointments"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">2</span><h3>Pilih klien, psikolog, layanan, dan tanggal</h3></div>
+    <p>Isi seperti Janji Manual biasa: cari dan pilih <b>klien</b>, pilih <b>psikolog</b> lalu <b>layanannya</b>, kemudian pilih <b>tanggal</b>. Daftar jam yang masih kosong muncul di bawah tanggal.</p>
+    <figure><img src="02-isi-klien-layanan-tanggal.png" alt="Jendela Buat Janji Temu Manual dengan klien, psikolog, layanan, dan tanggal terisi"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">3</span><h3>Klik "+ Jam lain (di luar jadwal)"</h3></div>
+    <p>Kalau jam yang dibutuhkan klien tidak ada di daftar, klik tautan <b>+ Jam lain (di luar jadwal)</b> di bawah daftar jam. Tautan ini juga muncul saat tanggalnya tidak punya jam kosong sama sekali.</p>
+    <figure><img src="03-tautan-jam-lain.png" alt="Tautan Jam lain di luar jadwal di bawah daftar jam"></figure>
+  </section>
+
+  <section class="step">
+    <p style="margin-left:0">Pada tanggal tanpa jam kosong, kotak kuning "Tidak ada jam kosong" menawarkan tanggal terdekat yang masih punya jam. Tautan yang sama tetap ada tepat di bawahnya.</p>
+    <figure><img src="03b-tanggal-kosong.png" alt="Tanggal tanpa jam kosong dengan tautan Jam lain di bawahnya"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">4</span><h3>Ketik jam mulai</h3></div>
+    <p>Ketik <b>jam mulai</b> (kelipatan 5 menit, misalnya 19:00). Jam selesai dihitung dari durasi layanan, dan catatan di bawahnya mengingatkan bahwa <b>Sesi Dadakan akan dibuat otomatis</b>. Tombol <b>Pesan Sesi</b> tetap abu-abu dan belum bisa diklik sampai konfirmasi dicentang.</p>
+    <figure><img src="04-ketik-jam.png" alt="Mengetik jam mulai 19:00 dan melihat jam selesai otomatis"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">5</span><h3>Centang konfirmasi psikolog</h3></div>
+    <p>Pastikan psikolognya sudah setuju dengan jam itu, lalu centang <b>Sudah dikonfirmasi dengan psikolog</b>. Psikolog yang memesan untuk dirinya sendiri tidak melihat kotak ini. Setelah dicentang, klik <b>Pesan Sesi</b>.</p>
+    <figure><img src="05-centang-konfirmasi.png" alt="Kotak konfirmasi dicentang dan tombol Pesan Sesi aktif"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">6</span><h3>Selesai</h3></div>
+    <p>Pesan hijau menyebutkan nomor register klien dan diakhiri dengan <b>"Sesi Dadakan 19:00–20:00 dibuat otomatis."</b> Janji temunya sudah masuk daftar Appointments dengan status <i>Belum dibayar</i>.</p>
+    <figure><img src="06-berhasil.png" alt="Pesan sukses janji temu dan Sesi Dadakan dibuat otomatis"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">7</span><h3>Periksa di daftar Sesi Dadakan</h3></div>
+    <p>Buka <b>Professional Sessions</b>. Di bagian <b>Sesi Dadakan / Custom (1×)</b> sudah ada barisnya, lengkap dengan tanggal, jam mulai, durasi, dan catatan "Otomatis dari Janji Manual".</p>
+    <figure><img src="07-sesi-dadakan-tercatat.png" alt="Sesi Dadakan 19:00 tercatat di daftar Sesi Dadakan"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">8</span><h3>Jam itu tidak ditawarkan lagi</h3></div>
+    <p>Kalau Anda membuka Janji Manual lagi untuk psikolog, layanan, dan tanggal yang sama, <b>19:00 tidak ada lagi di daftar</b> karena sudah terisi. Jam baru yang lain tetap bisa dipesan lewat tautan yang sama.</p>
+    <figure><img src="08-jam-tidak-ditawarkan-lagi.png" alt="Daftar jam tanpa 19:00 karena sudah terisi"></figure>
+  </section>
+
+  <h2>Yang terjadi otomatis</h2>
+  <ul class="auto">
+    <li><b>Sesi Dadakan muncul di daftar Sesi Dadakan</b> (Professional Sessions), seukuran durasi layanan dan di klinik janji temunya.</li>
+    <li><b>Janji temunya dibuat seperti Janji Manual biasa:</b> status menunggu pembayaran dan nomor register klien. Setelah klien membayar, staf memakai <b>"Tandai lunas &amp; terjadwal"</b> di daftar Appointments.</li>
+    <li><b>Kalau pemesanan gagal, Sesi Dadakannya ikut dibatalkan,</b> jadi tidak ada jam yatim yang tertinggal.</li>
+    <li><b>Jam yang sudah dipesan tidak ditawarkan lagi</b> di daftar jam Janji Manual.</li>
+  </ul>
+
+  <h2>Kalau muncul pesan ini</h2>
+  <table>
+    <thead><tr><th>Pesan</th><th>Artinya dan yang perlu dilakukan</th></tr></thead>
+    <tbody>
+      <tr><td>Centang konfirmasi bahwa jam ini sudah disepakati dengan psikolog.</td><td>Kotak <i>Sudah dikonfirmasi dengan psikolog</i> belum dicentang. Hubungi psikolog dulu, lalu centang.</td></tr>
+      <tr><td>Jam sudah lewat. Pilih jam lain.</td><td>Jam yang diketik sudah terlewat (untuk hari ini). Pilih jam yang akan datang.</td></tr>
+      <tr><td>Sesi melewati tengah malam. Pilih jam lebih awal.</td><td>Jam mulai ditambah durasi layanan lebih dari pukul 24:00. Pilih jam mulai yang lebih awal.</td></tr>
+      <tr><td>Jam mulai harus berformat JJ:MM dengan kelipatan 5 menit.</td><td>Tulis jam seperti 19:00 atau 19:05, bukan 19:07.</td></tr>
+      <tr><td>Bentrok dengan Sesi Dadakan lain pada jam yang sama.</td><td>Sesi Dadakan lain milik psikolog itu tumpang tindih sebagian dengan jam ini. Pilih jam lain, atau ubah atau hapus Sesi Dadakan itu di menu Sesi Dadakan.</td></tr>
+      <tr><td>Layanan ini tidak dibuka psikolog tersebut.</td><td>Psikolog itu tidak membuka layanan yang dipilih. Pilih layanan lain.</td></tr>
+      <tr><td>Durasi layanan gagal dimuat. Coba lagi.</td><td>Sambungan ke sistem terganggu sehingga durasi layanan tidak terbaca. Tunggu sebentar lalu klik Pesan Sesi lagi.</td></tr>
+      <tr><td>Jam ini baru saja terisi atau hold kedaluwarsa. Pilih jam lain.</td><td>Jam itu bentrok dengan janji temu lain milik psikolog yang sama, bisa juga di klinik lain. Pilih jam lain.</td></tr>
+      <tr><td>Psikolog ini tidak terdaftar di klinik Anda.</td><td>Admin klinik dan resepsionis hanya bisa memesan untuk psikolog di kliniknya sendiri.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Perlu diketahui</h2>
+  <div class="note">
+    <ul style="margin:0;padding-left:18px">
+      <li>Kalau jam yang Anda ketik ternyata sudah ada di daftar jam, sistem hanya memilih jam itu. Tidak ada Sesi Dadakan yang dibuat.</li>
+      <li>Sesi Dadakan tetap ada walaupun janji temunya kemudian dibatalkan. Hapus lewat menu Sesi Dadakan bila tidak diperlukan.</li>
+      <li>Pasien tidak pernah melihat Sesi Dadakan di halaman pemesanan publik.</li>
+      <li>Aturan batas pemesanan klinik (minimal berapa hari sebelumnya) tetap berlaku.</li>
+    </ul>
+  </div>
+
+  <footer>Versi 28 Oktober 2026. Berlaku setelah rilis dashboard yang memuat fitur Jam lain (di luar jadwal). Gambar diambil dari dashboard dengan data contoh.</footer>
+</main>
+</body>
+</html>

@@ -1,7 +1,8 @@
 # Menyalakan arah tulis Google Calendar
 
-Langkah-langkah ini **berurutan**. Langkah 1 dan 2 adalah jalur kritisnya:
-kodenya bisa menunggu, verifikasi Google tidak.
+Langkah-langkah ini **berurutan**, dan seluruhnya bisa diselesaikan dalam satu
+hari: scope yang dipakai (`calendar.app.created`) non-sensitive, jadi tidak ada
+verifikasi Google yang perlu ditunggu.
 
 Rancangannya: `docs/superpowers/specs/2026-11-03-google-calendar-dua-arah-design.md`
 
@@ -9,49 +10,65 @@ Rancangannya: `docs/superpowers/specs/2026-11-03-google-calendar-dua-arah-design
 
 ## 1. Tambahkan scope di Google Cloud Console
 
-Pada proyek OAuth PraktiQu → **Data Access** → Add or remove scopes, tambahkan:
+Pada proyek OAuth PraktiQu → **Data Access** → Add or remove scopes. Daftarnya 23
+baris, jadi naikkan "Rows per page" ke 50 supaya semuanya terlihat sekaligus.
+
+Centang **empat** ini, dan hanya empat:
 
 ```
-https://www.googleapis.com/auth/calendar.events
+openid
+https://www.googleapis.com/auth/userinfo.email
+https://www.googleapis.com/auth/calendar.freebusy
+https://www.googleapis.com/auth/calendar.app.created
 ```
 
-**Baca label yang Console tampilkan untuk scope itu di halaman yang sama.** Itu
-yang mengikat, bukan dokumentasi dan bukan panduan pihak ketiga. Waktu kita
-memeriksa `calendar.freebusy`, labelnya ternyata Non-sensitive — tidak ada
-halaman dokumen yang mencetaknya.
+Dua yang pertama untuk mengenali akunnya, yang ketiga arah baca yang sudah live,
+yang keempat arah tulis. Kode ini tidak pernah memanggil `calendarList`,
+`settings`, maupun kalender publik — jangan centang yang tidak dipakai, meski
+tidak bergembok.
 
-Yang diharapkan: **Sensitive** (bukan Restricted, jadi tidak ada CASA security
-assessment).
+**Perhatikan kolom gembok.** Di Console inilah satu-satunya tempat klasifikasi
+scope terlihat; tidak ada halaman dokumentasi yang mencetaknya.
+`calendar.app.created` **tidak bergembok**, sementara `calendar.events` dan
+seluruh scope kalender yang luas bergembok.
 
-## 2. Ajukan verifikasi
+## 2. Pastikan keempatnya non-sensitive
 
-Perlu disiapkan:
+Setelah Update, halaman Data Access memisahkan scope ke beberapa tabel. Keempat
+scope di atas harus mendarat di **"Your non-sensitive scopes"**.
 
-- Justifikasi tertulis per scope, termasuk jawaban atas *"kenapa scope yang lebih
-  sempit tidak cukup?"*
-- Video demo yang memperlihatkan alur izinnya dari layar PraktiQu
+Kalau benar begitu: **tidak ada verifikasi, tidak ada video demo, tidak ada
+antrean review.** Lanjut ke langkah 3.
 
-Google menyebut prosesnya bisa memakan beberapa minggu.
+Kalau salah satunya ternyata masuk "sensitive", berhenti dan kabari — itu
+mengubah rencananya, bukan sekadar menambah langkah.
 
-**Kalau ditolak** dan Google mendorong ke `calendar.app.created`: perpindahannya
-menyentuh dua tempat saja.
+### Kenapa `calendar.app.created` dan bukan `calendar.events`
 
-1. `GOOGLE_WRITE_SCOPES` di `src/lib/google/oauth-client.ts`
-2. Kolom `calendar_id` pada `google_calendar_event_sync` diisi id kalender yang
-   kita buat, bukan `'primary'` (kolomnya sudah ada justru untuk ini)
+`calendar.events` memberi kita baca-tulis atas **seluruh** kalender asli
+psikolog. `calendar.app.created` hanya memberi akses ke kalender yang aplikasi
+ini buat sendiri — kalender pribadi mereka di luar jangkauan secara struktural,
+bukan sekadar tidak kita sentuh. Untuk aplikasi kesehatan itu perbedaan yang
+nyata, dan kebetulan juga yang lebih murah.
 
-Ditambah satu panggilan `calendars.insert` sekali per psikolog saat menyambung.
-Sisa kodenya tidak berubah.
+Efek sampingnya bagus: acara buatan kita tinggal di kalender terpisah, sementara
+`freebusy` membaca kalender utama. Acara kita **tidak mungkin** terbaca balik
+sebagai jam sibuk.
 
-Perlu diingat kalau jalur itu ditempuh: kalender sekunder yang baru **tidak
-otomatis muncul di aplikasi Google Calendar di HP** — psikolog harus
-mengaktifkannya sekali di pengaturan aplikasi, dan itu perlu masuk ke panduan
-visual di `docs/panduan/google-calendar/`.
+Satu harga yang harus dibayar, dan sudah masuk panduan: **kalender sekunder yang
+baru tidak otomatis muncul di aplikasi Google Calendar di HP.** Psikolog perlu
+mencentang kalender "PraktiQu" sekali di pengaturan aplikasinya.
 
 ## 3. Jalankan SQL-nya
 
+Dua berkas, urutannya bebas:
+
 ```bash
 mysql -u <user> -p <database> < prisma/manual/2026-11-03-google-calendar-event-sync.sql
+```
+
+```bash
+mysql -u <user> -p <database> < prisma/manual/2026-11-03-google-calendar-app-calendar-id.sql
 ```
 
 Jangan `prisma migrate dev` dan jangan `prisma db push`. `DATABASE_URL` di proyek
@@ -104,7 +121,9 @@ undangan. Mereka harus menyetujui ulang lewat tombol baru di halaman pengaturan.
 
 Uji dengan satu akun lebih dulu, dan periksa tiga hal:
 
-1. Acara muncul di Google Calendar psikolog pada jam yang benar menurut WIB
+1. Kalender bernama **PraktiQu** muncul di daftar kalendernya, dan acaranya ada
+   di sana pada jam yang benar menurut WIB (di HP, kalendernya perlu dicentang
+   sekali dulu)
 2. Klien menerima undangan
 3. Membatalkan janji di PraktiQu menghapus acaranya
 

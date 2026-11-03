@@ -44,3 +44,21 @@ Menjalankannya manual (dari server, rahasianya dibaca dari proses yang hidup):
 ```bash
 ~/google-conflict-scan.sh && tail -1 ~/google-conflict-scan.log
 ```
+
+## Hostinger (endpoint.praktiqu.com) — sejak 2026-09-29
+
+Skrip: `~/google-conflict-scan.sh` (`700`). Berbeda dari versi Jagoan, `CRON_SECRET` **tidak
+disalin ke skrip**; ia dibaca saat jalan dari `~/domains/endpoint.praktiqu.com/hbuilds/config/.env`,
+berkas yang ditulis hPanel untuk app Node.js (nilainya sama dengan env proses, hanya diberi kutip).
+
+Dipasang lewat hPanel → Website → endpoint.praktiqu.com → Tingkat Lanjut → Cron Job → **Kustom**:
+
+```
+0 0 * * *   /bin/bash /home/u580667380/google-conflict-scan.sh
+```
+
+Server Hostinger berjalan di **UTC**, jadi `0 0` = 07:00 WIB, sama dengan jadwal lama.
+
+**Matikan baris `0 7 * * * /home/praktiqu/google-conflict-scan.sh` di Jagoan** begitu cron
+Hostinger aktif dan tabel app sudah diimpor — kalau keduanya jalan dengan koneksi Google yang
+sama, psikolog menerima pemberitahuan bentrok dua kali.

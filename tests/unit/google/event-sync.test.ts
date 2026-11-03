@@ -27,6 +27,12 @@ vi.mock('@/lib/prisma', () => ({
     googleCalendarConnection: {
       findUnique: vi.fn(async () => connection),
       findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async (args: { data: { appCalendarId?: string } }) => {
+        if (connection && args.data.appCalendarId) {
+          connection.appCalendarId = args.data.appCalendarId;
+        }
+        return { count: 1 };
+      }),
     },
     kcAppointment: { findMany: vi.fn(async () => []) },
   },
@@ -45,17 +51,28 @@ vi.mock('@/lib/google/freebusy', async (importOriginal) => ({
 vi.mock('@/services/integrations/google-calendar-connection.service', () => ({
   getRefreshToken: vi.fn(async () => 'refresh-token'),
   markConnection: vi.fn(async () => {}),
+  // Perilaku aslinya: pakai yang tersimpan, buat sekali kalau belum ada.
+  getOrCreateAppCalendarId: vi.fn(async (_id: number, create: () => Promise<string>) => {
+    const tersimpan = connection?.appCalendarId as string | undefined;
+    if (tersimpan) return tersimpan;
+    const baru = await create();
+    if (connection) connection.appCalendarId = baru;
+    return baru;
+  }),
 }));
 
-const createEvent = vi.fn(async () => 'evt-new');
-const updateEvent = vi.fn(async () => {});
-const deleteEvent = vi.fn(async () => {});
+type Opts = Record<string, unknown>;
+const createEvent = vi.fn(async (_opts: Opts): Promise<string> => 'evt-new');
+const createAppCalendar = vi.fn(async (_opts: Opts): Promise<string> => 'cal-baru');
+const updateEvent = vi.fn(async (_opts: Opts): Promise<void> => {});
+const deleteEvent = vi.fn(async (_opts: Opts): Promise<void> => {});
 
 vi.mock('@/lib/google/events', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  createEvent: (...a: unknown[]) => createEvent(...(a as [])),
-  updateEvent: (...a: unknown[]) => updateEvent(...(a as [])),
-  deleteEvent: (...a: unknown[]) => deleteEvent(...(a as [])),
+  createEvent: (opts: Opts) => createEvent(opts),
+  createAppCalendar: (opts: Opts) => createAppCalendar(opts),
+  updateEvent: (opts: Opts) => updateEvent(opts),
+  deleteEvent: (opts: Opts) => deleteEvent(opts),
 }));
 
 const { runEventSweep, DIRTY } = await import('@/services/integrations/google-event-sync.service');
@@ -86,19 +103,21 @@ function row(over: Record<string, unknown> = {}) {
     desiredHash: DIRTY,
     syncedHash: null,
     googleEventId: null,
-    calendarId: 'primary',
+    calendarId: CAL,
     attempts: 0,
     ...over,
   };
 }
 
-const WRITE_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events';
+const WRITE_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.app.created';
+const CAL = 'cal-praktiqu';
 
 beforeEach(() => {
   rows.length = 0;
   updates.length = 0;
-  connection = { status: 'active', scopeGranted: WRITE_SCOPE };
+  connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: CAL };
   createEvent.mockClear().mockResolvedValue('evt-new');
+  createAppCalendar.mockClear().mockResolvedValue('cal-baru');
   updateEvent.mockClear().mockResolvedValue(undefined);
   deleteEvent.mockClear().mockResolvedValue(undefined);
 });
@@ -107,7 +126,7 @@ describe('when writing is not switched on', () => {
   it('skips a professional who never granted the write scope', async () => {
     // Not an error and not worth retrying: the read direction may be working
     // perfectly well for this person.
-    connection = { status: 'active', scopeGranted: 'openid email' };
+    connection = { status: 'active', scopeGranted: 'openid email', appCalendarId: CAL };
     rows.push(row());
 
     const report = await runEventSweep({ loader });
@@ -117,7 +136,7 @@ describe('when writing is not switched on', () => {
   });
 
   it('skips a revoked connection', async () => {
-    connection = { status: 'revoked', scopeGranted: WRITE_SCOPE };
+    connection = { status: 'revoked', scopeGranted: WRITE_SCOPE, appCalendarId: CAL };
     rows.push(row());
 
     expect((await runEventSweep({ loader })).skippedNoWriteScope).toBe(1);
@@ -125,7 +144,11 @@ describe('when writing is not switched on', () => {
   });
 
   it('accepts the broad calendar scope a KiviCare-era grant would carry', async () => {
-    connection = { status: 'active', scopeGranted: 'https://www.googleapis.com/auth/calendar' };
+    connection = {
+      status: 'active',
+      scopeGranted: 'https://www.googleapis.com/auth/calendar',
+      appCalendarId: CAL,
+    };
     rows.push(row());
 
     expect((await runEventSweep({ loader })).created).toBe(1);
@@ -166,6 +189,62 @@ describe('creating and updating', () => {
 
     expect((await runEventSweep({ loader })).created).toBe(1);
     expect(createEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('kalender PraktiQu milik psikolog', () => {
+  it('membuatnya sekali ketika belum ada, lalu memakainya', async () => {
+    connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: null };
+    rows.push(row());
+
+    expect((await runEventSweep({ loader })).created).toBe(1);
+    expect(createAppCalendar).toHaveBeenCalledTimes(1);
+    // Acaranya mendarat di kalender yang baru dibuat, bukan di 'primary'.
+    expect(createEvent.mock.calls[0][0]).toMatchObject({ calendarId: 'cal-baru' });
+    expect(updates[0].data).toMatchObject({ calendarId: 'cal-baru' });
+  });
+
+  it('tidak membuat kalender kedua ketika sudah punya', async () => {
+    // Membuat ulang tiap putaran akan memenuhi akun orang dengan kalender
+    // "PraktiQu" berduplikat.
+    rows.push(row());
+
+    await runEventSweep({ loader });
+
+    expect(createAppCalendar).not.toHaveBeenCalled();
+    expect(createEvent.mock.calls[0][0]).toMatchObject({ calendarId: CAL });
+  });
+
+  it('memindahkan acara yang tertinggal di kalender lama', async () => {
+    // Terjadi kalau seseorang memutus lalu menyambung lagi: kalendernya baru,
+    // sementara baris lama masih menunjuk yang lama. Tanpa penghapusan ini,
+    // janji yang sama muncul dua kali — satu di kalender basi, satu di yang baru.
+    rows.push(row({ calendarId: 'cal-lama', googleEventId: 'evt-1', syncedHash: 'a'.repeat(64) }));
+
+    expect((await runEventSweep({ loader })).created).toBe(1);
+    expect(deleteEvent.mock.calls[0][0]).toMatchObject({
+      calendarId: 'cal-lama',
+      eventId: 'evt-1',
+    });
+    expect(createEvent.mock.calls[0][0]).toMatchObject({ calendarId: CAL });
+    expect(updateEvent).not.toHaveBeenCalled();
+  });
+
+  it('tetap membuat penggantinya walau acara lama sudah lenyap', async () => {
+    deleteEvent.mockRejectedValueOnce(new GoogleEventGoneError('gone'));
+    rows.push(row({ calendarId: 'cal-lama', googleEventId: 'evt-1', syncedHash: 'a'.repeat(64) }));
+
+    expect((await runEventSweep({ loader })).created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('menghapus dari kalender tempat acaranya benar-benar berada', async () => {
+    // Pembatalan harus menyasar kalender yang tercatat pada barisnya, bukan
+    // kalender tujuan hari ini.
+    rows.push(row({ desiredState: 'absent', calendarId: 'cal-lama', googleEventId: 'evt-1' }));
+
+    expect((await runEventSweep({ loader })).deleted).toBe(1);
+    expect(deleteEvent.mock.calls[0][0]).toMatchObject({ calendarId: 'cal-lama' });
   });
 });
 

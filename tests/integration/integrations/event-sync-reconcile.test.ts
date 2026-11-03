@@ -17,7 +17,7 @@ import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 
 const PRO = 900501;
 const BASE = 9005010;
-const WRITE_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events';
+const WRITE_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.app.created';
 
 /** Hari ini menurut UTC, karena kolom `@db.Date` pulang-pergi sebagai tengah malam UTC. */
 function hariKe(selisih: number): string {
@@ -145,6 +145,16 @@ describe('rekonsiliasi terhadap database sungguhan', () => {
     // Arah bacanya boleh jalan sempurna; arah tulisnya sekadar belum dinyalakan.
     await sambungkan('openid email https://www.googleapis.com/auth/calendar.freebusy');
     await janji(BASE + 7, APPOINTMENT_STATUS.BOOKED, 3);
+
+    expect((await reconcileCalendarIntents()).enqueuedMissing).toBe(0);
+  });
+
+  it('tidak menerima calendar.events sebagai izin tulis', async () => {
+    // Scope itu bisa menulis acara tapi TIDAK bisa membuat kalender, padahal
+    // seluruh fitur ini menulis ke kalender buatan sendiri. Menerimanya berarti
+    // penyapu mencoba lalu gagal berulang-ulang pada setiap putaran.
+    await sambungkan('openid email https://www.googleapis.com/auth/calendar.events');
+    await janji(BASE + 9, APPOINTMENT_STATUS.BOOKED, 3);
 
     expect((await reconcileCalendarIntents()).enqueuedMissing).toBe(0);
   });

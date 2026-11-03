@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
+  createAppCalendar,
   createEvent,
   updateEvent,
   deleteEvent,
@@ -173,5 +174,29 @@ describe('deleteEvent', () => {
     await expect(
       deleteEvent({ ...CALL, eventId: 'evt-1', fetchImpl, expectMarker: '4821' }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('createAppCalendar', () => {
+  it('membuat kalender bernama PraktiQu pada zona kliniknya', async () => {
+    const fetchImpl = replies([{ id: 'cal-1' }]);
+    const id = await createAppCalendar({
+      accessToken: 'at',
+      timeZone: 'Asia/Jakarta',
+      fetchImpl,
+    });
+
+    expect(id).toBe('cal-1');
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body).toMatchObject({ summary: 'PraktiQu', timeZone: 'Asia/Jakarta' });
+  });
+
+  it('menolak jawaban 200 tanpa id, bukan mengarangnya', async () => {
+    // Id kosong yang lolos akan tersimpan sebagai kalender tujuan, dan setiap
+    // penulisan setelahnya menyasar tempat yang tidak ada.
+    const fetchImpl = replies([{ ok: true }]);
+    await expect(
+      createAppCalendar({ accessToken: 'at', timeZone: 'Asia/Jakarta', fetchImpl }),
+    ).rejects.toBeInstanceOf(GoogleOAuthError);
   });
 });

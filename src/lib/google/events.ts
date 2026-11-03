@@ -8,6 +8,7 @@ import { GoogleOAuthError } from '@/lib/google/oauth-client';
 import { GoogleAuthRevokedError } from '@/lib/google/freebusy';
 
 const EVENTS_ENDPOINT = 'https://www.googleapis.com/calendar/v3/calendars';
+const CALENDARS_ENDPOINT = 'https://www.googleapis.com/calendar/v3/calendars';
 
 /**
  * The private extended property that marks an event as ours.
@@ -206,4 +207,44 @@ export async function deleteEvent(
   // 410 Gone is success for a delete: it is already not there.
   if (res.status === 410) return;
   if (!res.ok) await raiseFor(res, 'delete event');
+}
+
+/**
+ * Create the professional's own "PraktiQu" calendar, once.
+ *
+ * With `calendar.app.created` this is the only calendar we can ever touch, which
+ * is the point: their real calendar is unreachable rather than merely left alone.
+ * It also means our own events can never come back to us as busy — `freebusy`
+ * reads their primary calendar, and nothing we write lands there.
+ *
+ * It appears in their calendar list as a separate, tickable calendar they can
+ * hide or delete whenever they like. On the Google Calendar phone apps a newly
+ * added secondary calendar has to be switched on once before it shows; that is
+ * the cost of this scope, and it belongs in the user guide.
+ */
+export async function createAppCalendar(
+  opts: { accessToken: string; timeZone: string; fetchImpl?: typeof fetch },
+): Promise<string> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const res = await doFetch(CALENDARS_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${opts.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      summary: 'PraktiQu',
+      description:
+        'Janji dari PraktiQu. Dibuat otomatis — mengubah acara di sini tidak mengubah jadwal di PraktiQu.',
+      timeZone: opts.timeZone,
+    }),
+  });
+
+  if (!res.ok) await raiseFor(res, 'create calendar');
+
+  const json = (await res.json()) as { id?: unknown };
+  if (typeof json.id !== 'string' || !json.id) {
+    throw new GoogleOAuthError('create calendar returned no id');
+  }
+  return json.id;
 }

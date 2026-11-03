@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panduan Pindah Jadwal Sesi</title>
+<style>
+  :root {
+    --ink: #1E2236; --muted: #6B7186; --line: #E2E8F0; --soft: #F8FAFC;
+    --brand: #3858D6; --brand-soft: #EEF2FF; --accent: #F97316; --warn-bg: #FFF6E5; --warn: #9A6B00;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 15px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 40px 24px 56px; }
+  header { border-bottom: 3px solid var(--brand); padding-bottom: 18px; margin-bottom: 28px; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
+  h1 { font-size: 30px; line-height: 1.2; margin: 6px 0 6px; letter-spacing: -.01em; }
+  .lead { color: var(--muted); margin: 0; }
+  h2 { font-size: 20px; margin: 36px 0 12px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .card b { display: block; font-size: 13px; color: var(--brand); margin-bottom: 4px; }
+  .card p { margin: 0; font-size: 14px; }
+  .step { margin: 26px 0 34px; break-inside: avoid; page-break-inside: avoid; }
+  .step-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+  .num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+  .step h3 { margin: 0; font-size: 17px; }
+  .step p { margin: 4px 0 10px 42px; }
+  figure { margin: 0; }
+  figure img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 18px rgba(30,34,54,.08); }
+  figure.email img { max-width: 560px; margin: 0 auto; }
+  ul.auto { padding-left: 20px; }
+  ul.auto li { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; break-inside: avoid; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--brand-soft); color: var(--brand); font-size: 13px; }
+  td:first-child { font-weight: 600; width: 46%; }
+  .note { background: var(--warn-bg); border: 1px solid #F3E2BE; color: var(--warn); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } .step p { margin-left: 0; } }
+  @media print { main { padding: 0 6px; } h2 { break-after: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Dashboard PraktiQu · Panduan staf</div>
+    <h1>Pindah Jadwal Sesi</h1>
+    <p class="lead">Cara memindah sesi klien ke tanggal atau jam lain, langsung dari daftar janji temu. Sesinya tidak dibatalkan: pembayaran, status, dan persetujuannya tetap.</p>
+  </header>
+
+  <div class="cards">
+    <div class="card"><b>Siapa yang bisa</b><p>Admin klinik dan resepsionis (sesi di kliniknya), serta psikolog untuk sesinya sendiri.</p></div>
+    <div class="card"><b>Sesi yang bisa dipindah</b><p>Yang masih <i>Terjadwal</i> atau <i>Menunggu</i> (belum dibayar / menunggu persetujuan), dan belum dimulai.</p></div>
+    <div class="card"><b>Yang tetap sama</b><p>Psikolog, layanan, durasi, pembayaran, dan nomor sesinya.</p></div>
+  </div>
+
+  <h2>Langkah-langkah</h2>
+
+  <section class="step">
+    <div class="step-head"><span class="num">1</span><h3>Buka menu Appointments</h3></div>
+    <p>Di menu kiri, klik <b>Appointments</b> untuk membuka daftar semua janji temu.</p>
+    <figure><img src="01-menu-appointments.png" alt="Menu Appointments di sidebar dashboard"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">2</span><h3>Klik "Pindah jadwal" di baris sesinya</h3></div>
+    <p>Tombol <b>Pindah jadwal</b> ada di kolom paling kanan, di atas "Log Waktu". Sesi yang sudah selesai atau dibatalkan tidak punya tombol ini.</p>
+    <figure><img src="02-tombol-pindah-jadwal.png" alt="Tombol Pindah jadwal di baris sesi"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">3</span><h3>Periksa jadwal sekarang</h3></div>
+    <p>Jendela <b>Pindah Jadwal Sesi</b> terbuka dan menampilkan jadwal sesi saat ini beserta layanannya. Jam yang sedang dipakai sesi ini tidak ditawarkan lagi.</p>
+    <figure><img src="03-modal-terbuka.png" alt="Jendela Pindah Jadwal Sesi"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">4</span><h3>Pilih tanggal, jam, dan tulis alasannya</h3></div>
+    <p>Pilih <b>tanggal baru</b>; daftar jam yang masih kosong untuk psikolog dan layanan ini langsung muncul. Pilih <b>jam baru</b>, tulis <b>alasan</b> bila perlu (alasan ikut dikirim ke email klien), lalu klik tombol <b>Pindah ke …</b>.</p>
+    <figure><img src="04-pilih-jadwal-baru.png" alt="Memilih tanggal, jam, dan alasan"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">5</span><h3>Kalau jamnya keburu diambil</h3></div>
+    <p>Jam bisa saja dipesan orang lain sebelum Anda menekan tombol. Sistem menolaknya, dan tidak ada yang berubah. Pilih jam lain lalu tekan tombolnya lagi.</p>
+    <figure><img src="05-jam-sudah-terisi.png" alt="Pesan jam sudah terisi"></figure>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="num">6</span><h3>Selesai</h3></div>
+    <p>Jendela tertutup, muncul konfirmasi di bawah layar, dan jadwal di daftar langsung berubah. Tidak perlu memuat ulang halaman.</p>
+    <figure><img src="06-berhasil.png" alt="Jadwal berhasil dipindah"></figure>
+  </section>
+
+  <h2>Yang terjadi otomatis setelah dipindah</h2>
+  <ul class="auto">
+    <li><b>Klien dan psikolog dikirimi email</b> berisi jadwal lama, jadwal baru, layanan, dan alasan (bila diisi).</li>
+    <li><b>Pengingat sesi ikut pindah</b> ke jadwal baru (24 jam dan 1 jam sebelum sesi).</li>
+    <li><b>Event Google Meet / Google Calendar ikut diperbarui</b> bila sesi itu punya event. Bila link Meet berganti, link barunya ikut tercantum di email klien.</li>
+    <li>Pembayaran, status, dan persetujuan psikolog tidak berubah.</li>
+  </ul>
+
+  <section class="step">
+    <figure class="email"><img src="07-email-klien.png" alt="Contoh email jadwal dipindah yang diterima klien"></figure>
+  </section>
+
+  <h2>Kalau muncul pesan ini</h2>
+  <table>
+    <thead><tr><th>Pesan</th><th>Artinya dan yang perlu dilakukan</th></tr></thead>
+    <tbody>
+      <tr><td>Jam itu sudah terisi. Pilih jam lain.</td><td>Jam itu baru saja dipesan sesi lain. Pilih jam lain.</td></tr>
+      <tr><td>Sesi ini baru saja diubah. Muat ulang halaman lalu coba lagi.</td><td>Ada staf lain yang mengubah sesi ini setelah halaman Anda dibuka. Muat ulang halaman supaya melihat keadaan terbaru.</td></tr>
+      <tr><td>Sesi ini sudah di jam itu. Pilih tanggal atau jam lain.</td><td>Tanggal dan jam yang dipilih sama dengan jadwal sekarang.</td></tr>
+      <tr><td>Jam itu sudah lewat. Pilih jam yang akan datang.</td><td>Pilih tanggal dan jam di masa depan.</td></tr>
+      <tr><td>Psikolog tidak praktik di tanggal atau jam itu. Pilih jadwal lain.</td><td>Tanggal itu hari libur psikolog atau klinik.</td></tr>
+      <tr><td>Sesi ini sudah dimulai, jadi jadwalnya tidak bisa dipindah.</td><td>Jam mulai sesi sudah lewat. Gunakan check-in/check-out atau batalkan sesinya.</td></tr>
+      <tr><td>Hanya sesi yang terjadwal atau menunggu yang bisa dipindah.</td><td>Sesi itu sudah dibatalkan, sudah check-in, atau sudah selesai.</td></tr>
+      <tr><td>Peran Anda tidak berwenang memindah jadwal sesi ini.</td><td>Psikolog hanya bisa memindah sesinya sendiri; staf hanya sesi di kliniknya.</td></tr>
+      <tr><td>Jadwal psikolog sedang diproses. Coba lagi sebentar lagi.</td><td>Ada pemesanan lain untuk psikolog yang sama pada saat bersamaan. Tunggu beberapa detik lalu coba lagi.</td></tr>
+      <tr><td>Sistem belum mengonfirmasi perpindahannya. Muat ulang halaman untuk melihat jadwal terbaru.</td><td>Sambungan ke sistem terputus. Muat ulang halaman dan periksa jadwalnya sebelum mencoba lagi, supaya tidak dipindah dua kali.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Yang belum bisa</h2>
+  <div class="note">
+    Memindah sesi ke <b>psikolog lain</b>, ke <b>klinik lain</b>, atau mengganti <b>layanannya</b> belum bisa: batalkan sesinya lalu buat janji temu baru. Klien belum bisa memindah jadwalnya sendiri; mereka tetap menghubungi klinik.
+  </div>
+
+  <footer>Versi 21 Oktober 2026. Berlaku setelah rilis plugin praktiqu-endpoint 1.8.6, backend, dan dashboard yang memuat fitur Pindah jadwal. Gambar diambil dari dashboard dengan data contoh.</footer>
+</main>
+</body>
+</html>

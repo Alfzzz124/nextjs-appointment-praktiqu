@@ -202,3 +202,29 @@ export async function disconnectCalendar(professionalId: number): Promise<void> 
     where: { professionalId: BigInt(professionalId) },
   });
 }
+
+/**
+ * The professional's own "PraktiQu" calendar, creating it the first time.
+ *
+ * `calendar.app.created` can only touch calendars this application made, so one
+ * has to exist before anything can be written. The id is remembered on the
+ * connection: creating a second one on every sweep would litter their account
+ * with duplicate calendars.
+ */
+export async function getOrCreateAppCalendarId(
+  professionalId: number,
+  create: () => Promise<string>,
+): Promise<string> {
+  const row = await prisma.googleCalendarConnection.findUnique({
+    where: { professionalId: BigInt(professionalId) },
+    select: { appCalendarId: true },
+  });
+  if (row?.appCalendarId) return row.appCalendarId;
+
+  const id = await create();
+  await prisma.googleCalendarConnection.updateMany({
+    where: { professionalId: BigInt(professionalId) },
+    data: { appCalendarId: id },
+  });
+  return id;
+}

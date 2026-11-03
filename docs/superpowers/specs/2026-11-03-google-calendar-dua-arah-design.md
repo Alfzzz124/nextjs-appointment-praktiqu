@@ -41,23 +41,42 @@ penuh.
 | --- | --- | --- |
 | Isi acara | Nama layanan + nama klien, klien sebagai peserta | Diputuskan pemilik produk; sama dengan perilaku KiviCare yang sudah dikenal psikolog |
 | Kapan ditulis | Hanya janji yang sudah pasti | Tidak ada undangan untuk janji yang akhirnya ditolak |
-| Kalender tujuan | Kalender utama (`calendar.events`) | Muncul di HP tanpa langkah tambahan; pilihan pemilik produk, dengan `calendar.app.created` sebagai cadangan |
+| Kalender tujuan | Kalender **PraktiQu** tersendiri (`calendar.app.created`) | Non-sensitive di Console proyek ini, jadi tanpa verifikasi; dan kalender asli psikolog di luar jangkauan secara struktural |
 | Pengiriman | Catat dulu, kirim lewat penyapu berkala | Google lambat tidak boleh memperlambat pemesanan; penyapu yang merekonsiliasi menyembuhkan diri setelah pemadaman |
 
-### Risiko yang diterima
+### Kenapa bukan `calendar.events`
 
-`calendar.events` adalah scope **sensitive**. Verifikasi ulang mewajibkan
-justifikasi tertulis yang menjawab *"kenapa scope yang lebih sempit tidak cukup?"*,
-plus video demo, dan Google menyebut prosesnya bisa memakan beberapa minggu.
-Jawaban kita untuk pertanyaan itu — kalender sekunder merepotkan di aplikasi HP —
-lemah, sehingga pengajuan berpeluang didorong ke `calendar.app.created`.
+Pilihan awal pemilik produk adalah kalender utama lewat `calendar.events`, dengan
+`calendar.app.created` sebagai cadangan kalau Google menolak. Memeriksa Data
+Access di Console membalik urutannya, dan kedua alasannya menunjuk arah yang
+sama:
 
-Risiko ini dibahas dan diterima pemilik produk, dengan rencana cadangan pindah ke
-`calendar.app.created` bila ditolak. Desain di bawah membuat perpindahan itu
-menyentuh dua hal saja: string scope, dan id kalender tujuan.
+1. **Biaya.** Di Console proyek ini `calendar.events` bergembok (sensitive) dan
+   `calendar.app.created` tidak. Yang satu berarti justifikasi tertulis, video
+   demo, dan antrean review berminggu-minggu; yang satunya tidak ada sama sekali.
+   Klasifikasi ini hanya terlihat di Console — tidak ada halaman dokumentasi yang
+   mencetaknya, persis seperti waktu `calendar.freebusy` ternyata non-sensitive.
+2. **Jangkauan.** `calendar.events` memberi baca-tulis atas seluruh kalender asli
+   psikolog. `calendar.app.created` hanya menjangkau kalender yang aplikasi ini
+   buat sendiri. Untuk aplikasi kesehatan yang menyimpan nama klien, itu
+   perbedaan yang nyata: kalender pribadinya tidak terjangkau, bukan sekadar
+   tidak kita sentuh.
+
+Efek sampingnya menghapus satu risiko yang sempat didesain untuk ditangani:
+acara buatan kita tinggal di kalender terpisah sementara `freebusy` membaca
+kalender utama, jadi acara kita **tidak mungkin** terbaca balik sebagai jam
+sibuk. Yang tersisa hanya ketertinggalan — janji batal yang acaranya gagal
+terhapus — dan itu ditangani penyapu.
 
 Tidak ada scope Calendar yang masuk kategori *restricted*, jadi CASA security
-assessment tidak berlaku.
+assessment tidak berlaku pada jalur mana pun.
+
+### Harga yang dibayar
+
+Kalender sekunder yang baru **tidak otomatis muncul di aplikasi Google Calendar
+di HP**. Psikolog harus mencentang kalender "PraktiQu" sekali di pengaturan
+aplikasinya. Ini sekali seumur sambungan, disebutkan di layar pengaturan, dan
+masuk panduan visual.
 
 ## Lingkup
 
@@ -76,15 +95,14 @@ Scope tulis diminta dalam permintaan persetujuan **terpisah**, bukan digabung ke
 permintaan yang sekarang:
 
 ```
-baca  (sudah terverifikasi) : openid, email, calendar.freebusy
-tulis (menunggu verifikasi) : https://www.googleapis.com/auth/calendar.events
+baca  : openid, email, calendar.freebusy
+tulis : https://www.googleapis.com/auth/calendar.app.created
 ```
 
 `include_granted_scopes=true` sudah terpasang di `buildConsentUrl`, jadi izin yang
-sudah diberikan ikut terbawa. Memisahkannya penting: selama scope tulis belum
-terverifikasi, pengguna yang memintanya akan melihat layar "Google hasn't verified
-this app". Kalau digabung, layar itu juga menghantui psikolog yang hanya ingin
-arah baca — fitur yang sudah terverifikasi dan berjalan.
+sudah diberikan ikut terbawa. Tetap dipisah meski keduanya non-sensitive:
+persetujuan kedua adalah keputusan kedua, dan psikolog yang hanya ingin jadwalnya
+dibaca tidak perlu diminta izin menulis.
 
 Karena itu `scopeGranted` pada `GoogleCalendarConnection` menjadi sumber kebenaran:
 arah tulis hanya aktif untuk sambungan yang benar-benar memberi scope tulis.

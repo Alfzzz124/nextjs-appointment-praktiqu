@@ -33,25 +33,29 @@ export const GOOGLE_SCOPES = [
 /**
  * What writing appointments back needs, asked for SEPARATELY.
  *
- * `calendar.events` is a sensitive scope, so it carries its own verification. Until
- * that verification lands, anyone who requests it meets Google's "this app isn't
- * verified" screen. Bundled into GOOGLE_SCOPES it would show that screen to every
- * professional who only ever wanted the read direction — a feature that IS verified
- * and working — so the two consents stay apart and `include_granted_scopes=true`
- * carries the first one forward.
+ * `calendar.app.created` and NOT `calendar.events`, and the difference is the whole
+ * shape of this feature. It grants access to calendars this application itself
+ * created and to nothing else — a professional's real calendar is out of reach
+ * structurally, not merely by our promising not to touch it. `calendar.events`
+ * would hand us read-write over every appointment they have.
  *
- * Moving to an app-created calendar later replaces this one string;
- * `calendar.app.created` grants access only to calendars the app itself made.
+ * It is also the cheaper one. In this project's Cloud Console, `calendar.events`
+ * carries the sensitive padlock and `calendar.app.created` does not, which is weeks
+ * of verification against none. Both facts point the same way, so there is no
+ * trade-off to weigh here.
+ *
+ * Still asked for separately from GOOGLE_SCOPES: a second consent is a second
+ * decision, and `include_granted_scopes=true` carries the first one forward.
  */
 export const GOOGLE_WRITE_SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.app.created',
 ] as const;
 
 /** Did this grant actually include the write scope? */
 export function grantsWriteScope(scopeGranted: string): boolean {
   const granted = new Set(scopeGranted.split(/\s+/).filter(Boolean));
-  // `calendar` is the broader read-write scope. A professional who went through
-  // KiviCare's consent may hold it, and it does include event writes.
+  // `calendar` is the broad read-write scope. A professional who once went through
+  // KiviCare's consent may still hold it, and it subsumes what we need.
   return (
     GOOGLE_WRITE_SCOPES.every((s) => granted.has(s)) ||
     granted.has('https://www.googleapis.com/auth/calendar')

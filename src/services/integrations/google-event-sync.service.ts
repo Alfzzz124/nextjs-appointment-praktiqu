@@ -18,6 +18,7 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  createAppCalendar,
   GoogleEventGoneError,
   GoogleEventNotOursError,
 } from '@/lib/google/events';
@@ -32,7 +33,12 @@ import {
   type AppointmentLoader,
 } from '@/services/integrations/appointment-calendar-loader';
 import { findAppointmentById } from '@/repositories/wp/appointments.repo';
-import { markConnection, getRefreshToken } from '@/services/integrations/google-calendar-connection.service';
+import {
+  markConnection,
+  getRefreshToken,
+  getOrCreateAppCalendarId,
+} from '@/services/integrations/google-calendar-connection.service';
+import { CLINIC_TIME_ZONE } from '@/services/integrations/google-event-payload';
 
 /**
  * Marks a row as needing work without computing the event first.
@@ -143,13 +149,21 @@ async function markFailed(row: SyncRow, now: Date, message: string, minutes?: nu
   });
 }
 
-async function markSynced(row: SyncRow, hash: string, googleEventId: string | null) {
+async function markSynced(
+  row: SyncRow,
+  hash: string,
+  googleEventId: string | null,
+  calendarId?: string,
+) {
   await prisma.googleCalendarEventSync.update({
     where: { appointmentId: row.appointmentId },
     data: {
       desiredHash: hash,
       syncedHash: hash,
       googleEventId,
+      // Recorded with the event, because deleting it later has to go to the
+      // calendar it actually lives on, not wherever we would put a new one.
+      ...(calendarId ? { calendarId } : {}),
       attempts: 0,
       nextAttemptAt: null,
       lastError: null,
@@ -256,6 +270,26 @@ export async function runEventSweep(opts: {
       continue;
     }
 
+    // Kalender "PraktiQu" milik orang ini, dibuat sekali. Dengan
+    // `calendar.app.created` inilah satu-satunya kalender yang boleh kita
+    // sentuh — kalender aslinya tidak terjangkau, bukan sekadar tidak disentuh.
+    let targetCalendarId: string;
+    try {
+      targetCalendarId = await getOrCreateAppCalendarId(professionalId, () =>
+        createAppCalendar({
+          accessToken,
+          timeZone: CLINIC_TIME_ZONE,
+          fetchImpl: opts.fetchImpl,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof GoogleAuthRevokedError) {
+        await markConnection(professionalId, { status: 'revoked' });
+      }
+      report.failed += professionalRows.length;
+      continue;
+    }
+
     const presentIds = professionalRows
       .filter((r) => r.desiredState === 'present')
       .map((r) => Number(r.appointmentId));
@@ -268,6 +302,7 @@ export async function runEventSweep(opts: {
         const outcome = await syncOne({
           row,
           accessToken,
+          targetCalendarId,
           details,
           fetchImpl: opts.fetchImpl,
           now,
@@ -300,11 +335,16 @@ type Outcome = 'created' | 'updated' | 'deleted' | 'alreadyCurrent' | 'failed';
 async function syncOne(ctx: {
   row: SyncRow;
   accessToken: string;
+  /** The professional's PraktiQu calendar — where new events go. */
+  targetCalendarId: string;
   details: Map<number, Parameters<typeof buildEventBody>[0]>;
   fetchImpl?: typeof fetch;
   now: Date;
 }): Promise<Outcome> {
-  const { row, accessToken, details, fetchImpl, now } = ctx;
+  const { row, accessToken, targetCalendarId, details, fetchImpl, now } = ctx;
+  // Where the event IS, which is not always where a new one would go: someone who
+  // disconnects and reconnects gets a fresh calendar, and rows written before
+  // that still point at the old one.
   const call = { accessToken, calendarId: row.calendarId, fetchImpl };
   const marker = String(row.appointmentId);
 
@@ -342,7 +382,7 @@ async function syncOne(ctx: {
     return 'alreadyCurrent';
   }
 
-  if (row.googleEventId) {
+  if (row.googleEventId && row.calendarId === targetCalendarId) {
     try {
       await updateEvent({
         ...call,
@@ -357,10 +397,28 @@ async function syncOne(ctx: {
       // appointment is still real and still belongs on their calendar.
       if (!(err instanceof GoogleEventGoneError)) throw err;
     }
+  } else if (row.googleEventId) {
+    // The event sits on a calendar we no longer write to. Remove it before
+    // making the replacement, or they end up with the same appointment twice —
+    // once on a stale PraktiQu calendar and once on the current one.
+    try {
+      await deleteEvent({ ...call, eventId: row.googleEventId, expectMarker: marker });
+    } catch (err) {
+      // Already gone, or no longer ours to touch. Either way the replacement is
+      // still the right thing to make, and nothing here should block it.
+      if (!(err instanceof GoogleEventGoneError) && !(err instanceof GoogleEventNotOursError)) {
+        throw err;
+      }
+    }
   }
 
-  const eventId = await createEvent({ ...call, body });
-  await markSynced(row, hash, eventId);
+  const eventId = await createEvent({
+    accessToken,
+    calendarId: targetCalendarId,
+    fetchImpl,
+    body,
+  });
+  await markSynced(row, hash, eventId, targetCalendarId);
   return 'created';
 }
 
