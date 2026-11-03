@@ -4,7 +4,7 @@ Tags: authentication, rest-api, jwt, sso
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.6.6
+Stable tag: 1.8.6
 License: Proprietary
 License URI: https://praktiqu.local/license
 
@@ -27,6 +27,7 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * `GET  /health` — liveness probe
 * `POST /payments/order` — create a WooCommerce order for an appointment or bill
 * `GET  /payments/order/{id}` — read WooCommerce order status
+* `GET|PUT /clinics/{id}/payment-settings` — one clinic's international payment settings
 
 == Configuration ==
 
@@ -53,6 +54,133 @@ All endpoints live under the `/wp-json/praktiqu/v1/` namespace and require the `
 * Webhooks are signed with HMAC-SHA256 over the JSON body; receivers must verify the signature in `X-PraktiQU-Webhook-Signature`.
 
 == Changelog ==
+
+= 1.8.6 =
+* New POST /appointments/{id}/reschedule: moves a booked or pending appointment
+  to a new slot under the professional's schedule lock (Schedule_Write::move),
+  keeping its length, id, payment and approval. The caller sends the row as it
+  read it (`expected`); a row that changed since answers 409
+  praktiqu_schedule_stale, a taken slot 409 praktiqu_schedule_conflict, the
+  same slot 400 praktiqu_schedule_unchanged, a past time 422
+  praktiqu_schedule_unavailable. None of them writes anything.
+* After the move, its Google Meet / Zoom event and KiviCare Pro Google Calendar
+  event (when it has one) are moved too, and a pending KiviCare reminder keeps
+  its distance from the session. A failed step does not undo the move: it is
+  reported in `sync` and retried by the new praktiqu_schedule_outbox_sweep
+  action (every 5 minutes), which registers itself on the first request.
+* Needs the wp_praktiqu_schedule_outbox table
+  (prisma/manual/2026-10-19-schedule-sync-outbox.sql) before it can move
+  anything; without it a reschedule answers 500 and changes nothing.
+
+= 1.8.5 =
+* POST /appointments checks the slot itself, under the professional's schedule
+  lock (MySQL GET_LOCK praktiqu_doc_schedule_<doctor_id>), before KiviCare
+  writes the row. PraktiQU's own check runs a request earlier, so two bookings
+  for one slot could both pass it and both be written. A taken slot now answers
+  409 praktiqu_schedule_conflict, a lock still held after 5 seconds 503
+  praktiqu_schedule_busy, and a failed check 500 praktiqu_schedule_db_error;
+  none of them writes anything or fires a hook. Only BOOKED, PENDING and
+  CHECK_IN bookings are checked, and those now need end_time (400 without).
+  Schedule_Write::move() takes the same lock, so a booking and a reschedule
+  cannot land on one slot either. Safe in either order with the Next.js
+  release: an older PraktiQU reports the 409 as a refused booking instead of
+  "slot no longer available", but nothing is double-booked.
+
+= 1.8.4 =
+* POST /appointments/{id}/status takes an optional expect_status: the write
+  becomes a compare-and-set. A row that no longer has that status answers 409
+  praktiqu_status_conflict (with current_status) and is left alone; a row
+  already at the requested status answers 200 with claimed: false and fires no
+  hook. PraktiQU's psychologist approval sends it, so an approval landing after
+  a cancellation can no longer rewrite CANCELLED as BOOKED. Callers that do not
+  send it behave exactly as in 1.8.3, so this version is safe to deploy first.
+
+= 1.8.3 =
+* New job hook praktiqu_approval_reminder. PraktiQU schedules it when a paid
+  booking waits for its psychologist's approval; when it fires the plugin calls
+  back with approval.reminder and PraktiQU reminds the psychologist, escalates
+  to the clinic admin once, and schedules the next run. Without the new Next.js
+  nothing enqueues it, so this version is safe to deploy first.
+
+= 1.8.2 =
+* POST /patients accepts an optional `adopt_existing` flag. When the email already
+  belongs to an account whose every role is `customer` or `subscriber` (WooCommerce
+  sign-ups), the patient role is added to that account — the WooCommerce role stays —
+  instead of answering 409. Name and phone only fill empty fields, the clinic mapping
+  is added, and kc_patient_update fires (not kc_patient_save, so no welcome email with
+  a new password). The response is the usual patient payload plus `adopted`. Staff
+  accounts, site editors and accounts with no role still answer 409. Without the flag
+  nothing changes. Fixes clinic staff being unable to book a client whose email was
+  "already registered".
+
+= 1.8.1 =
+* Paid public bookings now send KiviCare's booking emails to patient, doctor and
+  clinic. POST /appointments/{id}/status accepts an optional
+  `payment` { gateway, wc_order_id, transaction_id }; when it rides on status 1 and
+  the row is PENDING, the row is claimed with a conditional UPDATE and
+  kc_appointment_payment_completed fires once — a second or concurrent confirmation
+  of the same order fires nothing. Before, a paid booking (created PENDING, so
+  kc_after_create_appointment was skipped) reached only kc_appointment_status_update,
+  whose sole listener handles check-in/check-out. A plain status change, including a
+  staff approval of an unpaid booking, behaves as in 1.8.0. A listener that throws
+  is logged and does not fail the request. The response gains `payment_confirmed`.
+* New email placeholders {{praktiqu_client_phone}} and {{praktiqu_professional_phone}},
+  answered through kivicare_custom_email_key_value from the user's basic_data →
+  mobile_number (empty string when missing or unreadable, never the literal key; only
+  phone characters are kept). KiviCare's own {{patient_contact_number}} /
+  {{doctor_contact_number}} are empty for nearly everyone (core reads a usermeta
+  KCPatient::save() never writes, then maps from a field its data lacks) and cannot be
+  overridden, so templates must switch keys — see
+  docs/deploy/email-phone-keys-runbook.md. Both keys are offered in KiviCare's template
+  editor via kivicare_template_dynamic_keys.
+
+= 1.8.0 =
+* New POST /clinic-admins creates the admin account of a clinic the Next.js app
+  just created: wp_insert_user with the kiviCare_clinic_admin role, a conditional
+  claim of wp_kc_clinics.clinic_admin_id (only while it is 0), KiviCare's
+  clinic_admin_registration email (WordPress's new-user email as fallback) and the
+  kivicare_clinic_admin_registered action. Answers 400 praktiqu_invalid_email /
+  praktiqu_invalid_name / praktiqu_missing_clinic, 404 praktiqu_clinic_not_found,
+  409 praktiqu_clinic_has_admin / praktiqu_email_taken. The password is never
+  returned.
+
+= 1.7.0 =
+* International clinics. New GET|PUT /clinics/{id}/payment-settings stores one
+  clinic's flag, FX rate, markup and fixed fee as a JSON string in the
+  praktiqu_endpoint_clinic_{id}_payment option (autoload off). PUT answers 404
+  clinic_not_found, 400 invalid_settings, 422 fx_rate_required or 500
+  save_failed.
+* POST /payments/order accepts an optional `charge` object for paypal/card:
+  the USD lines PraktiQU already computed. The order is built from them as
+  given, after checking the shape (400 invalid_charge) and that the clinic is
+  international (409 clinic_not_international). If the WooCommerce total
+  differs from charge.total the order is cancelled before PayPal is contacted
+  (502 charge_mismatch). New order meta: praktiqu_clinic_id,
+  praktiqu_fixed_fee_idr, praktiqu_fx_source. Without `charge` the old global
+  rate path still runs; it is kept only for the deploy transition. A
+  present-but-null `charge` is rejected with 400 invalid_charge (WordPress
+  core treats a null param as absent, so the plugin checks it itself).
+* The wp-admin FX rate and markup are now the global defaults, and the rate
+  must be from 1,000 to 100,000 rupiah per 1 USD, written with digits only.
+* Uninstall also removes every per-clinic payment option.
+* Requires WooCommerce -> Settings -> General -> "Enable tax rates and
+  calculations" OFF. With it on, WooCommerce adds its own tax to every
+  charged order, the total no longer matches charge.total, and each such
+  order is cancelled with charge_mismatch.
+
+= 1.6.8 =
+* Security (SEC-9): POST /authenticate checks the password BEFORE the
+  account status. A wrong password for an inactive or blocked account now
+  answers 401 invalid_credentials like any other wrong password, instead of
+  403 inactive, which let anyone learn an account was deactivated without
+  knowing its password. Only a correct password reveals the inactive state.
+
+= 1.6.7 =
+* New job hook praktiqu_booking_unpaid_cancel. PraktiQU schedules it when a
+  guest booking is created; when it fires the plugin calls back with
+  booking.unpaid_cancel and PraktiQU cancels the booking if it is still
+  PENDING with no pending or paid payment. Guest bookings abandoned before
+  checkout no longer hold their slot forever.
 
 = 1.4.0 =
 * Payment hand-off now returns the Xendit hosted invoice URL (all enabled

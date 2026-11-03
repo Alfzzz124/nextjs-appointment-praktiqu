@@ -55,25 +55,80 @@ export interface RateLimiter {
   reset(key: string): void;
   /** Test-only: clear all state. */
   _clear(): void;
+  /** Test-only: number of keys held. */
+  _size(): number;
 }
 
 interface RateLimiterOptions {
   config?: Partial<RateLimitConfig>;
   now?: () => number;
+  /** Most keys held at once. */
+  maxKeys?: number;
+  /** Sweep spent keys once every this many `check`/`recordFailure` calls. */
+  sweepEvery?: number;
 }
+
+/**
+ * The key usually holds the client IP, which a direct caller can forge (src/lib/client-ip.ts),
+ * so every key kept is memory an anonymous caller can spend. Hence: `check` never creates a
+ * key; spent keys are swept every `sweepEvery` calls; and a new key at `maxKeys` sweeps at
+ * once and, if what is left is all live (a flood inside one window), drops the least recently
+ * used until a tenth of the room is free. Freeing a tenth rather than one key makes a flood
+ * pay one full sweep per maxKeys/10 new keys instead of one per key.
+ */
+const DEFAULT_MAX_KEYS = 10_000;
+const DEFAULT_SWEEP_EVERY = 1_000;
 
 export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter {
   const cfg: RateLimitConfig = { ...DEFAULT_RATE_LIMIT_CONFIG, ...(options.config ?? {}) };
   const now = options.now ?? (() => Date.now());
+  const maxKeys = options.maxKeys ?? DEFAULT_MAX_KEYS;
+  const sweepEvery = options.sweepEvery ?? DEFAULT_SWEEP_EVERY;
+  /** Insertion order is recency order: `touch` moves a key to the end, eviction takes the front. */
   const state = new Map<string, RateLimitState>();
+  let callsSinceSweep = 0;
 
-  function getOrCreate(key: string): RateLimitState {
-    let s = state.get(key);
-    if (!s) {
-      s = { failures: [], lockedUntil: null, id: randomUUID() };
+  function touch(key: string): RateLimitState | undefined {
+    const s = state.get(key);
+    if (s) {
+      state.delete(key);
       state.set(key, s);
     }
     return s;
+  }
+
+  function create(key: string, t: number): RateLimitState {
+    if (state.size >= maxKeys) {
+      sweep(t);
+      const lowWater = Math.floor(maxKeys * 0.9);
+      for (const k of state.keys()) {
+        if (state.size <= lowWater) break;
+        state.delete(k);
+      }
+    }
+    const s: RateLimitState = { failures: [], lockedUntil: null, id: randomUUID() };
+    state.set(key, s);
+    return s;
+  }
+
+  /** No failure left in the window and no lock running: dropping it changes no verdict. */
+  function spent(s: RateLimitState, t: number): boolean {
+    if (s.lockedUntil && s.lockedUntil > t) return false;
+    const cutoff = t - cfg.windowMs;
+    return s.failures.every((ts) => ts <= cutoff);
+  }
+
+  function sweep(t: number): void {
+    for (const [k, s] of state) {
+      if (spent(s, t)) state.delete(k);
+    }
+  }
+
+  function tick(t: number): void {
+    if (++callsSinceSweep >= sweepEvery) {
+      callsSinceSweep = 0;
+      sweep(t);
+    }
   }
 
   function prune(s: RateLimitState, t: number): void {
@@ -99,7 +154,8 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
   return {
     recordFailure(key) {
       const t = now();
-      const s = getOrCreate(key);
+      tick(t);
+      const s = touch(key) ?? create(key, t);
       s.failures.push(t);
       return evaluate(s, t);
     },
@@ -108,14 +164,19 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     },
     check(key) {
       const t = now();
-      const s = getOrCreate(key);
-      return evaluate(s, t);
+      tick(t);
+      const s = touch(key);
+      // An unknown key has no failures, so it is allowed, and nothing is stored for it.
+      return s ? evaluate(s, t) : { kind: 'allow' };
     },
     reset(key) {
       state.delete(key);
     },
     _clear() {
       state.clear();
+    },
+    _size() {
+      return state.size;
     },
   };
 }

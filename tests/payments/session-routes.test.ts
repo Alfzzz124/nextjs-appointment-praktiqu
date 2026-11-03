@@ -1,5 +1,34 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
+
+// Only the clinic-scope block below reaches these: it runs the REAL ensureSessionPayment
+// (and through it the real getBill / resolveKcActor) against canned rows, so its 404 comes
+// from the actual scope check rather than a stubbed rejection. Every other block stubs the
+// service whole and never touches the database or WooCommerce.
+const db = vi.hoisted(() => ({
+  user: { findUnique: vi.fn() },
+  kcDoctorClinicMapping: { findFirst: vi.fn(), findMany: vi.fn() },
+  kcReceptionistClinicMapping: { findFirst: vi.fn() },
+  kcClinic: { findFirst: vi.fn(), findMany: vi.fn() },
+  kcBill: { findUnique: vi.fn() },
+  kcPatientEncounter: { findUnique: vi.fn() },
+  kcBillItem: { findMany: vi.fn() },
+  kcService: { findMany: vi.fn() },
+  kcTaxData: { findMany: vi.fn() },
+  kcUser: { findUnique: vi.fn() },
+  paymentOrder: { findFirst: vi.fn(), create: vi.fn() },
+}));
+vi.mock('@/lib/db', () => ({ prisma: db }));
+
+const wpEndpoint = vi.hoisted(() => ({ createWcOrder: vi.fn(), getWcOrderStatus: vi.fn() }));
+// Partial: the routes' error mapping needs the real WpEndpointError class.
+vi.mock('@/lib/wp-endpoint', async (orig) => ({
+  ...(await orig<typeof import('@/lib/wp-endpoint')>()),
+  ...wpEndpoint,
+}));
+
+const jobsClient = vi.hoisted(() => ({ jobs: { enqueue: vi.fn(), cancel: vi.fn() } }));
+vi.mock('@/lib/jobs/client', () => jobsClient);
 
 vi.mock('@/services/payments/payment.service', () => ({
   ensureSessionPayment: vi.fn(),
@@ -18,6 +47,15 @@ vi.mock('@/services/payments/payment.service', () => ({
 vi.mock('@/lib/auth/route-guards', () => ({
   requireRoles: vi.fn(async () => ({ actor: { id: 'u1', role: 'RECEPTIONIST', practiceId: 'p1' } })),
 }));
+vi.mock('@/lib/logging', () => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 vi.mock('@/lib/kc-response', () => ({
   KcError: class KcError extends Error { constructor(message: string, public httpStatus = 400) { super(message); } },
 }));
@@ -28,6 +66,15 @@ import { POST as success } from '@/app/api/v1/sessions/payment-success/route';
 import { POST as cancelRoute } from '@/app/api/v1/sessions/payment-cancel/route';
 import * as svc from '@/services/payments/payment.service';
 import { requireRoles } from '@/lib/auth/route-guards';
+import { KcError } from '@/lib/kc-response';
+import {
+  ChargeMismatchError,
+  DiscountNotSupportedError,
+  PaymentMethodNotAllowedError,
+  PaypalRateMissingError,
+} from '@/services/payments/payment-errors';
+import { PaymentSettingsUnavailableError } from '@/repositories/wp/clinic-payment-settings.repo';
+import { WpEndpointError } from '@/lib/wp-endpoint';
 
 function req(body: unknown) {
   return new NextRequest('http://x/api/v1/sessions/payment-verify', { method: 'POST', body: JSON.stringify(body) });
@@ -35,7 +82,15 @@ function req(body: unknown) {
 
 beforeEach(() => vi.clearAllMocks());
 
+/** Link the stub receptionist 'u1' to clinic 3, so the route can resolve its bill scope. */
+function linkReceptionist() {
+  db.user.findUnique.mockResolvedValue({ wpUserId: 501n });
+  db.kcReceptionistClinicMapping.findFirst.mockResolvedValue({ clinicId: 3n });
+}
+
 describe('POST /sessions/payment-verify', () => {
+  beforeEach(linkReceptionist);
+
   it('401 when unauthenticated', async () => {
     (requireRoles as any).mockResolvedValue({ response: new Response(null, { status: 401 }) });
     const res: any = await paymentVerify(req({ billId: '1' }));
@@ -60,6 +115,8 @@ describe('POST /sessions/payment-verify', () => {
 describe('POST /sessions/payment-verify — method', () => {
   const staff = { actor: { id: 'u1', role: 'RECEPTIONIST', practiceId: 'p1' } };
 
+  beforeEach(linkReceptionist);
+
   it('defaults to xendit when the body omits a method', async () => {
     (requireRoles as any).mockResolvedValue(staff);
     (svc.ensureSessionPayment as any).mockResolvedValue({
@@ -67,7 +124,7 @@ describe('POST /sessions/payment-verify — method', () => {
       expectedAmount: 200000, chargedAmount: 200000, chargedCurrency: 'IDR',
     });
     await paymentVerify(req({ billId: '9' }));
-    expect(svc.ensureSessionPayment).toHaveBeenCalledWith('9', 'xendit');
+    expect(svc.ensureSessionPayment).toHaveBeenCalledWith('9', 'xendit', { clinicId: 3n });
   });
 
   it('forwards paypal and returns the charged figures', async () => {
@@ -77,7 +134,7 @@ describe('POST /sessions/payment-verify — method', () => {
       expectedAmount: 200000, chargedAmount: 11.12, chargedCurrency: 'USD',
     });
     const res = await paymentVerify(req({ billId: '9', method: 'paypal' }));
-    expect(svc.ensureSessionPayment).toHaveBeenCalledWith('9', 'paypal');
+    expect(svc.ensureSessionPayment).toHaveBeenCalledWith('9', 'paypal', { clinicId: 3n });
     const body = await res.json();
     expect(body.data.chargedAmount).toBe(11.12);
     expect(body.data.chargedCurrency).toBe('USD');
@@ -88,6 +145,110 @@ describe('POST /sessions/payment-verify — method', () => {
     const res = await paymentVerify(req({ billId: '9', method: 'gopay' }));
     expect(res.status).toBe(400);
     expect(svc.ensureSessionPayment).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The route used to gate on role alone and hand the bill id straight to an unscoped
+ * getBill, so any clinic's staff could open a WooCommerce order against another
+ * clinic's bill. Scope now follows the bill routes (resolveKcActor → billScopeFor):
+ * clinic admins and receptionists see their clinic's bills, professionals their own
+ * encounters' bills, super admins everything. Out of scope is a 404, never a 403.
+ */
+describe('POST /sessions/payment-verify — clinic scope', () => {
+  const CLINIC_A = 3n, CLINIC_B = 4n;
+  const BILL_A = '101', BILL_B = '202';
+  const staffOfClinicA = [
+    { id: 'recep-a', role: 'RECEPTIONIST', practiceId: null },
+    { id: 'admin-a', role: 'CLINIC_ADMIN', practiceId: null },
+    { id: 'doc-a', role: 'PROFESSIONAL', practiceId: null },
+  ];
+
+  function billRow(id: bigint, clinicId: bigint, encounterId: bigint) {
+    return {
+      id, clinicId, encounterId, appointmentId: null, discount: '0',
+      totalAmount: '150000', actualAmount: '150000', paymentStatus: 'unpaid', createdAt: new Date(),
+    };
+  }
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('@/services/payments/payment.service')>('@/services/payments/payment.service');
+    vi.mocked(svc.ensureSessionPayment).mockImplementation(actual.ensureSessionPayment);
+
+    // Clinic A staff. The super admin ('super') deliberately has no WordPress link.
+    const wpUserIds: Record<string, bigint> = { 'recep-a': 501n, 'admin-a': 502n, 'doc-a': 601n };
+    db.user.findUnique.mockImplementation(async ({ where }: any) => (wpUserIds[where.id] ? { wpUserId: wpUserIds[where.id] } : null));
+    db.kcReceptionistClinicMapping.findFirst.mockImplementation(async ({ where }: any) => (where.receptionistId === 501n ? { clinicId: CLINIC_A } : null));
+    db.kcDoctorClinicMapping.findFirst.mockImplementation(async ({ where }: any) => (where.doctorId === 601n ? { clinicId: CLINIC_A } : null));
+    // A clinic admin's clinics now come from findMany (every clinic they own), not findFirst.
+    db.kcClinic.findMany.mockImplementation(async ({ where }: any) =>
+      where.clinicAdminId === 502n ? [{ id: CLINIC_A, name: 'Klinik A', status: 1 }] : []);
+    db.kcDoctorClinicMapping.findMany.mockResolvedValue([]);
+
+    const bills: Record<string, unknown> = { [BILL_A]: billRow(101n, CLINIC_A, 1001n), [BILL_B]: billRow(202n, CLINIC_B, 2002n) };
+    const encounters: Record<string, unknown> = {
+      '1001': { doctorId: 601n, patientId: 701n },
+      '2002': { doctorId: 602n, patientId: 702n },
+    };
+    db.kcBill.findUnique.mockImplementation(async ({ where }: any) => bills[String(where.id)] ?? null);
+    db.kcPatientEncounter.findUnique.mockImplementation(async ({ where }: any) => encounters[String(where.id)] ?? null);
+    db.kcBillItem.findMany.mockResolvedValue([]);
+    db.kcService.findMany.mockResolvedValue([]);
+    db.kcTaxData.findMany.mockResolvedValue([]);
+    db.kcUser.findUnique.mockResolvedValue({ displayName: 'Jane Doe', userEmail: 'jane@x.com' });
+    db.paymentOrder.findFirst.mockResolvedValue(null);
+    db.paymentOrder.create.mockImplementation(async ({ data }: any) => data);
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 777, checkoutUrl: 'https://wp/checkout/777', chargedAmount: null, chargedCurrency: 'IDR', fxRate: null,
+    });
+    jobsClient.jobs.enqueue.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => vi.mocked(svc.ensureSessionPayment).mockReset());
+
+  it.each(staffOfClinicA)('$role of the bill\'s clinic gets a checkout link', async (actor) => {
+    (requireRoles as any).mockResolvedValue({ actor });
+    const res = await paymentVerify(req({ billId: BILL_A }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.checkoutUrl).toBe('https://wp/checkout/777');
+  });
+
+  it.each(staffOfClinicA)('$role of another clinic gets 404 and no order is opened', async (actor) => {
+    (requireRoles as any).mockResolvedValue({ actor });
+    const res = await paymentVerify(req({ billId: BILL_B }));
+    expect(res.status).toBe(404);
+    expect(wpEndpoint.createWcOrder).not.toHaveBeenCalled();
+    expect(db.paymentOrder.create).not.toHaveBeenCalled();
+  });
+
+  it('another clinic\'s existing order is not disclosed either', async () => {
+    // A live order short-circuits before any bill is loaded and answers with its status
+    // and amount, so a check placed only on the create path would still leak both.
+    (requireRoles as any).mockResolvedValue({ actor: staffOfClinicA[0] });
+    db.paymentOrder.findFirst.mockResolvedValue({
+      wcOrderId: 9, billId: BILL_B, status: 'pending', expectedAmount: 150000,
+      chargedAmount: null, chargedCurrency: 'IDR', createdAt: new Date(),
+    });
+    const res = await paymentVerify(req({ billId: BILL_B }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).not.toHaveProperty('data');
+  });
+
+  it('a professional cannot pay a colleague\'s bill in the same clinic', async () => {
+    // Same rule as GET /bills/:id: a professional's scope is their own encounters.
+    (requireRoles as any).mockResolvedValue({ actor: staffOfClinicA[2] });
+    db.kcBill.findUnique.mockResolvedValue(billRow(303n, CLINIC_A, 3003n));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ doctorId: 603n, patientId: 703n });
+    const res = await paymentVerify(req({ billId: '303' }));
+    expect(res.status).toBe(404);
+    expect(wpEndpoint.createWcOrder).not.toHaveBeenCalled();
+  });
+
+  it('SUPER_ADMIN may start a payment for any clinic\'s bill, without a WordPress link', async () => {
+    (requireRoles as any).mockResolvedValue({ actor: { id: 'super', role: 'SUPER_ADMIN', practiceId: null } });
+    const res = await paymentVerify(req({ billId: BILL_B }));
+    expect(res.status).toBe(200);
+    expect(wpEndpoint.createWcOrder).toHaveBeenCalledWith(expect.objectContaining({ billId: BILL_B }));
   });
 });
 
@@ -222,5 +383,70 @@ describe('POST /sessions/payment-webhook — null transactionId', () => {
     }), 'ok'));
     expect(res.status).toBe(200);
     expect(svc.markFailed).toHaveBeenCalled();
+  });
+});
+
+describe('POST /sessions/payment-verify — coded errors', () => {
+  const staff = { actor: { id: 'u1', role: 'RECEPTIONIST', practiceId: 'p1' } };
+
+  beforeEach(linkReceptionist);
+
+  it.each([
+    ['a clinic that is not international', 403, 'payment_method_not_allowed', () => new PaymentMethodNotAllowedError('no')],
+    ['an international clinic with no usable rate', 503, 'paypal_rate_missing', () => new PaypalRateMissingError('no rate')],
+    ['a settings read error', 503, 'payment_settings_unavailable', () => new PaymentSettingsUnavailableError('db down')],
+    ['the backstop', 502, 'charge_mismatch', () => new ChargeMismatchError('8.33 != 8.34')],
+    ['a discounted bill', 422, 'discount_not_supported', () => new DiscountNotSupportedError('discount')],
+  ])('answers %s with %i %s', async (_label, status, code, makeErr) => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(makeErr());
+    const res = await paymentVerify(req({ billId: '9', method: 'paypal' }));
+    expect(res.status).toBe(status);
+    expect(await res.json()).toMatchObject({ status, code });
+    expect(res.headers.get('Retry-After')).toBeNull();
+  });
+
+  it.each([
+    ['clinic_not_international', 409, 403, 'payment_method_not_allowed'],
+    ['charge_mismatch', 502, 502, 'charge_mismatch'],
+    ['paypal_rate_missing', 503, 503, 'paypal_rate_missing'],
+    ['gateway_missing', 503, 503, 'payment_method_unavailable'],
+    ['woocommerce_missing', 503, 503, 'payment_unavailable'],
+    ['invalid_charge', 400, 502, 'payment_gateway_rejected'],
+    ['order_create_failed', 500, 502, 'payment_start_failed'],
+  ])('maps plugin code %s (WP %i) to %i %s, without the WordPress message', async (wpCode, wpStatus, status, code) => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(
+      new WpEndpointError(`WC order create failed ${wpStatus}: secret wp detail`, wpStatus, wpCode),
+    );
+    const res = await paymentVerify(req({ billId: '9', method: 'paypal' }));
+    expect(res.status).toBe(status);
+    const body = await res.json();
+    expect(body).toMatchObject({ status, code });
+    expect(JSON.stringify(body)).not.toContain('secret wp detail');
+  });
+
+  it('maps an unreachable WordPress to 503 payment_unavailable', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(new WpEndpointError('/payments/order unreachable', 0));
+    const res = await paymentVerify(req({ billId: '9', method: 'card' }));
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('payment_unavailable');
+  });
+
+  it('answers a KcError with a coded problem', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(new KcError('Bill not found', 404));
+    const res = await paymentVerify(req({ billId: '9' }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ status: 404, code: 'not_found', detail: 'Bill not found' });
+  });
+
+  it('answers an unrecognised error with a coded 500', async () => {
+    (requireRoles as any).mockResolvedValue(staff);
+    (svc.ensureSessionPayment as any).mockRejectedValue(new Error('boom'));
+    const res = await paymentVerify(req({ billId: '9' }));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ status: 500, code: 'internal_error' });
   });
 });

@@ -20,7 +20,9 @@ final class Plugin
     public Media $media;
     public Patients $patients;
     public Appointments $appointments;
+    public EmailKeys $email_keys;
     public Receptionists $receptionists;
+    public ClinicAdmins $clinic_admins;
     public Doctors $doctors;
     public ClinicalRecords $clinical_records;
     public Encounters $encounters;
@@ -36,12 +38,14 @@ final class Plugin
         $this->media    = new Media();
         $this->patients = new Patients();
         $this->appointments = new Appointments();
+        $this->email_keys = new EmailKeys();
         $this->receptionists = new Receptionists();
+        $this->clinic_admins = new ClinicAdmins();
         $this->doctors = new Doctors();
         $this->clinical_records = new ClinicalRecords();
         $this->encounters = new Encounters($this->clinical_records);
         $this->jobs     = new Jobs($this->service, $this->payments, new Jobs_Webhook());
-        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments, $this->receptionists, $this->doctors, $this->encounters, $this->clinical_records);
+        $this->rest     = new REST_Controller($this->service, $this->jobs, $this->payments, $this->media, $this->patients, $this->appointments, $this->receptionists, $this->doctors, $this->encounters, $this->clinical_records, $this->clinic_admins);
         $this->hooks    = new Hooks($this->service);
         $this->settings = new Settings();
 
@@ -54,6 +58,7 @@ final class Plugin
         $this->jobs->register();
         $this->payments->register();
         $this->settings->register();
+        $this->email_keys->register();
     }
 
     public static function instance(): Plugin
@@ -98,6 +103,8 @@ final class Plugin
         if (function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions('', [], Jobs::GROUP);
         }
+        // The sweep went with the group above; let the next activation schedule it again.
+        delete_option(Jobs::OUTBOX_SWEEP_OPTION);
         flush_rewrite_rules();
     }
 

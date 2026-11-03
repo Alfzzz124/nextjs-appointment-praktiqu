@@ -15,6 +15,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { clientIpOrNull } from '@/lib/client-ip';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { ACTIVE_CLINIC_HEADER, resolveActiveClinic } from '@/lib/auth/active-clinic';
+import { asClinicManager, isOwnerRoute } from '@/lib/auth/owner-routes';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? 'dev-secret-change-me',
@@ -24,6 +26,19 @@ export interface Actor {
   id: string;
   role: 'SUPER_ADMIN' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'RECEPTIONIST' | 'CLIENT';
   practiceId: string | null;
+  /**
+   * The clinic a CLINIC_ADMIN picked for this request with X-Praktiqu-Clinic-Id, already
+   * checked to be one of their own. Set ONLY by getActor(); resolveKcActor() trusts it
+   * without checking again. Undefined means "use the default clinic".
+   */
+  activeClinicId?: bigint;
+  /**
+   * The clinic a PROFESSIONAL owns and picked with X-Praktiqu-Clinic-Id (owner mode),
+   * already checked by getActor(). On an allowlisted route (owner-routes.ts) getActor()
+   * also turns the actor into that clinic's CLINIC_ADMIN; elsewhere it stays a
+   * PROFESSIONAL and this field is informational only.
+   */
+  ownerClinicId?: bigint;
 }
 
 export interface AuthContext {
@@ -38,10 +53,11 @@ export async function getActor(req: NextRequest): Promise<Actor> {
     throw new AuthError('Missing or invalid Authorization header', 401);
   }
   const token = header.slice('Bearer '.length);
+  let actor: Actor;
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     if (!payload.sub) throw new AuthError('Invalid token: missing sub', 401);
-    return {
+    actor = {
       id: payload.sub as string,
       role: (payload.role as Actor['role']) ?? 'CLIENT',
       practiceId: (payload.practiceId as string | null) ?? null,
@@ -49,6 +65,51 @@ export async function getActor(req: NextRequest): Promise<Actor> {
   } catch (err) {
     if (err instanceof AuthError) throw err;
     throw new AuthError('Invalid or expired token', 401);
+  }
+
+  // Outside the try above on purpose: a database error here must surface as a 500, not be
+  // reported as a bad token. The AuthError message IS the code (clinic_not_in_scope /
+  // invalid_clinic_header), so it reaches the client whatever wrapper renders it.
+  const active = await resolveActiveClinic(actor.id, actor.role, req.headers.get(ACTIVE_CLINIC_HEADER));
+  if ('code' in active) throw new AuthError(active.code, active.status); // 'in' narrows even with strictNullChecks off, unlike `!active.ok`
+  if (active.clinicId !== undefined) actor.activeClinicId = active.clinicId;
+  if (active.ownerClinicId !== undefined) {
+    actor.ownerClinicId = active.ownerClinicId;
+    if (isOwnerRoute(req.method, req.nextUrl.pathname)) actor = asClinicManager(actor, active.ownerClinicId);
+  }
+  return actor;
+}
+
+/**
+ * The actor behind a request on a route that does NOT require one, or null.
+ *
+ * For public routes that treat a signed-in caller differently without turning a guest
+ * away. It never throws: a missing, malformed or forged bearer is simply "nobody",
+ * which is how the route already treats every guest.
+ *
+ * `expiredGraceSeconds` accepts a token whose `exp` passed up to that long ago. The
+ * signature is still verified in full, so the identity is one we issued; only its
+ * freshness is relaxed. Use it only where the answer grants nothing (deciding what NOT
+ * to do to a booking, say) and never to authorise anything.
+ */
+export async function optionalActor(
+  req: NextRequest,
+  opts: { expiredGraceSeconds?: number } = {},
+): Promise<Actor | null> {
+  const header = req.headers.get('authorization');
+  if (!header?.startsWith('Bearer ')) return null;
+  try {
+    const { payload } = await jwtVerify(header.slice('Bearer '.length), JWT_SECRET, {
+      clockTolerance: opts.expiredGraceSeconds ?? 0,
+    });
+    if (!payload.sub) return null;
+    return {
+      id: payload.sub as string,
+      role: (payload.role as Actor['role']) ?? 'CLIENT',
+      practiceId: (payload.practiceId as string | null) ?? null,
+    };
+  } catch {
+    return null;
   }
 }
 

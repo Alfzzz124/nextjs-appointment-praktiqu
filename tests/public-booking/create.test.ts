@@ -39,6 +39,12 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
   createAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
 }));
+vi.mock('@/services/payments/clinic-payment.service', () => ({
+  resolveClinicPaymentForDisplay: vi.fn(),
+}));
+vi.mock('@/services/payments/public-usd.service', () => ({
+  rowPaymentForDisplay: vi.fn(),
+}));
 
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
@@ -50,6 +56,9 @@ import { createPatient, updatePatient } from '@/repositories/wp/patients.write';
 import { findConflictingAppointments } from '@/repositories/wp/appointments.repo';
 import { createAppointment } from '@/repositories/wp/appointments.write';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
+import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { notInternational, type ClinicPaymentSettings } from '@/services/payments/intl-pricing';
 import {
   createPublicAppointment,
   createPublicAppointmentSchema,
@@ -143,6 +152,7 @@ function primeHappyPath() {
       isActive: true,
       telemedService: null,
       nameAlias: null,
+      category: null,
     },
   ]);
 
@@ -183,6 +193,8 @@ function primeHappyPath() {
 beforeEach(() => {
   vi.clearAllMocks();
   primeHappyPath();
+  vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(notInternational(CLINIC));
+  vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit'], usd: null });
 });
 
 describe('createPublicAppointment', () => {
@@ -249,6 +261,57 @@ describe('createPublicAppointment', () => {
     ).rejects.toBeInstanceOf(ServiceNotFoundError);
   });
 
+  describe('when the caller names a clinic', () => {
+    // A professional who works at two clinics offers the same catalogue service at
+    // both. Without `clinicId` the first mapping wins — the staff manual-booking form
+    // sent its clinic, and it was silently dropped by the schema.
+    const OTHER_CLINIC = 5;
+
+    beforeEach(() => {
+      const mapping = (clinicId: number) => ({
+        mappingId: BigInt(10 + clinicId),
+        serviceId: BigInt(SERVICE),
+        doctorId: BigInt(DOCTOR),
+        clinicId: BigInt(clinicId),
+        name: 'Konseling Individu',
+        type: 'KONSELING',
+        charges: '350000',
+        durationMinutes: 60,
+        isPublic: true,
+        isActive: true,
+        telemedService: null,
+        nameAlias: null,
+        category: null,
+      });
+      vi.mocked(listServicesForDoctor).mockImplementation(async (opts) =>
+        [mapping(CLINIC), mapping(OTHER_CLINIC)].filter(
+          (m) => opts.clinicId === undefined || m.clinicId === opts.clinicId,
+        ),
+      );
+    });
+
+    it('books into that clinic, not the first mapping found', async () => {
+      await createPublicAppointment({ ...INPUT, clinicId: OTHER_CLINIC, holdKey: makeHold() });
+
+      expect(vi.mocked(listServicesForDoctor).mock.calls[0][0].clinicId).toBe(BigInt(OTHER_CLINIC));
+      expect(vi.mocked(createAppointment).mock.calls[0][0].clinicId).toBe(OTHER_CLINIC);
+    });
+
+    it('refuses a service the professional does not offer at that clinic', async () => {
+      await expect(
+        createPublicAppointment({ ...INPUT, clinicId: 99, holdKey: makeHold() }),
+      ).rejects.toBeInstanceOf(ServiceNotFoundError);
+      expect(createAppointment).not.toHaveBeenCalled();
+    });
+
+    it('still lets the mapping decide when no clinic is named', async () => {
+      await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+      expect(vi.mocked(listServicesForDoctor).mock.calls[0][0].clinicId).toBeUndefined();
+      expect(vi.mocked(createAppointment).mock.calls[0][0].clinicId).toBe(CLINIC);
+    });
+  });
+
   it('refuses a booking closer than the minimum notice', async () => {
     // Hiding these slots in the readers is not enough on its own: a caller can post
     // straight to this service, and a patient whose page loaded an hour ago is
@@ -313,6 +376,22 @@ describe('createPublicAppointment', () => {
     );
     expect(createAppointment).not.toHaveBeenCalled();
     // Released, not kept: a stale hold would lock the guest out of every other time.
+    expect(slotHoldService.get(holdKey)).toBeNull();
+  });
+
+  // The check above and the plugin's write are two requests; another booking can land
+  // between them. The plugin re-checks under the professional's schedule lock and
+  // answers 409 praktiqu_schedule_conflict. That is the same "pick another time" as
+  // above, not an upstream refusal the guest can do nothing about.
+  it('treats a slot the plugin finds taken as SlotConflictError and releases the hold', async () => {
+    vi.mocked(createAppointment).mockRejectedValue(
+      new WpEndpointError('/appointments failed 409: That slot is already booked.', 409, 'praktiqu_schedule_conflict'),
+    );
+    const holdKey = makeHold();
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
+      SlotConflictError,
+    );
     expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
@@ -452,9 +531,37 @@ describe('createPublicAppointment', () => {
     ).rejects.toBeInstanceOf(WpConfigError);
   });
 
+  /**
+   * Seen in production 2026-10-19: a client who signed up through WooCommerce holds
+   * only `customer`. findPatientByEmail misses them, a plain create answers 409, and
+   * clinic staff could not book them at all. The plugin adopts such an account when
+   * asked; it still refuses staff.
+   */
+  it('asks the plugin to adopt an existing ordinary account instead of refusing it', async () => {
+    vi.mocked(findPatientByEmail).mockResolvedValue(null);
+    vi.mocked(createPatient).mockResolvedValue({
+      id: 1032,
+      email: INPUT.clientEmail,
+      username: 'dao',
+      firstName: 'Dao',
+      lastName: '',
+      contactNumber: INPUT.clientMobile,
+      patientUniqueId: null,
+    });
+
+    await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(vi.mocked(createPatient).mock.calls[0][0]).toMatchObject({
+      email: INPUT.clientEmail,
+      adoptExisting: true,
+    });
+    expect(vi.mocked(createAppointment).mock.calls[0][0].patientId).toBe(1032);
+  });
+
   it('reports a conflict when the email belongs to a non-patient account', async () => {
     // findPatientByEmail is role-filtered, so it misses a doctor's address and the
-    // plugin answers 409. Booking against that account would be wrong.
+    // plugin answers 409 even with adoptExisting. Booking against that account would
+    // be wrong.
     vi.mocked(findPatientByEmail).mockResolvedValue(null);
     vi.mocked(createPatient).mockRejectedValue(
       new WpEndpointError('That email is already registered.', 409),
@@ -485,10 +592,59 @@ describe('createPublicAppointmentSchema', () => {
     expect(parsed.serviceId).toBe(7);
   });
 
+  it('keeps the clinic a form posts, as a number', () => {
+    // z.object strips unknown keys: before clinicId was declared, it vanished here.
+    const parsed = createPublicAppointmentSchema.parse({ ...INPUT, clinicId: '5', holdKey: 'k' });
+    expect(parsed.clinicId).toBe(5);
+  });
+
+  it('refuses a non-numeric clinic instead of ignoring it', () => {
+    expect(
+      createPublicAppointmentSchema.safeParse({ ...INPUT, clinicId: 'abc', holdKey: 'k' }).success,
+    ).toBe(false);
+  });
+
   it('refuses a non-numeric id instead of coercing it to NaN', () => {
     // The 2026-07-13 crash: a cuid became NaN and reached raw wp_kc_* SQL.
     expect(
       createPublicAppointmentSchema.safeParse({ ...INPUT, professionalId: 'pro-cuid-1' }).success,
     ).toBe(false);
+  });
+});
+
+describe('createPublicAppointment — payment fields', () => {
+  it('answers Xendit only and no USD for a clinic that is not international', async () => {
+    const result = await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(result.paymentMethods).toEqual(['xendit']);
+    expect(result.usd).toBeNull();
+  });
+
+  it("prices the booked row like the charge: the booked clinic, the service and the doctor's own price", async () => {
+    const settings: ClinicPaymentSettings = {
+      ...notInternational(CLINIC),
+      international: true,
+      methods: ['xendit', 'paypal', 'card'],
+    };
+    const usd = { price: '21.39', taxes: [], fee: null, total: '21.39' };
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(settings);
+    vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
+
+    const result = await createPublicAppointment({ ...INPUT, holdKey: makeHold() });
+
+    expect(resolveClinicPaymentForDisplay).toHaveBeenCalledWith(CLINIC);
+    expect(rowPaymentForDisplay).toHaveBeenCalledWith(
+      { clinicId: CLINIC, doctorId: DOCTOR, serviceId: SERVICE, name: 'Konseling Individu', price: '350000' },
+      settings,
+    );
+    expect(result.paymentMethods).toEqual(['xendit', 'paypal', 'card']);
+    expect(result.usd).toEqual(usd);
+  });
+
+  it('computes them only after the appointment is written', async () => {
+    vi.mocked(createAppointment).mockRejectedValue(new WpEndpointError('/appointments failed 500: down', 500));
+
+    await expect(createPublicAppointment({ ...INPUT, holdKey: makeHold() })).rejects.toBeInstanceOf(UpstreamWriteError);
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
   });
 });

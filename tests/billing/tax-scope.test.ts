@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedTax, cleanup } from './fixtures';
+import { assertTestDb, seedTax, cleanup, useIdBlock } from './fixtures';
 import {
   getTax, updateTax, deleteTax, setTaxStatus, bulkDeleteTaxes, bulkSetTaxStatus,
   type TaxScope,
 } from '@/services/billing/tax.service';
+
+const { BASE } = useIdBlock('billing/tax-scope.test.ts');
 
 /**
  * Cross-tenant row-scope regression suite (Critical finding, feat/encounter-documents
@@ -14,7 +16,7 @@ import {
  * as the existing `listTaxes` semantics.
  */
 
-const CLINIC_A = 9_030_001, CLINIC_B = 9_030_002;
+const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
 const scopeA: TaxScope = { clinicId: BigInt(CLINIC_A) };
 const scopeFailClosed: TaxScope = { clinicId: -1n }; // clinic staff with no resolved clinic
 
@@ -23,9 +25,9 @@ let taxAId: number, taxBId: number, taxGlobalId: number;
 beforeAll(async () => {
   assertTestDb();
   await cleanup();
-  taxAId = Number((await seedTax({ id: 9_030_101, name: 'Tax A', clinicId: CLINIC_A, taxValue: '5' })).id);
-  taxBId = Number((await seedTax({ id: 9_030_102, name: 'Tax B', clinicId: CLINIC_B, taxValue: '7' })).id);
-  taxGlobalId = Number((await seedTax({ id: 9_030_103, name: 'Tax Global', clinicId: -1, taxValue: '9' })).id);
+  taxAId = Number((await seedTax({ id: BASE + 101, name: 'Tax A', clinicId: CLINIC_A, taxValue: '5' })).id);
+  taxBId = Number((await seedTax({ id: BASE + 102, name: 'Tax B', clinicId: CLINIC_B, taxValue: '7' })).id);
+  taxGlobalId = Number((await seedTax({ id: BASE + 103, name: 'Tax Global', clinicId: -1, taxValue: '9' })).id);
 });
 afterAll(cleanup);
 
@@ -84,7 +86,7 @@ describe('bulk tax mutations scope', () => {
   });
 
   it('bulkDeleteTaxes only deletes rows in scope', async () => {
-    const extraA = await seedTax({ id: 9_030_104, name: 'Tax A2', clinicId: CLINIC_A, taxValue: '1' });
+    const extraA = await seedTax({ id: BASE + 104, name: 'Tax A2', clinicId: CLINIC_A, taxValue: '1' });
     const n = await bulkDeleteTaxes([Number(extraA.id), taxBId], scopeA);
     expect(n).toBe(1);
     await expect(getTax(Number(extraA.id), null)).rejects.toThrow(); // deleted

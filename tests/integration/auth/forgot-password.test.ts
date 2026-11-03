@@ -171,6 +171,43 @@ describe('POST /api/v1/auth/forgot-password', () => {
     expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
   });
 
+  // Only a registered address sends mail. Awaiting the send made that answer slower
+  // than the one for an unknown address by a round trip to the mail provider, which
+  // told anyone with a stopwatch which addresses have accounts.
+  it('answers before a slow email send finishes', async () => {
+    let finishSend: (v: { ok: true }) => void = () => {};
+    vi.mocked(sendEmail).mockImplementationOnce(
+      () => new Promise((resolve) => { finishSend = resolve; }),
+    );
+
+    const TIMED_OUT = Symbol('timed out');
+    const outcome = await Promise.race([
+      POST(makeReq('budi@example.com')),
+      new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), 500)),
+    ]);
+
+    expect(outcome).not.toBe(TIMED_OUT);
+    expect((outcome as Response).status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'budi@example.com' }));
+    finishSend({ ok: true });
+  });
+
+  it('logs a failed background send instead of throwing it', async () => {
+    vi.mocked(sendEmail).mockRejectedValueOnce(new Error('mail provider exploded'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await POST(makeReq('budi@example.com'));
+    // Let the detached send settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.status).toBe(200);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[auth/forgot-password] background reset email failed',
+      expect.objectContaining({ userId: USER.id, err: expect.any(Error) }),
+    );
+    errSpy.mockRestore();
+  });
+
   it('rejects a malformed email with 400', async () => {
     const res = await POST(makeReq('not-an-email'));
     const json = await res.json();

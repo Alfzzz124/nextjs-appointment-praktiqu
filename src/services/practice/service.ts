@@ -15,12 +15,22 @@
 import type { Actor } from '@/lib/auth';
 import { logging } from '@/lib/logging';
 import { resolveKcActor } from '@/services/billing/kc-actor';
+import { countOwnedClinics, isClinicAdminUser, wpUserEmailExists } from '@/repositories/wp/clinic-admins.repo';
+import { createClinicAdminViaPlugin } from '@/repositories/wp/clinic-admins.write';
+import { WpEndpointError } from '@/lib/wp-endpoint';
+import { assertClinicEmailAvailable, assertClinicNameAvailable } from './clinic-names';
+import { resolveClinicPaymentManyForDisplay } from '@/services/payments/clinic-payment.service';
 import {
+  countClinicReferences,
+  deleteClinicRow,
   findClinicById,
+  insertClinic,
   listClinicMembers,
   listClinics as listClinicRows,
+  setClinicAdmin,
   setClinicStatus,
   updateClinic,
+  type ClinicReferenceCounts,
   type WpClinic,
 } from '@/repositories/wp/clinics.repo';
 import {
@@ -34,7 +44,9 @@ import {
   HolidayDTO,
   PracticeDTO,
   holidayInputSchema,
+  practiceCreateSchema,
   practiceUpdateSchema,
+  type ClinicAdminChoice,
 } from '@/types/practice';
 
 /* ------------------------------------------------------------------ */
@@ -62,6 +74,37 @@ export class PracticeValidationError extends Error {
   ) {
     super(message);
     this.name = 'PracticeValidationError';
+  }
+}
+
+
+/** `admin.mode = 'new'` with an email some WordPress account already uses. */
+export class AdminEmailTakenError extends Error {
+  constructor(public readonly email: string) {
+    super(`A WordPress account already uses ${email}`);
+    this.name = 'AdminEmailTakenError';
+  }
+}
+
+/** The plugin could not create the admin account; the clinic was removed again. */
+export class ClinicAdminProvisionError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ClinicAdminProvisionError';
+  }
+}
+
+/** A permanent delete of a clinic that still has data; `counts` holds only non-zero keys. */
+export class ClinicNotEmptyError extends Error {
+  constructor(
+    public readonly id: number,
+    public readonly counts: Partial<ClinicReferenceCounts>,
+  ) {
+    super(`Practice ${id} still has data`);
+    this.name = 'ClinicNotEmptyError';
   }
 }
 
@@ -102,7 +145,7 @@ function readBusinessHours(extra: Record<string, unknown>): BusinessHours[] {
   return Array.isArray(value) ? (value as BusinessHours[]) : [];
 }
 
-function toPracticeDTO(c: WpClinic): PracticeDTO {
+function toPracticeDTO(c: WpClinic, international: boolean): PracticeDTO {
   // timezone, logoUrl and businessHours have no columns on KiviCare's table and
   // round-trip through `extra`, so adding fields needs no schema change.
   const extra = c.extra;
@@ -122,11 +165,21 @@ function toPracticeDTO(c: WpClinic): PracticeDTO {
     logoUrl: typeof extra.logoUrl === 'string' ? extra.logoUrl : null,
     status: c.isActive ? 1 : 0,
     businessHours: readBusinessHours(extra),
+    international,
     createdAt: c.createdAt.toISOString(),
     // KiviCare's clinics table has no updated_at column. Mirroring createdAt is
     // honest; inventing `now()` would not be.
     updatedAt: c.createdAt.toISOString(),
   };
+}
+
+/**
+ * DTOs for a page of clinics, with one settings read for the whole page. Never throws:
+ * a failed read is logged and every clinic reads `international: false`.
+ */
+async function toPracticeDTOs(clinics: WpClinic[]): Promise<PracticeDTO[]> {
+  const payment = await resolveClinicPaymentManyForDisplay(clinics.map((c) => Number(c.id)));
+  return clinics.map((c) => toPracticeDTO(c, payment.get(Number(c.id))?.international ?? false));
 }
 
 /** `HH:MM:SS` → `HH:mm`, the shape this DTO has always used. */
@@ -181,13 +234,104 @@ export async function listPractices(
     includeInactive: options.includeInactive,
     ids,
   });
-  return { data: items.map(toPracticeDTO), total };
+  return { data: await toPracticeDTOs(items), total };
 }
 
 export async function getPractice(id: number): Promise<PracticeDTO> {
   const clinic = await findClinicById(BigInt(id));
   if (!clinic) throw new PracticeNotFoundError(id);
-  return toPracticeDTO(clinic);
+  const [dto] = await toPracticeDTOs([clinic]);
+  return dto;
+}
+
+export interface CreatePracticeResult {
+  practice: PracticeDTO;
+  admin: { mode: ClinicAdminChoice['mode']; wpUserId: number | null; emailSent: boolean | null };
+}
+
+/** '' and whitespace-only become NULL, the way KiviCare leaves an unfilled column. */
+const orNull = (v: string | null | undefined): string | null => (v === undefined || v === null || v.trim() === '' ? null : v);
+
+/**
+ * Create a clinic (SUPER_ADMIN). Every check that can refuse runs BEFORE anything is
+ * written. With `admin.mode = 'new'` the clinic row is written first — the plugin needs its
+ * id to claim it — and removed again if the account cannot be made, so a failed request
+ * never leaves a half-made clinic behind.
+ */
+export async function createPractice(input: unknown, ctx: { actorId: string }): Promise<CreatePracticeResult> {
+  const parsed = practiceCreateSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new PracticeValidationError(
+      'Invalid practice input',
+      parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    );
+  }
+  const data = parsed.data;
+  const admin = data.admin;
+
+  await assertClinicNameAvailable(data.name);
+  await assertClinicEmailAvailable(data.email);
+  if (admin.mode === 'existing' && !(await isClinicAdminUser(BigInt(admin.wpUserId)))) {
+    throw new NotAClinicAdminError(admin.wpUserId);
+  }
+  if (admin.mode === 'new' && (await wpUserEmailExists(admin.email))) {
+    throw new AdminEmailTakenError(admin.email);
+  }
+
+  const id = await insertClinic({
+    name: data.name,
+    email: orNull(data.email),
+    telephone: orNull(data.telephoneNo),
+    address: orNull(data.address),
+    city: orNull(data.city),
+    state: orNull(data.state),
+    country: orNull(data.country),
+    postalCode: orNull(data.postalCode),
+    countryCode: orNull(data.countryCode),
+    countryCallingCode: orNull(data.countryCallingCode),
+    status: data.status === 1 ? 1 : 0,
+    clinicAdminId: admin.mode === 'existing' ? BigInt(admin.wpUserId) : 0n,
+  });
+
+  let adminId: number | null = admin.mode === 'existing' ? admin.wpUserId : null;
+  let emailSent: boolean | null = null;
+  if (admin.mode === 'new') {
+    try {
+      const created = await createClinicAdminViaPlugin({ name: admin.name, email: admin.email, clinicId: Number(id) });
+      adminId = created.id;
+      emailSent = created.emailSent;
+    } catch (err) {
+      await removeHalfMadeClinic(id);
+      if (err instanceof WpEndpointError) {
+        if (err.status === 409 && err.code === 'praktiqu_email_taken') throw new AdminEmailTakenError(admin.email);
+        throw new ClinicAdminProvisionError(err.message, err.status);
+      }
+      throw err;
+    }
+  }
+
+  await logging.audit('practice.create', {
+    userId: ctx.actorId,
+    resource: 'clinic',
+    resourceId: String(id),
+    metadata: { adminMode: admin.mode, adminId },
+  });
+
+  return { practice: await getPractice(Number(id)), admin: { mode: admin.mode, wpUserId: adminId, emailSent } };
+}
+
+/** The clinic was written moments ago and has no data, so deleting it outright is safe. */
+async function removeHalfMadeClinic(id: bigint): Promise<void> {
+  try {
+    await deleteClinicRow(id);
+  } catch (cleanupErr) {
+    // Left behind with clinic_admin_id = 0: findable by id in this log line and removable
+    // with DELETE /practices/:id?permanent=true.
+    await logging.error('createPractice: could not remove a clinic whose admin account failed', cleanupErr, {
+      resource: 'clinic',
+      resourceId: String(id),
+    });
+  }
 }
 
 export async function updatePractice(
@@ -206,6 +350,15 @@ export async function updatePractice(
 
   const existing = await findClinicById(BigInt(id));
   if (!existing) throw new PracticeNotFoundError(id);
+
+  // A rename moves the public booking link, so it obeys the same rules as a new clinic.
+  if (data.name !== undefined && data.name !== existing.name) {
+    await assertClinicNameAvailable(data.name, { exceptId: id });
+  }
+  const sameEmail = (data.email ?? '').trim().toLowerCase() === (existing.email ?? '').trim().toLowerCase();
+  if (data.email && !sameEmail) {
+    await assertClinicEmailAvailable(data.email, { exceptId: id });
+  }
 
   // Only the extra-backed fields actually supplied are merged, so a partial update
   // cannot blank the others out of the shared blob.
@@ -239,6 +392,43 @@ export async function updatePractice(
   return getPractice(id);
 }
 
+/** Activate or deactivate one clinic (SUPER_ADMIN). Deactivating keeps every row it owns. */
+export async function setPracticeStatus(id: number, status: 0 | 1, ctx: { actorId: string }): Promise<PracticeDTO> {
+  const existing = await findClinicById(BigInt(id));
+  if (!existing) throw new PracticeNotFoundError(id);
+
+  await setClinicStatus([BigInt(id)], status);
+  await logging.audit(status === 1 ? 'practice.activate' : 'practice.deactivate', {
+    userId: ctx.actorId,
+    resource: 'clinic',
+    resourceId: String(id),
+  });
+  return getPractice(id);
+}
+
+/**
+ * Delete a clinic for good (SUPER_ADMIN) — only one with no data at all, e.g. one created
+ * by mistake. Anything with appointments, bills, psychologists, patients, … can only be
+ * deactivated: deleting it would orphan those rows. The admin account is kept.
+ */
+export async function deletePracticePermanently(id: number, ctx: { actorId: string }): Promise<void> {
+  const clinic = await findClinicById(BigInt(id));
+  if (!clinic) throw new PracticeNotFoundError(id);
+
+  const counts = await countClinicReferences(BigInt(id));
+  const nonZero = Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0)) as Partial<ClinicReferenceCounts>;
+  if (Object.keys(nonZero).length > 0) throw new ClinicNotEmptyError(id, nonZero);
+
+  await deleteClinicRow(BigInt(id));
+  await logging.audit('practice.delete', {
+    userId: ctx.actorId,
+    resource: 'clinic',
+    resourceId: String(id),
+    metadata: { name: clinic.name, clinicAdminId: Number(clinic.clinicAdminId) },
+  });
+}
+
+
 /** Soft-delete: sets status to 0. */
 export async function bulkDeletePractices(ids: number[]): Promise<number> {
   return setClinicStatus(ids.map((i) => BigInt(i)), 0);
@@ -252,7 +442,7 @@ export async function exportPractices(params: { status?: number } = {}): Promise
   const out: PracticeDTO[] = [];
   for (let page = 1; ; page += 1) {
     const { items, total } = await listClinicRows({ page, perPage: 100, includeInactive: true });
-    out.push(...items.map(toPracticeDTO));
+    out.push(...(await toPracticeDTOs(items)));
     if (items.length === 0 || out.length >= total) break;
   }
   return params.status === undefined ? out : out.filter((p) => p.status === params.status);
@@ -269,18 +459,60 @@ export async function listPracticeUsers(
   return members.map((m) => ({ userId: Number(m.userId), role: m.role }));
 }
 
-export async function changePracticeAdmin(practiceId: number, newAdminId: number): Promise<void> {
+/** `newAdminId` is not a WordPress account holding the kiviCare_clinic_admin capability. */
+export class NotAClinicAdminError extends Error {
+  constructor(public readonly wpUserId: number) {
+    super(`WordPress user ${wpUserId} is not a clinic admin`);
+    this.name = 'NotAClinicAdminError';
+  }
+}
+
+export interface ChangePracticeAdminResult {
+  clinicId: number;
+  adminId: number;
+  previousAdminId: number;
+  /** Clinics the previous admin still owns after this change; 0 = they now hold none. */
+  previousAdminClinicCount: number;
+  /** True when `newAdminId` already was the admin: nothing was written or audited. */
+  unchanged: boolean;
+}
+
+/**
+ * Make `newAdminId` (a wp_users.ID) the admin of a clinic. A clinic has exactly one admin;
+ * one admin may hold several clinics and picks one per request with X-Praktiqu-Clinic-Id.
+ * The previous admin loses this clinic at once: their next request naming it gets 403.
+ */
+export async function changePracticeAdmin(
+  practiceId: number,
+  newAdminId: number,
+  actorId: string,
+): Promise<ChangePracticeAdminResult> {
   const clinic = await findClinicById(BigInt(practiceId));
   if (!clinic) throw new PracticeNotFoundError(practiceId);
+  if (!(await isClinicAdminUser(BigInt(newAdminId)))) throw new NotAClinicAdminError(newAdminId);
 
-  // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields, so
-  // it is set explicitly rather than widening that type for one caller.
-  const { prisma } = await import('@/lib/db');
-  await prisma.$executeRawUnsafe(
-    `UPDATE wp_kc_clinics SET clinic_admin_id = ? WHERE id = ?`,
-    newAdminId,
-    practiceId,
-  );
+  const previousAdminId = Number(clinic.clinicAdminId);
+  const unchanged = previousAdminId === newAdminId;
+  if (!unchanged) {
+    // clinic_admin_id is outside UpdateClinicInput, which covers the contact fields.
+    await setClinicAdmin(BigInt(practiceId), BigInt(newAdminId));
+    // userId is the caller's users.id (a cuid): log_entries.userId is a foreign key to
+    // users.id, and logging swallows insert errors, so a wp_users.ID here would drop the row.
+    await logging.audit('practice.admin_changed', {
+      userId: actorId,
+      resource: 'clinic',
+      resourceId: String(practiceId),
+      metadata: { previousAdminId, newAdminId },
+    });
+  }
+
+  return {
+    clinicId: practiceId,
+    adminId: newAdminId,
+    previousAdminId,
+    previousAdminClinicCount: await countOwnedClinics(BigInt(previousAdminId)),
+    unchanged,
+  };
 }
 
 /* ------------------------------------------------------------------ */

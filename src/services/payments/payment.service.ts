@@ -1,5 +1,5 @@
 import { calculateTax } from '@/services/billing/bill.service';
-import type { BillDetail } from '@/services/billing/bill.service';
+import type { BillDetail, BillScope } from '@/services/billing/bill.service';
 import { toNum } from '@/lib/kc-num';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -231,7 +231,13 @@ export async function markExpired(wcOrderId: number): Promise<PaymentOrder | nul
 // avoids dead exported code (YAGNI).
 
 import { signAppointmentToken } from '@/lib/public/appointment-token';
-import { createWcOrder, getWcOrderStatus, type PaymentMethod } from '@/lib/wp-endpoint';
+import {
+  createWcOrder,
+  getWcOrderStatus,
+  type CreateWcOrderResult,
+  type PaymentMethod,
+  type WcCharge,
+} from '@/lib/wp-endpoint';
 import { jobs } from '@/lib/jobs/client';
 import { getBill } from '@/services/billing/bill.service';
 import { logging } from '@/lib/logging';
@@ -241,6 +247,29 @@ import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { SESSION_STATUS, findSessionById } from '@/repositories/wp/sessions.repo';
 import { getPublicAppUrl } from '@/lib/public-url';
 import { syncSessionReminders } from '@/services/session/reminder-schedule';
+import { APPROVAL_STATE, findApproval } from '@/services/approval/store';
+import {
+  completeApproval,
+  holdForApproval,
+  publicApprovalFor,
+  shouldHoldForApproval,
+  type PublicApprovalView,
+} from '@/services/approval/service';
+import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
+import {
+  amountToCents,
+  gateUsdPayment,
+  notInternational,
+  toCharge,
+  type ClinicPaymentSettings,
+  type UsdQuote,
+} from '@/services/payments/intl-pricing';
+import {
+  ChargeMismatchError,
+  DiscountNotSupportedError,
+  PaymentMethodNotAllowedError,
+  PaypalRateMissingError,
+} from '@/services/payments/payment-errors';
 
 export class AppointmentNotFoundError extends Error {}
 export class AppointmentNotPendingError extends Error {}
@@ -264,6 +293,11 @@ export interface PaymentStatusView {
   /** What the payer was billed, in `chargedCurrency`. */
   chargedAmount: number;
   chargedCurrency: string;
+  /**
+   * Public bookings only: the psychologist-approval state when the booking waits for (or
+   * was decided by) its psychologist. Null otherwise; absent on staff bill payments.
+   */
+  approval?: PublicApprovalView | null;
 }
 
 /**
@@ -279,6 +313,83 @@ export function chargedView(order: PaymentOrder): { chargedAmount: number; charg
     chargedAmount: order.chargedAmount === null ? order.expectedAmount : toNum(order.chargedAmount),
     chargedCurrency: order.chargedCurrency || 'IDR',
   };
+}
+
+/** A USD order's quote and the `charge` built from it. */
+interface UsdCharge {
+  quote: UsdQuote;
+  charge: WcCharge;
+}
+
+/**
+ * The payment gate for paypal/card (spec §2), run before any WooCommerce order exists.
+ * The settings read itself may throw PaymentSettingsUnavailableError (503, retryable).
+ */
+function gateUsdCharge(items: PaymentLineItem[], taxes: PaymentTaxLine[], settings: ClinicPaymentSettings): UsdCharge {
+  const gate = gateUsdPayment(items, taxes, settings);
+  if (gate.ok === false) {
+    if (gate.reason === 'rate_missing') {
+      throw new PaypalRateMissingError(`Clinic ${settings.clinicId} is international but has no usable FX rate`);
+    }
+    throw new PaymentMethodNotAllowedError(`Clinic ${settings.clinicId} does not take USD payment for this order`);
+  }
+  return { quote: gate.quote, charge: toCharge(gate.quote) };
+}
+
+/**
+ * Backstop for version skew: an older plugin ignores `charge` and converts on its own.
+ * If what WooCommerce will charge differs from the quote, cancel that order now (the
+ * existing auto-cancel job — there is no direct cancel route) and write NO
+ * payment_orders row: a row would let the resulting payment.expired cancel the
+ * appointment, and a retry would then hit payment_already_initiated.
+ */
+async function assertChargedAsQuoted(wcOrder: CreateWcOrderResult, quote: UsdQuote): Promise<void> {
+  // The currency counts too: a charge of the right number in another currency (an
+  // older plugin falling back to rupiah) is not the quote.
+  const chargedAsQuoted =
+    wcOrder.chargedCurrency === 'USD' && amountToCents(wcOrder.chargedAmount ?? -1) === quote.totalCents;
+  if (chargedAsQuoted) return;
+  // The cancel is scheduled FIRST and the log line comes second, so a failing log
+  // write can never stand between a mis-priced order and its cancellation.
+  // Defensive only: jobs.enqueue (src/lib/jobs/client.ts) swallows its own failures
+  // today, so this catch is not expected to run. It stays so a future client that does
+  // reject still ends in ChargeMismatchError rather than a bare 500.
+  try {
+    await jobs.enqueue({
+      hook: 'praktiqu_payment_auto_cancel',
+      runAt: new Date(),
+      args: { wcOrderId: wcOrder.orderId },
+    });
+  } catch (err) {
+    await logging.error('Could not enqueue the cancel for a mis-charged WooCommerce order', err, {
+      metadata: { wcOrderId: wcOrder.orderId },
+    });
+  }
+  // A mis-priced order is being thrown away and nobody would otherwise know it happened
+  // (the route maps the error to a plain 502).
+  await logging.error('Charged amount differs from the USD quote — WooCommerce order cancel scheduled', undefined, {
+    metadata: {
+      wcOrderId: wcOrder.orderId,
+      chargedAmount: wcOrder.chargedAmount,
+      chargedCurrency: wcOrder.chargedCurrency,
+      quotedTotalUsd: quote.totalUsd,
+    },
+  });
+  throw new ChargeMismatchError(
+    `WooCommerce order ${wcOrder.orderId} charges ${wcOrder.chargedAmount} ${wcOrder.chargedCurrency}, quoted ${quote.totalUsd} USD`,
+  );
+}
+
+/**
+ * The staff-bill gate. Discounts are not supported in USD: the WooCommerce lines are the
+ * bill's gross service and tax lines while expectedAmount is the net total, so a USD
+ * quote of a discounted bill would overcharge without any error. A clinic id of 0 or
+ * null is not international.
+ */
+async function gateSessionUsdCharge(bill: BillDetail, items: PaymentLineItem[], taxes: PaymentTaxLine[]): Promise<UsdCharge> {
+  if (bill.discount > 0) throw new DiscountNotSupportedError(`Bill ${bill.id} has a discount; pay it with Xendit`);
+  const settings = bill.clinic?.id ? await resolveClinicPayment(bill.clinic.id) : notInternational(0);
+  return gateUsdCharge(items, taxes, settings);
 }
 
 export async function initiatePublicPayment(
@@ -305,7 +416,7 @@ export async function initiatePublicPayment(
     : [];
   const mapping = offered.find((s) => Number(s.serviceId) === serviceId);
 
-  const serviceName = mapping ? (mapping.nameAlias ?? mapping.name) : 'Service';
+  const serviceName = mapping ? mapping.name : 'Service';
   const servicePrice = mapping ? toNum(mapping.charges ?? 0) : 0;
   const { expectedAmount, items, taxes } = await computePublicAmount({
     name: serviceName,
@@ -314,6 +425,9 @@ export async function initiatePublicPayment(
     clinicId: appt.clinicId,
     doctorId: appt.professionalId,
   });
+
+  const usd: UsdCharge | null =
+    method === 'xendit' ? null : gateUsdCharge(items, taxes, await resolveClinicPayment(appt.clinicId));
 
   const token = signAppointmentToken(appointmentId);
   const wcOrder = await createWcOrder({
@@ -326,17 +440,19 @@ export async function initiatePublicPayment(
     returnUrl: `${getPublicAppUrl()}/book/payment/success?appt=${token}`,
     cancelUrl: `${getPublicAppUrl()}/book/payment/cancel?appt=${token}`,
     method,
+    ...(usd ? { charge: usd.charge } : {}),
   });
+  if (usd) await assertChargedAsQuoted(wcOrder, usd.quote);
 
   await createPaymentOrder({
     source: 'public',
     appointmentId: orderKey,
     wcOrderId: wcOrder.orderId,
-    expectedAmount,
+    expectedAmount: usd ? usd.quote.expectedIdr : expectedAmount,
     gateway: method,
     chargedAmount: wcOrder.chargedAmount,
     chargedCurrency: wcOrder.chargedCurrency,
-    fxRate: wcOrder.fxRate,
+    fxRate: usd ? Number(usd.quote.effectiveFxRate) : wcOrder.fxRate,
   });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',
@@ -354,14 +470,38 @@ export async function initiatePublicPayment(
 export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
   if (!order.appointmentId) return;
 
-  // Read-then-write rather than a guarded UPDATE, because confirming goes through the
-  // plugin: KiviCare's status listeners send the confirmation mail and provision the
-  // telemed link. Re-entering with an already-BOOKED appointment is the idempotent
-  // case and stops here.
+  // Confirming goes through the plugin, and it is the `payment` argument that makes the
+  // plugin fire `kc_appointment_payment_completed` — KiviCare's own post-payment hook and
+  // the one its booking mail to patient, professional and clinic listens on. A bare
+  // status change reaches only `kc_appointment_status_update`, whose sole listener mails
+  // check-in/check-out, so paid bookings went out unannounced until 1.8.1. No telemed
+  // link is created on this path. Re-entering with an already-BOOKED appointment is the
+  // idempotent case and stops here; two callers that both get past this read are settled
+  // by the plugin, which claims PENDING → BOOKED with a conditional UPDATE and mails once.
   const appt = await findSessionById(Number(order.appointmentId));
   if (!appt || appt.status !== SESSION_STATUS.PENDING) return;
 
-  await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED);
+  // A psychologist who approves their own bookings (spec 2026-10-19): the booking stays
+  // PENDING — slot held, no confirmation yet — and joins their queue instead of being
+  // booked here, unless the session has already started (shouldHoldForApproval). A record
+  // that already exists means a repeated webhook or poll; an APPROVED one on a PENDING
+  // booking is an approval that died before the plugin.
+  const approval = await findApproval(appt.id);
+  if (approval) {
+    if (approval.state === APPROVAL_STATE.APPROVED) await completeApproval(approval);
+    return;
+  }
+  if (await shouldHoldForApproval(appt)) {
+    await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
+    await holdForApproval({ row: appt, paymentOrderId: order.id });
+    return;
+  }
+
+  await setAppointmentStatus(Number(order.appointmentId), APPOINTMENT_STATUS.BOOKED, {
+    gateway: order.gateway,
+    wcOrderId: order.wcOrderId,
+    transactionId: order.transactionId,
+  });
   await jobs.cancel({ hook: 'praktiqu_payment_auto_cancel', args: { wcOrderId: order.wcOrderId } });
 
   // Guest bookings never pass through `transitionSession`, so this is the only hook
@@ -455,7 +595,10 @@ export async function cancelIfStillPending(order: PaymentOrder): Promise<void> {
     const appt = await findSessionById(Number(order.appointmentId));
     // Only an unpaid, unconfirmed booking is released. A BOOKED appointment means the
     // payment landed after all, and cancelling it here would drop a paid session.
-    if (appt && appt.status === SESSION_STATUS.PENDING) {
+    // A booking with an approval record is PAID and waits for its psychologist — paid
+    // through another order of the same booking, or marked paid by staff. An older order
+    // expiring must not release it.
+    if (appt && appt.status === SESSION_STATUS.PENDING && !(await findApproval(appt.id))) {
       await cancelAppointment(Number(order.appointmentId));
     }
   }
@@ -518,6 +661,8 @@ export async function checkPublicPaymentStatus(appointmentId: number): Promise<P
     status: reconciled.status as PaymentStatus,
     expectedAmount: reconciled.expectedAmount,
     ...chargedView(reconciled),
+    // Paid but waiting for the psychologist: the FE says so instead of "confirmed".
+    approval: await publicApprovalFor(appointmentId),
   };
 }
 
@@ -532,10 +677,19 @@ export async function checkSessionPaymentStatus(billId: string): Promise<Payment
   };
 }
 
+/**
+ * `scope` is the caller's bill row scope (`billScopeFor`; null = SUPER_ADMIN). It is
+ * checked by loading the bill first, before the existing-order shortcut — that branch
+ * answers with the order's status and amount, so checking only on the create path
+ * would still disclose another clinic's payment. Out of scope is a 404 from getBill.
+ */
 export async function ensureSessionPayment(
   billId: string,
   method: PaymentMethod = 'xendit',
+  scope: BillScope | null = null,
 ): Promise<{ checkoutUrl: string | null; status: PaymentStatus; expectedAmount: number; chargedAmount: number; chargedCurrency: string }> {
+  const bill = await getBill(Number(billId), scope);
+
   const existing = await getPaymentOrderByBill(billId);
   if (existing) {
     const reconciled = await reconcileIfStale(existing);
@@ -550,8 +704,8 @@ export async function ensureSessionPayment(
     // failed/expired/cancelled — fall through and create a fresh order.
   }
 
-  const bill = await getBill(Number(billId));
   const { expectedAmount, items, taxes } = computeSessionAmountFromBill(bill);
+  const usd: UsdCharge | null = method === 'xendit' ? null : await gateSessionUsdCharge(bill, items, taxes);
   const patientUser = await prisma.kcUser.findUnique({
     where: { id: BigInt(bill.patient.id) },
     select: { displayName: true, userEmail: true },
@@ -568,7 +722,9 @@ export async function ensureSessionPayment(
     returnUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-success`,
     cancelUrl: `${getPublicAppUrl()}/staff/bills/${billId}/payment-cancel`,
     method,
+    ...(usd ? { charge: usd.charge } : {}),
   });
+  if (usd) await assertChargedAsQuoted(wcOrder, usd.quote);
 
   await createPaymentOrder({
     source: 'session',
@@ -579,7 +735,7 @@ export async function ensureSessionPayment(
     gateway: method,
     chargedAmount: wcOrder.chargedAmount,
     chargedCurrency: wcOrder.chargedCurrency,
-    fxRate: wcOrder.fxRate,
+    fxRate: usd ? Number(usd.quote.effectiveFxRate) : wcOrder.fxRate,
   });
   await jobs.enqueue({
     hook: 'praktiqu_payment_auto_cancel',

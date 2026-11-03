@@ -35,13 +35,21 @@ export type WpDoctorService = {
   clinicId: bigint;
   name: string;
   type: string | null;
+  /** Raw JSON snapshot KiviCare keeps in `wp_kc_services.category`. */
+  category: string | null;
   /** The doctor's charge; overrides the service's base price. */
   charges: string | null;
   durationMinutes: number | null;
   isPublic: boolean;
   isActive: boolean;
   telemedService: string | null;
-  /** Doctor-specific display name, when set. */
+  /**
+   * KiviCare's `service_name_alias`. Despite the column name this is NOT a display
+   * name: KiviCare fills it with the category's static-data value (a slug such as
+   * `couplefamilysessionbahasaindonesia`) and only ever shows it, de-underscored, as the
+   * category of a telemed service. Showing it as the service name hid the real name —
+   * "Couple/Family Session (2 Orang) - 2 Jam" reached patients as that slug.
+   */
   nameAlias: string | null;
 };
 
@@ -160,7 +168,7 @@ export async function listServicesForDoctor(opts: {
 
   const services = await prisma.kcService.findMany({
     where: { id: { in: mappings.map((m) => m.serviceId) } },
-    select: { id: true, name: true, type: true },
+    select: { id: true, name: true, type: true, category: true },
   });
   const byId = new Map(services.map((s) => [s.id.toString(), s]));
 
@@ -177,6 +185,7 @@ export async function listServicesForDoctor(opts: {
         clinicId: m.clinicId,
         name: service.name,
         type: service.type,
+        category: service.category,
         charges: m.charges,
         durationMinutes: m.duration ?? null,
         isPublic: m.isPublic === 1,
@@ -211,6 +220,7 @@ export type ClinicServiceRow = {
   telemedService: string | null;
   isPublic: boolean;
   isActive: boolean;
+  /** The category slug, not a name — see WpDoctorService.nameAlias. */
   nameAlias: string | null;
 };
 

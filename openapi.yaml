@@ -12404,6 +12404,125 @@ paths:
               required:
               - email
               - password
+  /praktiqu/v1/clinics/{id}/payment-settings:
+    get:
+      tags:
+      - praktiqu
+      summary: GET /praktiqu/v1/clinics/{id}/payment-settings
+      operationId: get_praktiqu_v1_clinics_id_payment_settings
+      description: >-
+        Diagnostics only — Next.js reads the option straight from `wp_options`. Answers the decoded
+        `praktiqu_endpoint_clinic_{id}_payment` option (snake_case storage keys), or `settings: null` when it is
+        missing or not a JSON object.
+      responses:
+        '200':
+          description: The stored settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClinicPaymentSettingsResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+      security:
+      - serviceToken: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      tags:
+      - praktiqu
+      summary: PUT /praktiqu/v1/clinics/{id}/payment-settings
+      operationId: put_praktiqu_v1_clinics_id_payment_settings
+      description: >-
+        Called by Next.js (`PUT /api/v1/practices/{id}/payment-settings`), never by a browser. Re-validates every
+        field (rate 1,000–100,000 with at most 2 decimals, markup 0–100 with at most 2 decimals, fee an integer
+        0–10,000,000, `updated_by` a positive integer or null) and requires a usable rate — the clinic's or the
+        global `praktiqu_endpoint_paypal_idr_rate` — when `international` is true. Stores the whole object as a
+        JSON string (`update_option(..., wp_json_encode($data), false)`, autoload off), stamps `updated_at`
+        itself, and treats an identical re-save as success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Every key is required. Other keys are ignored.
+              properties:
+                international:
+                  type: boolean
+                fx_rate:
+                  type: number
+                  nullable: true
+                markup_percent:
+                  type: number
+                  nullable: true
+                fixed_fee_idr:
+                  type: integer
+                  nullable: true
+                updated_by:
+                  type: integer
+                  nullable: true
+                  description: '`wp_users.ID` of the editor, as sent by Next.js; null when the editor has no WordPress link.'
+              required:
+              - international
+              - fx_rate
+              - markup_percent
+              - fixed_fee_idr
+              - updated_by
+            example:
+              international: true
+              fx_rate: 18000
+              markup_percent: 10
+              fixed_fee_idr: 25000
+              updated_by: 123
+      responses:
+        '200':
+          description: Saved; same shape as GET
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClinicPaymentSettingsResponse'
+        '400':
+          description: '`invalid_settings` — a field failed validation'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WpRestError'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          description: '`clinic_not_found` — no `wp_kc_clinics` row with that id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WpRestError'
+        '422':
+          description: '`fx_rate_required` — `international` is true and neither the clinic nor the global option has a usable rate'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WpRestError'
+        '500':
+          description: '`save_failed` — `update_option` failed and the stored value differs'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WpRestError'
+      security:
+      - serviceToken: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
   /praktiqu/v1/health:
     get:
       tags:
@@ -12659,6 +12778,50 @@ components:
           schema:
             $ref: '#/components/schemas/Envelope'
   schemas:
+    ClinicPaymentSettingsResponse:
+      type: object
+      properties:
+        clinicId:
+          type: integer
+          example: 4
+        settings:
+          type: object
+          nullable: true
+          description: The stored option, decoded. null when there is none.
+          properties:
+            international:
+              type: boolean
+            fx_rate:
+              type: number
+              nullable: true
+            markup_percent:
+              type: number
+              nullable: true
+            fixed_fee_idr:
+              type: integer
+              nullable: true
+            updated_at:
+              type: string
+              format: date-time
+            updated_by:
+              type: integer
+              nullable: true
+      required:
+      - clinicId
+      - settings
+    WpRestError:
+      type: object
+      description: A WordPress REST error (`WP_Error`).
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            status:
+              type: integer
     Envelope:
       type: object
       properties:

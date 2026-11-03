@@ -27,8 +27,9 @@ final class REST_Controller
     private Doctors $doctors;
     private Encounters $encounters;
     private ClinicalRecords $clinical_records;
+    private ClinicAdmins $clinic_admins;
 
-    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors, Encounters $encounters, ClinicalRecords $clinical_records)
+    public function __construct(Service $service, Jobs $jobs, Payments $payments, Media $media, Patients $patients, Appointments $appointments, Receptionists $receptionists, Doctors $doctors, Encounters $encounters, ClinicalRecords $clinical_records, ClinicAdmins $clinic_admins)
     {
         $this->service = $service;
         $this->jobs = $jobs;
@@ -40,6 +41,7 @@ final class REST_Controller
         $this->doctors = $doctors;
         $this->encounters = $encounters;
         $this->clinical_records = $clinical_records;
+        $this->clinic_admins = $clinic_admins;
     }
 
     public function register(): void
@@ -149,6 +151,20 @@ final class REST_Controller
             ],
         ]);
 
+        // POST /praktiqu/v1/appointments/{id}/reschedule — move to a new slot under the
+        // professional's schedule lock (Schedule_Write::move), then sync Meet/Calendar
+        register_rest_route($ns, '/appointments/(?P<id>\d+)/reschedule', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_reschedule_appointment'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id'         => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+                'start_date' => ['required' => true, 'type' => 'string'],
+                'start_time' => ['required' => true, 'type' => 'string'],
+                'expected'   => ['required' => true, 'type' => 'object'],
+            ],
+        ]);
+
         // POST /praktiqu/v1/appointments/{id}/status — change status; 0 cancels
         register_rest_route($ns, '/appointments/(?P<id>\d+)/status', [
             'methods'             => \WP_REST_Server::CREATABLE,
@@ -158,6 +174,12 @@ final class REST_Controller
                 'id'     => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
                 // 0=CANCELLED 1=BOOKED 2=PENDING 3=CHECK_OUT 4=CHECK_IN (KCAppointment.php:41-45)
                 'status' => ['required' => true, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
+                // { gateway, wc_order_id, transaction_id } when status 1 confirms a paid
+                // booking; makes PENDING → BOOKED fire kc_appointment_payment_completed.
+                'payment' => ['required' => false, 'type' => 'object'],
+                // Compare-and-set (1.8.4): write only if the row still has this status;
+                // 409 praktiqu_status_conflict otherwise. Sent by psychologist approval.
+                'expect_status' => ['required' => false, 'type' => 'integer', 'enum' => [0, 1, 2, 3, 4]],
             ],
         ]);
 
@@ -239,6 +261,21 @@ final class REST_Controller
                 // receptionistCreateSchema upstream — declared here without its own
                 // bounds so the two cannot drift apart.
                 'password'  => ['required' => false, 'type' => 'string'],
+            ],
+        ]);
+
+        // POST /praktiqu/v1/clinic-admins — create the admin account of a clinic that has none
+        //
+        // The Next.js app writes the wp_kc_clinics row itself; the account has to come from
+        // wp_insert_user (see ClinicAdmins). Refuses a clinic that already has an admin.
+        register_rest_route($ns, '/clinic-admins', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_create_clinic_admin'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'email'     => ['required' => true, 'type' => 'string', 'format' => 'email'],
+                'name'      => ['required' => true, 'type' => 'string'],
+                'clinic_id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
             ],
         ]);
 
@@ -340,12 +377,48 @@ final class REST_Controller
             'methods'             => \WP_REST_Server::CREATABLE,
             'callback'            => [$this, 'handle_create_payment_order'],
             'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                // Only `charge` is declared (2026-10-06 international clinic design §4), as
+                // 'object' -- the jobs-route incident above was 'array' vs 'object' -- and
+                // with no nested `properties`: every nested check is done by
+                // ChargeValidator in create_order() and fails as our own 400 invalid_charge,
+                // never WP's generic rest_invalid_param. Core skips null params, so a JSON
+                // `"charge": null` is NOT rejected by this schema: create_order() rejects a
+                // present-but-null `charge` itself (400 invalid_charge), and only an absent
+                // key is the legacy/xendit path. The legacy keys (items, taxes, method, ...)
+                // stay undeclared so their loose handling does not change.
+                'charge' => ['type' => 'object', 'required' => false],
+            ],
         ]);
 
         // GET /praktiqu/v1/payments/order/{id} — verify-fallback order status
         register_rest_route($ns, '/payments/order/(?P<id>\d+)', [
             'methods'             => \WP_REST_Server::READABLE,
             'callback'            => [$this, 'handle_get_payment_order'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // GET /praktiqu/v1/clinics/{id}/payment-settings — diagnostics only; Next.js reads
+        // the option itself through KcOption (2026-10-06 international clinic design §4)
+        register_rest_route($ns, '/clinics/(?P<id>\d+)/payment-settings', [
+            'methods'             => \WP_REST_Server::READABLE,
+            'callback'            => [$this, 'handle_get_clinic_payment_settings'],
+            'permission_callback' => [Plugin::class, 'verify_service_token'],
+            'args'                => [
+                'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
+            ],
+        ]);
+
+        // PUT /praktiqu/v1/clinics/{id}/payment-settings — replace one clinic's whole object.
+        // Only `id` is declared: the body keys are checked by ClinicPaymentSettings::validate()
+        // so every failure is our own invalid_settings / fx_rate_required, never WP's generic
+        // rest_invalid_param.
+        register_rest_route($ns, '/clinics/(?P<id>\d+)/payment-settings', [
+            'methods'             => 'PUT',
+            'callback'            => [$this, 'handle_put_clinic_payment_settings'],
             'permission_callback' => [Plugin::class, 'verify_service_token'],
             'args'                => [
                 'id' => ['required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint'],
@@ -460,6 +533,19 @@ final class REST_Controller
     }
 
     /**
+     * POST /praktiqu/v1/appointments/{id}/reschedule
+     */
+    public function handle_reschedule_appointment(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $id = (int) $request->get_param('id');
+        $result = $this->appointments->reschedule($id, (array) $request->get_json_params());
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 200);
+    }
+
+    /**
      * POST /praktiqu/v1/appointments/{id}/status
      */
     public function handle_appointment_status(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
@@ -556,6 +642,18 @@ final class REST_Controller
     public function handle_create_receptionist(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
     {
         $result = $this->receptionists->create((array) $request->get_json_params(), $request);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return new \WP_REST_Response($result, 201);
+    }
+
+    /**
+     * POST /praktiqu/v1/clinic-admins
+     */
+    public function handle_create_clinic_admin(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $result = $this->clinic_admins->create((array) $request->get_json_params(), $request);
         if (is_wp_error($result)) {
             return $result;
         }
@@ -685,5 +783,74 @@ final class REST_Controller
             return $result;
         }
         return new \WP_REST_Response($result, 200);
+    }
+
+    /**
+     * GET /praktiqu/v1/clinics/{id}/payment-settings
+     *
+     * Diagnostics only. No clinic-existence check, so an option left behind by a deleted
+     * clinic is still visible here. `settings` is null when the option is absent or malformed.
+     */
+    public function handle_get_clinic_payment_settings(\WP_REST_Request $request): \WP_REST_Response
+    {
+        $clinic_id = (int) $request->get_param('id');
+        return new \WP_REST_Response([
+            'clinicId' => $clinic_id,
+            'settings' => ClinicPaymentSettings::get($clinic_id),
+        ], 200);
+    }
+
+    /**
+     * PUT /praktiqu/v1/clinics/{id}/payment-settings
+     *
+     * Body (storage keys): { international, fx_rate, markup_percent, fixed_fee_idr, updated_by }.
+     * updated_by is stored exactly as received: get_current_user_id() is always 0 on a
+     * service-token request, so the plugin never stamps the editor itself.
+     */
+    public function handle_put_clinic_payment_settings(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        $clinic_id = (int) $request->get_param('id');
+        if (!ClinicPaymentSettings::clinic_exists($clinic_id)) {
+            return new \WP_Error(
+                'clinic_not_found',
+                sprintf('Clinic %d does not exist', $clinic_id),
+                ['status' => 404]
+            );
+        }
+
+        $checked = ClinicPaymentSettings::validate(
+            (array) $request->get_json_params(),
+            get_option(ClinicPaymentSettings::GLOBAL_RATE_OPTION, '')
+        );
+        if (!$checked['ok']) {
+            return new \WP_Error(
+                $checked['code'],
+                $checked['message'],
+                [
+                    'status' => $checked['code'] === 'fx_rate_required' ? 422 : 400,
+                    'field'  => $checked['field'],
+                ]
+            );
+        }
+
+        // save() returns false on a failed write and throws when the JSON encode fails;
+        // both are the same "could not be saved" to the caller.
+        try {
+            $saved = ClinicPaymentSettings::save($clinic_id, $checked['data']);
+        } catch (\Throwable $e) {
+            $saved = false;
+        }
+        if (!$saved) {
+            return new \WP_Error(
+                'save_failed',
+                sprintf('Payment settings for clinic %d could not be saved', $clinic_id),
+                ['status' => 500]
+            );
+        }
+
+        return new \WP_REST_Response([
+            'clinicId' => $clinic_id,
+            'settings' => ClinicPaymentSettings::get($clinic_id),
+        ], 200);
     }
 }

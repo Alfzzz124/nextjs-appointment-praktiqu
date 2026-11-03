@@ -12,6 +12,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
+import { idBlock } from '../../helpers/id-blocks';
 
 /** Stand in for the praktiqu-endpoint plugin's doctor write endpoints. */
 vi.mock('@/repositories/wp/doctors.write', () => ({
@@ -43,8 +44,7 @@ const { getWeeklySchedule, setWeeklySchedule, addOffDay, listOffDays, removeOffD
 const { listAssignedServices, assignService, unassignService } =
   await import('@/services/professional/service-assignment.service');
 
-const BASE = 8_100_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('integration/professional/professional-wp.test.ts');
 const DOCTOR = BASE + 1;
 const CLINIC = BASE + 10;
 const SERVICE = BASE + 20;

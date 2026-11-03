@@ -22,6 +22,7 @@ import {
   linkReportToEncounter,
   listLinkedReportIds,
 } from '@/repositories/wp/encounter-documents.repo';
+import { idBlock } from '../helpers/id-blocks';
 
 const control: { throwForReportId: number | null } = { throwForReportId: null };
 
@@ -43,8 +44,7 @@ vi.mock('@/repositories/wp/encounter-documents.repo', async (importOriginal) => 
   };
 });
 
-const BASE = 9_200_000;
-const END = BASE + 1_000;
+const { BASE, END } = idBlock('billing/patient-medical-report-bulk-delete-partial-failure.test.ts');
 const PATIENT = BASE + 1;
 const ENCOUNTER = BASE + 2;
 const REPORT_1 = BASE + 10;

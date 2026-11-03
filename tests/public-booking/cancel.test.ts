@@ -19,16 +19,52 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
   cancelAppointment: vi.fn(),
   createAppointment: vi.fn(),
 }));
+vi.mock('@/services/payments/clinic-payment.service', () => ({
+  resolveClinicPaymentForDisplay: vi.fn(),
+}));
+vi.mock('@/services/payments/public-usd.service', () => ({
+  rowPaymentForDisplay: vi.fn(),
+}));
+vi.mock('@/lib/logging', () => ({
+  logging: {
+    audit: vi.fn().mockResolvedValue(undefined),
+    activity: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+    system: vi.fn().mockResolvedValue(undefined),
+    warn: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+const approval = vi.hoisted(() => ({ closeOnCancel: vi.fn(), publicApprovalView: vi.fn(), findApproval: vi.fn() }));
+vi.mock('@/services/approval/store', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/store')>()),
+  findApproval: (...a: unknown[]) => approval.findApproval(...a),
+}));
+vi.mock('@/services/approval/service', async (orig) => ({
+  ...(await orig<typeof import('@/services/approval/service')>()),
+  closeOnCancel: (...a: unknown[]) => approval.closeOnCancel(...a),
+  publicApprovalView: (...a: unknown[]) => approval.publicApprovalView(...a),
+}));
 
 import { findSessionById, SESSION_STATUS } from '@/repositories/wp/sessions.repo';
-import { findServiceById } from '@/repositories/wp/services.repo';
+import { findServiceById, listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { cancelAppointment } from '@/repositories/wp/appointments.write';
+import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { notInternational, type ClinicPaymentSettings } from '@/services/payments/intl-pricing';
+import { logging } from '@/lib/logging';
 import {
   cancelPublicAppointment,
   getPublicAppointmentById,
   NotCancellableError,
   AppointmentNotFoundError,
 } from '@/services/public/public-booking.service';
+
+beforeEach(() => {
+  approval.closeOnCancel.mockReset().mockResolvedValue(false);
+  approval.publicApprovalView.mockReset().mockResolvedValue(null);
+  approval.findApproval.mockReset().mockResolvedValue(null);
+});
 
 const APPOINTMENT = 5150;
 
@@ -55,6 +91,7 @@ function row(status: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findServiceById).mockResolvedValue({ id: 7n, name: 'Consultation' } as never);
+  vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(notInternational(3));
 });
 
 describe('getPublicAppointmentById', () => {
@@ -76,6 +113,9 @@ describe('getPublicAppointmentById', () => {
       professionalName: 'Dr. Smith',
       clientName: 'Jane Doe',
       clinicId: 3,
+      paymentMethods: ['xendit'],
+      usd: null,
+      approval: null,
     });
   });
 
@@ -94,6 +134,72 @@ describe('getPublicAppointmentById', () => {
     const view = await getPublicAppointmentById(APPOINTMENT);
     expect(view!.service).toBe('Service');
     expect(findServiceById).not.toHaveBeenCalled();
+  });
+});
+
+describe('public appointment view — payment fields', () => {
+  const INTL: ClinicPaymentSettings = { ...notInternational(3), international: true, methods: ['xendit', 'paypal', 'card'] };
+
+  it('runs no mapping or tax query for a clinic that cannot take PayPal', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    const view = await getPublicAppointmentById(APPOINTMENT);
+
+    expect(resolveClinicPaymentForDisplay).toHaveBeenCalledWith(3);
+    expect(listServicesForDoctor).not.toHaveBeenCalled();
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
+    expect(view).toMatchObject({ paymentMethods: ['xendit'], usd: null });
+  });
+
+  it("prices an international booking from the doctor's own charge at the booked clinic", async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
+    vi.mocked(listServicesForDoctor).mockResolvedValue([
+      { serviceId: 8n, name: 'Other', nameAlias: null, charges: '1' },
+      { serviceId: 7n, name: 'Consultation', nameAlias: 'konseling', charges: '350000' },
+    ] as never);
+    const usd = { price: '21.39', taxes: [], fee: null, total: '21.39' };
+    vi.mocked(rowPaymentForDisplay).mockResolvedValue({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
+
+    const view = await getPublicAppointmentById(APPOINTMENT);
+
+    expect(listServicesForDoctor).toHaveBeenCalledWith({ doctorId: 29n, clinicId: 3n });
+    expect(rowPaymentForDisplay).toHaveBeenCalledWith(
+      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Consultation', price: '350000' },
+      INTL,
+    );
+    expect(view).toMatchObject({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
+  });
+
+  it('offers Xendit only when the booked service is no longer mapped', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
+    vi.mocked(listServicesForDoctor).mockResolvedValue([]);
+
+    const view = await getPublicAppointmentById(APPOINTMENT);
+
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
+    expect(view).toMatchObject({ paymentMethods: ['xendit'], usd: null });
+  });
+
+  it('answers a cancel that went through with Xendit only, and logs, when the mapping read fails', async () => {
+    vi.mocked(findSessionById)
+      .mockResolvedValueOnce(row(SESSION_STATUS.PENDING))
+      .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
+    vi.mocked(resolveClinicPaymentForDisplay).mockResolvedValue(INTL);
+    const dbDown = new Error('Too many connections');
+    vi.mocked(listServicesForDoctor).mockRejectedValue(dbDown);
+
+    const view = await cancelPublicAppointment(APPOINTMENT);
+
+    expect(cancelAppointment).toHaveBeenCalledWith(APPOINTMENT);
+    expect(view).toMatchObject({ status: 'CANCELLED', paymentMethods: ['xendit'], usd: null });
+    expect(rowPaymentForDisplay).not.toHaveBeenCalled();
+    expect(logging.error).toHaveBeenCalledWith('USD price unavailable — showing rupiah and Xendit only', dbDown, {
+      resource: 'clinic',
+      resourceId: '3',
+      metadata: { doctorId: 29, serviceId: 7 },
+    });
   });
 });
 
@@ -145,5 +251,48 @@ describe('cancelPublicAppointment', () => {
       .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
 
     expect((await cancelPublicAppointment(APPOINTMENT)).status).toBe('CANCELLED');
+  });
+});
+
+describe('psychologist approval', () => {
+  it('the public view carries the approval state', async () => {
+    const view = {
+      state: 'AWAITING',
+      requestedAt: '2026-10-20T02:00:00.000Z',
+      decidedAt: null,
+      refundStatus: 'NONE',
+      isOverdue: false,
+    };
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    approval.publicApprovalView.mockResolvedValue(view);
+
+    expect((await getPublicAppointmentById(APPOINTMENT))?.approval).toEqual(view);
+  });
+
+  it('a client cancelling a booking that waits for approval puts it on the refund list', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(approval.closeOnCancel).toHaveBeenCalledWith(APPOINTMENT, null);
+  });
+
+  it('a booking approved and still being confirmed is not cancellable (no new 409 code)', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+    approval.findApproval.mockResolvedValue({ appointmentId: APPOINTMENT, state: 'APPROVED' });
+
+    await expect(cancelPublicAppointment(APPOINTMENT)).rejects.toBeInstanceOf(NotCancellableError);
+
+    expect(cancelAppointment).not.toHaveBeenCalled();
+    expect(approval.closeOnCancel).not.toHaveBeenCalled();
+  });
+
+  it('once it is BOOKED, an approved booking cancels like any other', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.BOOKED));
+    approval.findApproval.mockResolvedValue({ appointmentId: APPOINTMENT, state: 'APPROVED' });
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(cancelAppointment).toHaveBeenCalledWith(APPOINTMENT);
   });
 });

@@ -13,11 +13,11 @@ import { prisma } from '@/lib/db';
 import { assertTestDb } from '../../billing/fixtures';
 import { issueTokensForUser } from '@/services/auth/service';
 import { findWpAccountStatus } from '@/repositories/wp/account-status.repo';
+import { idBlock } from '../../helpers/id-blocks';
 
 const { POST } = await import('@/app/api/v1/auth/refresh/route');
 
-/** Test-owned range, below billing's unbounded `>= 9_000_000` cleanup. */
-const WP_ID = 8_700_001;
+const WP_ID = idBlock('integration/auth/refresh-inactive-account.test.ts').BASE + 1;
 const USER_ID = 'refresh-inactive-test-user';
 
 async function setWpStatus(userStatus: number, meta: string | null) {

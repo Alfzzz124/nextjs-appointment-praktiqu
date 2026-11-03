@@ -40,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // Non-super-admins are scoped by the service via resolveKcActor; only a
     // SUPER_ADMIN may name a clinic explicitly.
     const clinicId = clinicIdRaw !== undefined ? Number(clinicIdRaw) : undefined;
-    const rows = await exportClients({
+    const rows = await exportClients(actor, {
       clinicId: Number.isFinite(clinicId) ? clinicId : undefined,
       status: parsedStatus.data,
     });

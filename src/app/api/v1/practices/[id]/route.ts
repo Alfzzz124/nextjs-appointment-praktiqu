@@ -1,51 +1,40 @@
 /**
- * GET  /api/v1/practices/:id          — get a practice
- * PATCH /api/v1/practices/:id         — update practice (settings)
- * DELETE /api/v1/practices/:id        — deactivate (not a hard delete)
+ * GET    /api/v1/practices/:id — get a practice (SUPER_ADMIN; CLINIC_ADMIN for their own)
+ * PATCH  /api/v1/practices/:id — update its profile; a CLINIC_ADMIN may not send `status`
+ * DELETE /api/v1/practices/:id — SUPER_ADMIN: deactivate (status 0); with ?permanent=true,
+ *                                 delete a clinic that has no data at all
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRoles } from '@/lib/auth/route-guards';
-import { KcError } from '@/lib/kc-response';
+import { forbidden } from '@/lib/problem-details';
+import { practiceProblem } from '@/lib/practice-problems';
 import {
-  PracticeNotFoundError,
-  PracticeValidationError,
   assertPracticeInScope,
+  deletePracticePermanently,
   getPractice,
+  setPracticeStatus,
   updatePractice,
 } from '@/services/practice/service';
 import { logging } from '@/lib/logging';
 
 type Params = { params: { id: string } };
 
+const internalError = () =>
+  NextResponse.json({ type: '/errors/internal', title: 'Internal Server Error', status: 500 }, { status: 500 });
+
 /** GET /api/v1/practices/:id */
-export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
-  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
   if ('response' in gate) return gate.response;
 
   try {
     await assertPracticeInScope(gate.actor, Number(params.id));
-    const dto = await getPractice(Number(params.id));
-    return NextResponse.json({ data: dto }, { status: 200 });
+    return NextResponse.json({ data: await getPractice(Number(params.id)) }, { status: 200 });
   } catch (err) {
-    if (err instanceof PracticeNotFoundError) {
-      return NextResponse.json(
-        {
-          type: '/errors/resource-not-found',
-          title: 'Practice not found',
-          status: 404,
-          detail: `Practice ${err.id} does not exist.`,
-        },
-        { status: 404 },
-      );
-    }
-    if (err instanceof KcError) {
-      return NextResponse.json({ type: '/errors/forbidden', title: 'Forbidden', status: err.httpStatus, detail: err.message }, { status: err.httpStatus });
-    }
+    const mapped = practiceProblem(err);
+    if (mapped) return mapped;
     await logging.error('getPractice failed', err, { path: `/api/v1/practices/${params.id}` });
-    return NextResponse.json(
-      { type: '/errors/internal', title: 'Internal Server Error', status: 500 },
-      { status: 500 },
-    );
+    return internalError();
   }
 }
 
@@ -59,73 +48,56 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
     body = await req.json();
   } catch {
     return NextResponse.json(
-      { type: '/errors/bad-request', title: 'Invalid JSON', status: 400 },
+      { type: '/errors/bad-request', title: 'Invalid JSON', status: 400, code: 'invalid_json' },
       { status: 400 },
     );
   }
 
   try {
     await assertPracticeInScope(gate.actor, Number(params.id));
-    const dto = await updatePractice(Number(params.id), body, { actorId: null });
+    // Switching a clinic on or off is the super admin's call; a clinic admin could otherwise
+    // lock themselves (and their patients' bookings) out.
+    if (gate.actor.role !== 'SUPER_ADMIN' && body !== null && typeof body === 'object' && 'status' in body) {
+      return NextResponse.json(
+        forbidden('status_change_forbidden', 'Only a super admin can change a clinic status.'),
+        { status: 403 },
+      );
+    }
+    const dto = await updatePractice(Number(params.id), body, { actorId: gate.actor.id });
     return NextResponse.json({ data: dto }, { status: 200 });
   } catch (err) {
-    if (err instanceof PracticeNotFoundError) {
-      return NextResponse.json(
-        {
-          type: '/errors/resource-not-found',
-          title: 'Practice not found',
-          status: 404,
-          detail: `Practice ${err.id} does not exist.`,
-        },
-        { status: 404 },
-      );
-    }
-    if (err instanceof PracticeValidationError) {
-      return NextResponse.json(
-        {
-          type: '/errors/validation-error',
-          title: 'Validation Error',
-          status: 422,
-          detail: err.message,
-          issues: err.issues,
-        },
-        { status: 422 },
-      );
-    }
-    if (err instanceof KcError) {
-      return NextResponse.json({ type: '/errors/forbidden', title: 'Forbidden', status: err.httpStatus, detail: err.message }, { status: err.httpStatus });
-    }
+    const mapped = practiceProblem(err);
+    if (mapped) return mapped;
     await logging.error('updatePractice failed', err, { path: `/api/v1/practices/${params.id}`, method: 'PATCH' });
-    return NextResponse.json(
-      { type: '/errors/internal', title: 'Internal Server Error', status: 500 },
-      { status: 500 },
-    );
+    return internalError();
   }
 }
 
-/** DELETE /api/v1/practices/:id — soft deactivate (status = 0) */
-export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
-  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+/**
+ * DELETE /api/v1/practices/:id — deactivate (status = 0).
+ * DELETE /api/v1/practices/:id?permanent=true — delete, only when the clinic has no data
+ * (409 clinic_not_empty with the counts otherwise).
+ */
+export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const gate = await requireRoles(req, ['SUPER_ADMIN']);
   if ('response' in gate) return gate.response;
 
+  const permanent = req.nextUrl.searchParams.get('permanent') === 'true';
   try {
     await assertPracticeInScope(gate.actor, Number(params.id));
-    await updatePractice(Number(params.id), { status: 0 }, { actorId: null });
+    if (permanent) {
+      await deletePracticePermanently(Number(params.id), { actorId: gate.actor.id });
+    } else {
+      await setPracticeStatus(Number(params.id), 0, { actorId: gate.actor.id });
+    }
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof PracticeNotFoundError) {
-      return NextResponse.json(
-        { type: '/errors/resource-not-found', title: 'Practice not found', status: 404 },
-        { status: 404 },
-      );
-    }
-    if (err instanceof KcError) {
-      return NextResponse.json({ type: '/errors/forbidden', title: 'Forbidden', status: err.httpStatus, detail: err.message }, { status: err.httpStatus });
-    }
-    await logging.error('deactivatePractice failed', err, { path: `/api/v1/practices/${params.id}`, method: 'DELETE' });
-    return NextResponse.json(
-      { type: '/errors/internal', title: 'Internal Server Error', status: 500 },
-      { status: 500 },
-    );
+    const mapped = practiceProblem(err);
+    if (mapped) return mapped;
+    await logging.error(permanent ? 'deletePractice failed' : 'deactivatePractice failed', err, {
+      path: `/api/v1/practices/${params.id}`,
+      method: 'DELETE',
+    });
+    return internalError();
   }
 }

@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedClinicAdmin, seedAppointment, seedBill, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedAppointment, seedBill, cleanup, useIdBlock } from './fixtures';
 import {
   getStatistics, getRecentPayments, getTopProfessionals,
   getUpcomingSessions, getRevenueChart,
 } from '@/services/billing/dashboard.service';
 
-const CLINIC = 9_000_001, ADMIN = 9_000_002;
-const DOCTOR = 9_000_010, PATIENT_A = 9_000_020, PATIENT_B = 9_000_021;
+const { BASE } = useIdBlock('billing/dashboard.service.test.ts');
+
+const CLINIC = BASE + 1, ADMIN = BASE + 2;
+const DOCTOR = BASE + 10, PATIENT_A = BASE + 20, PATIENT_B = BASE + 21;
 
 const scopeClinic = { clinicId: BigInt(CLINIC) };
 const params = { limit: 10, period: 'month' as const };
@@ -20,19 +22,19 @@ describe('dashboard.service', () => {
 
       // Three appointments in-scope: two active (BOOKED/PENDING), one cancelled.
       // Upcoming dates are in the future so getUpcomingSessions picks them up.
-      await seedAppointment({ id: 9_000_400, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT_A, status: 1, startDate: '2027-01-10' });
-      await seedAppointment({ id: 9_000_401, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT_B, status: 2, startDate: '2027-01-11' });
-      await seedAppointment({ id: 9_000_402, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT_A, status: 0, startDate: '2027-01-12' });
+      await seedAppointment({ id: BASE + 400, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT_A, status: 1, startDate: '2027-01-10' });
+      await seedAppointment({ id: BASE + 401, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT_B, status: 2, startDate: '2027-01-11' });
+      await seedAppointment({ id: BASE + 402, clinicId: CLINIC, doctorId: DOCTOR, patientId: PATIENT_A, status: 0, startDate: '2027-01-12' });
 
       // Two bills in-scope (clinic_id = CLINIC), total revenue 300.00.
-      await seedBill({ id: 9_000_600, clinicId: CLINIC, actualAmount: '100.00', createdAt: '2026-07-10 12:00:00' });
-      await seedBill({ id: 9_000_601, clinicId: CLINIC, actualAmount: '200.00', createdAt: '2026-08-10 12:00:00' });
+      await seedBill({ id: BASE + 600, clinicId: CLINIC, actualAmount: '100.00', createdAt: '2026-07-10 12:00:00' });
+      await seedBill({ id: BASE + 601, clinicId: CLINIC, actualAmount: '200.00', createdAt: '2026-08-10 12:00:00' });
 
       // One in-scope UNPAID bill: billed, but not revenue.
-      await seedBill({ id: 9_000_603, clinicId: CLINIC, actualAmount: '50.00', createdAt: '2026-08-12 12:00:00', paymentStatus: 'unpaid' });
+      await seedBill({ id: BASE + 603, clinicId: CLINIC, actualAmount: '50.00', createdAt: '2026-08-12 12:00:00', paymentStatus: 'unpaid' });
 
       // One out-of-scope bill (different clinic) that must NOT count.
-      await seedBill({ id: 9_000_602, clinicId: CLINIC + 999, actualAmount: '999.00', createdAt: '2026-07-15 12:00:00' });
+      await seedBill({ id: BASE + 602, clinicId: CLINIC + 999, actualAmount: '999.00', createdAt: '2026-07-15 12:00:00' });
     });
     afterAll(cleanup);
 
@@ -58,18 +60,18 @@ describe('dashboard.service', () => {
     it('getUpcomingSessions returns future BOOKED/PENDING appointments', async () => {
       const { sessions } = await getUpcomingSessions(params, scopeClinic);
       const ids = sessions.map((s) => s.id);
-      expect(ids).toContain(9_000_400);
-      expect(ids).toContain(9_000_401);
+      expect(ids).toContain(BASE + 400);
+      expect(ids).toContain(BASE + 401);
       // cancelled appointment excluded
-      expect(ids).not.toContain(9_000_402);
+      expect(ids).not.toContain(BASE + 402);
     });
 
     it('getRecentPayments returns scoped bills only', async () => {
       const { payments } = await getRecentPayments(params, scopeClinic);
       const ids = payments.map((p) => p.id);
-      expect(ids).toContain(9_000_600);
-      expect(ids).toContain(9_000_601);
-      expect(ids).not.toContain(9_000_602);
+      expect(ids).toContain(BASE + 600);
+      expect(ids).toContain(BASE + 601);
+      expect(ids).not.toContain(BASE + 602);
     });
 
     it('getRevenueChart buckets scoped revenue', async () => {

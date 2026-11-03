@@ -18,9 +18,9 @@ import {
   prepareUnlinkBatch,
   unlinkReport,
 } from '@/repositories/wp/encounter-documents.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-const BASE = 8_800_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-encounter-documents.repo.test.ts');
 
 const ENCOUNTER = BASE + 1;
 const OTHER_ENCOUNTER = BASE + 2;
@@ -96,7 +96,7 @@ describe('encounter document links', () => {
   });
 
   it('recognizes a report id already stored as a JSON string and does not duplicate it', async () => {
-    // Seed a row in the "other" shape: fields_data = '"8800013"' rather than '8800013'.
+    // Seed a row in the "other" shape: fields_data = '"8810013"' rather than '8810013'.
     await prisma.$executeRawUnsafe(
       `INSERT INTO wp_kc_custom_fields_data (module_type, module_id, fields_data, field_id, created_at)
        VALUES (?, ?, ?, NULL, NOW())`,

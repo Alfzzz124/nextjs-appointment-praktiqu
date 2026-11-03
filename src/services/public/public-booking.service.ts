@@ -17,7 +17,8 @@
  * everyone but us. See docs/architecture/shadow-tables-audit.md §6 D1.
  */
 import { z } from 'zod';
-import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
+import { logging } from '@/lib/logging';
+import { isWpSlotTaken, WpConfigError, WpEndpointError, type PaymentMethod } from '@/lib/wp-endpoint';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { isTooSoon } from '@/services/booking/booking-policy';
 import { toMinutes } from '@/services/booking/slot-math';
@@ -35,6 +36,16 @@ import {
   findSessionById,
   fromKcStatus,
 } from '@/repositories/wp/sessions.repo';
+import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
+import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
+import {
+  closeOnCancel,
+  isBeingConfirmed,
+  publicApprovalView,
+  type PublicApprovalView,
+} from '@/services/approval/service';
+import { findApproval } from '@/services/approval/store';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -52,6 +63,11 @@ export const createPublicAppointmentSchema = z.object({
   clientMobile: z.string().min(1).max(32),
   notes: z.string().max(1000).optional(),
   holdKey: z.string().min(1),
+  // Optional: which of the professional's clinics to book into. Staff manual booking
+  // sends its own clinic; the public pages send none and let the service mapping
+  // decide. Declared so it survives parsing — z.object strips unknown keys, and an
+  // undeclared clinicId used to vanish here without a word.
+  clinicId: z.coerce.number().int().positive().optional(),
 });
 export type CreatePublicAppointmentInput = z.infer<typeof createPublicAppointmentSchema>;
 
@@ -167,6 +183,14 @@ export interface CreatedAppointment {
    * admins never saw them (2026-09-25 FE audit, BK-14).
    */
   clinicId: number;
+  /**
+   * How this booking may be paid, and its USD figures (spec §3). Authoritative for the
+   * success screen: computed from the booked clinic, service and the doctor's own price —
+   * the numbers `initiatePublicPayment` charges. `usd` is null unless the clinic is
+   * international with a usable rate and the booking is not free.
+   */
+  paymentMethods: PaymentMethod[];
+  usd: PublicUsdView | null;
   token: string;
 }
 
@@ -261,17 +285,25 @@ async function resolvePatient(
   try {
     // No password: WordPress generates one and the kc_patient_save listener mails it,
     // which is how a guest gets an account they can later log into.
+    //
+    // adoptExisting: an address that already has an ordinary account (a WooCommerce
+    // `customer` — four such on production, 2026-10-19) is missed by the role-filtered
+    // lookup above, and a plain create answers 409. That locked those clients out of
+    // booking entirely, including when clinic staff booked for them. The plugin now
+    // adds the patient role to that account — the same "re-use by email" this function
+    // already does for patients. Staff accounts still answer 409, handled below.
     const created = await createPatient({
       email: input.clientEmail,
       firstName,
       lastName,
       contactNumber: input.clientMobile,
       clinicId,
+      adoptExisting: true,
     });
     return created.id;
   } catch (err) {
-    // 409 here means the address exists but is not a patient — findPatientByEmail is
-    // role-filtered, so the two checks disagreeing is exactly that case.
+    // 409 here means the address belongs to a staff account (psikolog, admin, editor)
+    // the plugin refused to adopt — or to any account, on a plugin older than 1.8.2.
     if (err instanceof WpEndpointError && err.status === 409) {
       throw new EmailConflictError('That email is already registered to another account');
     }
@@ -301,15 +333,22 @@ export async function createPublicAppointment(
   // enforces the same constraint, so a guessed service id cannot book a private service.
   const offered = await listServicesForDoctor({
     doctorId: BigInt(input.professionalId),
+    clinicId: input.clinicId !== undefined ? BigInt(input.clinicId) : undefined,
     publicOnly: true,
   });
   const service = offered.find((s) => Number(s.serviceId) === input.serviceId && s.isActive);
   if (!service) {
-    throw new ServiceNotFoundError('Service not found for this professional');
+    throw new ServiceNotFoundError(
+      input.clinicId !== undefined
+        ? 'Service not found for this professional at this clinic'
+        : 'Service not found for this professional',
+    );
   }
 
   // The clinic comes from the doctor↔service mapping rather than the doctor: a doctor
   // may work at several clinics, and the service they were booked for says which.
+  // A caller-named clinic narrows the mappings above, so it can only pick one of the
+  // professional's real clinics, never add one.
   const clinicId = Number(service.clinicId);
   if (!clinicId) {
     throw new AppointmentInsertError('Professional is not attached to a practice');
@@ -381,6 +420,11 @@ export async function createPublicAppointment(
       serviceIds: [input.serviceId],
     });
   } catch (err) {
+    // Another booking took the slot after the check above. Same answer as that check.
+    if (isWpSlotTaken(err)) {
+      slotHoldService.consume(input.holdKey);
+      throw new SlotConflictError('Slot no longer available');
+    }
     // The hold is deliberately NOT consumed: nothing was written, so the slot is
     // still the guest's to take on the retry the route is about to invite.
     throw asUpstreamWriteError(err, 'create_appointment');
@@ -391,15 +435,30 @@ export async function createPublicAppointment(
   const professionalName =
     [doctor.firstName, doctor.lastName].filter(Boolean).join(' ').trim() || doctor.displayName;
 
+  // Never throws: the appointment is already written, so a failed read shows rupiah and
+  // Xendit only. A throw here would also make the route's withRetry book a second time.
+  const { paymentMethods, usd } = await rowPaymentForDisplay(
+    {
+      clinicId,
+      doctorId: input.professionalId,
+      serviceId: input.serviceId,
+      name: service.name,
+      price: service.charges ?? '0',
+    },
+    await resolveClinicPaymentForDisplay(clinicId),
+  );
+
   return {
     id: created.id,
     status: fromKcStatus(created.status),
     date: input.date,
     startTime: startTime.slice(0, 5),
-    service: service.nameAlias ?? service.name,
+    service: service.name,
     professionalName,
     clientName: input.clientName,
     clinicId,
+    paymentMethods,
+    usd,
     token: signAppointmentToken(created.id),
   };
 }
@@ -418,6 +477,11 @@ export interface PublicAppointmentView {
   clientName: string;
   /** See CreatedAppointment.clinicId. */
   clinicId: number;
+  /** See CreatedAppointment.paymentMethods. */
+  paymentMethods: PaymentMethod[];
+  usd: PublicUsdView | null;
+  /** The psychologist-approval state, when this booking waits for (or was decided by) its psychologist. */
+  approval: PublicApprovalView | null;
 }
 
 export class AppointmentNotFoundError extends Error {
@@ -440,9 +504,57 @@ async function serviceNameFor(serviceIds: number[]): Promise<string> {
   return service?.name ?? 'Service';
 }
 
+/**
+ * `paymentMethods` + `usd` for an existing booking, priced exactly as
+ * `initiatePublicPayment` prices it: the doctor's own charge for the booked service at
+ * the booked clinic. A clinic that cannot take PayPal costs no mapping or tax query.
+ */
+async function bookingPayment(booking: {
+  clinicId: number;
+  professionalId: number;
+  serviceIds: number[];
+}): Promise<RowPayment> {
+  const settings = await resolveClinicPaymentForDisplay(booking.clinicId);
+  const serviceId = booking.serviceIds[0];
+  if (!settings.methods.includes('paypal') || serviceId === undefined) {
+    return { paymentMethods: [...XENDIT_ONLY], usd: null };
+  }
+
+  let offered: Awaited<ReturnType<typeof listServicesForDoctor>>;
+  try {
+    offered = await listServicesForDoctor({
+      doctorId: BigInt(booking.professionalId),
+      clinicId: BigInt(booking.clinicId),
+    });
+  } catch (err) {
+    // Display only, like rowPaymentForDisplay: a cancel has already gone through the
+    // plugin by the time toView runs, so a failed read must not answer it with a 500.
+    await logging.error('USD price unavailable — showing rupiah and Xendit only', err, {
+      resource: 'clinic',
+      resourceId: String(booking.clinicId),
+      metadata: { doctorId: booking.professionalId, serviceId },
+    });
+    return { paymentMethods: [...XENDIT_ONLY], usd: null };
+  }
+  const mapping = offered.find((s) => Number(s.serviceId) === serviceId);
+  if (!mapping) return { paymentMethods: [...XENDIT_ONLY], usd: null };
+
+  return rowPaymentForDisplay(
+    {
+      clinicId: booking.clinicId,
+      doctorId: booking.professionalId,
+      serviceId,
+      name: mapping.name,
+      price: mapping.charges ?? '0',
+    },
+    settings,
+  );
+}
+
 async function toView(id: number): Promise<PublicAppointmentView | null> {
   const row = await findSessionById(id);
   if (!row) return null;
+  const { paymentMethods, usd } = await bookingPayment(row);
 
   return {
     id: row.id,
@@ -453,6 +565,9 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
     professionalName: row.professionalName,
     clientName: row.clientName,
     clinicId: row.clinicId,
+    paymentMethods,
+    usd,
+    approval: await publicApprovalView(row),
   };
 }
 
@@ -476,10 +591,19 @@ export async function cancelPublicAppointment(id: number): Promise<PublicAppoint
   if (!CANCELLABLE_STATUSES.includes(current.status)) {
     throw new NotCancellableError();
   }
+  // Approved by the psychologist and on its way to BOOKED: a cancel now would drop the
+  // payment with no refund flag. Not cancellable for the moment — the existing answer,
+  // because a public endpoint never answers a new 409.
+  if (current.status === SESSION_STATUS.PENDING && isBeingConfirmed(current.status, await findApproval(id))) {
+    throw new NotCancellableError();
+  }
 
   // Through the plugin: cancelling drives the cancellation email, telemed teardown and
   // Pro's followup cancellation. It also writes status 0 — CANCELLED, not 1.
   await cancelAppointment(id);
+  // A paid booking that waited for its psychologist: the client withdrew and the money is
+  // in, so it joins the refund list for the clinic to settle.
+  await closeOnCancel(id, null);
 
   const updated = await toView(id);
   if (!updated) throw new AppointmentNotFoundError();

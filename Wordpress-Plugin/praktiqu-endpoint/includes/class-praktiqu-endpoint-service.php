@@ -23,8 +23,10 @@ final class Service
      * a WP_Error with a code on failure.
      *
      * Failure codes (per 001-auth-foundation/spec.md):
-     *   - 'invalid_credentials' (401): wrong email or password
-     *   - 'inactive'           (403): user meta `praktiqu_user_status` is not 'active'
+     *   - 'invalid_credentials' (401): wrong email or password, INCLUDING a wrong
+     *                              password for an inactive or blocked account
+     *   - 'inactive'           (403): correct password, but user meta `praktiqu_user_status`
+     *                              is not 'active'
      *                              (we use the WP `user_status` field for inactive accounts
      *                              and additionally a custom usermeta `praktiqu_user_status`
      *                              that admins can toggle without deactivating the WP account)
@@ -43,15 +45,23 @@ final class Service
             return new \WP_Error('invalid_credentials', 'Invalid email or password.', ['status' => 401]);
         }
 
+        // Password FIRST, status second (SEC-9). The status check used to come first, so
+        // an inactive or blocked account answered 403 'inactive' to ANY password: anyone
+        // holding a list of addresses could learn which accounts exist and are
+        // deactivated without knowing a single password. It also skipped the hash, which
+        // made the answer measurably faster than a real password check. Now a wrong
+        // password gets the same 401 whatever the account's state, every path runs
+        // exactly one password check, and only the account's owner learns it is inactive.
+        //
+        // Check the password using WP's password hashing (PHPASS / bcrypt).
+        if (!wp_check_password($password, $user->user_pass, $user->ID)) {
+            return new \WP_Error('invalid_credentials', 'Invalid email or password.', ['status' => 401]);
+        }
+
         // Active status check (custom usermeta set by PraktiQU admin UI).
         $praktiqu_status = (string) get_user_meta($user->ID, 'praktiqu_user_status', true);
         if ($praktiqu_status !== '' && $praktiqu_status !== 'active') {
             return new \WP_Error('inactive', 'Account is inactive.', ['status' => 403]);
-        }
-
-        // Check the password using WP's password hashing (PHPASS / bcrypt).
-        if (!wp_check_password($password, $user->user_pass, $user->ID)) {
-            return new \WP_Error('invalid_credentials', 'Invalid email or password.', ['status' => 401]);
         }
 
         return $this->build_identity($user);

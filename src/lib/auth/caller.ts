@@ -29,7 +29,9 @@ export async function callerFromRequest(req: NextRequest): Promise<Caller> {
     actor = await getActor(req);
   } catch (err) {
     if (err instanceof AuthError) {
-      throw new InterventionPlanError('forbidden', 'unauthenticated', 401);
+      // 401 = missing/invalid token. 400/403 = the active-clinic header was refused; keep
+      // its status and code so the client can tell the two apart.
+      throw new InterventionPlanError('forbidden', err.status === 401 ? 'unauthenticated' : err.message, err.status);
     }
     throw err;
   }

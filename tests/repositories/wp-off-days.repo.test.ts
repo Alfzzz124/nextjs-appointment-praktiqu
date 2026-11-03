@@ -15,10 +15,9 @@ import {
   listDoctorOffDays,
   offDaysOn,
 } from '@/repositories/wp/off-days.repo';
+import { idBlock } from '../helpers/id-blocks';
 
-/** Test-owned range. Cleanup is bounded by END — see the note in wp-patients.repo.test.ts. */
-const BASE = 8_200_000;
-const END = BASE + 100_000;
+const { BASE, END } = idBlock('repositories/wp-off-days.repo.test.ts');
 
 const DOCTOR = BigInt(BASE + 20);
 const OTHER_DOCTOR = BigInt(BASE + 21);

@@ -11,9 +11,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setAvailabilityInputSchema } from '@/services/professional/validation';
 import { getWeeklySchedule, setWeeklySchedule } from '@/services/professional/availability.service';
-import { assertTestDb, cleanup, seedClinicAdmin } from '../../billing/fixtures';
+import { assertTestDb, cleanup, seedClinicAdmin, useIdBlock } from '../../billing/fixtures';
 
-const CLINIC = 9_000_301, ADMIN = 9_000_302, DOCTOR = 9_000_310;
+const { BASE } = useIdBlock('integration/professional/availability-overlap.test.ts');
+
+const CLINIC = BASE + 301, ADMIN = BASE + 302, DOCTOR = BASE + 310;
 
 const window = (over: Record<string, unknown> = {}) => ({
   day: 'mon', startTime: '09:00', endTime: '12:00', slotDurationMinutes: 30, ...over,

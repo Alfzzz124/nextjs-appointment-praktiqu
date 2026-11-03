@@ -24,6 +24,8 @@ import { resolveKcActor, type KcActor } from '@/services/billing/kc-actor';
 import {
   CLIENT_STATUS,
   findPatientById,
+  patientInClinic,
+  patientIdsInClinic,
   listPatients,
   type ClientStatus,
   type ListPatientsQuery,
@@ -211,7 +213,10 @@ export async function enforceClientReadAccess(kc: KcActor, patient: WpPatient): 
   }
 
   if (role === 'CLINIC_ADMIN' || role === 'RECEPTIONIST') {
-    if (kc.clinicId === null || patient.clinicId !== kc.clinicId) {
+    // Any of the patient's clinics counts, the same rule the list applies. `patient.clinicId`
+    // is only their FIRST mapping, so comparing against it hid a patient of clinics A+B from
+    // clinic B right after the list had shown them there.
+    if (kc.clinicId === null || !(await patientInClinic(patient.id, kc.clinicId))) {
       throw new ClientServiceError('Forbidden: client is not in your clinic', {
         status: 403,
         code: 'forbidden',
@@ -532,6 +537,20 @@ async function bulkApplyStatus(ids: number[], status: ClientStatus): Promise<num
   return applied;
 }
 
+/**
+ * Of `ids`, the clients a bulk action by this actor may NOT touch — the same clinic rule
+ * `enforceClientReadAccess` applies to one client (any of the patient's clinics counts).
+ * SUPER_ADMIN touches any; clinic staff only their own clinic's, staff with no clinic none.
+ */
+export async function clientIdsOutsideScope(actor: AuthActor, ids: number[]): Promise<number[]> {
+  if (actor.role === 'SUPER_ADMIN') return [];
+  if (actor.role !== 'CLINIC_ADMIN' && actor.role !== 'RECEPTIONIST') return ids;
+  const kc = await resolveKcActor(actor);
+  if (kc.clinicId === null) return ids;
+  const inClinic = await patientIdsInClinic(ids, kc.clinicId);
+  return ids.filter((id) => !inClinic.has(id));
+}
+
 export async function bulkArchiveClients(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   return bulkApplyStatus(ids, CLIENT_STATUS.ARCHIVED);
@@ -547,6 +566,7 @@ export async function bulkSetClientStatus(ids: number[], status: ClientStatus): 
 /* ------------------------------------------------------------------ */
 
 export interface ClientExportParams {
+  /** Honoured for SUPER_ADMIN only; clinic staff are confined to their own clinic. */
   clinicId?: number;
   status?: ClientStatus;
 }
@@ -554,13 +574,20 @@ export interface ClientExportParams {
 /** Page size for the export sweep. */
 const EXPORT_PAGE = 100;
 
-export async function exportClients(params: ClientExportParams): Promise<Client[]> {
+export async function exportClients(actor: Actor, params: ClientExportParams): Promise<Client[]> {
+  if (!['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role)) {
+    throw new ClientServiceError('Not authorized', { status: 403, code: 'forbidden' });
+  }
+  const kc = await resolveKcActor(actor);
+  const clinicIds =
+    visibleClinics(kc) ?? (params.clinicId ? [BigInt(params.clinicId)] : undefined);
+
   const out: Client[] = [];
   for (let page = 1; ; page += 1) {
     const { items, total } = await listPatients({
       page,
       perPage: EXPORT_PAGE,
-      clinicIds: params.clinicId ? [BigInt(params.clinicId)] : undefined,
+      clinicIds,
       statuses: params.status ? [params.status] : undefined,
     });
     out.push(...items.map(toClient));

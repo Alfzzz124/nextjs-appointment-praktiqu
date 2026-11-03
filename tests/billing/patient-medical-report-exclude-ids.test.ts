@@ -5,16 +5,18 @@
  * exercise the real SQL against the test database, not mocks.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { assertTestDb, seedMedReport, cleanup } from './fixtures';
+import { assertTestDb, seedMedReport, cleanup, useIdBlock } from './fixtures';
 import { listMedReports, listMedReportsByIds } from '@/services/billing/patient-medical-report.service';
 
-const PATIENT = 9_000_910;
-const OTHER_PATIENT = 9_000_911;
+const { BASE } = useIdBlock('billing/patient-medical-report-exclude-ids.test.ts');
 
-const REPORT_A = 9_000_960;
-const REPORT_B = 9_000_961;
-const REPORT_C = 9_000_962;
-const OTHER_REPORT = 9_000_970;
+const PATIENT = BASE + 910;
+const OTHER_PATIENT = BASE + 911;
+
+const REPORT_A = BASE + 960;
+const REPORT_B = BASE + 961;
+const REPORT_C = BASE + 962;
+const OTHER_REPORT = BASE + 970;
 
 describe('patient-medical-report.service — excludeIds / listMedReportsByIds', () => {
   beforeAll(async () => {

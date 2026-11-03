@@ -11,12 +11,15 @@
  */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { prisma } from '@/lib/prisma';
-import { assertTestDb, seedAppointment } from '../../billing/fixtures';
+import { assertTestDb, seedAppointment, useIdBlock } from '../../billing/fixtures';
 import { reconcileCalendarIntents } from '@/services/integrations/google-event-sync.service';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 
-const PRO = 900501;
-const BASE = 9005010;
+// Blok id milik suite ini, dari registri di tests/helpers/id-blocks.ts. Bukan
+// angka pilihan sendiri: suite ini menghapus wp_kc_appointments per doctor_id,
+// dan blok yang tumpang tindih membuat satu suite menghapus baris suite lain.
+const { BASE } = useIdBlock('integration/integrations/event-sync-reconcile.test.ts');
+const PRO = BASE + 501;
 const WRITE_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.app.created';
 
 /** Hari ini menurut UTC, karena kolom `@db.Date` pulang-pergi sebagai tengah malam UTC. */

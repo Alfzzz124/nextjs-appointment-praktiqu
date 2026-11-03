@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { assertTestDb, seedClinicAdmin, seedEncounter, cleanup } from './fixtures';
+import { assertTestDb, seedClinicAdmin, seedEncounter, cleanup, useIdBlock } from './fixtures';
 import { createBill } from '@/services/billing/bill.service';
 
 vi.mock('puppeteer', () => ({ default: { launch: vi.fn().mockResolvedValue({
@@ -14,6 +14,8 @@ import { GET as billGet, PUT as billPut } from '@/app/api/v1/bills/[id]/route';
 import { GET as billPrintGet } from '@/app/api/v1/bills/[id]/print/route';
 import { GET as billByEncounterGet } from '@/app/api/v1/bills/by-encounter/[encounterId]/route';
 import { PUT as billItemPut, DELETE as billItemDelete } from '@/app/api/v1/bills/item/[itemId]/route';
+
+const { BASE } = useIdBlock('billing/bill-routes-scope.integration.test.ts');
 
 /**
  * Route-level proof for the row-scope fix: the reviewer's finding was specifically
@@ -30,10 +32,10 @@ function reqWith(jwt: string, url: string, init: RequestInit = {}) {
   return new NextRequest(url, { ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...(init.headers ?? {}) } });
 }
 
-const CLINIC_A = 9_022_001, CLINIC_B = 9_022_002;
-const DOCTOR_A = 9_022_011, DOCTOR_B = 9_022_012;
-const PATIENT_A = 9_022_021, PATIENT_B = 9_022_022;
-const ENC_A = 9_022_101, ENC_B = 9_022_102;
+const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
+const DOCTOR_A = BASE + 11, DOCTOR_B = BASE + 12;
+const PATIENT_A = BASE + 21, PATIENT_B = BASE + 22;
+const ENC_A = BASE + 101, ENC_B = BASE + 102;
 
 let billAId: number, billBId: number;
 

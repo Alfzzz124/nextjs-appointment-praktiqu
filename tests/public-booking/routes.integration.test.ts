@@ -56,6 +56,18 @@ describe('public catalog routes', () => {
     expect(res.status).toBe(404);
     expect((await res.json()).code).toBe('professional_not_found');
   });
+  it('GET /public/professionals/[id]/services?clinicId= → only that clinic', async () => {
+    // The staff manual-booking form books into its own clinic; offering a service
+    // the professional only has elsewhere would fail at the Book button.
+    (catalog.getPublicProfessionalServices as any).mockResolvedValue([]);
+    await professionalServices(req('http://x/api/v1/public/professionals/29/services?clinicId=5'), { params: { id: '29' } });
+    expect(catalog.getPublicProfessionalServices).toHaveBeenCalledWith(29, 5);
+  });
+  it('GET /public/professionals/[id]/services?clinicId=abc → 400, not every clinic', async () => {
+    const res = await professionalServices(req('http://x/api/v1/public/professionals/29/services?clinicId=abc'), { params: { id: '29' } });
+    expect(res.status).toBe(400);
+    expect(catalog.getPublicProfessionalServices).not.toHaveBeenCalled();
+  });
   it('GET /public/static-data → 200', async () => {
     expect((await staticData()).status).toBe(200);
   });

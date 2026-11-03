@@ -7,7 +7,7 @@ vi.mock('@/lib/auth', () => ({
     handler(req, { actor: auth.actor, params: ctx?.params ?? {} }),
 }));
 
-const scope = vi.hoisted(() => ({ scopeForRequest: vi.fn(), canWrite: vi.fn() }));
+const scope = vi.hoisted(() => ({ scopeForRequest: vi.fn(), canWrite: vi.fn(), canEdit: vi.fn() }));
 vi.mock('@/services/service-catalog/scope', async (orig) => ({
   ...(await orig<any>()),
   ...scope,
@@ -45,12 +45,14 @@ beforeEach(() => {
   auth.actor = { id: 'actor-1', role: 'CLINIC_ADMIN', practiceId: null };
   scope.scopeForRequest.mockReset();
   scope.canWrite.mockReset();
+  scope.canEdit.mockReset();
   Object.values(svc).forEach((f) => f.mockReset());
 
   scope.scopeForRequest.mockResolvedValue({
     scope: { clinicId: 3n, doctorId: null, empty: false },
   });
   scope.canWrite.mockReturnValue(true);
+  scope.canEdit.mockReturnValue(true);
   svc.getService.mockResolvedValue(summary);
   svc.updateService.mockResolvedValue(summary);
   svc.deleteService.mockResolvedValue({ ok: true });
@@ -100,11 +102,25 @@ describe('PUT /api/v1/services/{id}', () => {
     );
   });
 
-  it('403s a role that cannot write', async () => {
-    scope.canWrite.mockReturnValue(false);
+  it('403s a role that cannot edit', async () => {
+    scope.canEdit.mockReturnValue(false);
 
     expect((await PUT(req('PUT', { price: 1 }), ctx('501'))).status).toBe(403);
     expect(svc.updateService).not.toHaveBeenCalled();
+  });
+
+  it('lets a psychologist edit, handing the service layer their own-rows scope', async () => {
+    auth.actor = { id: 'actor-1', role: 'PROFESSIONAL', practiceId: null };
+    // The real canWrite says no to PROFESSIONAL; PUT must not be asking it.
+    scope.canWrite.mockReturnValue(false);
+    const own = { clinicId: null, doctorId: 34n, empty: false };
+    scope.scopeForRequest.mockResolvedValue({ scope: own });
+
+    const res = await PUT(req('PUT', { price: 650000 }), ctx('501'));
+
+    expect(res.status).toBe(200);
+    expect(scope.canEdit).toHaveBeenCalledWith('PROFESSIONAL');
+    expect(svc.updateService).toHaveBeenCalledWith(501, { price: 650000 }, own, 'actor-1');
   });
 
   it('400s a malformed body', async () => {

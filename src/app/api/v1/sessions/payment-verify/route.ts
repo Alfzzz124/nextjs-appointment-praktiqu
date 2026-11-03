@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireRoles } from '@/lib/auth/route-guards';
 import { ensureSessionPayment } from '@/services/payments/payment.service';
+import { resolveKcActor } from '@/services/billing/kc-actor';
+import { billScopeFor } from '@/services/billing/kc-permissions';
 import { badRequest } from '@/lib/problem-details';
 import { KcError } from '@/lib/kc-response';
 import type { PaymentMethod } from '@/lib/wp-endpoint';
+import { paymentErrorProblem, statusProblem } from '@/services/payments/payment-errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,13 +35,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await ensureSessionPayment(parsed.data.billId, parsed.data.method);
+    // Same row scope as GET /bills/:id. SUPER_ADMIN is unscoped and skips the WordPress
+    // lookup, which would 403 a super admin account with no wp_users link.
+    const { actor } = gate;
+    const scope = actor.role === 'SUPER_ADMIN' ? null : billScopeFor(await resolveKcActor(actor));
+    const result = await ensureSessionPayment(parsed.data.billId, parsed.data.method, scope);
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err) {
     if (err instanceof KcError) {
-      return NextResponse.json({ type: 'about:blank', title: err.message, status: err.httpStatus }, { status: err.httpStatus });
+      const p = statusProblem(err.httpStatus, err.message);
+      return NextResponse.json(p, { status: p.status });
     }
+    const paymentProblem = paymentErrorProblem(err);
+    if (paymentProblem) return NextResponse.json(paymentProblem, { status: paymentProblem.status });
     console.error('[sessions/payment-verify] unexpected error:', err);
-    return NextResponse.json({ type: 'about:blank', title: 'Internal Server Error', status: 500 }, { status: 500 });
+    const fallback = statusProblem(500, 'Internal Server Error');
+    return NextResponse.json(fallback, { status: fallback.status });
   }
 }
