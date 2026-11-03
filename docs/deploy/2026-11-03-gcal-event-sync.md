@@ -6,6 +6,28 @@ verifikasi Google yang perlu ditunggu.
 
 Rancangannya: `docs/superpowers/specs/2026-11-03-google-calendar-dua-arah-design.md`
 
+## Yang sudah dikerjakan di produksi, 2026-11-03
+
+- [x] **Langkah 1 & 2** — empat scope dicentang di Data Access oleh pemilik proyek
+- [x] **Langkah 3** — kedua berkas SQL dijalankan di `u580667380_nnmkapn`, tabel
+      dan kolomnya diverifikasi ada (lihat di bawah)
+- [x] **Skrip cron** `~/gcal-event-sync.sh` dibuat (700), sudah diuji dan benar
+      membaca `CRON_SECRET`
+- [ ] **Langkah 4** — merge BE lalu FE, dan periksa build-nya
+- [ ] **Langkah 5** — tambahkan entri cron di hPanel yang memanggil skrip itu
+- [ ] **Langkah 6** — nyalakan `PRAKTIQU_KALENDER_TULIS` untuk satu akun uji
+
+`CRON_SECRET` sudah ada di env produksi: endpoint `conflict-scan` menjawab 401,
+bukan 503.
+
+Basis datanya dipastikan dulu sebelum disentuh — tabel `google_calendar_connections`
+dan `wp_kc_appointments` sama-sama ada di sana, jadi itu memang basis data yang
+dipakai aplikasi, bukan sekadar basis data yang namanya mirip.
+
+Catatan: `google_calendar_connections` masih **0 baris**. Belum ada satu psikolog
+pun yang menghubungkan Google Calendar-nya di produksi, jadi arah baca yang sudah
+live pun belum pernah benar-benar dipakai orang.
+
 ---
 
 ## 1. Tambahkan scope di Google Cloud Console
@@ -93,16 +115,20 @@ yang sama persis dengan `google-conflict-scan.sh` yang sudah berjalan — rahasi
 lewat stdin, bukan argumen, karena `ps` bisa dibaca pengguna lain di hosting
 bersama.
 
-```bash
-#!/bin/bash
-# /home/praktiqu/gcal-event-sync.sh — chmod 700
-printf 'url = "https://endpoint.praktiqu.com/api/v1/internal/google-calendar/event-sync"\nheader = "x-cron-secret: %s"\nrequest = "POST"\nsilent\n' "$CRON_SECRET" \
-  | curl -K - -o /dev/null -w '%{http_code}\n'
-```
+Skripnya **sudah ada di server**: `~/gcal-event-sync.sh`, mode 700, dibuat
+mengikuti `~/google-conflict-scan.sh` di sebelahnya. Ia membaca `CRON_SECRET`
+saat jalan dari `.env` yang ditulis hPanel, jadi rahasianya tidak tersalin ke
+dalam skrip dan ikut berganti kalau env diubah. Rahasianya dioper lewat stdin
+(`curl -K -`), bukan argumen, karena di shared hosting `ps` terbaca pengguna lain.
 
-```
-0 * * * * /home/praktiqu/gcal-event-sync.sh >> /home/praktiqu/logs/gcal-event-sync.log 2>&1
-```
+Yang tersisa cuma menjadwalkannya. Cron di kotak ini diatur lewat **hPanel →
+Cron Jobs**, bukan `crontab -e` — crontab pengguna kosong, dan entri yang ada
+semuanya dari hPanel.
+
+- Perintah: `/home/u580667380/gcal-event-sync.sh`
+- Jadwal: sejam sekali (`0 * * * *`)
+
+Lognya di `~/gcal-event-sync.log`, satu baris per putaran, kode HTTP di depan.
 
 Endpoint-nya **gagal tertutup**: tanpa `CRON_SECRET` ia menjawab 503, bukan
 mengerjakan apa pun. Memastikan ia hidup dan terkunci:
