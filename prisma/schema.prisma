@@ -1047,6 +1047,16 @@ model GoogleCalendarConnection {
   /// unticked in the UI -- a picker only protects the people who use the picker.
   calendarIds Json
 
+  /// The separate "PraktiQu" calendar we create in their account, once.
+  ///
+  /// NULL until the write direction is switched on for this person. It is a
+  /// calendar of our own making because `calendar.app.created` grants access to
+  /// nothing else — their real calendar is structurally out of reach, not merely
+  /// left alone by convention. It also means our own events can never come back
+  /// as busy: `freebusy` reads their primary calendar, and our events are not in
+  /// it.
+  appCalendarId String? @db.VarChar(255)
+
   /// 'active' | 'revoked' | 'error'.
   ///
   /// `revoked` is NOT an error: while the Google app is in Testing, authorisations
@@ -1067,6 +1077,60 @@ model GoogleCalendarConnection {
 
   @@index([status])
   @@map("google_calendar_connections")
+}
+
+/// What a given appointment *should* look like in Google Calendar.
+///
+/// Intent, not a log. The booking request writes a row here and returns; a
+/// periodic sweep is what talks to Google. Two reasons it is shaped that way:
+/// Google being slow must not slow down the person booking, and Google being
+/// down must not fail the booking at all.
+///
+/// Create it with prisma/manual/2026-11-03-google-calendar-event-sync.sql.
+model GoogleCalendarEventSync {
+  /// `wp_kc_appointments.id`. Primary key rather than a unique index: one
+  /// appointment must not hold two conflicting intents, and the key is what makes
+  /// INSERT ... ON DUPLICATE KEY a cheap mutex.
+  appointmentId BigInt @id @db.UnsignedBigInt
+
+  /// `wp_users.ID` of the professional whose calendar this belongs on. Copied in
+  /// rather than joined every time: the sweep groups work per professional so one
+  /// access token covers many events, and a deleted appointment must not hide its
+  /// event from deletion.
+  professionalId BigInt @db.UnsignedBigInt
+
+  /// 'present' | 'absent' -- what Google SHOULD hold, never what it does hold.
+  desiredState String @db.VarChar(16)
+
+  /// Fingerprint of the event body we want. Synced means this equals syncedHash.
+  desiredHash String @db.Char(64)
+
+  /// Fingerprint of what actually landed. NULL means it never succeeded once.
+  syncedHash String? @db.Char(64)
+
+  /// Google's event id, once created. Cleared again after a successful delete.
+  googleEventId String? @db.VarChar(255)
+
+  /// The calendar the event belongs on: the professional's own "PraktiQu"
+  /// calendar, from GoogleCalendarConnection.appCalendarId. Its own column so a
+  /// person who connects later, onto a different calendar, does not invalidate
+  /// rows written before.
+  calendarId String @default("primary") @db.VarChar(255)
+
+  /// Attempts since the last success; reset to 0 whenever sync is reached.
+  attempts Int @default(0)
+
+  /// Backoff. NULL means it may be attempted now.
+  nextAttemptAt DateTime?
+
+  lastError String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([professionalId, nextAttemptAt], map: "idx_gces_pekerjaan")
+  @@index([nextAttemptAt], map: "idx_gces_belum_sinkron")
+  @@map("google_calendar_event_sync")
 }
 
 /// A psychologist marked as owner of a clinic. See prisma/manual/2026-10-16-clinic-owners.sql

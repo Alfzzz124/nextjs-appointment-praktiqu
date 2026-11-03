@@ -11,6 +11,7 @@
  */
 import { wpRequestJson, WpEndpointError } from '@/lib/wp-endpoint';
 import { APPOINTMENT_STATUS } from './appointments.repo';
+import { recordCalendarIntent } from '@/services/integrations/google-event-sync.service';
 
 export type CreateAppointmentInput = {
   clinicId: number;
@@ -93,6 +94,20 @@ export async function createAppointment(
     throw new WpEndpointError('Appointment create returned no id', 502);
   }
 
+  // Catat niat Google Calendar di sini, bukan di tiap pemanggil.
+  //
+  // Lapis repositori ini adalah satu-satunya tempat yang dilewati SEMUA penulisan
+  // janji — booking publik, pembayaran, sesi, pembatalan otomatis. Menaruhnya di
+  // pemanggil berarti setiap jalur baru harus mengingatnya, dan yang lupa tidak
+  // akan ketahuan sampai ada psikolog bertanya kenapa satu janji tidak muncul.
+  // Fungsinya tidak pernah melempar: arah tulis gagal tidak boleh menggagalkan
+  // pemesanan, dan rekonsiliasi berkala menyusul apa pun yang hilang di sini.
+  await recordCalendarIntent({
+    appointmentId: res.id,
+    professionalId: res.doctor_id,
+    status: res.status,
+  });
+
   return {
     id: res.id,
     status: res.status,
@@ -111,7 +126,7 @@ export async function updateAppointment(
   appointmentId: number,
   input: UpdateAppointmentInput,
 ): Promise<{ id: number; updated: string[] }> {
-  return wpRequestJson<{ id: number; updated: string[] }>(`/appointments/${appointmentId}`, {
+  const res = await wpRequestJson<{ id: number; updated: string[] }>(`/appointments/${appointmentId}`, {
     method: 'PUT',
     body: {
       start_date: input.startDate,
@@ -122,6 +137,12 @@ export async function updateAppointment(
       timezone: input.timezone,
     },
   });
+
+  // Jam atau layanan berubah: acaranya harus ikut berubah. Status tidak
+  // disertakan karena pemanggil tidak mengubahnya — biarkan dibaca dari janji.
+  await recordCalendarIntent({ appointmentId });
+
+  return res;
 }
 
 /** The row as the caller read it, which the plugin compares against before moving it. */
@@ -235,7 +256,13 @@ export async function setAppointmentStatus(
   payment?: ConfirmedPayment,
   opts: { expectStatus?: number } = {},
 ): Promise<{ id: number; status: number; cancelled: boolean; payment_confirmed?: boolean; claimed?: boolean }> {
-  return wpRequestJson(`/appointments/${appointmentId}/status`, {
+  const res = await wpRequestJson<{
+    id: number;
+    status: number;
+    cancelled: boolean;
+    payment_confirmed?: boolean;
+    claimed?: boolean;
+  }>(`/appointments/${appointmentId}/status`, {
     method: 'POST',
     body: {
       status,
@@ -251,6 +278,13 @@ export async function setAppointmentStatus(
       ...(opts.expectStatus !== undefined ? { expect_status: opts.expectStatus } : {}),
     },
   });
+
+  // Status yang DIKEMBALIKAN, bukan yang diminta. Dengan `expectStatus` plugin
+  // bisa menolak klaimnya dan membiarkan barisnya apa adanya; mencatat status
+  // yang kita minta akan menulis niat untuk perubahan yang tidak pernah terjadi.
+  await recordCalendarIntent({ appointmentId, status: res.status });
+
+  return res;
 }
 
 /** The plugin's answer to an `expectStatus` the row no longer had (409). */

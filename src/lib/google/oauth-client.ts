@@ -30,6 +30,38 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.freebusy',
 ] as const;
 
+/**
+ * What writing appointments back needs, asked for SEPARATELY.
+ *
+ * `calendar.app.created` and NOT `calendar.events`, and the difference is the whole
+ * shape of this feature. It grants access to calendars this application itself
+ * created and to nothing else — a professional's real calendar is out of reach
+ * structurally, not merely by our promising not to touch it. `calendar.events`
+ * would hand us read-write over every appointment they have.
+ *
+ * It is also the cheaper one. In this project's Cloud Console, `calendar.events`
+ * carries the sensitive padlock and `calendar.app.created` does not, which is weeks
+ * of verification against none. Both facts point the same way, so there is no
+ * trade-off to weigh here.
+ *
+ * Still asked for separately from GOOGLE_SCOPES: a second consent is a second
+ * decision, and `include_granted_scopes=true` carries the first one forward.
+ */
+export const GOOGLE_WRITE_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.app.created',
+] as const;
+
+/** Did this grant actually include the write scope? */
+export function grantsWriteScope(scopeGranted: string): boolean {
+  const granted = new Set(scopeGranted.split(/\s+/).filter(Boolean));
+  // `calendar` is the broad read-write scope. A professional who once went through
+  // KiviCare's consent may still hold it, and it subsumes what we need.
+  return (
+    GOOGLE_WRITE_SCOPES.every((s) => granted.has(s)) ||
+    granted.has('https://www.googleapis.com/auth/calendar')
+  );
+}
+
 export interface GoogleOAuthConfig {
   clientId: string;
   clientSecret: string;
@@ -38,13 +70,24 @@ export interface GoogleOAuthConfig {
 }
 
 export function buildConsentUrl(
-  opts: Omit<GoogleOAuthConfig, 'clientSecret'> & { state: string },
+  opts: Omit<GoogleOAuthConfig, 'clientSecret'> & {
+    state: string;
+    /**
+     * Ask for the write scope on top of the read ones. Defaults to false, so the
+     * ordinary "connect my calendar" path is untouched and never meets the
+     * unverified-app screen that an unverified sensitive scope brings with it.
+     */
+    withWrite?: boolean;
+  },
 ): string {
+  const scopes = opts.withWrite
+    ? [...GOOGLE_SCOPES, ...GOOGLE_WRITE_SCOPES]
+    : [...GOOGLE_SCOPES];
   const url = new URL(CONSENT_ENDPOINT);
   url.searchParams.set('client_id', opts.clientId);
   url.searchParams.set('redirect_uri', opts.redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', GOOGLE_SCOPES.join(' '));
+  url.searchParams.set('scope', scopes.join(' '));
   // Without access_type=offline there is no refresh token at all. Without
   // prompt=consent Google withholds it on a RE-authorisation — which is exactly
   // what every professional does weekly while the app is in Testing, so omitting

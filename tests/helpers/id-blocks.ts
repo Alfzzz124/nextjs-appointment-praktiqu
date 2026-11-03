@@ -116,6 +116,7 @@ export const ID_BLOCKS: readonly Row[] = [
   [9_250_000, 'billing/tax-scope.test.ts', 'cleanup()'],
   [9_260_000, 'billing/tax.service.test.ts', 'cleanup()'],
   [9_270_000, 'integration/professional/availability-overlap.test.ts', 'cleanup()'],
+  [9_280_000, 'integration/integrations/event-sync-reconcile.test.ts', 'google_calendar_event_sync, google_calendar_connections, kc_appointments (by doctor_id)'],
 ];
 
 export interface IdBlock {

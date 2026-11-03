@@ -18,6 +18,16 @@ export const dynamic = 'force-dynamic';
 const schema = z.object({
   /** Where to send the browser afterwards. Checked against the allowlist. */
   returnUrl: z.string().min(1),
+  /**
+   * Also ask for permission to WRITE appointments into the calendar.
+   *
+   * Its own flag, defaulting to false, so the ordinary "connect my calendar" path
+   * keeps asking only for the verified read scopes. `calendar.events` is sensitive
+   * and carries its own verification; until that lands, requesting it shows
+   * Google's "this app isn't verified" screen, and that screen must not greet
+   * people who only want the read direction.
+   */
+  withWrite: z.boolean().optional(),
 });
 
 export const POST = withAuth(async (req: NextRequest, { actor }) => {
@@ -63,6 +73,7 @@ export const POST = withAuth(async (req: NextRequest, { actor }) => {
       clientId: config.clientId,
       redirectUri: config.redirectUri,
       state,
+      withWrite: parsed.data.withWrite === true,
     }),
   });
 });
