@@ -154,6 +154,7 @@ async function markSynced(
   hash: string,
   googleEventId: string | null,
   calendarId?: string,
+  links?: { htmlLink: string | null; hangoutLink: string | null; conferenceError: string | null },
 ) {
   await prisma.googleCalendarEventSync.update({
     where: { appointmentId: row.appointmentId },
@@ -161,12 +162,23 @@ async function markSynced(
       desiredHash: hash,
       syncedHash: hash,
       googleEventId,
+      ...(links
+        ? {
+            htmlLink: links.htmlLink,
+            hangoutLink: links.hangoutLink,
+            // A missing Meet link is recorded, not retried: the event itself is
+            // correct and re-running would only mint a second conference. The
+            // likeliest cause is a narrower grant than ours, which no amount of
+            // retrying fixes.
+            lastError: links.conferenceError,
+          }
+        : {}),
       // Recorded with the event, because deleting it later has to go to the
       // calendar it actually lives on, not wherever we would put a new one.
       ...(calendarId ? { calendarId } : {}),
       attempts: 0,
       nextAttemptAt: null,
-      lastError: null,
+      ...(links ? {} : { lastError: null }),
     },
   });
 }
@@ -412,13 +424,13 @@ async function syncOne(ctx: {
     }
   }
 
-  const eventId = await createEvent({
+  const created = await createEvent({
     accessToken,
     calendarId: targetCalendarId,
     fetchImpl,
     body,
   });
-  await markSynced(row, hash, eventId, targetCalendarId);
+  await markSynced(row, hash, created.id, targetCalendarId, created);
   return 'created';
 }
 

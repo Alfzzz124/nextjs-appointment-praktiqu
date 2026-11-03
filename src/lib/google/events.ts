@@ -48,6 +48,30 @@ export interface GoogleEventBody {
   end: { dateTime: string; timeZone: string };
   attendees: { email: string }[];
   extendedProperties: { private: Record<string, string> };
+  /** Present only for telemed services: asks Google to mint a Meet link. */
+  conferenceData?: {
+    createRequest: {
+      requestId: string;
+      conferenceSolutionKey: { type: 'hangoutsMeet' };
+    };
+  };
+}
+
+/** What Google hands back once an event exists. */
+export interface CreatedEvent {
+  id: string;
+  /** Link to the event in Google Calendar. */
+  htmlLink: string | null;
+  /** The Meet link, when one was asked for and Google made it. */
+  hangoutLink: string | null;
+  /**
+   * Set when a Meet link was asked for and did NOT arrive.
+   *
+   * The event still exists; only the conference failed. Carried out so the caller
+   * can record why rather than leaving a NULL that could equally mean "this was
+   * never an online session".
+   */
+  conferenceError: string | null;
 }
 
 async function errorCodeOf(res: Response): Promise<string> {
@@ -101,9 +125,15 @@ const SEND_UPDATES = 'all';
 
 export async function createEvent(
   opts: Call & { body: GoogleEventBody },
-): Promise<string> {
+): Promise<CreatedEvent> {
   const doFetch = opts.fetchImpl ?? fetch;
-  const res = await doFetch(eventsUrl(opts.calendarId, '', { sendUpdates: SEND_UPDATES }), {
+  // conferenceDataVersion=1 is required for conferenceData to be honoured at all.
+  // Without it Google accepts the request and silently drops the conference, which
+  // presents as "Meet just doesn't work" with nothing to debug.
+  const query: Record<string, string> = { sendUpdates: SEND_UPDATES };
+  if (opts.body.conferenceData) query.conferenceDataVersion = '1';
+
+  const res = await doFetch(eventsUrl(opts.calendarId, '', query), {
     method: 'POST',
     headers: {
       authorization: `Bearer ${opts.accessToken}`,
@@ -114,11 +144,36 @@ export async function createEvent(
 
   if (!res.ok) await raiseFor(res, 'create event');
 
-  const json = (await res.json()) as { id?: unknown };
+  const json = (await res.json()) as {
+    id?: unknown;
+    htmlLink?: unknown;
+    hangoutLink?: unknown;
+    conferenceData?: {
+      createRequest?: { status?: { statusCode?: unknown } };
+    };
+  };
   if (typeof json.id !== 'string' || !json.id) {
     throw new GoogleOAuthError('create event returned no id');
   }
-  return json.id;
+
+  const hangoutLink = typeof json.hangoutLink === 'string' ? json.hangoutLink : null;
+  // Google answers with a status code rather than an error when it declines to
+  // make the conference, and the event is created either way. A narrower scope
+  // than ours may land here, so the caller must be able to tell that apart from a
+  // service that never wanted a Meet link.
+  const wanted = Boolean(opts.body.conferenceData);
+  const code = json.conferenceData?.createRequest?.status?.statusCode;
+  const conferenceError =
+    wanted && !hangoutLink
+      ? `Meet not created (status ${typeof code === 'string' ? code : 'unknown'})`
+      : null;
+
+  return {
+    id: json.id,
+    htmlLink: typeof json.htmlLink === 'string' ? json.htmlLink : null,
+    hangoutLink,
+    conferenceError,
+  };
 }
 
 /** The marker an existing event carries, or null if it has none. */
@@ -167,10 +222,16 @@ export async function updateEvent(
     );
   }
 
+  // This is a PUT, so the body replaces the event. Without conferenceDataVersion
+  // the conference block is ignored, and a rescheduled online session would come
+  // back without the Meet link the client already has. The requestId is stable per
+  // appointment, so sending it again keeps the SAME conference rather than minting
+  // a second one.
+  const query: Record<string, string> = { sendUpdates: SEND_UPDATES };
+  if (opts.body.conferenceData) query.conferenceDataVersion = '1';
+
   const res = await doFetch(
-    eventsUrl(opts.calendarId, `/${encodeURIComponent(opts.eventId)}`, {
-      sendUpdates: SEND_UPDATES,
-    }),
+    eventsUrl(opts.calendarId, `/${encodeURIComponent(opts.eventId)}`, query),
     {
       method: 'PUT',
       headers: {

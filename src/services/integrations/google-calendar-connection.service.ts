@@ -7,7 +7,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { encryptSecret, decryptSecret, SecretKeyError } from '@/lib/secret-box';
-import { grantsWriteScope } from '@/lib/google/oauth-client';
+import { grantsWriteScope, usesBroadCalendarScope } from '@/lib/google/oauth-client';
 
 /** The connection exists but cannot be used right now. */
 export class ConnectionUnusableError extends Error {
@@ -45,6 +45,12 @@ export interface ConnectionStatusView {
    * leave them waiting for events that are never coming.
    */
   writeEnabled: boolean;
+  /**
+   * The grant is wider than this application asks for, so the promise on the
+   * settings page — that the personal calendar cannot be touched — does not hold
+   * for this connection until the person revokes access at Google and reconnects.
+   */
+  writeScopeBroad: boolean;
 }
 
 /**
@@ -144,6 +150,7 @@ export async function getConnectionStatus(
       lastCheckedAt: null,
       lastErrorMessage: null,
       writeEnabled: false,
+      writeScopeBroad: false,
     };
   }
 
@@ -157,6 +164,7 @@ export async function getConnectionStatus(
     // Only a live connection writes. A revoked one holds no credential, so
     // reporting its old scope as enabled would promise work nothing can do.
     writeEnabled: row.status === 'active' && grantsWriteScope(row.scopeGranted),
+    writeScopeBroad: row.status === 'active' && usesBroadCalendarScope(row.scopeGranted),
   };
 
   // A stored credential we can no longer read is reported as an error, loudly.

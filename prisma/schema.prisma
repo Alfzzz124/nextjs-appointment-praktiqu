@@ -1117,6 +1117,16 @@ model GoogleCalendarEventSync {
   /// rows written before.
   calendarId String @default("primary") @db.VarChar(255)
 
+  /// Google's own link to the event, so PraktiQu can point at it without the
+  /// person hunting through their calendar. Returned by the create call and
+  /// otherwise thrown away.
+  htmlLink String? @db.Text
+
+  /// The Meet link, for services flagged `telemed_service = yes`. NULL means
+  /// either not a telemed service, or Google declined to make one -- the two are
+  /// told apart by `lastError`, not by guessing from this column.
+  hangoutLink String? @db.VarChar(255)
+
   /// Attempts since the last success; reset to 0 whenever sync is reached.
   attempts Int @default(0)
 

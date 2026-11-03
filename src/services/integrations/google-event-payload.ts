@@ -32,6 +32,14 @@ export interface AppointmentForCalendar {
   clinicName?: string | null;
   clientEmail?: string | null;
   professionalEmail?: string | null;
+  /**
+   * Service is flagged `telemed_service = 'yes'`: the session happens online, so
+   * the event asks Google for a Meet link.
+   *
+   * KiviCare's own Meet add-on used to do this and stopped on 3 August 2026, so
+   * every online session since then has gone out with no meeting link at all.
+   */
+  isTelemed?: boolean;
 }
 
 /**
@@ -91,6 +99,19 @@ export function buildEventBody(appt: AppointmentForCalendar): GoogleEventBody {
     'mengubah jadwal di PraktiQu.',
   ].filter((l): l is string => l !== null);
 
+  // Stable per appointment, NOT random: Google treats requestId as the
+  // idempotency key for the conference. A fresh one on every sync would ask for a
+  // new Meet link each time the event is updated, and the link the client already
+  // has would stop being the one in the invitation.
+  const conferenceData = appt.isTelemed
+    ? {
+        createRequest: {
+          requestId: `praktiqu-${appt.appointmentId}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' as const },
+        },
+      }
+    : undefined;
+
   return {
     summary: `${appt.serviceName} — ${appt.clientName}`,
     description: descriptionLines.join('\n'),
@@ -98,6 +119,7 @@ export function buildEventBody(appt: AppointmentForCalendar): GoogleEventBody {
     end: { dateTime: `${appt.date}T${appt.endTime}`, timeZone: CLINIC_TIME_ZONE },
     attendees,
     extendedProperties: { private: { [MARKER_KEY]: String(appt.appointmentId) } },
+    ...(conferenceData ? { conferenceData } : {}),
   };
 }
 
