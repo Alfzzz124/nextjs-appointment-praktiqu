@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { encryptSecret, decryptSecret, SecretKeyError } from '@/lib/secret-box';
+import { grantsWriteScope } from '@/lib/google/oauth-client';
 
 /** The connection exists but cannot be used right now. */
 export class ConnectionUnusableError extends Error {
@@ -35,6 +36,15 @@ export interface ConnectionStatusView {
   connectedAt: string | null;
   lastCheckedAt: string | null;
   lastErrorMessage: string | null;
+  /**
+   * Whether appointments are written back into this calendar.
+   *
+   * Separate from `status` because the two directions are independently granted:
+   * someone connected long before the write scope existed has a perfectly healthy
+   * connection that writes nothing, and reporting that as merely "active" would
+   * leave them waiting for events that are never coming.
+   */
+  writeEnabled: boolean;
 }
 
 /**
@@ -133,6 +143,7 @@ export async function getConnectionStatus(
       connectedAt: null,
       lastCheckedAt: null,
       lastErrorMessage: null,
+      writeEnabled: false,
     };
   }
 
@@ -143,6 +154,9 @@ export async function getConnectionStatus(
     connectedAt: row.connectedAt.toISOString(),
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
     lastErrorMessage: row.lastErrorMessage,
+    // Only a live connection writes. A revoked one holds no credential, so
+    // reporting its old scope as enabled would promise work nothing can do.
+    writeEnabled: row.status === 'active' && grantsWriteScope(row.scopeGranted),
   };
 
   // A stored credential we can no longer read is reported as an error, loudly.

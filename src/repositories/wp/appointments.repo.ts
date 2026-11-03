@@ -207,6 +207,22 @@ export async function findAppointmentById(id: bigint): Promise<WpAppointment | n
   return row ? toAppointment(row as AppointmentRow) : null;
 }
 
+/**
+ * Several appointments at once, for callers holding a list of ids.
+ *
+ * The Google Calendar sweep works through a batch per professional; one query per
+ * appointment would turn a quiet sweep into a few hundred round trips against a
+ * database whose connection cap is five.
+ */
+export async function findAppointmentsByIds(ids: bigint[]): Promise<WpAppointment[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.kcAppointment.findMany({
+    where: { id: { in: ids } },
+    select: SELECT,
+  });
+  return rows.map((r) => toAppointment(r as AppointmentRow));
+}
+
 export async function listAppointments(
   query: ListAppointmentsQuery,
 ): Promise<PaginatedAppointments> {

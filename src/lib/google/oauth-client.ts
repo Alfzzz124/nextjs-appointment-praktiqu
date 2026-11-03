@@ -30,6 +30,34 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.freebusy',
 ] as const;
 
+/**
+ * What writing appointments back needs, asked for SEPARATELY.
+ *
+ * `calendar.events` is a sensitive scope, so it carries its own verification. Until
+ * that verification lands, anyone who requests it meets Google's "this app isn't
+ * verified" screen. Bundled into GOOGLE_SCOPES it would show that screen to every
+ * professional who only ever wanted the read direction — a feature that IS verified
+ * and working — so the two consents stay apart and `include_granted_scopes=true`
+ * carries the first one forward.
+ *
+ * Moving to an app-created calendar later replaces this one string;
+ * `calendar.app.created` grants access only to calendars the app itself made.
+ */
+export const GOOGLE_WRITE_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+] as const;
+
+/** Did this grant actually include the write scope? */
+export function grantsWriteScope(scopeGranted: string): boolean {
+  const granted = new Set(scopeGranted.split(/\s+/).filter(Boolean));
+  // `calendar` is the broader read-write scope. A professional who went through
+  // KiviCare's consent may hold it, and it does include event writes.
+  return (
+    GOOGLE_WRITE_SCOPES.every((s) => granted.has(s)) ||
+    granted.has('https://www.googleapis.com/auth/calendar')
+  );
+}
+
 export interface GoogleOAuthConfig {
   clientId: string;
   clientSecret: string;
@@ -38,13 +66,24 @@ export interface GoogleOAuthConfig {
 }
 
 export function buildConsentUrl(
-  opts: Omit<GoogleOAuthConfig, 'clientSecret'> & { state: string },
+  opts: Omit<GoogleOAuthConfig, 'clientSecret'> & {
+    state: string;
+    /**
+     * Ask for the write scope on top of the read ones. Defaults to false, so the
+     * ordinary "connect my calendar" path is untouched and never meets the
+     * unverified-app screen that an unverified sensitive scope brings with it.
+     */
+    withWrite?: boolean;
+  },
 ): string {
+  const scopes = opts.withWrite
+    ? [...GOOGLE_SCOPES, ...GOOGLE_WRITE_SCOPES]
+    : [...GOOGLE_SCOPES];
   const url = new URL(CONSENT_ENDPOINT);
   url.searchParams.set('client_id', opts.clientId);
   url.searchParams.set('redirect_uri', opts.redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', GOOGLE_SCOPES.join(' '));
+  url.searchParams.set('scope', scopes.join(' '));
   // Without access_type=offline there is no refresh token at all. Without
   // prompt=consent Google withholds it on a RE-authorisation — which is exactly
   // what every professional does weekly while the app is in Testing, so omitting

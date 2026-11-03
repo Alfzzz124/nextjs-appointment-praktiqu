@@ -1051,6 +1051,58 @@ model GoogleCalendarConnection {
   @@map("google_calendar_connections")
 }
 
+/// What a given appointment *should* look like in Google Calendar.
+///
+/// Intent, not a log. The booking request writes a row here and returns; a
+/// periodic sweep is what talks to Google. Two reasons it is shaped that way:
+/// Google being slow must not slow down the person booking, and Google being
+/// down must not fail the booking at all.
+///
+/// Create it with prisma/manual/2026-11-03-google-calendar-event-sync.sql.
+model GoogleCalendarEventSync {
+  /// `wp_kc_appointments.id`. Primary key rather than a unique index: one
+  /// appointment must not hold two conflicting intents, and the key is what makes
+  /// INSERT ... ON DUPLICATE KEY a cheap mutex.
+  appointmentId BigInt @id @map("appointment_id") @db.UnsignedBigInt
+
+  /// `wp_users.ID` of the professional whose calendar this belongs on. Copied in
+  /// rather than joined every time: the sweep groups work per professional so one
+  /// access token covers many events, and a deleted appointment must not hide its
+  /// event from deletion.
+  professionalId BigInt @map("professional_id") @db.UnsignedBigInt
+
+  /// 'present' | 'absent' -- what Google SHOULD hold, never what it does hold.
+  desiredState String @map("desired_state") @db.VarChar(16)
+
+  /// Fingerprint of the event body we want. Synced means this equals syncedHash.
+  desiredHash String @map("desired_hash") @db.Char(64)
+
+  /// Fingerprint of what actually landed. NULL means it never succeeded once.
+  syncedHash String? @map("synced_hash") @db.Char(64)
+
+  /// Google's event id, once created. Cleared again after a successful delete.
+  googleEventId String? @map("google_event_id") @db.VarChar(255)
+
+  /// 'primary' today. Its own column so moving to an app-created calendar
+  /// (calendar.app.created) is a value change, not a schema change.
+  calendarId String @default("primary") @map("calendar_id") @db.VarChar(255)
+
+  /// Attempts since the last success; reset to 0 whenever sync is reached.
+  attempts Int @default(0)
+
+  /// Backoff. NULL means it may be attempted now.
+  nextAttemptAt DateTime? @map("next_attempt_at")
+
+  lastError String? @map("last_error") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([professionalId, nextAttemptAt], map: "idx_gces_pekerjaan")
+  @@index([nextAttemptAt], map: "idx_gces_belum_sinkron")
+  @@map("google_calendar_event_sync")
+}
+
 /// A client-supplied Idempotency-Key for public booking.
 ///
 /// The gateway gives up at ~8s while the write carries on, so the caller cannot

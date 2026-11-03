@@ -11,6 +11,7 @@
  */
 import { wpRequestJson, WpEndpointError } from '@/lib/wp-endpoint';
 import { APPOINTMENT_STATUS } from './appointments.repo';
+import { recordCalendarIntent } from '@/services/integrations/google-event-sync.service';
 
 export type CreateAppointmentInput = {
   clinicId: number;
@@ -93,6 +94,20 @@ export async function createAppointment(
     throw new WpEndpointError('Appointment create returned no id', 502);
   }
 
+  // Catat niat Google Calendar di sini, bukan di tiap pemanggil.
+  //
+  // Lapis repositori ini adalah satu-satunya tempat yang dilewati SEMUA penulisan
+  // janji — booking publik, pembayaran, sesi, pembatalan otomatis. Menaruhnya di
+  // pemanggil berarti setiap jalur baru harus mengingatnya, dan yang lupa tidak
+  // akan ketahuan sampai ada psikolog bertanya kenapa satu janji tidak muncul.
+  // Fungsinya tidak pernah melempar: arah tulis gagal tidak boleh menggagalkan
+  // pemesanan, dan rekonsiliasi berkala menyusul apa pun yang hilang di sini.
+  await recordCalendarIntent({
+    appointmentId: res.id,
+    professionalId: res.doctor_id,
+    status: res.status,
+  });
+
   return {
     id: res.id,
     status: res.status,
@@ -111,7 +126,7 @@ export async function updateAppointment(
   appointmentId: number,
   input: UpdateAppointmentInput,
 ): Promise<{ id: number; updated: string[] }> {
-  return wpRequestJson<{ id: number; updated: string[] }>(`/appointments/${appointmentId}`, {
+  const res = await wpRequestJson<{ id: number; updated: string[] }>(`/appointments/${appointmentId}`, {
     method: 'PUT',
     body: {
       start_date: input.startDate,
@@ -122,6 +137,12 @@ export async function updateAppointment(
       timezone: input.timezone,
     },
   });
+
+  // Jam atau layanan berubah: acaranya harus ikut berubah. Status tidak
+  // disertakan karena pemanggil tidak mengubahnya — biarkan dibaca dari janji.
+  await recordCalendarIntent({ appointmentId });
+
+  return res;
 }
 
 /**
@@ -132,10 +153,16 @@ export async function setAppointmentStatus(
   appointmentId: number,
   status: number,
 ): Promise<{ id: number; status: number; cancelled: boolean }> {
-  return wpRequestJson(`/appointments/${appointmentId}/status`, {
-    method: 'POST',
-    body: { status },
-  });
+  const res = await wpRequestJson<{ id: number; status: number; cancelled: boolean }>(
+    `/appointments/${appointmentId}/status`,
+    { method: 'POST', body: { status } },
+  );
+
+  // Status yang dikirim, bukan yang diminta: kalau plugin menolak atau
+  // menyesuaikannya, yang benar adalah apa yang akhirnya tersimpan.
+  await recordCalendarIntent({ appointmentId, status: res.status });
+
+  return res;
 }
 
 /**
