@@ -143,36 +143,43 @@ export async function createEvent(
   });
 
   if (!res.ok) await raiseFor(res, 'create event');
+  return readEvent(await res.json(), Boolean(opts.body.conferenceData), 'create event');
+}
 
-  const json = (await res.json()) as {
-    id?: unknown;
-    htmlLink?: unknown;
-    hangoutLink?: unknown;
-    conferenceData?: {
-      createRequest?: { status?: { statusCode?: unknown } };
-    };
-  };
+interface RawEvent {
+  id?: unknown;
+  htmlLink?: unknown;
+  hangoutLink?: unknown;
+  conferenceData?: { createRequest?: { status?: { statusCode?: unknown } } };
+}
+
+/**
+ * Read what Google hands back, for both create and update.
+ *
+ * Shared on purpose. The first cut parsed it only on create, so an event that
+ * reached Google through the update path kept its Meet link there and stored
+ * NULL here — the links were right where nobody could see them.
+ */
+function readEvent(raw: unknown, wantedConference: boolean, what: string): CreatedEvent {
+  const json = raw as RawEvent;
   if (typeof json.id !== 'string' || !json.id) {
-    throw new GoogleOAuthError('create event returned no id');
+    throw new GoogleOAuthError(`${what} returned no id`);
   }
 
   const hangoutLink = typeof json.hangoutLink === 'string' ? json.hangoutLink : null;
   // Google answers with a status code rather than an error when it declines to
-  // make the conference, and the event is created either way. A narrower scope
-  // than ours may land here, so the caller must be able to tell that apart from a
+  // make the conference, and the event exists either way. A narrower scope than
+  // ours may land here, so the caller must be able to tell that apart from a
   // service that never wanted a Meet link.
-  const wanted = Boolean(opts.body.conferenceData);
   const code = json.conferenceData?.createRequest?.status?.statusCode;
-  const conferenceError =
-    wanted && !hangoutLink
-      ? `Meet not created (status ${typeof code === 'string' ? code : 'unknown'})`
-      : null;
-
   return {
     id: json.id,
     htmlLink: typeof json.htmlLink === 'string' ? json.htmlLink : null,
     hangoutLink,
-    conferenceError,
+    conferenceError:
+      wantedConference && !hangoutLink
+        ? `Meet not created (status ${typeof code === 'string' ? code : 'unknown'})`
+        : null,
   };
 }
 
@@ -212,7 +219,7 @@ export async function markerOf(
  */
 export async function updateEvent(
   opts: Call & { eventId: string; body: GoogleEventBody; expectMarker: string },
-): Promise<void> {
+): Promise<CreatedEvent> {
   const doFetch = opts.fetchImpl ?? fetch;
 
   const marker = await markerOf(opts);
@@ -243,6 +250,38 @@ export async function updateEvent(
   );
 
   if (!res.ok) await raiseFor(res, 'update event');
+  return readEvent(await res.json(), Boolean(opts.body.conferenceData), 'update event');
+}
+
+/**
+ * Read back the links of an event we already created.
+ *
+ * For rows whose content is unchanged but whose links were never recorded. The
+ * marker is checked here too — the same rule applies to reading as to writing.
+ */
+export async function eventLinks(
+  opts: Call & { eventId: string; expectMarker: string; wantedConference: boolean },
+): Promise<CreatedEvent> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const res = await doFetch(
+    eventsUrl(opts.calendarId, `/${encodeURIComponent(opts.eventId)}`),
+    { headers: { authorization: `Bearer ${opts.accessToken}` } },
+  );
+  if (!res.ok) await raiseFor(res, 'read event');
+
+  const json = (await res.json()) as RawEvent & {
+    status?: unknown;
+    extendedProperties?: { private?: Record<string, unknown> };
+  };
+  if (json.status === 'cancelled') throw new GoogleEventGoneError('read event: event is cancelled');
+
+  const marker = json.extendedProperties?.private?.[MARKER_KEY];
+  if (marker !== opts.expectMarker) {
+    throw new GoogleEventNotOursError(
+      `event ${opts.eventId} carries marker ${typeof marker === 'string' ? marker : '(none)'}, expected ${opts.expectMarker}`,
+    );
+  }
+  return readEvent(json, opts.wantedConference, 'read event');
 }
 
 /** Remove an event we created — after proving it is still ours. */
