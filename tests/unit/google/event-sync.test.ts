@@ -65,13 +65,17 @@ type Opts = Record<string, unknown>;
 const dibuat = (id: string) => ({ id, htmlLink: null, hangoutLink: null, conferenceError: null });
 const createEvent = vi.fn(async (_opts: Opts) => dibuat('evt-new'));
 const createAppCalendar = vi.fn(async (_opts: Opts): Promise<string> => 'cal-baru');
-const updateEvent = vi.fn(async (_opts: Opts): Promise<void> => {});
+const eventLinks = vi.fn(async (_opts: Opts) => ({
+  id: 'evt-1', htmlLink: 'https://cal/e/1', hangoutLink: null, conferenceError: null,
+}));
+const updateEvent = vi.fn(async (_opts: Opts) => dibuat('evt-1'));
 const deleteEvent = vi.fn(async (_opts: Opts): Promise<void> => {});
 
 vi.mock('@/lib/google/events', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   createEvent: (opts: Opts) => createEvent(opts),
   createAppCalendar: (opts: Opts) => createAppCalendar(opts),
+  eventLinks: (opts: Opts) => eventLinks(opts),
   updateEvent: (opts: Opts) => updateEvent(opts),
   deleteEvent: (opts: Opts) => deleteEvent(opts),
 }));
@@ -106,6 +110,7 @@ function row(over: Record<string, unknown> = {}) {
     googleEventId: null,
     calendarId: CAL,
     attempts: 0,
+    htmlLink: 'https://cal/e/lama',
     ...over,
   };
 }
@@ -119,7 +124,8 @@ beforeEach(() => {
   connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: CAL };
   createEvent.mockClear().mockResolvedValue(dibuat('evt-new'));
   createAppCalendar.mockClear().mockResolvedValue('cal-baru');
-  updateEvent.mockClear().mockResolvedValue(undefined);
+  updateEvent.mockClear().mockResolvedValue(dibuat('evt-1'));
+  eventLinks.mockClear();
   deleteEvent.mockClear().mockResolvedValue(undefined);
 });
 
@@ -246,6 +252,55 @@ describe('kalender PraktiQu milik psikolog', () => {
 
     expect((await runEventSweep({ loader })).deleted).toBe(1);
     expect(deleteEvent.mock.calls[0][0]).toMatchObject({ calendarId: 'cal-lama' });
+  });
+});
+
+describe('menyimpan tautan acara', () => {
+  it('menyimpan tautan dari jalur PEMBUATAN', async () => {
+    createEvent.mockResolvedValueOnce({
+      id: 'evt-new', htmlLink: 'https://cal/e/9', hangoutLink: 'https://meet.google.com/x', conferenceError: null,
+    });
+    rows.push(row({ googleEventId: null, syncedHash: null, htmlLink: null }));
+
+    await runEventSweep({ loader });
+
+    expect(updates[0].data).toMatchObject({
+      htmlLink: 'https://cal/e/9',
+      hangoutLink: 'https://meet.google.com/x',
+    });
+  });
+
+  it('menyimpan tautan dari jalur PEMBARUAN juga', async () => {
+    // Versi pertama hanya menyimpannya saat membuat, jadi acara yang sampai ke
+    // Google lewat pembaruan menyimpan NULL — tautannya ada, persis di tempat
+    // yang tidak bisa dilihat siapa pun.
+    updateEvent.mockResolvedValueOnce({
+      id: 'evt-1', htmlLink: 'https://cal/e/1', hangoutLink: 'https://meet.google.com/y', conferenceError: null,
+    });
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: 'a'.repeat(64) }));
+
+    expect((await runEventSweep({ loader })).updated).toBe(1);
+    expect(updates[0].data).toMatchObject({ hangoutLink: 'https://meet.google.com/y' });
+  });
+
+  it('mengisi tautan yang hilang pada baris yang isinya tidak berubah', async () => {
+    // Baris lama yang ditulis sebelum kolomnya ada. Isinya cocok, jadi tidak ada
+    // yang pernah membacanya ulang — tanpa ini ia kosong selamanya.
+    const hash = fingerprintEvent(buildEventBody(APPT));
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: hash, htmlLink: null }));
+
+    expect((await runEventSweep({ loader })).alreadyCurrent).toBe(1);
+    expect(eventLinks).toHaveBeenCalledTimes(1);
+    expect(updates[0].data).toMatchObject({ htmlLink: 'https://cal/e/1' });
+  });
+
+  it('tidak membaca ulang baris yang tautannya sudah ada', async () => {
+    const hash = fingerprintEvent(buildEventBody(APPT));
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: hash }));
+
+    await runEventSweep({ loader });
+
+    expect(eventLinks).not.toHaveBeenCalled();
   });
 });
 

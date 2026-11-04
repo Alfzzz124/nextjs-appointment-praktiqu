@@ -19,6 +19,7 @@ import {
   updateEvent,
   deleteEvent,
   createAppCalendar,
+  eventLinks,
   GoogleEventGoneError,
   GoogleEventNotOursError,
 } from '@/lib/google/events';
@@ -131,6 +132,7 @@ type SyncRow = {
   googleEventId: string | null;
   calendarId: string;
   attempts: number;
+  htmlLink: string | null;
 };
 
 function backoffFrom(now: Date, attempts: number, minutes?: number): Date {
@@ -389,20 +391,35 @@ async function syncOne(ctx: {
 
   // Nothing about the event changed — a status flip between BOOKED and CHECK_IN,
   // say. Costs no request at all.
+  //
+  // Unless the links are missing. A row written before this column existed, or by
+  // a path that discarded them, would otherwise stay blank forever: the content
+  // matches, so nothing ever re-reads it. One GET fills it in and it never runs
+  // again for that row.
   if (hash === row.syncedHash && row.googleEventId) {
-    await markSynced(row, hash, row.googleEventId);
+    if (row.htmlLink === null) {
+      const tautan = await eventLinks({
+        ...call,
+        eventId: row.googleEventId,
+        expectMarker: marker,
+        wantedConference: Boolean(body.conferenceData),
+      });
+      await markSynced(row, hash, row.googleEventId, undefined, tautan);
+    } else {
+      await markSynced(row, hash, row.googleEventId);
+    }
     return 'alreadyCurrent';
   }
 
   if (row.googleEventId && row.calendarId === targetCalendarId) {
     try {
-      await updateEvent({
+      const diperbarui = await updateEvent({
         ...call,
         eventId: row.googleEventId,
         body,
         expectMarker: marker,
       });
-      await markSynced(row, hash, row.googleEventId);
+      await markSynced(row, hash, row.googleEventId, undefined, diperbarui);
       return 'updated';
     } catch (err) {
       // The professional deleted it by hand. Recreate rather than give up: the
