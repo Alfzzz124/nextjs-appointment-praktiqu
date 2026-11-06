@@ -515,9 +515,14 @@ ditandai dengan `extra = {"praktiqu_duration_of": <id mapping induk>}`.
   - daftar tetap datar: baris opsi tetap ada, supaya pencarian nama berdasarkan id tetap jalan.
 - `PUT /api/v1/services/{id}` menerima `durationOptions: [{ id?, duration, price }]` sebagai daftar lengkap.
   - Kategori, status, tampil publik, telemed, dan nama ikut induk secara otomatis.
-  - Opsi tidak bisa diubah atau dihapus langsung (422 `edit_via_parent`).
+  - PUT atau DELETE pada baris opsi dijawab 422 `edit_via_parent`: ubah lewat induknya.
 - `DELETE /api/v1/services/{id}` pada induk menonaktifkan induk beserta opsinya yang hidup dalam
-  satu transaksi (`ikut dinonaktifkan dalam satu transaksi`).
+  satu transaksi.
 - `GET /api/v1/public/professionals/{id}/services`: setiap baris membawa `durationOf`, yaitu id publik
   (id katalog) induknya. FE mengelompokkan per (`clinicId`, `durationOf`).
 - Slot, booking, dan pembayaran tidak berubah: kirim `serviceId` milik opsi yang dipilih.
+
+Kode galat:
+
+- 422: `duration_option_limit`, `duration_option_duplicate`, `duration_option_not_found`, `edit_via_parent`.
+- 409: `duration_option_has_appointments` (dengan `count`) dan `service_name_taken`.

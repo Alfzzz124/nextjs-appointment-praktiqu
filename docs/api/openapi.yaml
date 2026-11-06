@@ -10726,7 +10726,8 @@ paths:
         `durationOptions`, when sent, is the complete list of extra durations: rows without `id` are created,
         rows with `id` updated, options not listed removed (422 `duration_option_limit`,
         `duration_option_duplicate`, `duration_option_not_found`; 409 `duration_option_has_appointments` with
-        `count`). PUT or DELETE on an option row answers 422 `edit_via_parent`.
+        `count`). PUT or DELETE on an option row answers 422 `edit_via_parent`. 409 `service_name_taken` when
+        an option name clashes with another service of this professional at this clinic.
       security:
         - bearerAuth: []
       parameters:
@@ -13861,6 +13862,12 @@ components:
         clinicId:
           type: integer
           description: The clinic this row is offered at. Submit the booking with it.
+        durationOf:
+          type: integer
+          nullable: true
+          description: >-
+            When this row is a duration option of another service: that parent's public `id` (its catalogue
+            id), in this same list and at the same clinic. null for every other row.
         paymentMethods:
           type: array
           items:

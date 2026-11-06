@@ -856,7 +856,8 @@ registry.registerPath({
     ' `durationOptions`, when sent, is the complete list of extra durations: rows without `id` ' +
     'are created, rows with `id` updated, options not listed removed (422 `duration_option_limit`, ' +
     '`duration_option_duplicate`, `duration_option_not_found`; 409 `duration_option_has_appointments` ' +
-    'with `count`). PUT or DELETE on an option row answers 422 `edit_via_parent`.',
+    'with `count`). PUT or DELETE on an option row answers 422 `edit_via_parent`.' +
+    ' 409 `service_name_taken` when an option name clashes with another service of this professional at this clinic.',
   security: auth,
   request: {
     params: z.object({ id: serviceIdParam }),
