@@ -9,7 +9,7 @@ const write = vi.hoisted(() => ({
   doctorsMappedToClinic: vi.fn(),
   findConflictingMapping: vi.fn(),
   insertMapping: vi.fn(),
-  updateMapping: vi.fn(),
+  saveServiceUpdate: vi.fn(),
   softDeleteMapping: vi.fn(),
   countBlockingAppointments: vi.fn(),
 }));
@@ -54,25 +54,28 @@ beforeEach(() => {
 
   repo.findMappingById.mockResolvedValue(row);
   write.findConflictingMapping.mockResolvedValue(null);
-  write.updateMapping.mockResolvedValue(undefined);
+  write.saveServiceUpdate.mockResolvedValue(undefined);
 });
 
 const expectError = async (fn: () => Promise<unknown>, tag: string) => {
   await expect(fn()).rejects.toMatchObject({ _tag: tag });
 };
 
+/** The parent patch handed to the one transactional save. */
+const parentPatch = () => write.saveServiceUpdate.mock.calls[0][0].parent.patch;
+
 describe('updateService', () => {
   it('writes price into charges and leaves the shared catalogue row alone', async () => {
     await updateService(501, { price: 300000 }, clinicAdmin, 'actor-1');
 
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { charges: '300000' });
+    expect(parentPatch()).toEqual({ charges: '300000' });
     expect(write.createCatalogue).not.toHaveBeenCalled();
   });
 
   it('patches only the fields it was given', async () => {
     await updateService(501, { duration: 90, status: 0 }, clinicAdmin, 'actor-1');
 
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { duration: 90, status: 0 });
+    expect(parentPatch()).toEqual({ duration: 90, status: 0 });
   });
 
   it('repoints to an existing catalogue row on rename instead of renaming it', async () => {
@@ -84,7 +87,7 @@ describe('updateService', () => {
     await updateService(501, { name: 'Terapi Keluarga' }, clinicAdmin, 'actor-1');
 
     expect(write.createCatalogue).not.toHaveBeenCalled();
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 909n });
+    expect(parentPatch()).toEqual({ serviceId: 909n });
   });
 
   it('creates a new catalogue row when the new name and type are unknown', async () => {
@@ -102,7 +105,7 @@ describe('updateService', () => {
     expect(write.createCatalogue).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Terapi Keluarga', type: 'psychology_services', price: row.charges }),
     );
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 202n });
+    expect(parentPatch()).toEqual({ serviceId: 202n });
   });
 
   it('seeds a new catalogue row with the new price when renaming and changing price together', async () => {
@@ -117,7 +120,7 @@ describe('updateService', () => {
     expect(write.createCatalogue).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Terapi Keluarga', type: 'psychology_services', price: '400000' }),
     );
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { charges: '400000', serviceId: 202n });
+    expect(parentPatch()).toEqual({ charges: '400000', serviceId: 202n });
   });
 
   it('repoints on a category change even when the name is unchanged', async () => {
@@ -130,7 +133,7 @@ describe('updateService', () => {
     await updateService(501, { categoryId: 9 }, clinicAdmin, 'actor-1');
 
     expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu', 'assessment');
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 303n });
+    expect(parentPatch()).toEqual({ serviceId: 303n });
   });
 
   it('does not repoint when the given categoryId matches the row\'s current category', async () => {
@@ -143,7 +146,7 @@ describe('updateService', () => {
     expect(staticData.findServiceTypeById).not.toHaveBeenCalled();
     expect(write.findCatalogueByNameAndType).not.toHaveBeenCalled();
     expect(write.createCatalogue).not.toHaveBeenCalled();
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, {});
+    expect(parentPatch()).toEqual({});
   });
 
   it('still repoints when the given categoryId differs from the current category', async () => {
@@ -155,7 +158,7 @@ describe('updateService', () => {
     await updateService(501, { categoryId: 9 }, clinicAdmin, 'actor-1');
 
     expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu', 'assessment');
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 303n });
+    expect(parentPatch()).toEqual({ serviceId: 303n });
   });
 
   it('repoints when categoryId is supplied and the existing category cannot be parsed', async () => {
@@ -171,7 +174,7 @@ describe('updateService', () => {
     // categoryId must count as a change even though it happens to equal what the row
     // would have had if it parsed.
     expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu', 'psychology_services');
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, { serviceId: 909n });
+    expect(parentPatch()).toEqual({ serviceId: 909n });
   });
 
   it('rejects a rename that collides with another service of the same professional', async () => {
@@ -184,7 +187,7 @@ describe('updateService', () => {
       () => updateService(501, { name: 'Terapi Keluarga' }, clinicAdmin, 'actor-1'),
       'conflict',
     );
-    expect(write.updateMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
   });
 
   it('excludes the row being edited from the collision check', async () => {
@@ -230,7 +233,155 @@ describe('updateService', () => {
 
     // `patch` ends up empty and `updateMapping` correctly issues no SQL for it, but the
     // audit trail must follow suit rather than recording a change that never happened.
-    expect(write.updateMapping).toHaveBeenCalledWith(501n, {});
+    expect(parentPatch()).toEqual({});
     expect(logging.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateService — duration options', () => {
+  const option = (id: bigint, serviceId: bigint, minutes: number, extra: Partial<Record<string, unknown>> = {}) => ({
+    ...row, id, serviceId, name: `Konseling Individu (${minutes} menit)`, charges: '600000',
+    durationMinutes: minutes, optionOf: { parentId: 501n, removed: false }, ...extra,
+  });
+  const saved = () => write.saveServiceUpdate.mock.calls[0][0];
+
+  beforeEach(() => {
+    write.countBlockingAppointments.mockResolvedValue(0);
+    write.findCatalogueByNameAndType.mockResolvedValue(null);
+    write.createCatalogue.mockResolvedValue(909n);
+  });
+
+  it('refuses to edit an option row directly', async () => {
+    repo.findMappingById.mockResolvedValue({ ...row, id: 601n, optionOf: { parentId: 501n, removed: false } });
+
+    await expect(updateService(601, { price: 1 }, clinicAdmin, 'a')).rejects.toMatchObject({
+      _tag: 'unprocessable', code: 'edit_via_parent',
+    });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('creates a new option inheriting doctor, clinic, telemed, status and visibility', async () => {
+    await updateService(501, { durationOptions: [{ duration: 90, price: 600000 }] }, clinicAdmin, 'a');
+
+    expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu (90 menit)', 'psychology_services');
+    expect(write.createCatalogue).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Konseling Individu (90 menit)', type: 'psychology_services', price: '600000', status: 1,
+    }));
+    expect(saved().optionInserts).toEqual([{
+      parentMappingId: 501n, serviceId: 909n, doctorId: 8100001n, clinicId: 3n,
+      charges: '600000', duration: 90, telemedService: 'no', status: 1, isPublic: 1,
+    }]);
+  });
+
+  it('removes an option not in the list', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([option(601n, 201n, 90)]);
+
+    await updateService(501, { durationOptions: [] }, clinicAdmin, 'a');
+
+    expect(saved().optionRemovals).toEqual([{ mappingId: 601n, parentMappingId: 501n }]);
+  });
+
+  it('refuses to remove an option an upcoming booking uses, and says how many', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([option(601n, 201n, 90)]);
+    write.countBlockingAppointments.mockResolvedValue(2);
+
+    await expect(updateService(501, { durationOptions: [] }, clinicAdmin, 'a')).rejects.toMatchObject({
+      _tag: 'conflict', code: 'duration_option_has_appointments', count: 2,
+    });
+    expect(write.countBlockingAppointments).toHaveBeenCalledWith({ serviceId: 201n, doctorId: 8100001n });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to change an option's length under an upcoming booking, but allows a price change", async () => {
+    repo.listOptionRowsOf.mockResolvedValue([option(601n, 201n, 90)]);
+    write.countBlockingAppointments.mockResolvedValue(1);
+
+    await expect(updateService(501, { durationOptions: [{ id: 601, duration: 120, price: 600000 }] }, clinicAdmin, 'a'))
+      .rejects.toMatchObject({ code: 'duration_option_has_appointments' });
+
+    write.saveServiceUpdate.mockClear();
+    await updateService(501, { durationOptions: [{ id: 601, duration: 90, price: 650000 }] }, clinicAdmin, 'a');
+    expect(saved().optionUpdates).toEqual([{ mappingId: 601n, patch: { charges: '650000' } }]);
+  });
+
+  it('renames and repoints an option whose duration changes', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([option(601n, 201n, 90)]);
+
+    await updateService(501, { durationOptions: [{ id: 601, duration: 120, price: 600000 }] }, clinicAdmin, 'a');
+
+    expect(write.findCatalogueByNameAndType).toHaveBeenCalledWith('Konseling Individu (120 menit)', 'psychology_services');
+    expect(saved().optionUpdates).toEqual([{ mappingId: 601n, patch: { duration: 120, serviceId: 909n } }]);
+  });
+
+  it('carries a parent rename onto its options without being asked', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([option(601n, 201n, 90)]);
+    write.findCatalogueByNameAndType.mockImplementation(async (name: string) =>
+      name === 'Terapi Keluarga' ? { id: 808n } : null);
+
+    await updateService(501, { name: 'Terapi Keluarga' }, clinicAdmin, 'a');
+
+    expect(parentPatch()).toEqual({ serviceId: 808n });
+    expect(write.createCatalogue).toHaveBeenCalledWith(expect.objectContaining({ name: 'Terapi Keluarga (90 menit)' }));
+    expect(saved().optionUpdates).toEqual([{ mappingId: 601n, patch: { serviceId: 909n } }]);
+  });
+
+  it('copies status, visibility and telemed from the parent onto every live option', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([
+      option(601n, 201n, 90),
+      option(602n, 202n, 120, { isActive: false, optionOf: { parentId: 501n, removed: true } }),
+    ]);
+
+    await updateService(501, { status: 0, isPublic: 0, telemedService: 'yes' }, clinicAdmin, 'a');
+
+    // The removed option (602) is not live: it is neither cascaded to nor removed again.
+    expect(saved().optionUpdates).toEqual([
+      { mappingId: 601n, patch: { telemedService: 'yes', status: 0, isPublic: 0 } },
+    ]);
+    expect(saved().optionRemovals).toEqual([]);
+  });
+
+  it("refuses a parent duration equal to an option's", async () => {
+    repo.listOptionRowsOf.mockResolvedValue([option(601n, 201n, 90)]);
+
+    await expect(updateService(501, { duration: 90 }, clinicAdmin, 'a')).rejects.toMatchObject({
+      _tag: 'unprocessable', code: 'duration_option_duplicate',
+    });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses more than four options', async () => {
+    const durationOptions = [30, 45, 90, 120, 150].map((duration) => ({ duration, price: 1 }));
+    await expect(updateService(501, { durationOptions }, clinicAdmin, 'a')).rejects.toMatchObject({
+      code: 'duration_option_limit',
+    });
+  });
+
+  it("refuses an option name another of this professional's services already has, writing nothing", async () => {
+    write.findConflictingMapping.mockResolvedValue({ mappingId: 700n, doctorId: 8100001n });
+
+    await expect(updateService(501, { durationOptions: [{ duration: 90, price: 1 }] }, clinicAdmin, 'a'))
+      .rejects.toMatchObject({ _tag: 'conflict', code: 'service_name_taken' });
+    expect(write.createCatalogue).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('leaves the parent and its options out of the option-name conflict check, removed ones included', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([
+      option(602n, 202n, 120, { isActive: false, optionOf: { parentId: 501n, removed: true } }),
+    ]);
+
+    await updateService(501, { durationOptions: [{ duration: 120, price: 1 }] }, clinicAdmin, 'a');
+
+    expect(write.findConflictingMapping).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Konseling Individu (120 menit)', excludeMappingIds: [501n, 602n],
+    }));
+  });
+
+  it('audits option changes even when the parent itself is unchanged', async () => {
+    await updateService(501, { durationOptions: [{ duration: 90, price: 600000 }] }, clinicAdmin, 'a');
+
+    expect(logging.audit).toHaveBeenCalledWith('service.updated', expect.objectContaining({
+      metadata: expect.objectContaining({ durationOptions: { created: [90], changed: [], removed: [] } }),
+    }));
   });
 });

@@ -114,3 +114,32 @@ describe('deleteService', () => {
     expect(logging.audit).not.toHaveBeenCalled();
   });
 });
+
+describe('deleteService — duration options', () => {
+  const live = { ...row, id: 601n, serviceId: 201n, optionOf: { parentId: 501n, removed: false } };
+  const gone = { ...row, id: 602n, serviceId: 202n, isActive: false, optionOf: { parentId: 501n, removed: true } };
+
+  it('refuses to delete an option row directly', async () => {
+    repo.findMappingById.mockResolvedValue({ ...row, id: 601n, optionOf: { parentId: 501n, removed: false } });
+
+    await expect(deleteService(601, clinicAdmin, 'a')).rejects.toMatchObject({ _tag: 'unprocessable', code: 'edit_via_parent' });
+    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+  });
+
+  it('retires the live options with their parent, leaving removed ones alone', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([live, gone]);
+
+    await deleteService(501, clinicAdmin, 'a');
+
+    expect(write.softDeleteMapping.mock.calls.map((c) => c[0])).toEqual([501n, 601n]);
+  });
+
+  it("counts an option's upcoming bookings as blocking the parent's delete", async () => {
+    repo.listOptionRowsOf.mockResolvedValue([live]);
+    write.countBlockingAppointments.mockImplementation(async ({ serviceId }: { serviceId: bigint }) =>
+      serviceId === 201n ? 2 : 0);
+
+    await expect(deleteService(501, clinicAdmin, 'a')).rejects.toMatchObject({ _tag: 'conflict', count: 2 });
+    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+  });
+});
