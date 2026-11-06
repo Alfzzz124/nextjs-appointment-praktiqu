@@ -852,7 +852,11 @@ registry.registerPath({
     'Price, duration, telemed flag, status and visibility touch only this mapping row. ' +
     'A rename repoints the mapping at a catalogue row carrying the new name and type — ' +
     'creating one if needed — rather than renaming a row other clinics may share. ' +
-    '`doctorIds` and `clinicId` cannot be changed here.',
+    '`doctorIds` and `clinicId` cannot be changed here.' +
+    ' `durationOptions`, when sent, is the complete list of extra durations: rows without `id` ' +
+    'are created, rows with `id` updated, options not listed removed (422 `duration_option_limit`, ' +
+    '`duration_option_duplicate`, `duration_option_not_found`; 409 `duration_option_has_appointments` ' +
+    'with `count`). PUT or DELETE on an option row answers 422 `edit_via_parent`.',
   security: auth,
   request: {
     params: z.object({ id: serviceIdParam }),

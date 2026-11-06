@@ -8949,7 +8949,9 @@ paths:
         - public
       summary: Approval link (GET) — public
       operationId: get_api_v1_public_approvals_token
-      description: 'The booking behind an email approval link and the buttons it may offer. Decides nothing. **Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        The booking behind an email approval link and the buttons it may offer. Decides nothing. **Response
+        envelope:** standard / RFC-7807 problem+json
       responses:
         '200':
           description: Success
@@ -8982,7 +8984,9 @@ paths:
         - public
       summary: Approve from the email link (POST) — public
       operationId: post_api_v1_public_approvals_token_approve
-      description: 'Approve as the psychologist. 409 approval_already_decided, 422 session_already_started. **Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        Approve as the psychologist. 409 approval_already_decided, 422 session_already_started. **Response
+        envelope:** standard / RFC-7807 problem+json
       responses:
         '200':
           description: Success
@@ -9033,14 +9037,17 @@ paths:
         - public
       summary: Reject from the email link (POST) — public
       operationId: post_api_v1_public_approvals_token_reject
-      description: 'Reject as the psychologist; the reason is internal. 409 approval_already_decided. **Response envelope:** standard / RFC-7807 problem+json'
+      description: >-
+        Reject as the psychologist; the reason is internal. 409 approval_already_decided. **Response
+        envelope:** standard / RFC-7807 problem+json
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
+              required:
+                - reason
               properties:
                 reason:
                   type: string
@@ -10221,6 +10228,41 @@ paths:
                           type: boolean
                         isActive:
                           type: boolean
+                        durationOf:
+                          type: integer
+                          nullable: true
+                          description: >-
+                            Parent mapping id when this row is a duration option (live or removed) of another
+                            service
+                        durationOptions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: integer
+                                description: The option's own mapping id
+                              serviceId:
+                                type: integer
+                                description: The option's catalogue row id — what booking sends
+                              name:
+                                type: string
+                              durationMinutes:
+                                type: integer
+                                nullable: true
+                              price:
+                                type: number
+                                nullable: true
+                              isActive:
+                                type: boolean
+                            required:
+                              - id
+                              - serviceId
+                              - name
+                              - durationMinutes
+                              - price
+                              - isActive
+                          description: This service's live duration options, shortest first. Empty for an option row.
                       required:
                         - id
                         - serviceId
@@ -10233,6 +10275,8 @@ paths:
                         - telemedService
                         - isPublic
                         - isActive
+                        - durationOf
+                        - durationOptions
                   total:
                     type: integer
                   page:
@@ -10565,6 +10609,41 @@ paths:
                     type: boolean
                   isActive:
                     type: boolean
+                  durationOf:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      Parent mapping id when this row is a duration option (live or removed) of another
+                      service
+                  durationOptions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: The option's own mapping id
+                        serviceId:
+                          type: integer
+                          description: The option's catalogue row id — what booking sends
+                        name:
+                          type: string
+                        durationMinutes:
+                          type: integer
+                          nullable: true
+                        price:
+                          type: number
+                          nullable: true
+                        isActive:
+                          type: boolean
+                      required:
+                        - id
+                        - serviceId
+                        - name
+                        - durationMinutes
+                        - price
+                        - isActive
+                    description: This service's live duration options, shortest first. Empty for an option row.
                 required:
                   - id
                   - serviceId
@@ -10577,6 +10656,8 @@ paths:
                   - telemedService
                   - isPublic
                   - isActive
+                  - durationOf
+                  - durationOptions
         '400':
           description: RFC-7807 problem detail
           content:
@@ -10642,6 +10723,10 @@ paths:
         Price, duration, telemed flag, status and visibility touch only this mapping row. A rename repoints
         the mapping at a catalogue row carrying the new name and type — creating one if needed — rather than
         renaming a row other clinics may share. `doctorIds` and `clinicId` cannot be changed here.
+        `durationOptions`, when sent, is the complete list of extra durations: rows without `id` are created,
+        rows with `id` updated, options not listed removed (422 `duration_option_limit`,
+        `duration_option_duplicate`, `duration_option_not_found`; 409 `duration_option_has_appointments` with
+        `count`). PUT or DELETE on an option row answers 422 `edit_via_parent`.
       security:
         - bearerAuth: []
       parameters:
@@ -10696,6 +10781,25 @@ paths:
                     - type: number
                       enum:
                         - 1
+                durationOptions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: true
+                      duration:
+                        type: integer
+                        minimum: 1
+                        maximum: 1440
+                      price:
+                        type: number
+                        minimum: 0
+                    required:
+                      - duration
+                      - price
       responses:
         '200':
           description: The updated service
@@ -10748,6 +10852,41 @@ paths:
                     type: boolean
                   isActive:
                     type: boolean
+                  durationOf:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      Parent mapping id when this row is a duration option (live or removed) of another
+                      service
+                  durationOptions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: The option's own mapping id
+                        serviceId:
+                          type: integer
+                          description: The option's catalogue row id — what booking sends
+                        name:
+                          type: string
+                        durationMinutes:
+                          type: integer
+                          nullable: true
+                        price:
+                          type: number
+                          nullable: true
+                        isActive:
+                          type: boolean
+                      required:
+                        - id
+                        - serviceId
+                        - name
+                        - durationMinutes
+                        - price
+                        - isActive
+                    description: This service's live duration options, shortest first. Empty for an option row.
                 required:
                   - id
                   - serviceId
@@ -10760,6 +10899,8 @@ paths:
                   - telemedService
                   - isPublic
                   - isActive
+                  - durationOf
+                  - durationOptions
         '400':
           description: RFC-7807 problem detail
           content:
@@ -13734,26 +13875,69 @@ components:
             - $ref: '#/components/schemas/PublicUsdView'
     PublicApprovalLinkView:
       type: object
-      required: [clientName, professionalName, serviceName, slotDate, startTime, timezone, amount, state, decidedByName, decidedAt, isOverdue, canApprove, canReject]
+      required:
+        - clientName
+        - professionalName
+        - serviceName
+        - slotDate
+        - startTime
+        - timezone
+        - amount
+        - state
+        - decidedByName
+        - decidedAt
+        - isOverdue
+        - canApprove
+        - canReject
       properties:
-        clientName: { type: string }
-        professionalName: { type: string }
-        serviceName: { type: string }
-        slotDate: { type: string, nullable: true, example: '2026-11-05' }
-        startTime: { type: string, nullable: true, example: '10:00:00' }
-        timezone: { type: string, example: Asia/Jakarta }
+        clientName:
+          type: string
+        professionalName:
+          type: string
+        serviceName:
+          type: string
+        slotDate:
+          type: string
+          nullable: true
+          example: '2026-11-05'
+        startTime:
+          type: string
+          nullable: true
+          example: '10:00:00'
+        timezone:
+          type: string
+          example: Asia/Jakarta
         amount:
           type: object
           nullable: true
           properties:
-            value: { type: number }
-            currency: { type: string, enum: [IDR, USD] }
-        state: { type: string, enum: [AWAITING, APPROVED, REJECTED, CANCELLED] }
-        decidedByName: { type: string, nullable: true }
-        decidedAt: { type: string, format: date-time, nullable: true }
-        isOverdue: { type: boolean }
-        canApprove: { type: boolean }
-        canReject: { type: boolean }
+            value:
+              type: number
+            currency:
+              type: string
+              enum:
+                - IDR
+                - USD
+        state:
+          type: string
+          enum:
+            - AWAITING
+            - APPROVED
+            - REJECTED
+            - CANCELLED
+        decidedByName:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        isOverdue:
+          type: boolean
+        canApprove:
+          type: boolean
+        canReject:
+          type: boolean
     PublicAppointmentView:
       type: object
       properties:
