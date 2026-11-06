@@ -110,8 +110,27 @@ Jalur tulis yang wajib ikut menyinkronkan:
 - `assignServiceToDoctor`: reaktivasi. Opsi yang sebelumnya nonaktif *karena
   induknya* ikut aktif lagi.
 
+Catatan: `setDoctorServiceStatus`, `unassignServiceFromDoctor`, dan
+`assignServiceToDoctor` saat ini hanya bisa dijangkau dari tes. Route HTTP-nya
+menjawab 410 (`src/services/professional/retired-endpoints.ts`). Penulis yang
+benar-benar tidak tercakup adalah admin WordPress/KiviCare, dan itu yang ditutup
+oleh pengaman saat membaca di bawah.
+
 Jalur yang menghapus semua mapping seorang psikolog atau sebuah klinik sudah
 otomatis mengenai opsinya, karena opsi punya `doctor_id`/`clinic_id` yang sama.
+
+### Pajak
+
+Baris `wp_kc_taxes` dengan `service_id` tertentu dan `doctor_id` spesifik menyimpan
+id **mapping**, yang diterjemahkan ke `service_id` katalog milik mapping itu. Opsi
+mewarisi semuanya dari induk kecuali durasi dan harga, jadi pajak seperti itu
+berlaku untuk semua opsi layanannya: `calculateTax` menambahkan id katalog setiap
+opsi induk (`findOptionCatalogueIds`), **termasuk yang sudah dihapus**, karena
+kunjungan yang selesai pada sebuah opsi bisa ditagih setelah opsi itu dihapus.
+
+Pajak per layanan dengan `doctor_id = -1` menyimpan id **katalog** (kontrak
+KiviCare Pro `KCProTaxController`), jadi **tidak** diwarisi opsi. Ambiguitas
+katalog-vs-mapping ini sudah ada di KiviCare dan perlu tindak lanjut tersendiri.
 
 ### Menghapus opsi
 
@@ -128,7 +147,9 @@ bentrok nama mengabaikan induk dan semua opsinya, termasuk yang sudah dihapus.
 ### Pengaman saat membaca
 
 `listServicesForDoctor` (sumber data booking, slot, pembayaran, dan katalog publik)
-membuang opsi yang induknya tidak ada di hasil query yang sama, yaitu induk yang
+juga membuang baris yang membawa penanda `_removed`, berapa pun statusnya, supaya
+opsi yang dihapus tidak bisa dibooking walau statusnya dikembalikan ke 1 dari luar
+API (misalnya admin KiviCare). Selain itu ia membuang opsi yang induknya tidak ada di hasil query yang sama, yaitu induk yang
 nonaktif, tidak publik (untuk `publicOnly`), atau hilang. Akibatnya opsi seperti
 itu tidak pernah tampil dan **tidak bisa dibooking**, walaupun ada jalur tulis yang
 lupa menyinkronkan.
@@ -274,6 +295,26 @@ Tidak berubah. FE cukup mengirim `serviceId` milik opsi yang dipilih.
 ### Form tambah layanan
 
 Tidak berubah.
+
+## Tindak lanjut
+
+- (a) Tidak ada kunci baris antara pemeriksaan dan penulisan, jadi dua PUT yang
+  bersamaan bisa melewati batas 4 opsi.
+- (b) Audit mencatat patch kaskade walau nilainya tidak berubah.
+- (c) Opsi yang sudah dihapus milik induk lain masih bisa memicu 409 bentrok nama.
+- (d) Sudah ada sebelumnya: mengganti nama induk memindahkan katalog opsi/induk
+  yang punya janji mendatang. Janji itu tetap memegang id katalog lama, sehingga
+  `countBlockingAppointments` tidak lagi melihatnya, dan `initiatePublicPayment`
+  (`payment.service.ts` sekitar baris 417-420) bisa jatuh ke harga 0.
+
+- (e) Penghapusan bisa terlalu ketat lintas klinik, karena
+  `countBlockingAppointments` mencocokkan (serviceId, doctorId) tanpa klinik.
+- (f) `softDeleteMapping` kini export mati.
+- (g) Celah tes: tidak ada tes rollback DB asli untuk `saveServiceUpdate`, tidak ada
+  e2e untuk bentrok nama akibat rename yang di-rollback, dan tidak ada e2e untuk
+  reaktivasi setelah DELETE.
+- (h) Satu pemindaian LIKE penuh per baris pajak per layanan pada setiap
+  `calculateTax`.
 
 ## Di luar cakupan (sengaja)
 
