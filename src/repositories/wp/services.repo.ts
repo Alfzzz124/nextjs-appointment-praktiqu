@@ -13,6 +13,12 @@
 import { prisma } from '@/lib/db';
 import { lastInsertId } from '@/lib/last-insert-id';
 import { paginate } from './wp-user';
+import {
+  ANY_OPTION_PROBE,
+  parseDurationOf,
+  readMarker,
+  type OptionMarker,
+} from './duration-option-marker';
 
 const STATUS_ACTIVE = 1;
 
@@ -51,6 +57,11 @@ export type WpDoctorService = {
    * "Couple/Family Session (2 Orang) - 2 Jam" reached patients as that slug.
    */
   nameAlias: string | null;
+  /**
+   * The parent MAPPING id when this row is a live duration option of another service,
+   * else null. See duration-option-marker.ts.
+   */
+  durationOf: bigint | null;
 };
 
 export type ListServicesQuery = {
@@ -160,6 +171,7 @@ export async function listServicesForDoctor(opts: {
       status: true,
       telemedService: true,
       serviceNameAlias: true,
+      extra: true,
     },
     orderBy: { id: 'asc' },
   });
@@ -172,7 +184,7 @@ export async function listServicesForDoctor(opts: {
   });
   const byId = new Map(services.map((s) => [s.id.toString(), s]));
 
-  return mappings
+  const rows: WpDoctorService[] = mappings
     // A mapping can outlive its service if the service row was deleted directly in
     // the DB; skip those rather than emitting a nameless entry.
     .filter((m) => byId.has(m.serviceId.toString()))
@@ -192,8 +204,16 @@ export async function listServicesForDoctor(opts: {
         isActive: m.status === STATUS_ACTIVE,
         telemedService: m.telemedService,
         nameAlias: m.serviceNameAlias,
+        durationOf: parseDurationOf(m.extra),
       };
     });
+
+  // An option is offered only beside its parent. The parent went through the same
+  // filters (active, public, clinic); when it is not here, neither is the option — even
+  // if some write path forgot to copy the parent's status onto it. This is what keeps a
+  // stranded option unbookable: booking, slots and payment all read this function.
+  const present = new Set(rows.map((r) => r.mappingId.toString()));
+  return rows.filter((r) => r.durationOf === null || present.has(r.durationOf.toString()));
 }
 
 /* ------------------------------------------------------------------ */
@@ -222,6 +242,12 @@ export type ClinicServiceRow = {
   isActive: boolean;
   /** The category slug, not a name — see WpDoctorService.nameAlias. */
   nameAlias: string | null;
+  /**
+   * The duration-option marker: set for live AND removed options, null for an ordinary
+   * service. Removed options keep it so reports can still name past bookings and the
+   * dashboard can hide them under their parent.
+   */
+  optionOf: OptionMarker | null;
 };
 
 export type ListClinicServicesQuery = {
@@ -251,6 +277,7 @@ const MAPPING_SELECT = {
   status: true,
   telemedService: true,
   serviceNameAlias: true,
+  extra: true,
   // `created_at` is deliberately NOT selected. It is `datetime NOT NULL`, but KiviCare has
   // filled it with MySQL zero-dates: 273 of 277 rows on staging read `0000-00-00 00:00:00`.
   // Prisma refuses to decode those ("Value out of range for the type"), so selecting the
@@ -270,6 +297,7 @@ type MappingRow = {
   status: number;
   telemedService: string | null;
   serviceNameAlias: string | null;
+  extra: string | null;
 };
 
 type CatalogueRow = { id: bigint; name: string; type: string | null; category: string | null };
@@ -299,6 +327,7 @@ function toClinicService(m: MappingRow, s: CatalogueRow): ClinicServiceRow {
     isPublic: m.isPublic === 1,
     isActive: m.status === STATUS_ACTIVE,
     nameAlias: m.serviceNameAlias,
+    optionOf: readMarker(m.extra),
   };
 }
 
@@ -340,14 +369,64 @@ export async function listClinicServices(
 
   // `total` deliberately counts mappings, not survivors: it is the count the pagination
   // arithmetic is built on, and dropping orphans from it would make page sizes lie.
-  return {
-    items: mappings
-      .filter((m) => byId.has(m.serviceId.toString()))
-      .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!)),
-    total,
-    page,
-    perPage,
-  };
+  const items = mappings
+    .filter((m) => byId.has(m.serviceId.toString()))
+    .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!));
+
+  // `total` deliberately counts mappings, not survivors: it is the count the pagination
+  // arithmetic is built on, and dropping orphans from it would make page sizes lie.
+  return { items: await withoutStrandedOptions(items), total, page, perPage };
+}
+
+/**
+ * Drop options whose parent is gone, or whose parent is inactive while the option is
+ * active. The parent is looked up by id, not searched for on this page: the list is
+ * paginated and the parent may well sit on another page.
+ */
+async function withoutStrandedOptions(items: ClinicServiceRow[]): Promise<ClinicServiceRow[]> {
+  const parentIds = [
+    ...new Set(items.flatMap((i) => (i.optionOf ? [i.optionOf.parentId.toString()] : []))),
+  ];
+  if (parentIds.length === 0) return items;
+
+  const parents = await prisma.kcServiceDoctorMapping.findMany({
+    where: { id: { in: parentIds.map((id) => BigInt(id)) } },
+    select: { id: true, status: true },
+  });
+  const parentActive = new Map(parents.map((p) => [p.id.toString(), p.status === STATUS_ACTIVE]));
+
+  return items.filter((i) => {
+    if (!i.optionOf) return true;
+    const active = parentActive.get(i.optionOf.parentId.toString());
+    if (active === undefined) return false;
+    return active || !i.isActive;
+  });
+}
+
+/**
+ * Every duration option of these parents — live AND removed, any status — shortest first.
+ *
+ * Found by the marker, not by doctor: option rows are few, and one LIKE on `extra` covers
+ * any mix of parents. `readMarker` then confirms each candidate.
+ */
+export async function listOptionRowsOf(parentIds: bigint[]): Promise<ClinicServiceRow[]> {
+  if (parentIds.length === 0) return [];
+  const wanted = new Set(parentIds.map((id) => id.toString()));
+
+  const candidates = (await prisma.kcServiceDoctorMapping.findMany({
+    where: ANY_OPTION_PROBE,
+    select: MAPPING_SELECT,
+    orderBy: [{ duration: 'asc' }, { id: 'asc' }],
+  })) as MappingRow[];
+
+  const mine = candidates.filter((m) => {
+    const marker = readMarker(m.extra);
+    return marker !== null && wanted.has(marker.parentId.toString());
+  });
+  const byId = await catalogueFor(mine);
+  return mine
+    .filter((m) => byId.has(m.serviceId.toString()))
+    .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!));
 }
 
 /**

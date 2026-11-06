@@ -153,6 +153,7 @@ function primeHappyPath() {
       telemedService: null,
       nameAlias: null,
       category: null,
+      durationOf: null,
     },
   ]);
 
@@ -282,6 +283,7 @@ describe('createPublicAppointment', () => {
         telemedService: null,
         nameAlias: null,
         category: null,
+        durationOf: null,
       });
       vi.mocked(listServicesForDoctor).mockImplementation(async (opts) =>
         [mapping(CLINIC), mapping(OTHER_CLINIC)].filter(

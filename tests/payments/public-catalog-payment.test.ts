@@ -111,6 +111,7 @@ function mapping(serviceId: number, clinicId: number, charges: string): WpDoctor
     telemedService: null,
     nameAlias: null,
     category: null,
+    durationOf: null,
   };
 }
 

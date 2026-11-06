@@ -161,6 +161,7 @@ const MAPPING = {
   isPublic: true,
   isActive: true,
   telemedService: null,
+  durationOf: null,
 };
 
 function tomorrow(): string {
