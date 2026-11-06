@@ -1,7 +1,9 @@
 # Opsi durasi layanan
 
 **Tanggal:** 2026-11-05
-**Status:** desain disetujui, menunggu review spec
+**Status:** spec disetujui 2026-11-06. Rencana implementasi:
+`docs/superpowers/plans/2026-11-06-opsi-durasi-layanan-be.md` (backend, rilis duluan) dan
+`docs/superpowers/plans/2026-11-06-opsi-durasi-layanan-fe.md` (Laravel FE)
 **Cabang:** `feat/opsi-durasi-layanan` (BE, dari `origin/main` 07b6579) + cabang bernama sama di FE
 
 ## Ringkasan
@@ -117,6 +119,12 @@ Menghapus opsi = soft delete (`status = 0`) **dan** mengganti kuncinya menjadi
 `praktiqu_duration_of_removed`. Dengan begitu opsi yang sudah dibuang tidak ikut
 hidup lagi saat induknya diaktifkan ulang, tapi jejaknya tetap ada.
 
+Opsi yang sudah dihapus tetap membawa `durationOf` di API staf. Dengan begitu
+dashboard bisa menyembunyikannya di bawah induknya (bukan tampil sebagai layanan
+nonaktif tersendiri), dan laporan tetap menemukan nama layanan untuk janji lama.
+Menambahkan lagi durasi yang pernah dihapus membuat baris baru; pemeriksaan
+bentrok nama mengabaikan induk dan semua opsinya, termasuk yang sudah dihapus.
+
 ### Pengaman saat membaca
 
 `listServicesForDoctor` (sumber data booking, slot, pembayaran, dan katalog publik)
@@ -131,9 +139,11 @@ induknya nonaktif saat opsi itu sendiri aktif. Statusnya dicek lewat query id in
 halaman lain. Alasan yang sama berlaku untuk `durationOptions` di baris induk: isinya
 diambil dengan query tersendiri, bukan dirakit dari baris di halaman yang sama.
 
-**Jebakan Prisma:** filter "bukan opsi" pada kolom nullable harus eksplisit
-`OR: [{ extra: null }, { extra: { not: { contains: ... } } }]`. `NOT LIKE` pada
-NULL bernilai NULL, sehingga baris tanpa `extra` (hampir semua baris) ikut terbuang.
+Kandidat opsi dicari dengan satu `LIKE '%"praktiqu_duration_of%'` pada `extra`,
+yang cocok dengan kunci hidup maupun kunci `_removed`. Setiap kandidat lalu
+dipastikan dengan mem-parse JSON-nya, karena teks bebas bisa saja memuat
+karakter yang sama. Daftar tetap datar, jadi tidak ada filter "bukan opsi" yang
+bisa terjebak `NOT LIKE` pada NULL.
 
 ## API (BE)
 
@@ -151,16 +161,19 @@ penanda, dan pengelompokan dikerjakan FE untuk tampilan saja.
 
 ### `GET /api/v1/services` dan `GET /api/v1/services/{id}`
 
-- Setiap baris mendapat `durationOf: string | null`, berisi id mapping induk untuk
-  baris opsi.
-- Baris induk mendapat `durationOptions: Array<{ id, name, durationMinutes, charges }>`,
-  terurut dari durasi terpendek. Isinya `[]` kalau tidak punya opsi.
+- Setiap baris mendapat `durationOf: number | null`, berisi id mapping induk untuk
+  baris opsi, baik yang hidup maupun yang sudah dihapus.
+- Setiap baris mendapat `durationOptions: Array<{ id, serviceId, name, durationMinutes, price, isActive }>`.
+  Isinya opsi hidup milik induk itu, terurut dari durasi terpendek; `[]` untuk
+  baris opsi dan untuk layanan tanpa opsi. Nama field mengikuti `ServiceSummary`
+  (`price`, bukan `charges`).
 - Pagination dan `total` tidak berubah, tetap menghitung semua baris. FE sudah
   menyapu semua halaman (`DashboardController:1234`), jadi aman.
 
 ### `PUT /api/v1/services/{id}`
 
-Field baru opsional: `durationOptions: Array<{ id?: string, durationMinutes: number, charges: number }>`.
+Field baru opsional: `durationOptions: Array<{ id?: number, duration: number, price: number }>`.
+Nama field mengikuti field induk di request yang sama (`duration`, `price`).
 
 - Field tidak dikirim → opsi tidak disentuh, jadi FE lama tetap aman.
 - Field dikirim → dianggap daftar lengkap:
@@ -207,28 +220,39 @@ Tidak berubah. FE cukup mengirim `serviceId` milik opsi yang dipilih.
 - Satu kartu per induk. Opsi tidak tampil sebagai kartu sendiri.
 - Kartu tanpa opsi tampil persis seperti sekarang.
 - Kartu dengan opsi menampilkan chip `60 menit · Rp425rb` / `90 menit · Rp600rb`
-  di dalam kartu, terurut dari durasi terpendek. Klik kartu memilih durasi induk.
-  Klik chip memilih opsi itu, sehingga `serviceId` = id opsi. Harga (termasuk USD)
-  dan durasi di kartu mengikuti chip yang dipilih.
+  tepat di bawah kartu, terurut dari durasi terpendek.
+  - Klik kartu memilih durasi induk, kecuali pilihan sudah ada di kartu itu
+    (mis. 90 menit); pilihan itu tidak dikembalikan diam-diam ke durasi utama.
+  - Klik chip memilih opsi itu, sehingga `serviceId` = id opsi.
+  - Harga (termasuk USD) dan durasi di kartu mengikuti chip yang dipilih.
 - Ganti chip setelah tanggal/jam dipilih → pilihan tanggal/jam di-reset lalu slot
   dipindai ulang, karena durasinya beda.
 - Chip adalah grup radio tersendiri (Tab, Enter/Spasi, `aria-checked`), mengikuti
-  pola aksesibilitas kartu yang sudah ada.
+  pola aksesibilitas kartu yang sudah ada. Letaknya di luar elemen kartu
+  (`role=radio`), karena kontrol interaktif di dalam kontrol interaktif tidak
+  terbaca benar oleh pembaca layar.
+- Pengelompokan dikerjakan sekali di `BookingApi::mapServices`. Halaman booking
+  dan janji manual sama-sama memakainya.
 - Ringkasan dan langkah berikutnya memakai nama opsi apa adanya, misalnya
   "Konseling Individu (90 menit)".
 - Halaman tautan pribadi (`/{nama}`) ikut, karena view-nya sama.
 
 ### Janji manual di dashboard
 
-- Modal pilih layanan memakai pola chip yang sama.
+- Modal ini memakai dropdown, bukan kartu. Dropdown layanan hanya berisi induk
+  (mis. "Konseling Individu · 60/90 menit"). Kalau layanan itu punya opsi, muncul
+  dropdown kedua untuk memilih durasi beserta harganya.
+- `manualForm.serviceId` tetap id yang benar-benar dipesan, jadi hitungan durasi,
+  slot, dan submit tidak berubah.
 - Pencarian durasi di `ManualAppointmentController` (`:317`, `:553`) tetap jalan
   tanpa diubah, karena opsi tetap ada di daftar datar.
 
 ### Daftar kelola layanan (`DashboardController`)
 
-- Baris dengan `durationOf` tidak ditampilkan sebagai baris sendiri.
-- Baris induk menampilkan semua durasinya di kolom durasi/harga, misalnya
-  `60′ Rp425rb · 90′ Rp600rb`.
+- Baris dengan `durationOf` (opsi hidup maupun yang sudah dihapus) tidak
+  ditampilkan sebagai baris sendiri.
+- Kartu induk menampilkan durasi utamanya seperti sekarang, ditambah tag untuk
+  setiap opsi dari `durationOptions`, misalnya `90 mnt · Rp600.000`.
 - Hitungan "jumlah layanan" di halaman itu menghitung induk saja.
 
 ### Form edit layanan (`ServiceController`)
@@ -238,9 +262,14 @@ Tidak berubah. FE cukup mengirim `serviceId` milik opsi yang dipilih.
 - Teks bantu: "Kategori, status online, dan tampil publik mengikuti layanan ini.
   Nama opsi dibuat otomatis, misalnya *Konseling Individu (90 menit)*."
 - Simpan mengirim `durationOptions` lengkap bersama field lain dalam satu PUT.
+- Bagian ini hanya tampil (dan daftarnya hanya dikirim) kalau backend memang
+  mengirim `durationOptions` untuk baris itu. Mengirim `[]` ke backend yang
+  mengenal opsi berarti "hapus semua", jadi FE tidak boleh menebak.
 - Pesan galat dalam bahasa Indonesia untuk setiap kode di tabel API di atas.
   Pesan 409 janji mendatang menyebut jumlah janjinya.
-- Membuka URL edit milik baris opsi mengarahkan ke edit induknya.
+- Baris opsi tidak pernah tampil di daftar, jadi tidak ada jalan di UI untuk
+  membuka form Ubah milik opsi. Kalaupun ada yang memanggil API-nya langsung,
+  backend menolak dengan `edit_via_parent`.
 
 ### Form tambah layanan
 
@@ -269,9 +298,13 @@ Tidak berubah.
 **E2E BE di test DB** (blok id sendiri lewat `idBlock()`):
 - PUT tambah, ubah, dan hapus opsi, lalu baris katalog + mapping + `extra`-nya benar.
 - `GET /services` dan `/services/{id}` membawa `durationOf` / `durationOptions`.
-- `GET /public/professionals/{id}/services` membawa `durationOf`.
-- Slot dengan id opsi memakai durasi opsi.
-- Booking publik dengan id opsi tercatat dengan harga dan durasi opsi.
+- `GET /public/professionals/{id}/services` membawa `durationOf` (unit, dengan
+  repositori di-mock).
+- Slot, booking, dan pembayaran tidak diuji ulang lewat route-nya. Ketiganya
+  mengambil harga dan durasi dari `listServicesForDoctor(...).find(serviceId)`,
+  dan kodenya tidak berubah. Yang diuji di DB nyata: baris opsi muncul di
+  `listServicesForDoctor` dengan durasi dan harganya sendiri, dan opsi yatim
+  tidak muncul sama sekali.
 - Sinkronisasi: ganti nama, nonaktif/aktif, `is_public`, telemed, bulk status,
   bulk delete, dan reaktivasi lewat assign.
 - Opsi yang dihapus tidak hidup lagi saat induk diaktifkan ulang.
@@ -286,8 +319,15 @@ Tidak berubah.
 **FE:**
 - PHPUnit: controller meneruskan `durationOptions`, daftar kelola menyembunyikan
   baris opsi, dan pesan galat per kode.
-- Tes JS: pengelompokan per (`clinicId`, `durationOf`), pemilihan chip, dan reset
-  jadwal saat chip diganti.
+- PHPUnit untuk pengelompokan di `BookingApi` per (`clinicId`, `durationOf`),
+  termasuk opsi yatim dan tautan pribadi lintas klinik, plus markup chip di
+  halaman booking.
+- Tes JS pada `dashApp()` asli: dropdown janji manual (induk saja, dropdown
+  durasi, `serviceId` yang dipesan) dan form Ubah (muat, tambah/hapus maks. 4,
+  kirim hanya saat mengubah).
+- Interaksi chip di halaman booking (harga mengikuti chip, reset jadwal, klik
+  kartu tidak mengembalikan pilihan) diperiksa lewat smoke test browser, karena
+  skrip halaman booking belum punya harness tes JS.
 - Smoke test di browser lokal (stub backend): booking pasien, janji manual, dan
   form edit.
 
