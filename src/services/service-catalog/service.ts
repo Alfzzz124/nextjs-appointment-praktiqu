@@ -19,7 +19,6 @@ import {
   doctorsMappedToClinic,
   findConflictingMapping,
   saveServiceUpdate,
-  softDeleteMapping,
   countBlockingAppointments,
   type MappingPatch,
   type OptionInsert,
@@ -586,8 +585,13 @@ export async function deleteService(
   }
 
   // Live options keep their marker: reactivating the parent (PUT status 1) brings them back.
-  await softDeleteMapping(existing.id);
-  for (const o of live) await softDeleteMapping(o.id);
+  // One transaction, so a failure cannot leave a retired parent with active options.
+  await saveServiceUpdate({
+    parent: { mappingId: existing.id, patch: { status: 0 } },
+    optionUpdates: live.map((o) => ({ mappingId: o.id, patch: { status: 0 } })),
+    optionInserts: [],
+    optionRemovals: [],
+  });
 
   await audit('service.deleted', {
     userId: actorId,

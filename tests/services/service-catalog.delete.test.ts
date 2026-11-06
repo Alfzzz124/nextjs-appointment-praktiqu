@@ -10,7 +10,7 @@ const write = vi.hoisted(() => ({
   findConflictingMapping: vi.fn(),
   insertMapping: vi.fn(),
   updateMapping: vi.fn(),
-  softDeleteMapping: vi.fn(),
+  saveServiceUpdate: vi.fn(),
   countBlockingAppointments: vi.fn(),
 }));
 vi.mock('@/repositories/wp/services.write', () => write);
@@ -53,7 +53,7 @@ beforeEach(() => {
 
   repo.findMappingById.mockResolvedValue(row);
   write.countBlockingAppointments.mockResolvedValue(0);
-  write.softDeleteMapping.mockResolvedValue(1);
+  write.saveServiceUpdate.mockResolvedValue(undefined);
 });
 
 const expectError = async (fn: () => Promise<unknown>, tag: string) => {
@@ -63,7 +63,12 @@ const expectError = async (fn: () => Promise<unknown>, tag: string) => {
 describe('deleteService', () => {
   it('soft-deletes when nothing upcoming uses the service', async () => {
     expect(await deleteService(501, clinicAdmin, 'actor-1')).toEqual({ ok: true });
-    expect(write.softDeleteMapping).toHaveBeenCalledWith(501n);
+    expect(write.saveServiceUpdate).toHaveBeenCalledWith({
+      parent: { mappingId: 501n, patch: { status: 0 } },
+      optionUpdates: [],
+      optionInserts: [],
+      optionRemovals: [],
+    });
   });
 
   it('checks the catalogue service id against this mapping’s doctor', async () => {
@@ -82,7 +87,7 @@ describe('deleteService', () => {
       _tag: 'conflict',
       count: 3,
     });
-    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
   });
 
   it('404s a mapping in another clinic', async () => {
@@ -110,7 +115,7 @@ describe('deleteService', () => {
 
     expect(await deleteService(501, clinicAdmin, 'actor-1')).toEqual({ ok: true });
     expect(write.countBlockingAppointments).not.toHaveBeenCalled();
-    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
     expect(logging.audit).not.toHaveBeenCalled();
   });
 });
@@ -123,7 +128,7 @@ describe('deleteService — duration options', () => {
     repo.findMappingById.mockResolvedValue({ ...row, id: 601n, optionOf: { parentId: 501n, removed: false } });
 
     await expect(deleteService(601, clinicAdmin, 'a')).rejects.toMatchObject({ _tag: 'unprocessable', code: 'edit_via_parent' });
-    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
   });
 
   it('retires the live options with their parent, leaving removed ones alone', async () => {
@@ -131,7 +136,13 @@ describe('deleteService — duration options', () => {
 
     await deleteService(501, clinicAdmin, 'a');
 
-    expect(write.softDeleteMapping.mock.calls.map((c) => c[0])).toEqual([501n, 601n]);
+    expect(write.saveServiceUpdate).toHaveBeenCalledTimes(1);
+    expect(write.saveServiceUpdate).toHaveBeenCalledWith({
+      parent: { mappingId: 501n, patch: { status: 0 } },
+      optionUpdates: [{ mappingId: 601n, patch: { status: 0 } }],
+      optionInserts: [],
+      optionRemovals: [],
+    });
   });
 
   it("counts an option's upcoming bookings as blocking the parent's delete", async () => {
@@ -140,6 +151,6 @@ describe('deleteService — duration options', () => {
       serviceId === 201n ? 2 : 0);
 
     await expect(deleteService(501, clinicAdmin, 'a')).rejects.toMatchObject({ _tag: 'conflict', count: 2 });
-    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
   });
 });

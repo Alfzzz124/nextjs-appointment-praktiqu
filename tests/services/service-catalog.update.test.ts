@@ -231,7 +231,7 @@ describe('updateService', () => {
   it('does not audit a no-op update that changes nothing', async () => {
     await updateService(501, { name: row.name }, clinicAdmin, 'actor-1');
 
-    // `patch` ends up empty and `updateMapping` correctly issues no SQL for it, but the
+    // `patch` ends up empty and the transactional save has nothing to write for it, but the
     // audit trail must follow suit rather than recording a change that never happened.
     expect(parentPatch()).toEqual({});
     expect(logging.audit).not.toHaveBeenCalled();
