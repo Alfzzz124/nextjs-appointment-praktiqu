@@ -180,18 +180,21 @@ describe("a professional's services", () => {
       {
         id: 7, name: 'Konsultasi', price: '200000', durationMinutes: 60, serviceType: 'KONSELING', category: null,
         clinicId: INTL,
+        durationOf: null,
         paymentMethods: ['xendit', 'paypal', 'card'],
         usd: { price: '12.23', taxes: [], fee: '1.39', total: '13.62' },
       },
       {
         id: 7, name: 'Konsultasi', price: '200000', durationMinutes: 60, serviceType: 'KONSELING', category: null,
         clinicId: LOCAL,
+        durationOf: null,
         paymentMethods: ['xendit'],
         usd: null,
       },
       {
         id: 8, name: 'Konsultasi', price: '0', durationMinutes: 60, serviceType: 'KONSELING', category: null,
         clinicId: INTL,
+        durationOf: null,
         paymentMethods: ['xendit'],
         usd: null,
       },

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const repo = vi.hoisted(() => ({ listClinicServices: vi.fn(), findMappingById: vi.fn() }));
+const repo = vi.hoisted(() => ({ listClinicServices: vi.fn(), findMappingById: vi.fn(), listOptionRowsOf: vi.fn() }));
 vi.mock('@/repositories/wp/services.repo', () => repo);
 
 const write = vi.hoisted(() => ({
@@ -47,6 +47,8 @@ const otherClinic: ServiceScope = { clinicId: 9n, doctorId: null, empty: false }
 beforeEach(() => {
   Object.values(write).forEach((f) => f.mockReset());
   repo.findMappingById.mockReset();
+  repo.listOptionRowsOf.mockReset();
+  repo.listOptionRowsOf.mockResolvedValue([]);
   staticData.findServiceTypeById.mockReset();
   logging.audit.mockReset();
 

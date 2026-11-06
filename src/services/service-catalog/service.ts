@@ -8,6 +8,7 @@
 import {
   listClinicServices,
   findMappingById,
+  listOptionRowsOf,
   type ClinicServiceRow,
 } from '@/repositories/wp/services.repo';
 import { parseServiceCategory, type ServiceCategory } from '@/repositories/wp/service-category';
@@ -29,6 +30,17 @@ import type { ListServicesQuery, CreateServiceInput, UpdateServiceInput } from '
 
 export type { ServiceCategory };
 
+export type DurationOptionSummary = {
+  /** The option's own mapping id. */
+  id: number;
+  /** The option's catalogue id — what a booking sends. */
+  serviceId: number;
+  name: string;
+  durationMinutes: number | null;
+  price: number | null;
+  isActive: boolean;
+};
+
 export type ServiceSummary = {
   /** The mapping id — what `/api/v1/services/{id}` addresses. */
   id: number;
@@ -43,6 +55,10 @@ export type ServiceSummary = {
   telemedService: 'yes' | 'no';
   isPublic: boolean;
   isActive: boolean;
+  /** Parent mapping id when this row is a duration option (live or removed), else null. */
+  durationOf: number | null;
+  /** This service's live duration options, shortest first. Empty for an option row. */
+  durationOptions: DurationOptionSummary[];
 };
 
 export type ServiceCatalogError =
@@ -73,7 +89,19 @@ function parsePrice(raw: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function toSummary(row: ClinicServiceRow): ServiceSummary {
+function toOptionSummary(o: ClinicServiceRow): DurationOptionSummary {
+  return {
+    id: Number(o.id),
+    serviceId: Number(o.serviceId),
+    name: o.name,
+    durationMinutes: o.durationMinutes,
+    price: parsePrice(o.charges),
+    isActive: o.isActive,
+  };
+}
+
+/** `options`: this row's option rows, live or removed; only live ones are reported. */
+function toSummary(row: ClinicServiceRow, options: ClinicServiceRow[] = []): ServiceSummary {
   return {
     id: Number(row.id),
     serviceId: Number(row.serviceId),
@@ -86,7 +114,14 @@ function toSummary(row: ClinicServiceRow): ServiceSummary {
     telemedService: row.telemedService === 'yes' ? 'yes' : 'no',
     isPublic: row.isPublic,
     isActive: row.isActive,
+    durationOf: row.optionOf ? Number(row.optionOf.parentId) : null,
+    durationOptions: options.filter((o) => o.optionOf && !o.optionOf.removed).map(toOptionSummary),
   };
+}
+
+/** The LIVE option rows of one parent, shortest first. */
+async function liveOptionsOf(parentId: bigint): Promise<ClinicServiceRow[]> {
+  return (await listOptionRowsOf([parentId])).filter((o) => o.optionOf && !o.optionOf.removed);
 }
 
 /** Visible to this scope? Both dimensions must pass; `null` means unrestricted. */
@@ -120,8 +155,18 @@ export async function listServices(
     includeInactive: query.includeInactive,
   });
 
+  // Options of this page's parents, fetched by parent id — not assembled from this page,
+  // where an option may be missing because it fell on another page.
+  const parentIds = page.items.filter((r) => !r.optionOf).map((r) => r.id);
+  const optionRows = await listOptionRowsOf(parentIds);
+  const byParent = new Map<string, ClinicServiceRow[]>();
+  for (const o of optionRows) {
+    const key = o.optionOf!.parentId.toString();
+    byParent.set(key, [...(byParent.get(key) ?? []), o]);
+  }
+
   return {
-    services: page.items.map(toSummary),
+    services: page.items.map((r) => toSummary(r, r.optionOf ? [] : byParent.get(r.id.toString()) ?? [])),
     total: page.total,
     page: page.page,
     perPage: page.perPage,
@@ -142,7 +187,7 @@ export async function getService(
 
   const row = await findMappingById(BigInt(mappingId));
   if (!row || !inScope(row, scope)) return null;
-  return toSummary(row);
+  return toSummary(row, row.optionOf ? [] : await listOptionRowsOf([row.id]));
 }
 
 /* ------------------------------------------------------------------ */
@@ -346,7 +391,7 @@ export async function updateService(
   if (!refreshed) {
     throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
   }
-  return toSummary(refreshed);
+  return toSummary(refreshed, await liveOptionsOf(refreshed.id));
 }
 
 /* ------------------------------------------------------------------ */

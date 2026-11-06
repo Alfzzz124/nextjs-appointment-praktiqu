@@ -324,6 +324,12 @@ export interface PublicService {
   paymentMethods: PaymentMethod[];
   /** USD figures, only for an international clinic with a usable rate and a non-free row. */
   usd: PublicUsdView | null;
+  /**
+   * When this row is a duration option of another service: that parent's public `id` (its
+   * catalogue id), in this same list and at this same clinic. The booking page shows one
+   * card per parent and the options as durations to choose from. null for every other row.
+   */
+  durationOf: number | null;
 }
 
 /**
@@ -352,6 +358,9 @@ export async function getPublicProfessionalServices(
   // the same computePublicAmount + buildUsdQuote that charges, so shown and charged match.
   const payment = await resolveClinicPaymentManyForDisplay(rows.map((s) => Number(s.clinicId)));
   const categoryOf = await serviceCategoryLabeller(rows);
+  // An option names its parent by MAPPING id; the public id is the catalogue id.
+  // listServicesForDoctor never returns an option without its parent.
+  const publicIdByMapping = new Map(rows.map((r) => [r.mappingId.toString(), Number(r.serviceId)]));
 
   // Sequential on purpose: a row of an international clinic runs a tax query, and the
   // MySQL user is capped at a handful of connections.
@@ -377,6 +386,7 @@ export async function getPublicProfessionalServices(
       clinicId,
       paymentMethods,
       usd,
+      durationOf: s.durationOf ? publicIdByMapping.get(s.durationOf.toString()) ?? null : null,
     });
   }
   return services;
