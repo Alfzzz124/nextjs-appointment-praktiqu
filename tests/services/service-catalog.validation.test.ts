@@ -104,3 +104,35 @@ describe('toFieldErrors', () => {
     expect(fields.duration[0]).toMatch(/1/);
   });
 });
+
+describe('updateServiceSchema.durationOptions', () => {
+  it('accepts new and existing options', () => {
+    const r = updateServiceSchema.safeParse({
+      durationOptions: [{ duration: 90, price: 600000 }, { id: 12, duration: 120, price: 800000 }],
+    });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.durationOptions).toEqual([
+      { duration: 90, price: 600000 },
+      { id: 12, duration: 120, price: 800000 },
+    ]);
+  });
+
+  it('an empty list is a valid update on its own: it removes every option', () => {
+    expect(updateServiceSchema.safeParse({ durationOptions: [] }).success).toBe(true);
+  });
+
+  it('applies the service duration bounds to each option', () => {
+    const r = updateServiceSchema.safeParse({ durationOptions: [{ duration: 0, price: 1 }] });
+    expect(r.success).toBe(false);
+    expect(!r.success && r.error.issues[0].path).toEqual(['durationOptions', 0, 'duration']);
+  });
+
+  it('refuses a negative price', () => {
+    expect(updateServiceSchema.safeParse({ durationOptions: [{ duration: 90, price: -1 }] }).success).toBe(false);
+  });
+
+  it('drops unknown keys inside an option instead of storing them', () => {
+    const r = updateServiceSchema.safeParse({ durationOptions: [{ duration: 90, price: 1, name: 'x' }] });
+    expect(r.success && r.data.durationOptions).toEqual([{ duration: 90, price: 1 }]);
+  });
+});

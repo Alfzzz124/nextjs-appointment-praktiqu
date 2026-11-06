@@ -18,6 +18,16 @@ const priceSchema = z.number().min(0, 'Price cannot be negative');
 const idSchema = z.number().int().positive();
 
 /**
+ * One duration option in a PUT. Same bounds as the service's own duration and price.
+ * `id` is the option's mapping id; absent means "create".
+ */
+export const durationOptionInputSchema = z.object({
+  id: idSchema.optional(),
+  duration: durationSchema,
+  price: priceSchema,
+});
+
+/**
  * `.strip()` is the default, and it is load-bearing here: `maxClients` has no column
  * anywhere, and silently accepting it would be the exact pattern this dashboard has
  * already had cleaned out twice. Unknown keys are dropped, never stored.
@@ -52,6 +62,11 @@ export const updateServiceSchema = z
     telemedService: z.enum(['yes', 'no']).optional(),
     status: flag.optional(),
     isPublic: flag.optional(),
+    /**
+     * The complete list of extra durations. Absent: options untouched. Present: rows
+     * without `id` are created, rows with `id` updated, and options not listed removed.
+     */
+    durationOptions: z.array(durationOptionInputSchema).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' });
 
@@ -95,6 +110,15 @@ export const serviceCategorySchema = z.object({
   value: z.string().nullable(),
 });
 
+export const durationOptionSummarySchema = z.object({
+  id: z.number().int().describe("The option's own mapping id"),
+  serviceId: z.number().int().describe("The option's catalogue row id — what booking sends"),
+  name: z.string(),
+  durationMinutes: z.number().int().nullable(),
+  price: z.number().nullable(),
+  isActive: z.boolean(),
+});
+
 export const serviceSummarySchema = z.object({
   id: z.number().int().describe('The doctor-service mapping id'),
   serviceId: z.number().int().describe('The catalogue row id'),
@@ -107,6 +131,14 @@ export const serviceSummarySchema = z.object({
   telemedService: z.enum(['yes', 'no']),
   isPublic: z.boolean(),
   isActive: z.boolean(),
+  durationOf: z
+    .number()
+    .int()
+    .nullable()
+    .describe('Parent mapping id when this row is a duration option (live or removed) of another service'),
+  durationOptions: z
+    .array(durationOptionSummarySchema)
+    .describe("This service's live duration options, shortest first. Empty for an option row."),
 });
 
 export const serviceListResponseSchema = z.object({
