@@ -136,3 +136,11 @@ describe('updateServiceSchema.durationOptions', () => {
     expect(r.success && r.data.durationOptions).toEqual([{ duration: 90, price: 1 }]);
   });
 });
+
+describe('updateServiceSchema durationOptions bound', () => {
+  const opt = { duration: 90, price: 300000 };
+  it('accepts 50 items and rejects 51', () => {
+    expect(updateServiceSchema.safeParse({ durationOptions: Array(50).fill(opt) }).success).toBe(true);
+    expect(updateServiceSchema.safeParse({ durationOptions: Array(51).fill(opt) }).success).toBe(false);
+  });
+});

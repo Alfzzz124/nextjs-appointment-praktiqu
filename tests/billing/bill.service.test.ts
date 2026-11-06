@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { seedTax, cleanup, assertTestDb, useIdBlock } from './fixtures';
 import { calculateTax, createBill, getBill, getBillByEncounter, updateBill, updateBillItem, deleteBillItem } from '@/services/billing/bill.service';
 import { prisma } from '@/lib/db';
+import { optionMarker, removedMarker } from '@/repositories/wp/duration-option-marker';
 
 const { BASE } = useIdBlock('billing/bill.service.test.ts');
 
@@ -16,6 +17,74 @@ describe('bill.service calculateTax', () => {
     } as any);
     expect(res.total_tax).toBeGreaterThanOrEqual(10);
     expect(Array.isArray(res.calculated_taxes)).toBe(true);
+  });
+});
+
+describe('bill.service calculateTax: service-scoped tax and duration options', () => {
+  const CLINIC = BASE + 2000;
+  const TAX = BASE + 2001;
+  const TAX_GLOBAL = BASE + 2002;
+  const DOCTOR = BASE + 2030;
+  const [S_PARENT, S_OPT, S_REMOVED, S_OTHER] = [BASE + 2010, BASE + 2011, BASE + 2012, BASE + 2013];
+  const [M_PARENT, M_OPT, M_REMOVED] = [BASE + 2020, BASE + 2021, BASE + 2022];
+  const mapRow = (id: number, serviceId: number, duration: number, extra: string | null, status = 1) => ({
+    id: BigInt(id), serviceId: BigInt(serviceId), doctorId: BigInt(DOCTOR), clinicId: BigInt(CLINIC),
+    charges: '100', duration, status, isPublic: 1, telemedService: 'no', extra, createdAt: new Date(),
+  });
+  const wipeRows = async () => {
+    await prisma.kcTax.deleteMany({ where: { id: { in: [BigInt(TAX), BigInt(TAX_GLOBAL)] } } });
+    await prisma.kcServiceDoctorMapping.deleteMany({ where: { id: { in: [M_PARENT, M_OPT, M_REMOVED].map(BigInt) } } });
+    await prisma.kcService.deleteMany({ where: { id: { in: [S_PARENT, S_OPT, S_REMOVED, S_OTHER].map(BigInt) } } });
+  };
+
+  beforeAll(async () => {
+    assertTestDb();
+    await wipeRows();
+    await prisma.kcService.createMany({
+      data: [S_PARENT, S_OPT, S_REMOVED, S_OTHER].map((id) => ({
+        id: BigInt(id), name: `Pajak Uji ${id}`, type: 'uji_pajak', price: '0', category: null, status: 1, createdAt: new Date(),
+      })) as never,
+    });
+    await prisma.kcServiceDoctorMapping.createMany({
+      data: [
+        mapRow(M_PARENT, S_PARENT, 60, null),
+        mapRow(M_OPT, S_OPT, 90, optionMarker(BigInt(M_PARENT))),
+        mapRow(M_REMOVED, S_REMOVED, 45, removedMarker(BigInt(M_PARENT)), 0),
+      ] as never,
+    });
+    // service_id on a tax row holds the parent MAPPING id.
+    await prisma.kcTax.create({
+      data: {
+        id: BigInt(TAX), name: 'Pajak Layanan', taxType: 'percentage', taxValue: '10', clinicId: BigInt(CLINIC),
+        doctorId: BigInt(DOCTOR), serviceId: BigInt(M_PARENT), addedBy: 1n, status: 1, createdAt: new Date(),
+      },
+    });
+    // Doctor-global row: service_id is a catalogue id by KiviCare Pro's contract, so it is
+    // never read as a mapping id here, even when the number happens to equal one.
+    await prisma.kcTax.create({
+      data: {
+        id: BigInt(TAX_GLOBAL), name: 'Pajak Global', taxType: 'percentage', taxValue: '5', clinicId: BigInt(CLINIC),
+        doctorId: -1n, serviceId: BigInt(M_PARENT), addedBy: 1n, status: 1, createdAt: new Date(),
+      },
+    });
+  });
+  afterAll(wipeRows);
+
+  const item = (id: number) => ({ serviceId: id, quantity: 1, price: 100, service_name: `s${id}` });
+  const hitsOf = async (taxId: number) => {
+    const res = await calculateTax({
+      clinic_id: CLINIC, doctor_id: DOCTOR,
+      serviceItems: [item(S_PARENT), item(S_OPT), item(S_REMOVED), item(S_OTHER)],
+    } as any);
+    return res.calculated_taxes.filter((t) => t.tax_id === taxId).map((t) => t.service_id).sort();
+  };
+
+  it('applies a doctor-specific tax to the parent and all its options (removed too), not to other services', async () => {
+    expect(await hitsOf(TAX)).toEqual([S_PARENT, S_OPT, S_REMOVED].sort());
+  });
+
+  it('does not read a doctor-global row as a mapping id: options are not added', async () => {
+    expect(await hitsOf(TAX_GLOBAL)).toEqual([S_PARENT]);
   });
 });
 

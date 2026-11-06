@@ -186,6 +186,9 @@ export async function listServicesForDoctor(opts: {
   const byId = new Map(services.map((s) => [s.id.toString(), s]));
 
   const rows: WpDoctorService[] = mappings
+    // A removed option is dead whatever its status says: a flip back to 1 outside our API
+    // (KiviCare WP admin) must not make it bookable.
+    .filter((m) => readMarker(m.extra)?.removed !== true)
     // A mapping can outlive its service if the service row was deleted directly in
     // the DB; skip those rather than emitting a nameless entry.
     .filter((m) => byId.has(m.serviceId.toString()))
@@ -464,6 +467,21 @@ export async function findLiveOptionIds(
       return parent !== null && wanted.has(parent.toString());
     })
     .map((r) => r.id);
+}
+
+/**
+ * Catalogue service ids of the options of one parent mapping, LIVE AND REMOVED, any status.
+ * Used by tax matching: an option inherits the parent's service-scoped taxes, and a
+ * finished visit on an option can be billed after the option was removed.
+ */
+export async function findOptionCatalogueIds(parentMappingId: bigint): Promise<bigint[]> {
+  const rows = await prisma.kcServiceDoctorMapping.findMany({
+    where: ANY_OPTION_PROBE,
+    select: { serviceId: true, extra: true },
+  });
+  return rows
+    .filter((r) => readMarker(r.extra)?.parentId === parentMappingId)
+    .map((r) => r.serviceId);
 }
 
 /**

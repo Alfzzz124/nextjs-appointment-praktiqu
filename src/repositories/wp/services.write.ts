@@ -311,7 +311,7 @@ export async function saveServiceUpdate(w: ServiceUpdateWrites): Promise<void> {
         optionMarker(i.parentMappingId),
       );
     }
-  });
+  }, { maxWait: 5000, timeout: 10000 });
 }
 
 /**

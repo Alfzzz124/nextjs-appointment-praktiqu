@@ -66,7 +66,7 @@ export const updateServiceSchema = z
      * The complete list of extra durations. Absent: options untouched. Present: rows
      * without `id` are created, rows with `id` updated, and options not listed removed.
      */
-    durationOptions: z.array(durationOptionInputSchema).optional(),
+    durationOptions: z.array(durationOptionInputSchema).max(50).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' });
 

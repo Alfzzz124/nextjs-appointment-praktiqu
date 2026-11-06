@@ -193,3 +193,27 @@ describe('status follows the parent on the psychologist write paths', () => {
     expect([await statusOf(P3), await statusOf(O3), await statusOf(R3)]).toEqual([1, 1, 0]);
   });
 });
+
+describe('listServicesForDoctor: removed options are never bookable', () => {
+  const D4 = BASE + 503;
+  const S_P4 = BASE + 13;
+  const S_R4 = BASE + 14;
+  const P4 = BASE + 113;
+  const R4 = BASE + 114;
+
+  beforeAll(async () => {
+    await prisma.kcService.createMany({ data: [svc(S_P4, 'Dihapus Uji'), svc(S_R4, 'Dihapus Uji (45 menit)')] as never });
+    await prisma.kcServiceDoctorMapping.createMany({
+      data: [
+        map(P4, S_P4, D4),
+        // Status flipped back to 1 outside our API, e.g. KiviCare WP admin.
+        map(R4, S_R4, D4, { duration: 45, status: 1, extra: removedMarker(BigInt(P4)) }),
+      ] as never,
+    });
+  });
+
+  it('drops a status-1 row that carries the removed marker', async () => {
+    const rows = await listServicesForDoctor({ doctorId: BigInt(D4) });
+    expect(rows.map((r) => r.mappingId)).toEqual([BigInt(P4)]);
+  });
+});
