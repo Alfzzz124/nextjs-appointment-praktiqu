@@ -10,6 +10,7 @@
  * Reads are direct SQL. Assignment WRITES are too — see the Writes section: KiviCare
  * hooks the service catalogue but not the doctor-service mapping.
  */
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { lastInsertId } from '@/lib/last-insert-id';
 import { paginate } from './wp-user';
@@ -373,8 +374,6 @@ export async function listClinicServices(
     .filter((m) => byId.has(m.serviceId.toString()))
     .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!));
 
-  // `total` deliberately counts mappings, not survivors: it is the count the pagination
-  // arithmetic is built on, and dropping orphans from it would make page sizes lie.
   return { items: await withoutStrandedOptions(items), total, page, perPage };
 }
 
@@ -448,6 +447,39 @@ export async function findMappingById(id: bigint): Promise<ClinicServiceRow | nu
   return service ? toClinicService(mapping, service) : null;
 }
 
+/** Ids of the LIVE duration options of these parents, any status. */
+export async function findLiveOptionIds(
+  parentIds: bigint[],
+  db: Prisma.TransactionClient = prisma,
+): Promise<bigint[]> {
+  if (parentIds.length === 0) return [];
+  const wanted = new Set(parentIds.map((id) => id.toString()));
+  const rows = await db.kcServiceDoctorMapping.findMany({
+    where: ANY_OPTION_PROBE,
+    select: { id: true, extra: true },
+  });
+  return rows
+    .filter((r) => {
+      const parent = parseDurationOf(r.extra);
+      return parent !== null && wanted.has(parent.toString());
+    })
+    .map((r) => r.id);
+}
+
+/**
+ * Options follow their parent's status. Removed options carry the `_removed` key and are
+ * not "live", so they are never revived here.
+ */
+async function cascadeStatusToOptions(parentIds: bigint[], status: 0 | 1): Promise<void> {
+  const ids = await findLiveOptionIds(parentIds);
+  if (ids.length === 0) return;
+  await prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_service_doctor_mapping SET status = ? WHERE id IN (${ids.map(() => '?').join(',')})`,
+    status,
+    ...ids,
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Writes — doctor↔service assignments                                 */
 /* ------------------------------------------------------------------ */
@@ -482,6 +514,7 @@ export async function assignServiceToDoctor(opts: {
       opts.durationMinutes ?? null,
       existing.id,
     );
+    await cascadeStatusToOptions([existing.id], 1);
     return existing.id;
   }
 
@@ -519,10 +552,20 @@ export async function unassignServiceFromDoctor(opts: {
     args.push(opts.clinicId);
   }
 
-  return prisma.$executeRawUnsafe(
-    `UPDATE wp_kc_service_doctor_mapping SET status = 0 WHERE ${where.join(' AND ')}`,
+  // Select first: the options to retire are found by their parents' ids.
+  const targets = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+    `SELECT id FROM wp_kc_service_doctor_mapping WHERE ${where.join(' AND ')}`,
     ...args,
   );
+  if (targets.length === 0) return 0;
+  const ids = targets.map((t) => BigInt(t.id));
+
+  const affected = await prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_service_doctor_mapping SET status = 0 WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ...ids,
+  );
+  await cascadeStatusToOptions(ids, 0);
+  return affected;
 }
 
 export async function setDoctorServiceStatus(opts: {
@@ -533,11 +576,20 @@ export async function setDoctorServiceStatus(opts: {
   if (opts.mappingIds.length === 0) return 0;
 
   // doctor_id is in the WHERE so one professional cannot flip another's assignments.
-  return prisma.$executeRawUnsafe(
+  const affected = await prisma.$executeRawUnsafe(
     `UPDATE wp_kc_service_doctor_mapping SET status = ?
       WHERE doctor_id = ? AND id IN (${opts.mappingIds.map(() => '?').join(',')})`,
     opts.status,
     opts.doctorId,
     ...opts.mappingIds,
   );
+
+  // Only the parents that really are this doctor's: ids belonging to someone else were
+  // not updated above, so their options must not be either.
+  const owned = await prisma.kcServiceDoctorMapping.findMany({
+    where: { id: { in: opts.mappingIds }, doctorId: opts.doctorId },
+    select: { id: true },
+  });
+  await cascadeStatusToOptions(owned.map((o) => o.id), opts.status);
+  return affected;
 }

@@ -8,10 +8,13 @@ import { assertTestDb } from '../billing/fixtures';
 import { idBlock } from '../helpers/id-blocks';
 import { optionMarker, removedMarker } from '@/repositories/wp/duration-option-marker';
 import {
+  assignServiceToDoctor,
   findMappingById,
   listClinicServices,
   listOptionRowsOf,
   listServicesForDoctor,
+  setDoctorServiceStatus,
+  unassignServiceFromDoctor,
 } from '@/repositories/wp/services.repo';
 
 const { BASE, END } = idBlock('repositories/wp-duration-options.repo.test.ts');
@@ -138,5 +141,55 @@ describe('listOptionRowsOf', () => {
 describe('findMappingById', () => {
   it('carries the marker', async () => {
     expect((await findMappingById(BigInt(O)))!.optionOf).toEqual({ parentId: BigInt(P), removed: false });
+  });
+});
+
+describe('status follows the parent on the psychologist write paths', () => {
+  const D3 = BASE + 502;
+  const S_P3 = BASE + 10;
+  const S_O3 = BASE + 11;
+  const S_R3 = BASE + 12;
+  const P3 = BASE + 110;
+  const O3 = BASE + 111;
+  const R3 = BASE + 112; // removed option of P3 — must never come back to life
+
+  const statusOf = async (id: number) =>
+    (await prisma.kcServiceDoctorMapping.findUnique({ where: { id: BigInt(id) }, select: { status: true } }))!.status;
+
+  beforeAll(async () => {
+    await prisma.kcService.createMany({
+      data: [svc(S_P3, 'Kaskade Uji'), svc(S_O3, 'Kaskade Uji (90 menit)'), svc(S_R3, 'Kaskade Uji (45 menit)')] as never,
+    });
+    await prisma.kcServiceDoctorMapping.createMany({
+      data: [
+        map(P3, S_P3, D3),
+        map(O3, S_O3, D3, { duration: 90, extra: optionMarker(BigInt(P3)) }),
+        map(R3, S_R3, D3, { duration: 45, status: 0, extra: removedMarker(BigInt(P3)) }),
+      ] as never,
+    });
+  });
+
+  it('bulk status flips the option with its parent', async () => {
+    await setDoctorServiceStatus({ mappingIds: [BigInt(P3)], doctorId: BigInt(D3), status: 0 });
+    expect([await statusOf(P3), await statusOf(O3)]).toEqual([0, 0]);
+
+    await setDoctorServiceStatus({ mappingIds: [BigInt(P3)], doctorId: BigInt(D3), status: 1 });
+    expect([await statusOf(P3), await statusOf(O3), await statusOf(R3)]).toEqual([1, 1, 0]);
+  });
+
+  it('bulk status for a mapping of another doctor touches neither it nor its options', async () => {
+    await setDoctorServiceStatus({ mappingIds: [BigInt(P3)], doctorId: BigInt(D), status: 0 });
+    expect([await statusOf(P3), await statusOf(O3)]).toEqual([1, 1]);
+  });
+
+  it('unassign retires the option too, and counts only the parent', async () => {
+    const affected = await unassignServiceFromDoctor({ doctorId: BigInt(D3), serviceId: BigInt(S_P3) });
+    expect(affected).toBe(1);
+    expect([await statusOf(P3), await statusOf(O3)]).toEqual([0, 0]);
+  });
+
+  it('re-assigning revives the live option but not the removed one', async () => {
+    await assignServiceToDoctor({ doctorId: BigInt(D3), serviceId: BigInt(S_P3), clinicId: BigInt(C) });
+    expect([await statusOf(P3), await statusOf(O3), await statusOf(R3)]).toEqual([1, 1, 0]);
   });
 });
