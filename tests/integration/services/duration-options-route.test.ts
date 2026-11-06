@@ -31,6 +31,7 @@ const TYPE = `uji_durasi_${BASE}`;
 let token = '';
 
 async function wipe() {
+  assertTestDb();
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_appointment_service_mapping WHERE id >= ? AND id < ?`, BASE, END);
   await prisma.$executeRawUnsafe(`DELETE FROM wp_kc_appointments WHERE id >= ? AND id < ?`, BASE, END);
   // Options are inserted by the route with auto-increment ids: find them by doctor.
@@ -122,11 +123,11 @@ describe('duration options through PUT /api/v1/services/{id}', () => {
   });
 
   it('status, visibility and telemed follow the parent', async () => {
-    await call('PUT', P, { status: 0, isPublic: 0, telemedService: 'yes' });
+    expect((await call('PUT', P, { status: 0, isPublic: 0, telemedService: 'yes' })).status).toBe(200);
     let [row] = await optionRows();
     expect([row.status, row.is_public, row.telemed_service]).toEqual([0, 0, 'yes']);
 
-    await call('PUT', P, { status: 1, isPublic: 1, telemedService: 'no' });
+    expect((await call('PUT', P, { status: 1, isPublic: 1, telemedService: 'no' })).status).toBe(200);
     [row] = await optionRows();
     expect([row.status, row.is_public, row.telemed_service]).toEqual([1, 1, 'no']);
   });
@@ -141,7 +142,9 @@ describe('duration options through PUT /api/v1/services/{id}', () => {
 
   it('refuses a fifth extra duration', async () => {
     const durationOptions = [30, 45, 90, 120, 150].map((duration) => ({ duration, price: 1 }));
+    const before = await optionRows();
     expect((await call('PUT', P, { durationOptions })).json.code).toBe('duration_option_limit');
+    expect(await optionRows()).toHaveLength(before.length);
   });
 
   it('refuses to edit or delete the option row directly', async () => {
@@ -150,10 +153,11 @@ describe('duration options through PUT /api/v1/services/{id}', () => {
   });
 
   it('refuses an option name another service of this professional already has, inserting nothing', async () => {
-    const { status } = await call('PUT', P, {
+    const { status, json } = await call('PUT', P, {
       durationOptions: [{ id: optionId, duration: 90, price: 600000 }, { duration: 120, price: 800000 }],
     });
     expect(status).toBe(409);
+    expect(json.code).toBe('service_name_taken');
     expect(await optionRows()).toHaveLength(1);
   });
 
@@ -205,5 +209,8 @@ describe('duration options through PUT /api/v1/services/{id}', () => {
     expect((await call('DELETE', P)).status).toBe(200);
     const live = (await optionRows()).filter((r) => JSON.parse(r.extra).praktiqu_duration_of === P);
     expect(live.map((r) => r.status)).toEqual([0]);
+    expect(live.map((r) => JSON.parse(r.extra))).toEqual([{ praktiqu_duration_of: P }]);
+    const parent = await prisma.kcServiceDoctorMapping.findUnique({ where: { id: BigInt(P) }, select: { status: true } });
+    expect(parent!.status).toBe(0);
   });
 });
