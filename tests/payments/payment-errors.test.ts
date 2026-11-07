@@ -20,6 +20,7 @@ import {
   DiscountNotSupportedError,
   PaymentMethodNotAllowedError,
   PaypalRateMissingError,
+  ServiceNotOfferedError,
   paymentErrorProblem,
   statusProblem,
 } from '@/services/payments/payment-errors';
@@ -44,6 +45,9 @@ describe('paymentErrorProblem — our own errors', () => {
     ['PaymentSettingsUnavailableError', 503, 'payment_settings_unavailable', new PaymentSettingsUnavailableError('x')],
     ['ChargeMismatchError', 502, 'charge_mismatch', new ChargeMismatchError('x')],
     ['DiscountNotSupportedError', 422, 'discount_not_supported', new DiscountNotSupportedError('x')],
+    // 422, not 409: the FE reads every 409 from /public/payments other than
+    // appointment_not_pending as "an order is already pending" and starts polling.
+    ['ServiceNotOfferedError', 422, 'service_not_offered', new ServiceNotOfferedError('x')],
   ])('%s -> %i %s', (_name, status, code, err) => {
     expect(paymentErrorProblem(err)).toMatchObject({ status, code });
   });
@@ -57,6 +61,14 @@ describe('paymentErrorProblem — our own errors', () => {
       err,
       { metadata: { cause: 'connection refused' } },
     );
+  });
+
+  it('answers a booking whose service cannot be priced in Indonesian, without internal ids', () => {
+    const p = paymentErrorProblem(new ServiceNotOfferedError('appointment 5150: service 7 has no active mapping'));
+
+    expect(p).toMatchObject({ status: 422, code: 'service_not_offered' });
+    expect(p!.detail).toMatch(/layanan/i);
+    expect(JSON.stringify(p)).not.toContain('5150');
   });
 
   it('returns null for an error it does not own', () => {

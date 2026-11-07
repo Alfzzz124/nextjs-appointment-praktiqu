@@ -29,6 +29,14 @@ export class PaypalRateMissingError extends Error {}
 export class ChargeMismatchError extends Error {}
 /** Staff route: paypal/card on a bill with a discount. 422. */
 export class DiscountNotSupportedError extends Error {}
+/**
+ * Public route: the booked service has no active mapping for the professional at the
+ * clinic any more (renamed, recategorised or deactivated after booking), so there is no
+ * price to charge. 422, not 409: the FE reads every 409 from /public/payments other than
+ * `appointment_not_pending` as "an order is already pending" and leaves the patient
+ * polling for an order that does not exist.
+ */
+export class ServiceNotOfferedError extends Error {}
 
 function wpErrorProblem(err: WpEndpointError): ProblemDetails {
   // Fire-and-forget: logging.write swallows its own failures and never rejects.
@@ -80,6 +88,13 @@ export function paymentErrorProblem(err: unknown): ProblemDetails | null {
   }
   if (err instanceof DiscountNotSupportedError) {
     return validationError('discount_not_supported', 'PayPal and card cannot be used on a discounted bill');
+  }
+  if (err instanceof ServiceNotOfferedError) {
+    // The service logged the ids; the patient gets no internal numbers.
+    return validationError(
+      'service_not_offered',
+      'Layanan pada janji temu ini sudah diubah atau tidak tersedia lagi, jadi tagihannya belum bisa dibuat. Silakan hubungi klinik.',
+    );
   }
   if (err instanceof WpEndpointError) return wpErrorProblem(err);
   return null;

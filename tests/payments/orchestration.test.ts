@@ -101,6 +101,7 @@ import {
   DiscountNotSupportedError,
   PaymentMethodNotAllowedError,
   PaypalRateMissingError,
+  ServiceNotOfferedError,
 } from '@/services/payments/payment-errors';
 import { PaymentSettingsUnavailableError } from '@/repositories/wp/clinic-payment-settings.repo';
 
@@ -292,6 +293,116 @@ describe('initiatePublicPayment', () => {
       }),
     }));
     expect(result.chargedCurrency).toBe('USD');
+  });
+});
+
+describe('initiatePublicPayment — the booked service has no mapping any more', () => {
+  // The appointment stores only the catalogue id (`visit_type` /
+  // wp_kc_appointment_service_mapping.service_id). A price is found by matching that id
+  // against the professional's active mappings at the clinic. When nothing matches, the
+  // old code charged Rp 0 for a service named "Service".
+
+  /** Nothing may be created: no WooCommerce order, no payment_orders row, no job. */
+  function expectNothingCharged() {
+    expect(wpEndpoint.createWcOrder).not.toHaveBeenCalled();
+    expect(db.paymentOrder.create).not.toHaveBeenCalled();
+    expect(jobsClient.jobs.enqueue).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    db.paymentOrder.findFirst.mockResolvedValue(null);
+    wpEndpoint.createWcOrder.mockResolvedValue({
+      orderId: 42, checkoutUrl: 'https://wp/checkout/42',
+      chargedAmount: 0, chargedCurrency: 'IDR', fxRate: null,
+    });
+    db.paymentOrder.create.mockResolvedValue({ id: 'po_1' });
+  });
+
+  it('refuses after a rename repointed the mapping at another catalogue row', async () => {
+    // updateService never renames the catalogue row: it repoints the mapping at a row
+    // carrying the new name. The booking made before the rename still names SERVICE.
+    services.listServicesForDoctor.mockResolvedValue([
+      {
+        mappingId: 11n,
+        serviceId: 99n,
+        doctorId: BigInt(DOCTOR),
+        clinicId: BigInt(CLINIC),
+        name: 'Konseling Individu',
+        type: 'KONSELING',
+        charges: '100000',
+        durationMinutes: 60,
+        isPublic: true,
+        isActive: true,
+        telemedService: null,
+        nameAlias: null,
+      },
+    ]);
+
+    await expect(initiatePublicPayment(APPOINTMENT)).rejects.toThrow(ServiceNotOfferedError);
+    expectNothingCharged();
+  });
+
+  it('refuses after the mapping was deactivated (the repo returns active mappings only)', async () => {
+    services.listServicesForDoctor.mockResolvedValue([]);
+
+    await expect(initiatePublicPayment(APPOINTMENT)).rejects.toThrow(ServiceNotOfferedError);
+    expectNothingCharged();
+  });
+
+  it('refuses a booking that carries no service id at all', async () => {
+    sessions.findSessionById.mockResolvedValue({ ...appointmentRow('PENDING'), serviceIds: [] });
+
+    await expect(initiatePublicPayment(APPOINTMENT)).rejects.toThrow(ServiceNotOfferedError);
+    expect(services.listServicesForDoctor).not.toHaveBeenCalled();
+    expectNothingCharged();
+  });
+
+  it('refuses for PayPal too, before any clinic-settings read', async () => {
+    services.listServicesForDoctor.mockResolvedValue([]);
+
+    await expect(initiatePublicPayment(APPOINTMENT, 'paypal')).rejects.toThrow(ServiceNotOfferedError);
+    expect(db.kcOption.findMany).not.toHaveBeenCalled();
+    expectNothingCharged();
+  });
+
+  it('logs which booking could not be priced, so staff can fix it', async () => {
+    services.listServicesForDoctor.mockResolvedValue([]);
+
+    await expect(initiatePublicPayment(APPOINTMENT)).rejects.toThrow(ServiceNotOfferedError);
+    expect(logging.logging.warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        resource: 'appointment',
+        resourceId: String(APPOINTMENT),
+        metadata: expect.objectContaining({ serviceId: SERVICE, doctorId: DOCTOR, clinicId: CLINIC }),
+      }),
+    );
+  });
+
+  it('still charges Rp 0 for a genuinely free service whose mapping resolves', async () => {
+    services.listServicesForDoctor.mockResolvedValue([
+      {
+        mappingId: 11n,
+        serviceId: BigInt(SERVICE),
+        doctorId: BigInt(DOCTOR),
+        clinicId: BigInt(CLINIC),
+        name: 'Sesi Perkenalan',
+        type: 'KONSELING',
+        charges: '0',
+        durationMinutes: 30,
+        isPublic: true,
+        isActive: true,
+        telemedService: null,
+        nameAlias: null,
+      },
+    ]);
+
+    await initiatePublicPayment(APPOINTMENT);
+
+    expect(wpEndpoint.createWcOrder.mock.calls[0][0].items).toEqual([{ name: 'Sesi Perkenalan', price: 0 }]);
+    expect(db.paymentOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ expectedAmount: 0 }),
+    }));
   });
 });
 

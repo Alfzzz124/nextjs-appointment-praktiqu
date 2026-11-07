@@ -30,6 +30,7 @@ import {
   ChargeMismatchError,
   PaymentMethodNotAllowedError,
   PaypalRateMissingError,
+  ServiceNotOfferedError,
 } from '@/services/payments/payment-errors';
 import { PaymentSettingsUnavailableError } from '@/repositories/wp/clinic-payment-settings.repo';
 import { WpEndpointError } from '@/lib/wp-endpoint';
@@ -65,6 +66,15 @@ describe('POST /public/payments', () => {
     (svc.initiatePublicPayment as any).mockRejectedValue(new (svc as any).AppointmentNotFoundError());
     const res = await initiate(req({ token: 'good' }));
     expect(res.status).toBe(404);
+  });
+
+  it('422 service_not_offered when the booked service no longer has a price, never a 201', async () => {
+    // A 409 would be misread by the FE as "an order is already pending" and leave the
+    // patient polling; this must be a status the FE treats as a plain failure.
+    (svc.initiatePublicPayment as any).mockRejectedValue(new ServiceNotOfferedError('no mapping'));
+    const res = await initiate(req({ token: 'good' }));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ status: 422, code: 'service_not_offered' });
   });
 });
 
