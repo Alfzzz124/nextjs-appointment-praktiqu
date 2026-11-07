@@ -29,6 +29,9 @@ describe('readMarker', () => {
     ['a JSON array', '[501]'],
     ['a JSON number', '501'],
     ['JSON without our key', '{"currency":"IDR"}'],
+    // What production actually holds in 113 of 287 rows (2026-11-07): a WooCommerce
+    // product link written by an older KiviCare.
+    ['the legacy KiviCare WooCommerce link', '{"product_id":45786}'],
     ['zero', '{"praktiqu_duration_of":0}'],
     ['a negative id', '{"praktiqu_duration_of":-3}'],
     ['a fraction', '{"praktiqu_duration_of":1.5}'],

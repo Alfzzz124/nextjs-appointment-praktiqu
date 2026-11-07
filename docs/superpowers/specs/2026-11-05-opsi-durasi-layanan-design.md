@@ -67,8 +67,27 @@ pernah disentuh. Saat membaca, sebuah baris dianggap opsi hanya kalau `extra`-ny
 JSON yang punya kunci `praktiqu_duration_of`. Isi lain atau teks yang bukan JSON
 dianggap layanan biasa.
 
-Sebelum rilis tetap ada satu query read-only ke DB produksi untuk memastikan kolom
-itu memang kosong semua. Query ini butuh izin pemilik produk dulu.
+**Koreksi setelah dicek di produksi (2026-11-07, read-only, dengan izin pemilik
+produk).** Kolom ini ternyata TIDAK kosong:
+- 113 dari 287 baris mapping berisi `{"product_id": N}`, yaitu tautan produk
+  WooCommerce yang ditulis KiviCare versi lama.
+- Isi itu aman bagi desain ini. Parser hanya mengenali kunci `praktiqu_duration_of`,
+  jadi baris-baris itu tetap layanan biasa. Kita juga tidak pernah menulis ke baris
+  yang sudah ada.
+
+KiviCare 4 masih punya satu jalur tulis, yaitu `KCWooCommerce::handle_product_delete`.
+Saat produk WooCommerce yang membawa meta `kivicare_service_id` dihapus, KiviCare
+mengosongkan `extra` mapping yang ditunjuk meta itu. Risikonya bagi opsi kecil:
+- Produk seperti itu hanya dibuat oleh alur pembayaran WooCommerce bawaan
+  KiviCare. Produk dari `praktiqu-endpoint` tidak memasang meta itu.
+- Produk terakhir dibuat 2026-07-05, dan tidak ada sama sekali dalam 90 hari
+  terakhir.
+- Produk lama hanya menunjuk mapping ber-id ≤ 419, padahal id mapping tertinggi
+  sudah 439. Opsi baru selalu mendapat id baru di atas itu.
+
+Kalau suatu saat jalur ini mengenai baris opsi, opsi itu kehilangan penandanya dan
+tampil sebagai layanan biasa. Durasi dan harganya tetap benar, jadi tampilannya
+saja yang menurun, tidak rusak.
 
 ## Model data
 
@@ -315,6 +334,10 @@ Tidak berubah.
   reaktivasi setelah DELETE.
 - (h) Satu pemindaian LIKE penuh per baris pajak per layanan pada setiap
   `calculateTax`.
+- (i) Kalau alur pembayaran WooCommerce bawaan KiviCare diaktifkan lagi,
+  `handle_product_delete` bisa mengosongkan `extra` sebuah opsi (lihat "Kenapa
+  kolom `extra`"). Opsi itu lalu tampil sebagai layanan biasa. Perbaikannya:
+  pulihkan penandanya, atau jangan hapus produk yang menunjuk mapping opsi.
 
 ## Di luar cakupan (sengaja)
 
@@ -376,9 +399,10 @@ Tidak berubah.
 
 Tidak ada migrasi SQL.
 
-1. Minta izin, lalu jalankan query read-only ke DB produksi:
-   `SELECT COUNT(*) FROM wp_kc_service_doctor_mapping WHERE extra IS NOT NULL AND extra <> ''`.
-   Hasilnya harus 0. Kalau tidak 0, lihat isinya dulu sebelum lanjut.
+1. ~~Query read-only ke DB produksi.~~ Sudah dijalankan 2026-11-07 dengan izin.
+   - `extra` tidak kosong: 113 baris berisi `{"product_id": N}` bawaan KiviCare lama.
+     Isi itu aman (lihat "Kenapa kolom `extra`").
+   - `wp_kc_taxes` berisi 0 baris, jadi aturan pajak opsi belum berpengaruh.
 2. Merge BE, lalu pastikan build Hostinger benar-benar jalan (pernah ter-skip).
    - BE baru dengan FE lama aman: field baru diabaikan FE lama.
    - Opsi belum bisa dibuat sebelum FE baru rilis.
