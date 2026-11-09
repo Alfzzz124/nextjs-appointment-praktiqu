@@ -39,6 +39,9 @@ function toErrorResponse(err: unknown): NextResponse {
         { status: 422 },
       );
     }
+    if (err._tag === 'unprocessable') {
+      return NextResponse.json(validationError(err.code, err.message), { status: 422 });
+    }
     // Not reachable from update or delete today, but both are typed to produce it and the
     // collection route maps it. Without this branch it would fall through to the re-throw
     // and surface as a 500 — a silent divergence between the two sibling routes.

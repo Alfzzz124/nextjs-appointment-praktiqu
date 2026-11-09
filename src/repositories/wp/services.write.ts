@@ -18,6 +18,7 @@ import { prisma } from '@/lib/db';
 import { lastInsertId } from '@/lib/last-insert-id';
 import type { Prisma } from '@prisma/client';
 import { ACTIVE_STATUSES } from './appointments.repo';
+import { optionMarker, removedMarker } from './duration-option-marker';
 
 /* ------------------------------------------------------------------ */
 /* Catalogue — wp_kc_services                                          */
@@ -98,13 +99,18 @@ export async function findConflictingMapping(opts: {
   clinicId: bigint;
   name: string;
   excludeMappingId?: bigint;
+  /** Further mappings to ignore, e.g. the duration options of the service being edited. */
+  excludeMappingIds?: bigint[];
 }): Promise<{ mappingId: bigint; doctorId: bigint } | null> {
   if (opts.doctorIds.length === 0) return null;
 
   const placeholders = opts.doctorIds.map(() => '?').join(',');
   const exclude = opts.excludeMappingId !== undefined ? ' AND sdm.id <> ?' : '';
+  const many = opts.excludeMappingIds ?? [];
+  const excludeMany = many.length > 0 ? ` AND sdm.id NOT IN (${many.map(() => '?').join(',')})` : '';
   const args: unknown[] = [opts.clinicId, opts.name, ...opts.doctorIds];
   if (opts.excludeMappingId !== undefined) args.push(opts.excludeMappingId);
+  args.push(...many);
 
   const rows = await prisma.$queryRawUnsafe<Array<{ mapping_id: bigint | number; doctor_id: bigint | number }>>(
     `SELECT sdm.id AS mapping_id, sdm.doctor_id AS doctor_id
@@ -112,7 +118,7 @@ export async function findConflictingMapping(opts: {
        JOIN wp_kc_services s ON s.id = sdm.service_id
       WHERE sdm.clinic_id = ?
         AND s.name = ?
-        AND sdm.doctor_id IN (${placeholders})${exclude}
+        AND sdm.doctor_id IN (${placeholders})${exclude}${excludeMany}
       LIMIT 1`,
     ...args,
   );
@@ -206,7 +212,12 @@ const PATCH_COLUMNS: Array<[keyof MappingPatch, string]> = [
   ['isPublic', 'is_public'],
 ];
 
-export async function updateMapping(id: bigint, patch: MappingPatch): Promise<void> {
+/** `updateMapping` on whatever connection `db` is — the pool, or a transaction. */
+export async function updateMappingOn(
+  db: Prisma.TransactionClient,
+  id: bigint,
+  patch: MappingPatch,
+): Promise<void> {
   const sets: string[] = [];
   const args: unknown[] = [];
 
@@ -221,10 +232,86 @@ export async function updateMapping(id: bigint, patch: MappingPatch): Promise<vo
   if (sets.length === 0) return;
 
   args.push(id);
-  await prisma.$executeRawUnsafe(
+  await db.$executeRawUnsafe(
     `UPDATE wp_kc_service_doctor_mapping SET ${sets.join(', ')} WHERE id = ?`,
     ...args,
   );
+}
+
+export async function updateMapping(id: bigint, patch: MappingPatch): Promise<void> {
+  await updateMappingOn(prisma, id, patch);
+}
+
+export type OptionInsert = {
+  parentMappingId: bigint;
+  serviceId: bigint;
+  doctorId: bigint;
+  clinicId: bigint;
+  charges: string;
+  duration: number;
+  telemedService: 'yes' | 'no';
+  status: 0 | 1;
+  isPublic: 0 | 1;
+};
+
+export type ServiceUpdateWrites = {
+  parent: { mappingId: bigint; patch: MappingPatch };
+  optionUpdates: Array<{ mappingId: bigint; patch: MappingPatch }>;
+  optionInserts: OptionInsert[];
+  optionRemovals: Array<{ mappingId: bigint; parentMappingId: bigint }>;
+};
+
+/**
+ * Every mapping write of one service edit, in one transaction: the parent's own columns,
+ * then option removals, option updates, and new options. A failure halfway leaves the
+ * service as it was rather than with half its options.
+ *
+ * Catalogue rows are resolved before this runs (a catalogue row without a mapping is
+ * invisible and harmless). New options need no LAST_INSERT_ID, so nothing here depends
+ * on connection pinning beyond the transaction itself.
+ */
+export async function saveServiceUpdate(w: ServiceUpdateWrites): Promise<void> {
+  const nothing =
+    Object.keys(w.parent.patch).length === 0 &&
+    w.optionUpdates.length === 0 &&
+    w.optionInserts.length === 0 &&
+    w.optionRemovals.length === 0;
+  if (nothing) return;
+
+  await prisma.$transaction(async (tx) => {
+    await updateMappingOn(tx, w.parent.mappingId, w.parent.patch);
+
+    // Removed before anything is added: a re-added duration then never sits beside its
+    // removed twin as two live rows, not even inside the transaction.
+    for (const r of w.optionRemovals) {
+      await tx.$executeRawUnsafe(
+        `UPDATE wp_kc_service_doctor_mapping SET status = 0, extra = ? WHERE id = ?`,
+        removedMarker(r.parentMappingId),
+        r.mappingId,
+      );
+    }
+
+    for (const u of w.optionUpdates) {
+      await updateMappingOn(tx, u.mappingId, u.patch);
+    }
+
+    for (const i of w.optionInserts) {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO wp_kc_service_doctor_mapping
+           (service_id, doctor_id, clinic_id, charges, duration, telemed_service, status, is_public, extra, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        i.serviceId,
+        i.doctorId,
+        i.clinicId,
+        i.charges,
+        i.duration,
+        i.telemedService,
+        i.status,
+        i.isPublic,
+        optionMarker(i.parentMappingId),
+      );
+    }
+  }, { maxWait: 5000, timeout: 10000 });
 }
 
 /**

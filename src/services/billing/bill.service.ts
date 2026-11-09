@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { KcError } from '@/lib/kc-response';
 import { toNum, toMoney } from '@/lib/kc-num';
 import { TaxCalculator } from './tax-calculator';
+import { findOptionCatalogueIds } from '@/repositories/wp/services.repo';
 
 interface NormItem { serviceId: number; name: string; price: number; qty: number }
 
@@ -65,6 +66,14 @@ export async function calculateTax(input: { clinic_id?: number; doctor_id?: numb
     if (t.serviceId && t.serviceId !== -1n) {
       const map = await prisma.kcServiceDoctorMapping.findUnique({ where: { id: t.serviceId }, select: { serviceId: true } });
       svcIds = map ? [Number(map.serviceId)] : [Number(t.serviceId)];
+      // A duration option inherits everything but duration and price, so a tax set for
+      // the parent service applies to all its durations (removed options too: a visit can
+      // be billed after removal). Only a doctor-specific row stores a MAPPING id; a
+      // doctor-global row (doctor_id -1) stores a raw catalogue id, left as it was.
+      if (map && t.doctorId !== null && t.doctorId > 0n) {
+        const optionServiceIds = await findOptionCatalogueIds(t.serviceId);
+        svcIds.push(...optionServiceIds.map(Number));
+      }
     }
     calc.addTax(Number(t.id), t.name ?? '', (t.taxType as any) ?? 'percentage', toNum(t.taxValue), svcIds);
   }

@@ -42,6 +42,7 @@ import {
   updateMapping,
   softDeleteMapping,
   countBlockingAppointments,
+  saveServiceUpdate,
 } from '@/repositories/wp/services.write';
 
 beforeEach(() => {
@@ -346,5 +347,68 @@ describe('countBlockingAppointments', () => {
   it('reads an empty result as zero', async () => {
     db.$queryRawUnsafe.mockResolvedValue([]);
     expect(await countBlockingAppointments({ serviceId: 1n, doctorId: 2n })).toBe(0);
+  });
+});
+
+describe('findConflictingMapping — excludeMappingIds', () => {
+  it('excludes every listed mapping, after the single exclusion', async () => {
+    db.$queryRawUnsafe.mockResolvedValue([]);
+
+    await findConflictingMapping({
+      doctorIds: [8100001n],
+      clinicId: 3n,
+      name: 'Konseling (90 menit)',
+      excludeMappingId: 501n,
+      excludeMappingIds: [601n, 602n],
+    });
+
+    const [sql, ...args] = db.$queryRawUnsafe.mock.calls[0];
+    expect(sql).toContain('sdm.id <> ?');
+    expect(sql).toContain('sdm.id NOT IN (?,?)');
+    expect(args).toEqual([3n, 'Konseling (90 menit)', 8100001n, 501n, 601n, 602n]);
+    expectPlaceholdersMatchArgs(sql, args);
+  });
+});
+
+describe('saveServiceUpdate', () => {
+  beforeEach(() => {
+    db.$executeRawUnsafe.mockReset();
+    db.$transaction.mockClear();
+    db.$executeRawUnsafe.mockResolvedValue(1);
+  });
+
+  it('writes parent, removals, updates and inserts in that order, in one transaction', async () => {
+    await saveServiceUpdate({
+      parent: { mappingId: 501n, patch: { charges: '450000' } },
+      optionRemovals: [{ mappingId: 602n, parentMappingId: 501n }],
+      optionUpdates: [{ mappingId: 601n, patch: { duration: 120 } }],
+      optionInserts: [{
+        parentMappingId: 501n, serviceId: 909n, doctorId: 8100001n, clinicId: 3n,
+        charges: '900000', duration: 150, telemedService: 'no', status: 1, isPublic: 1,
+      }],
+    });
+
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    const calls = db.$executeRawUnsafe.mock.calls;
+    expect(calls).toHaveLength(4);
+
+    expect(calls[0][0]).toContain('charges = ?');
+    expect(calls[0].slice(1)).toEqual(['450000', 501n]);
+
+    expect(calls[1][0]).toContain('SET status = 0, extra = ?');
+    expect(calls[1].slice(1)).toEqual(['{"praktiqu_duration_of_removed":501}', 602n]);
+
+    expect(calls[2][0]).toContain('duration = ?');
+    expect(calls[2].slice(1)).toEqual([120, 601n]);
+
+    expect(calls[3][0]).toContain('INSERT INTO wp_kc_service_doctor_mapping');
+    expect(calls[3].slice(1)).toEqual([909n, 8100001n, 3n, '900000', 150, 'no', 1, 1, '{"praktiqu_duration_of":501}']);
+    for (const [sql, ...args] of calls) expectPlaceholdersMatchArgs(sql, args);
+  });
+
+  it('opens no transaction when there is nothing to write', async () => {
+    await saveServiceUpdate({ parent: { mappingId: 501n, patch: {} }, optionUpdates: [], optionInserts: [], optionRemovals: [] });
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(db.$executeRawUnsafe).not.toHaveBeenCalled();
   });
 });

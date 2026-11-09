@@ -10,9 +10,16 @@
  * Reads are direct SQL. Assignment WRITES are too — see the Writes section: KiviCare
  * hooks the service catalogue but not the doctor-service mapping.
  */
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { lastInsertId } from '@/lib/last-insert-id';
 import { paginate } from './wp-user';
+import {
+  ANY_OPTION_PROBE,
+  parseDurationOf,
+  readMarker,
+  type OptionMarker,
+} from './duration-option-marker';
 
 const STATUS_ACTIVE = 1;
 
@@ -51,6 +58,11 @@ export type WpDoctorService = {
    * "Couple/Family Session (2 Orang) - 2 Jam" reached patients as that slug.
    */
   nameAlias: string | null;
+  /**
+   * The parent MAPPING id when this row is a live duration option of another service,
+   * else null. See duration-option-marker.ts.
+   */
+  durationOf: bigint | null;
 };
 
 export type ListServicesQuery = {
@@ -160,6 +172,7 @@ export async function listServicesForDoctor(opts: {
       status: true,
       telemedService: true,
       serviceNameAlias: true,
+      extra: true,
     },
     orderBy: { id: 'asc' },
   });
@@ -172,7 +185,10 @@ export async function listServicesForDoctor(opts: {
   });
   const byId = new Map(services.map((s) => [s.id.toString(), s]));
 
-  return mappings
+  const rows: WpDoctorService[] = mappings
+    // A removed option is dead whatever its status says: a flip back to 1 outside our API
+    // (KiviCare WP admin) must not make it bookable.
+    .filter((m) => readMarker(m.extra)?.removed !== true)
     // A mapping can outlive its service if the service row was deleted directly in
     // the DB; skip those rather than emitting a nameless entry.
     .filter((m) => byId.has(m.serviceId.toString()))
@@ -192,8 +208,16 @@ export async function listServicesForDoctor(opts: {
         isActive: m.status === STATUS_ACTIVE,
         telemedService: m.telemedService,
         nameAlias: m.serviceNameAlias,
+        durationOf: parseDurationOf(m.extra),
       };
     });
+
+  // An option is offered only beside its parent. The parent went through the same
+  // filters (active, public, clinic); when it is not here, neither is the option — even
+  // if some write path forgot to copy the parent's status onto it. This is what keeps a
+  // stranded option unbookable: booking, slots and payment all read this function.
+  const present = new Set(rows.map((r) => r.mappingId.toString()));
+  return rows.filter((r) => r.durationOf === null || present.has(r.durationOf.toString()));
 }
 
 /* ------------------------------------------------------------------ */
@@ -222,6 +246,12 @@ export type ClinicServiceRow = {
   isActive: boolean;
   /** The category slug, not a name — see WpDoctorService.nameAlias. */
   nameAlias: string | null;
+  /**
+   * The duration-option marker: set for live AND removed options, null for an ordinary
+   * service. Removed options keep it so reports can still name past bookings and the
+   * dashboard can hide them under their parent.
+   */
+  optionOf: OptionMarker | null;
 };
 
 export type ListClinicServicesQuery = {
@@ -251,6 +281,7 @@ const MAPPING_SELECT = {
   status: true,
   telemedService: true,
   serviceNameAlias: true,
+  extra: true,
   // `created_at` is deliberately NOT selected. It is `datetime NOT NULL`, but KiviCare has
   // filled it with MySQL zero-dates: 273 of 277 rows on staging read `0000-00-00 00:00:00`.
   // Prisma refuses to decode those ("Value out of range for the type"), so selecting the
@@ -270,6 +301,7 @@ type MappingRow = {
   status: number;
   telemedService: string | null;
   serviceNameAlias: string | null;
+  extra: string | null;
 };
 
 type CatalogueRow = { id: bigint; name: string; type: string | null; category: string | null };
@@ -299,6 +331,7 @@ function toClinicService(m: MappingRow, s: CatalogueRow): ClinicServiceRow {
     isPublic: m.isPublic === 1,
     isActive: m.status === STATUS_ACTIVE,
     nameAlias: m.serviceNameAlias,
+    optionOf: readMarker(m.extra),
   };
 }
 
@@ -340,14 +373,62 @@ export async function listClinicServices(
 
   // `total` deliberately counts mappings, not survivors: it is the count the pagination
   // arithmetic is built on, and dropping orphans from it would make page sizes lie.
-  return {
-    items: mappings
-      .filter((m) => byId.has(m.serviceId.toString()))
-      .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!)),
-    total,
-    page,
-    perPage,
-  };
+  const items = mappings
+    .filter((m) => byId.has(m.serviceId.toString()))
+    .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!));
+
+  return { items: await withoutStrandedOptions(items), total, page, perPage };
+}
+
+/**
+ * Drop options whose parent is gone, or whose parent is inactive while the option is
+ * active. The parent is looked up by id, not searched for on this page: the list is
+ * paginated and the parent may well sit on another page.
+ */
+async function withoutStrandedOptions(items: ClinicServiceRow[]): Promise<ClinicServiceRow[]> {
+  const parentIds = [
+    ...new Set(items.flatMap((i) => (i.optionOf ? [i.optionOf.parentId.toString()] : []))),
+  ];
+  if (parentIds.length === 0) return items;
+
+  const parents = await prisma.kcServiceDoctorMapping.findMany({
+    where: { id: { in: parentIds.map((id) => BigInt(id)) } },
+    select: { id: true, status: true },
+  });
+  const parentActive = new Map(parents.map((p) => [p.id.toString(), p.status === STATUS_ACTIVE]));
+
+  return items.filter((i) => {
+    if (!i.optionOf) return true;
+    const active = parentActive.get(i.optionOf.parentId.toString());
+    if (active === undefined) return false;
+    return active || !i.isActive;
+  });
+}
+
+/**
+ * Every duration option of these parents — live AND removed, any status — shortest first.
+ *
+ * Found by the marker, not by doctor: option rows are few, and one LIKE on `extra` covers
+ * any mix of parents. `readMarker` then confirms each candidate.
+ */
+export async function listOptionRowsOf(parentIds: bigint[]): Promise<ClinicServiceRow[]> {
+  if (parentIds.length === 0) return [];
+  const wanted = new Set(parentIds.map((id) => id.toString()));
+
+  const candidates = (await prisma.kcServiceDoctorMapping.findMany({
+    where: ANY_OPTION_PROBE,
+    select: MAPPING_SELECT,
+    orderBy: [{ duration: 'asc' }, { id: 'asc' }],
+  })) as MappingRow[];
+
+  const mine = candidates.filter((m) => {
+    const marker = readMarker(m.extra);
+    return marker !== null && wanted.has(marker.parentId.toString());
+  });
+  const byId = await catalogueFor(mine);
+  return mine
+    .filter((m) => byId.has(m.serviceId.toString()))
+    .map((m) => toClinicService(m, byId.get(m.serviceId.toString())!));
 }
 
 /**
@@ -367,6 +448,54 @@ export async function findMappingById(id: bigint): Promise<ClinicServiceRow | nu
   const byId = await catalogueFor([mapping]);
   const service = byId.get(mapping.serviceId.toString());
   return service ? toClinicService(mapping, service) : null;
+}
+
+/** Ids of the LIVE duration options of these parents, any status. */
+export async function findLiveOptionIds(
+  parentIds: bigint[],
+  db: Prisma.TransactionClient = prisma,
+): Promise<bigint[]> {
+  if (parentIds.length === 0) return [];
+  const wanted = new Set(parentIds.map((id) => id.toString()));
+  const rows = await db.kcServiceDoctorMapping.findMany({
+    where: ANY_OPTION_PROBE,
+    select: { id: true, extra: true },
+  });
+  return rows
+    .filter((r) => {
+      const parent = parseDurationOf(r.extra);
+      return parent !== null && wanted.has(parent.toString());
+    })
+    .map((r) => r.id);
+}
+
+/**
+ * Catalogue service ids of the options of one parent mapping, LIVE AND REMOVED, any status.
+ * Used by tax matching: an option inherits the parent's service-scoped taxes, and a
+ * finished visit on an option can be billed after the option was removed.
+ */
+export async function findOptionCatalogueIds(parentMappingId: bigint): Promise<bigint[]> {
+  const rows = await prisma.kcServiceDoctorMapping.findMany({
+    where: ANY_OPTION_PROBE,
+    select: { serviceId: true, extra: true },
+  });
+  return rows
+    .filter((r) => readMarker(r.extra)?.parentId === parentMappingId)
+    .map((r) => r.serviceId);
+}
+
+/**
+ * Options follow their parent's status. Removed options carry the `_removed` key and are
+ * not "live", so they are never revived here.
+ */
+async function cascadeStatusToOptions(parentIds: bigint[], status: 0 | 1): Promise<void> {
+  const ids = await findLiveOptionIds(parentIds);
+  if (ids.length === 0) return;
+  await prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_service_doctor_mapping SET status = ? WHERE id IN (${ids.map(() => '?').join(',')})`,
+    status,
+    ...ids,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -403,6 +532,7 @@ export async function assignServiceToDoctor(opts: {
       opts.durationMinutes ?? null,
       existing.id,
     );
+    await cascadeStatusToOptions([existing.id], 1);
     return existing.id;
   }
 
@@ -440,10 +570,20 @@ export async function unassignServiceFromDoctor(opts: {
     args.push(opts.clinicId);
   }
 
-  return prisma.$executeRawUnsafe(
-    `UPDATE wp_kc_service_doctor_mapping SET status = 0 WHERE ${where.join(' AND ')}`,
+  // Select first: the options to retire are found by their parents' ids.
+  const targets = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+    `SELECT id FROM wp_kc_service_doctor_mapping WHERE ${where.join(' AND ')}`,
     ...args,
   );
+  if (targets.length === 0) return 0;
+  const ids = targets.map((t) => BigInt(t.id));
+
+  const affected = await prisma.$executeRawUnsafe(
+    `UPDATE wp_kc_service_doctor_mapping SET status = 0 WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ...ids,
+  );
+  await cascadeStatusToOptions(ids, 0);
+  return affected;
 }
 
 export async function setDoctorServiceStatus(opts: {
@@ -454,11 +594,20 @@ export async function setDoctorServiceStatus(opts: {
   if (opts.mappingIds.length === 0) return 0;
 
   // doctor_id is in the WHERE so one professional cannot flip another's assignments.
-  return prisma.$executeRawUnsafe(
+  const affected = await prisma.$executeRawUnsafe(
     `UPDATE wp_kc_service_doctor_mapping SET status = ?
       WHERE doctor_id = ? AND id IN (${opts.mappingIds.map(() => '?').join(',')})`,
     opts.status,
     opts.doctorId,
     ...opts.mappingIds,
   );
+
+  // Only the parents that really are this doctor's: ids belonging to someone else were
+  // not updated above, so their options must not be either.
+  const owned = await prisma.kcServiceDoctorMapping.findMany({
+    where: { id: { in: opts.mappingIds }, doctorId: opts.doctorId },
+    select: { id: true },
+  });
+  await cascadeStatusToOptions(owned.map((o) => o.id), opts.status);
+  return affected;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const repo = vi.hoisted(() => ({ listClinicServices: vi.fn(), findMappingById: vi.fn() }));
+const repo = vi.hoisted(() => ({ listClinicServices: vi.fn(), findMappingById: vi.fn(), listOptionRowsOf: vi.fn() }));
 vi.mock('@/repositories/wp/services.repo', () => repo);
 
 const write = vi.hoisted(() => ({
@@ -10,7 +10,7 @@ const write = vi.hoisted(() => ({
   findConflictingMapping: vi.fn(),
   insertMapping: vi.fn(),
   updateMapping: vi.fn(),
-  softDeleteMapping: vi.fn(),
+  saveServiceUpdate: vi.fn(),
   countBlockingAppointments: vi.fn(),
 }));
 vi.mock('@/repositories/wp/services.write', () => write);
@@ -47,11 +47,13 @@ const otherClinic: ServiceScope = { clinicId: 9n, doctorId: null, empty: false }
 beforeEach(() => {
   Object.values(write).forEach((f) => f.mockReset());
   repo.findMappingById.mockReset();
+  repo.listOptionRowsOf.mockReset();
+  repo.listOptionRowsOf.mockResolvedValue([]);
   logging.audit.mockReset();
 
   repo.findMappingById.mockResolvedValue(row);
   write.countBlockingAppointments.mockResolvedValue(0);
-  write.softDeleteMapping.mockResolvedValue(1);
+  write.saveServiceUpdate.mockResolvedValue(undefined);
 });
 
 const expectError = async (fn: () => Promise<unknown>, tag: string) => {
@@ -61,7 +63,12 @@ const expectError = async (fn: () => Promise<unknown>, tag: string) => {
 describe('deleteService', () => {
   it('soft-deletes when nothing upcoming uses the service', async () => {
     expect(await deleteService(501, clinicAdmin, 'actor-1')).toEqual({ ok: true });
-    expect(write.softDeleteMapping).toHaveBeenCalledWith(501n);
+    expect(write.saveServiceUpdate).toHaveBeenCalledWith({
+      parent: { mappingId: 501n, patch: { status: 0 } },
+      optionUpdates: [],
+      optionInserts: [],
+      optionRemovals: [],
+    });
   });
 
   it('checks the catalogue service id against this mapping’s doctor', async () => {
@@ -80,7 +87,7 @@ describe('deleteService', () => {
       _tag: 'conflict',
       count: 3,
     });
-    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
   });
 
   it('404s a mapping in another clinic', async () => {
@@ -108,7 +115,42 @@ describe('deleteService', () => {
 
     expect(await deleteService(501, clinicAdmin, 'actor-1')).toEqual({ ok: true });
     expect(write.countBlockingAppointments).not.toHaveBeenCalled();
-    expect(write.softDeleteMapping).not.toHaveBeenCalled();
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
     expect(logging.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteService — duration options', () => {
+  const live = { ...row, id: 601n, serviceId: 201n, optionOf: { parentId: 501n, removed: false } };
+  const gone = { ...row, id: 602n, serviceId: 202n, isActive: false, optionOf: { parentId: 501n, removed: true } };
+
+  it('refuses to delete an option row directly', async () => {
+    repo.findMappingById.mockResolvedValue({ ...row, id: 601n, optionOf: { parentId: 501n, removed: false } });
+
+    await expect(deleteService(601, clinicAdmin, 'a')).rejects.toMatchObject({ _tag: 'unprocessable', code: 'edit_via_parent' });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('retires the live options with their parent, leaving removed ones alone', async () => {
+    repo.listOptionRowsOf.mockResolvedValue([live, gone]);
+
+    await deleteService(501, clinicAdmin, 'a');
+
+    expect(write.saveServiceUpdate).toHaveBeenCalledTimes(1);
+    expect(write.saveServiceUpdate).toHaveBeenCalledWith({
+      parent: { mappingId: 501n, patch: { status: 0 } },
+      optionUpdates: [{ mappingId: 601n, patch: { status: 0 } }],
+      optionInserts: [],
+      optionRemovals: [],
+    });
+  });
+
+  it("counts an option's upcoming bookings as blocking the parent's delete", async () => {
+    repo.listOptionRowsOf.mockResolvedValue([live]);
+    write.countBlockingAppointments.mockImplementation(async ({ serviceId }: { serviceId: bigint }) =>
+      serviceId === 201n ? 2 : 0);
+
+    await expect(deleteService(501, clinicAdmin, 'a')).rejects.toMatchObject({ _tag: 'conflict', count: 2 });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
   });
 });

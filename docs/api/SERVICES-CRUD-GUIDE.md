@@ -502,3 +502,27 @@ dilakukan di sisi Laravel: [`SERVICES-FRONTEND-GUIDE.md`](SERVICES-FRONTEND-GUID
 
 Desain dan alasan di balik keputusannya:
 [`docs/superpowers/specs/2026-08-30-services-crud-design.md`](../superpowers/specs/2026-08-30-services-crud-design.md).
+
+## Opsi durasi (2026-11-06)
+
+Satu layanan boleh punya sampai 4 durasi tambahan dengan harga sendiri. Setiap opsi adalah
+layanan tersendiri (baris katalog + mapping), bernama `<nama induk> (<menit> menit)`, dan
+ditandai dengan `extra = {"praktiqu_duration_of": <id mapping induk>}`.
+
+- `GET /api/v1/services` dan `GET /api/v1/services/{id}`:
+  - setiap baris membawa `durationOf` (id mapping induk, untuk opsi hidup maupun yang sudah dihapus);
+  - induk membawa `durationOptions` (opsi hidup saja, durasi terpendek dulu);
+  - daftar tetap datar: baris opsi tetap ada, supaya pencarian nama berdasarkan id tetap jalan.
+- `PUT /api/v1/services/{id}` menerima `durationOptions: [{ id?, duration, price }]` sebagai daftar lengkap.
+  - Kategori, status, tampil publik, telemed, dan nama ikut induk secara otomatis.
+  - PUT atau DELETE pada baris opsi dijawab 422 `edit_via_parent`: ubah lewat induknya.
+- `DELETE /api/v1/services/{id}` pada induk menonaktifkan induk beserta opsinya yang hidup dalam
+  satu transaksi.
+- `GET /api/v1/public/professionals/{id}/services`: setiap baris membawa `durationOf`, yaitu id publik
+  (id katalog) induknya. FE mengelompokkan per (`clinicId`, `durationOf`).
+- Slot, booking, dan pembayaran tidak berubah: kirim `serviceId` milik opsi yang dipilih.
+
+Kode galat:
+
+- 422: `duration_option_limit`, `duration_option_duplicate`, `duration_option_not_found`, `edit_via_parent`.
+- 409: `duration_option_has_appointments` (dengan `count`) dan `service_name_taken`.

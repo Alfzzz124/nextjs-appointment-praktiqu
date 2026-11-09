@@ -139,6 +139,7 @@ function primeReads() {
       telemedService: null,
       nameAlias: null,
       category: null,
+      durationOf: null,
     },
   ]);
 

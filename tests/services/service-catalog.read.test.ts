@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const repo = vi.hoisted(() => ({
   listClinicServices: vi.fn(),
   findMappingById: vi.fn(),
+  listOptionRowsOf: vi.fn(),
 }));
 vi.mock('@/repositories/wp/services.repo', () => repo);
 
@@ -51,6 +52,8 @@ const nothing: ServiceScope = { clinicId: null, doctorId: null, empty: true };
 beforeEach(() => {
   repo.listClinicServices.mockReset();
   repo.findMappingById.mockReset();
+  repo.listOptionRowsOf.mockReset();
+  repo.listOptionRowsOf.mockResolvedValue([]);
   repo.listClinicServices.mockResolvedValue({ items: [row], total: 1, page: 1, perPage: 20 });
 });
 
@@ -176,5 +179,46 @@ describe('getService', () => {
   it('returns null for an empty scope without touching the database', async () => {
     expect(await getService(501, nothing)).toBeNull();
     expect(repo.findMappingById).not.toHaveBeenCalled();
+  });
+});
+
+describe('duration options in summaries', () => {
+  const option = {
+    ...row, id: 601n, serviceId: 201n, name: 'Konseling Individu (90 menit)', charges: '600000',
+    durationMinutes: 90, optionOf: { parentId: 501n, removed: false },
+  };
+  const removed = {
+    ...row, id: 602n, serviceId: 202n, name: 'Konseling Individu (120 menit)', charges: '800000',
+    durationMinutes: 120, isActive: false, optionOf: { parentId: 501n, removed: true },
+  };
+
+  it('lists an option flat, pointing at its parent, and the parent carries its live options', async () => {
+    repo.listClinicServices.mockResolvedValue({ items: [{ ...row, optionOf: null }, option], total: 2, page: 1, perPage: 20 });
+    repo.listOptionRowsOf.mockResolvedValue([option, removed]);
+
+    const res = await listServices({ page: 1, perPage: 20 } as any, superAdmin);
+
+    expect(repo.listOptionRowsOf).toHaveBeenCalledWith([501n]);
+    expect(res.services[0].durationOf).toBeNull();
+    expect(res.services[0].durationOptions).toEqual([
+      { id: 601, serviceId: 201, name: 'Konseling Individu (90 menit)', durationMinutes: 90, price: 600000, isActive: true },
+    ]);
+    expect(res.services[1].durationOf).toBe(501);
+    expect(res.services[1].durationOptions).toEqual([]);
+  });
+
+  it('getService on an option reports its parent and no options of its own', async () => {
+    repo.findMappingById.mockResolvedValue(option);
+
+    const svc = await getService(601, superAdmin);
+
+    expect(svc!.durationOf).toBe(501);
+    expect(svc!.durationOptions).toEqual([]);
+    expect(repo.listOptionRowsOf).not.toHaveBeenCalled();
+  });
+
+  it('a removed option still reports its parent', async () => {
+    repo.findMappingById.mockResolvedValue(removed);
+    expect((await getService(602, superAdmin))!.durationOf).toBe(501);
   });
 });
