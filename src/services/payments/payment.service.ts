@@ -269,6 +269,7 @@ import {
   DiscountNotSupportedError,
   PaymentMethodNotAllowedError,
   PaypalRateMissingError,
+  ServiceNotOfferedError,
 } from '@/services/payments/payment-errors';
 
 export class AppointmentNotFoundError extends Error {}
@@ -416,11 +417,25 @@ export async function initiatePublicPayment(
     : [];
   const mapping = offered.find((s) => Number(s.serviceId) === serviceId);
 
-  const serviceName = mapping ? mapping.name : 'Service';
-  const servicePrice = mapping ? toNum(mapping.charges ?? 0) : 0;
+  // No mapping means no price, and that is a refusal, not Rp 0. The booking holds only
+  // the catalogue id, so it loses its mapping when the service is renamed or
+  // recategorised after booking (updateService repoints the mapping at another catalogue
+  // row) or deactivated. This used to charge 0 for a line called "Service".
+  if (!mapping) {
+    await logging.warn('Public payment refused: the booked service has no active mapping', {
+      resource: 'appointment',
+      resourceId: String(appointmentId),
+      metadata: { serviceId: serviceId ?? null, doctorId: appt.professionalId, clinicId: appt.clinicId },
+    });
+    throw new ServiceNotOfferedError(
+      `Appointment ${appointmentId}: service ${serviceId ?? 'none'} has no active mapping ` +
+        `for professional ${appt.professionalId} at clinic ${appt.clinicId}`,
+    );
+  }
+
   const { expectedAmount, items, taxes } = await computePublicAmount({
-    name: serviceName,
-    price: servicePrice,
+    name: mapping.name,
+    price: toNum(mapping.charges ?? 0),
     serviceId,
     clinicId: appt.clinicId,
     doctorId: appt.professionalId,
