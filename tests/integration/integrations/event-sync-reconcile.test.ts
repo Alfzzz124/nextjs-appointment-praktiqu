@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { prisma } from '@/lib/prisma';
 import { assertTestDb, seedAppointment, useIdBlock } from '../../billing/fixtures';
-import { reconcileCalendarIntents } from '@/services/integrations/google-event-sync.service';
+import { reconcileCalendarIntents, DIRTY } from '@/services/integrations/google-event-sync.service';
 import { APPOINTMENT_STATUS } from '@/repositories/wp/appointments.repo';
 
 // Blok id milik suite ini, dari registri di tests/helpers/id-blocks.ts. Bukan
@@ -169,5 +169,95 @@ describe('rekonsiliasi terhadap database sungguhan', () => {
     await janji(BASE + 8, APPOINTMENT_STATUS.BOOKED, 0);
 
     expect((await reconcileCalendarIntents()).enqueuedMissing).toBe(1);
+  });
+  describe('memeriksa ulang isi acara yang sudah sinkron', () => {
+    // Rekonsiliasi dulu hanya menurunkan ulang ada/tidaknya acara, tidak pernah
+    // jamnya. Janji yang dipindah lewat jalur yang tidak mencatat niat — kejadian
+    // sungguhan: 3388, dipindah 10 Nov 2026 — tetap tercatat "sinkron" dan
+    // acaranya menetap di jam lama selamanya.
+    const SINKRON = 'f'.repeat(64);
+
+    async function barisSinkron(id: number, terakhirDisentuh: Date) {
+      await prisma.googleCalendarEventSync.create({
+        data: {
+          appointmentId: BigInt(id),
+          professionalId: BigInt(PRO),
+          desiredState: 'present',
+          desiredHash: SINKRON,
+          syncedHash: SINKRON,
+          googleEventId: 'evt-1',
+        },
+      });
+      // Lewat SQL karena Prisma mengisi ulang `updatedAt` sendiri.
+      await prisma.$executeRawUnsafe(
+        'UPDATE google_calendar_event_sync SET updatedAt = ? WHERE appointmentId = ?',
+        terakhirDisentuh,
+        id,
+      );
+    }
+
+    it('menandai ulang baris yang sudah lama tidak diperiksa', async () => {
+      await sambungkan();
+      await janji(BASE + 10, APPOINTMENT_STATUS.BOOKED, 1);
+      await barisSinkron(BASE + 10, new Date(Date.now() - 7 * 3_600_000));
+
+      const hasil = await reconcileCalendarIntents();
+
+      expect(hasil.reverified).toBe(1);
+      const row = await prisma.googleCalendarEventSync.findUnique({
+        where: { appointmentId: BigInt(BASE + 10) },
+      });
+      // Hanya ditandai: penyapu yang membandingkan isinya dengan data hidup, dan
+      // yang tidak berubah lolos tanpa satu permintaan pun ke Google.
+      expect(row?.desiredHash).toBe(DIRTY);
+      expect(row?.syncedHash).toBe(SINKRON);
+      expect(row?.googleEventId).toBe('evt-1');
+    });
+
+    it('tidak menandai ulang baris yang baru saja diperiksa', async () => {
+      await sambungkan();
+      await janji(BASE + 11, APPOINTMENT_STATUS.BOOKED, 1);
+      await barisSinkron(BASE + 11, new Date());
+
+      expect((await reconcileCalendarIntents()).reverified).toBe(0);
+      const row = await prisma.googleCalendarEventSync.findUnique({
+        where: { appointmentId: BigInt(BASE + 11) },
+      });
+      expect(row?.desiredHash).toBe(SINKRON);
+    });
+
+    it('tidak mengganggu baris yang sedang menunggu percobaan ulang', async () => {
+      // Jeda mundurnya hasil kegagalan sungguhan; menghapusnya tiap jam berarti
+      // menghantam Google terus-menerus untuk baris yang memang sedang rusak.
+      await sambungkan();
+      await janji(BASE + 12, APPOINTMENT_STATUS.BOOKED, 1);
+      // Detik bulat: kolomnya DATETIME tanpa pecahan, dan MySQL membulatkan
+      // milidetik — bukan memotongnya — sehingga pembandingan pas akan meleset.
+      const nanti = new Date(Math.floor((Date.now() + 3_600_000) / 1000) * 1000);
+      await prisma.googleCalendarEventSync.create({
+        data: {
+          appointmentId: BigInt(BASE + 12),
+          professionalId: BigInt(PRO),
+          desiredState: 'present',
+          desiredHash: DIRTY,
+          syncedHash: SINKRON,
+          googleEventId: 'evt-1',
+          attempts: 3,
+          nextAttemptAt: nanti,
+        },
+      });
+      await prisma.$executeRawUnsafe(
+        'UPDATE google_calendar_event_sync SET updatedAt = ? WHERE appointmentId = ?',
+        new Date(Date.now() - 7 * 3_600_000),
+        BASE + 12,
+      );
+
+      expect((await reconcileCalendarIntents()).reverified).toBe(0);
+      const row = await prisma.googleCalendarEventSync.findUnique({
+        where: { appointmentId: BigInt(BASE + 12) },
+      });
+      expect(row).toMatchObject({ attempts: 3 });
+      expect(row?.nextAttemptAt?.getTime()).toBe(nanti.getTime());
+    });
   });
 });

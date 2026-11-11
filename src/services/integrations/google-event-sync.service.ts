@@ -32,6 +32,7 @@ import {
 import {
   loadAppointmentsForCalendar,
   type AppointmentLoader,
+  type CalendarAppointment,
 } from '@/services/integrations/appointment-calendar-loader';
 import { findAppointmentById } from '@/repositories/wp/appointments.repo';
 import {
@@ -161,6 +162,13 @@ async function markSynced(
   await prisma.googleCalendarEventSync.update({
     where: { appointmentId: row.appointmentId },
     data: {
+      // The state just reached, which syncOne may have corrected from the
+      // appointment's live status. Written every time, not only when it changed:
+      // if an intent lands while this row is being synced, a stale state here is
+      // caught by the next reconciliation (inside its horizon), whereas the
+      // intent's own state paired with a hash that claims "synced" would never be
+      // looked at again.
+      desiredState: row.desiredState,
       desiredHash: hash,
       syncedHash: hash,
       googleEventId,
@@ -304,10 +312,9 @@ export async function runEventSweep(opts: {
       continue;
     }
 
-    const presentIds = professionalRows
-      .filter((r) => r.desiredState === 'present')
-      .map((r) => Number(r.appointmentId));
-    const details = presentIds.length > 0 ? await loader(presentIds) : new Map();
+    // Every row, including those meant to be absent: the appointment's live status
+    // decides, not the state copied into the row when the intent was recorded.
+    const details = await loader(professionalRows.map((r) => Number(r.appointmentId)));
 
     let authDied = false;
     for (const row of professionalRows) {
@@ -351,11 +358,24 @@ async function syncOne(ctx: {
   accessToken: string;
   /** The professional's PraktiQu calendar — where new events go. */
   targetCalendarId: string;
-  details: Map<number, Parameters<typeof buildEventBody>[0]>;
+  details: Map<number, CalendarAppointment>;
   fetchImpl?: typeof fetch;
   now: Date;
 }): Promise<Outcome> {
-  const { row, accessToken, targetCalendarId, details, fetchImpl, now } = ctx;
+  const { accessToken, targetCalendarId, details, fetchImpl, now } = ctx;
+  const appt = details.get(Number(ctx.row.appointmentId));
+
+  // The appointment's live status wins over the state recorded with the intent.
+  // Intents are written by our own write paths; an appointment can also be
+  // cancelled through paths that record nothing — KiviCare's own dashboard, a
+  // WooCommerce order cancellation. Trusting the recorded state sent calendar
+  // invitations for sessions that had already been cancelled.
+  //
+  // Without an appointment row the recorded state is all there is to go on.
+  const row: SyncRow = appt
+    ? { ...ctx.row, desiredState: desiredStateFor(appt.status) }
+    : ctx.row;
+
   // Where the event IS, which is not always where a new one would go: someone who
   // disconnects and reconnects gets a fresh calendar, and rows written before
   // that still point at the old one.
@@ -377,7 +397,6 @@ async function syncOne(ctx: {
     return 'deleted';
   }
 
-  const appt = details.get(Number(row.appointmentId));
   if (!appt) {
     // The appointment is gone, or lacks the date and times an event needs. Not
     // treated as "delete it": conflating a missing row with a malformed one would
@@ -454,14 +473,27 @@ async function syncOne(ctx: {
 export interface ReconcileReport {
   enqueuedMissing: number;
   flippedToAbsent: number;
+  /** Synced events handed back to the sweep to compare against live data. */
+  reverified: number;
 }
+
+/**
+ * How long an event that is in sync goes before reconciliation hands it back to
+ * the sweep for another look.
+ *
+ * The sweep compares the event it would write today against the one it wrote,
+ * so an unchanged appointment costs no request to Google. What this bounds is
+ * the loader's work: each row is looked at a few times a day, not every hour.
+ */
+const REVERIFY_AFTER_MS = 6 * 60 * 60_000;
 
 /**
  * Re-derive what should be true, for appointments inside the horizon.
  *
  * Catches intents that were never recorded (a crash between the appointment write
- * and the intent write) and intents that went stale (an appointment cancelled
- * through a path that does not record one).
+ * and the intent write), intents that went stale (an appointment cancelled
+ * through a path that does not record one), and events whose content went stale
+ * (an appointment moved through a path that does not record one).
  */
 export async function reconcileCalendarIntents(opts: {
   now?: Date;
@@ -469,7 +501,7 @@ export async function reconcileCalendarIntents(opts: {
 } = {}): Promise<ReconcileReport> {
   const now = opts.now ?? new Date();
   const horizonDays = opts.horizonDays ?? 60;
-  const report: ReconcileReport = { enqueuedMissing: 0, flippedToAbsent: 0 };
+  const report: ReconcileReport = { enqueuedMissing: 0, flippedToAbsent: 0, reverified: 0 };
 
   const connections = await prisma.googleCalendarConnection.findMany({
     where: { status: 'active' },
@@ -503,10 +535,12 @@ export async function reconcileCalendarIntents(opts: {
     desiredState: string;
     desiredHash: string;
   }[] = [];
+  const stillPresent: bigint[] = [];
 
   for (const appt of appointments) {
     const wanted = desiredStateFor(appt.status);
     const known = stateById.get(appt.id.toString());
+    if (known === 'present' && wanted === 'present') stillPresent.push(appt.id);
 
     if (known === undefined) {
       // Only worth a row if there is something to do. An appointment that was
@@ -544,6 +578,25 @@ export async function reconcileCalendarIntents(opts: {
       skipDuplicates: true,
     });
     report.enqueuedMissing += result.count;
+  }
+
+  // Present before and still present — but possibly at another time. A reschedule
+  // done where no intent is recorded leaves the row claiming "synced" while the
+  // event sits at the old hour, and nothing above would ever notice: the state
+  // never changed. Only rows that are synced and settled are touched. A row
+  // already waiting on a retry keeps its backoff, or a broken one would be
+  // hammered every hour.
+  if (stillPresent.length > 0) {
+    const recheck = await prisma.googleCalendarEventSync.updateMany({
+      where: {
+        appointmentId: { in: stillPresent },
+        desiredState: 'present',
+        desiredHash: { equals: prisma.googleCalendarEventSync.fields.syncedHash },
+        updatedAt: { lt: new Date(now.getTime() - REVERIFY_AFTER_MS) },
+      },
+      data: { desiredHash: DIRTY },
+    });
+    report.reverified = recheck.count;
   }
 
   return report;
