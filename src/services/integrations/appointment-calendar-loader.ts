@@ -8,10 +8,19 @@ import { prisma } from '@/lib/prisma';
 import { findAppointmentsByIds } from '@/repositories/wp/appointments.repo';
 import type { AppointmentForCalendar } from '@/services/integrations/google-event-payload';
 
+/**
+ * An appointment as the sweep sees it: the event's content, plus the live status
+ * that decides whether there should be an event at all.
+ */
+export type CalendarAppointment = AppointmentForCalendar & {
+  /** Raw KiviCare status, read with the details — never the copy on the intent. */
+  status: number;
+};
+
 /** What the sweep asks for: ids in, the details it can find out. */
 export type AppointmentLoader = (
   ids: number[],
-) => Promise<Map<number, AppointmentForCalendar>>;
+) => Promise<Map<number, CalendarAppointment>>;
 
 /**
  * `visit_type` holds service ids, comma separated, not a human-readable type.
@@ -29,7 +38,7 @@ function serviceIdsOf(visitType: string | null): bigint[] {
 }
 
 export const loadAppointmentsForCalendar: AppointmentLoader = async (ids) => {
-  const out = new Map<number, AppointmentForCalendar>();
+  const out = new Map<number, CalendarAppointment>();
   if (ids.length === 0) return out;
 
   const appointments = await findAppointmentsByIds(ids.map((id) => BigInt(id)));
@@ -98,6 +107,7 @@ export const loadAppointmentsForCalendar: AppointmentLoader = async (ids) => {
     const doctor = user.get(appt.doctorId.toString());
 
     out.set(Number(appt.id), {
+      status: appt.status,
       appointmentId: Number(appt.id),
       date: appt.startDate,
       startTime: appt.startTime,

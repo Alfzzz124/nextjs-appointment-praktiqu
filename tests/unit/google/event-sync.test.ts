@@ -86,7 +86,10 @@ const { buildEventBody, fingerprintEvent } = await import(
 );
 const { GoogleEventGoneError } = await import('@/lib/google/events');
 
+const { APPOINTMENT_STATUS } = await import('@/repositories/wp/appointments.repo');
+
 const APPT = {
+  status: APPOINTMENT_STATUS.BOOKED,
   appointmentId: 4821,
   date: '2026-11-04',
   startTime: '14:00:00',
@@ -99,6 +102,9 @@ const APPT = {
 };
 
 const loader = async () => new Map([[4821, APPT]]);
+/** Janji yang sama, sudah dibatalkan. */
+const loaderBatal = async () =>
+  new Map([[4821, { ...APPT, status: APPOINTMENT_STATUS.CANCELLED }]]);
 
 function row(over: Record<string, unknown> = {}) {
   return {
@@ -250,7 +256,7 @@ describe('kalender PraktiQu milik psikolog', () => {
     // kalender tujuan hari ini.
     rows.push(row({ desiredState: 'absent', calendarId: 'cal-lama', googleEventId: 'evt-1' }));
 
-    expect((await runEventSweep({ loader })).deleted).toBe(1);
+    expect((await runEventSweep({ loader: loaderBatal })).deleted).toBe(1);
     expect(deleteEvent.mock.calls[0][0]).toMatchObject({ calendarId: 'cal-lama' });
   });
 });
@@ -308,7 +314,7 @@ describe('removing', () => {
   it('deletes the event when the appointment is cancelled', async () => {
     rows.push(row({ desiredState: 'absent', googleEventId: 'evt-1' }));
 
-    expect((await runEventSweep({ loader })).deleted).toBe(1);
+    expect((await runEventSweep({ loader: loaderBatal })).deleted).toBe(1);
     expect(deleteEvent.mock.calls[0][0]).toMatchObject({ expectMarker: '4821' });
     expect(updates[0].data).toMatchObject({ googleEventId: null });
   });
@@ -316,7 +322,7 @@ describe('removing', () => {
   it('settles without a request when there was never an event', async () => {
     rows.push(row({ desiredState: 'absent', googleEventId: null }));
 
-    expect((await runEventSweep({ loader })).alreadyCurrent).toBe(1);
+    expect((await runEventSweep({ loader: loaderBatal })).alreadyCurrent).toBe(1);
     expect(deleteEvent).not.toHaveBeenCalled();
   });
 
@@ -324,7 +330,49 @@ describe('removing', () => {
     deleteEvent.mockRejectedValueOnce(new GoogleEventGoneError('gone'));
     rows.push(row({ desiredState: 'absent', googleEventId: 'evt-1' }));
 
-    expect((await runEventSweep({ loader })).deleted).toBe(1);
+    expect((await runEventSweep({ loader: loaderBatal })).deleted).toBe(1);
+  });
+});
+
+describe('status janji dibaca langsung, bukan dari niat yang tercatat', () => {
+  // Niat dicatat oleh jalur tulis kita sendiri. Janji bisa dibatalkan lewat jalur
+  // yang tidak mencatat apa pun (dasbor KiviCare, pembatalan order WooCommerce),
+  // dan kejadian sungguhan 10 Nov 2026: janji 3397 sudah batal, barisnya masih
+  // 'present'. Tanpa membaca ulang status, klien janji yang sudah batal menerima
+  // undangan kalender.
+
+  it('tidak membuat acara untuk janji yang ternyata sudah batal', async () => {
+    rows.push(row({ desiredState: 'present', googleEventId: null }));
+
+    const report = await runEventSweep({ loader: loaderBatal });
+
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(report.alreadyCurrent).toBe(1);
+    // Niatnya ikut dibetulkan, supaya rekonsiliasi berikutnya tidak membaliknya lagi.
+    expect(updates[0].data).toMatchObject({ desiredState: 'absent', googleEventId: null });
+  });
+
+  it('menghapus acara janji yang dibatalkan lewat jalur lain', async () => {
+    rows.push(row({ desiredState: 'present', googleEventId: 'evt-1', syncedHash: 'a'.repeat(64) }));
+
+    expect((await runEventSweep({ loader: loaderBatal })).deleted).toBe(1);
+    expect(updateEvent).not.toHaveBeenCalled();
+    expect(deleteEvent.mock.calls[0][0]).toMatchObject({ eventId: 'evt-1', expectMarker: '4821' });
+    expect(updates[0].data).toMatchObject({ desiredState: 'absent', googleEventId: null });
+  });
+
+  it('membuat acara bila niatnya absent tapi janjinya ternyata sudah pasti', async () => {
+    rows.push(row({ desiredState: 'absent', googleEventId: null }));
+
+    expect((await runEventSweep({ loader })).created).toBe(1);
+    expect(updates[0].data).toMatchObject({ desiredState: 'present', googleEventId: 'evt-new' });
+  });
+
+  it('tetap menghapus acara yang janjinya sudah tidak ada sama sekali', async () => {
+    // Tanpa baris janji, niat yang tercatat satu-satunya pegangan.
+    rows.push(row({ desiredState: 'absent', googleEventId: 'evt-1' }));
+
+    expect((await runEventSweep({ loader: async () => new Map() })).deleted).toBe(1);
   });
 });
 
