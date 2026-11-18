@@ -444,6 +444,7 @@ export async function createPublicAppointment(
       serviceId: input.serviceId,
       name: service.name,
       price: service.charges ?? '0',
+      priceUsd: service.priceUsd ?? null,
     },
     await resolveClinicPaymentForDisplay(clinicId),
   );
@@ -546,6 +547,7 @@ async function bookingPayment(booking: {
       serviceId,
       name: mapping.name,
       price: mapping.charges ?? '0',
+      priceUsd: mapping.priceUsd ?? null,
     },
     settings,
   );

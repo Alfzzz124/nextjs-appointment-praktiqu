@@ -112,6 +112,7 @@ function mapping(serviceId: number, clinicId: number, charges: string): WpDoctor
     nameAlias: null,
     category: null,
     durationOf: null,
+    priceUsd: null,
   };
 }
 

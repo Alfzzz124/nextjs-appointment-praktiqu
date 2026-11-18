@@ -140,6 +140,7 @@ function primeReads() {
       nameAlias: null,
       category: null,
       durationOf: null,
+      priceUsd: null,
     },
   ]);
 

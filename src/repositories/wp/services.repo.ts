@@ -47,6 +47,13 @@ export type WpDoctorService = {
   category: string | null;
   /** The doctor's charge; overrides the service's base price. */
   charges: string | null;
+  /**
+   * Harga dolar yang ditetapkan admin, atau null kalau harganya masih rupiah.
+   *
+   * Kalau ada, INILAH harga yang berlaku: `charges` tinggal cermin yang boleh tertinggal
+   * di belakang kurs, dan rupiahnya diturunkan ulang dari sini saat order dibangun.
+   */
+  priceUsd: string | null;
   durationMinutes: number | null;
   isPublic: boolean;
   isActive: boolean;
@@ -204,6 +211,7 @@ export async function listServicesForDoctor(opts: {
         type: service.type,
         category: service.category,
         charges: m.charges,
+        priceUsd: usdOf(m.extra),
         durationMinutes: m.duration ?? null,
         isPublic: m.isPublic === 1,
         isActive: m.status === STATUS_ACTIVE,
