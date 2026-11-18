@@ -59,6 +59,10 @@ vi.mock('@/services/integrations/google-calendar-connection.service', () => ({
     if (connection) connection.appCalendarId = baru;
     return baru;
   }),
+  // Bersyarat pada id yang gagal, seperti aslinya.
+  forgetAppCalendarId: vi.fn(async (_id: number, calendarId: string) => {
+    if (connection?.appCalendarId === calendarId) connection.appCalendarId = null;
+  }),
 }));
 
 type Opts = Record<string, unknown>;
@@ -84,7 +88,14 @@ const { runEventSweep, DIRTY } = await import('@/services/integrations/google-ev
 const { buildEventBody, fingerprintEvent } = await import(
   '@/services/integrations/google-event-payload'
 );
-const { GoogleEventGoneError } = await import('@/lib/google/events');
+const { GoogleEventGoneError, GoogleTransientError } = await import('@/lib/google/events');
+const { GoogleAuthRevokedError } = await import('@/lib/google/freebusy');
+const { GoogleOAuthError } = await import('@/lib/google/oauth-client');
+const connectionService = await import(
+  '@/services/integrations/google-calendar-connection.service'
+);
+const markConnection = vi.mocked(connectionService.markConnection);
+const forgetAppCalendarId = vi.mocked(connectionService.forgetAppCalendarId);
 
 const { APPOINTMENT_STATUS } = await import('@/repositories/wp/appointments.repo');
 
@@ -133,6 +144,8 @@ beforeEach(() => {
   updateEvent.mockClear().mockResolvedValue(dibuat('evt-1'));
   eventLinks.mockClear();
   deleteEvent.mockClear().mockResolvedValue(undefined);
+  markConnection.mockClear();
+  forgetAppCalendarId.mockClear();
 });
 
 describe('when writing is not switched on', () => {
@@ -387,5 +400,173 @@ describe('when the appointment cannot be loaded', () => {
     expect(report.failed).toBe(1);
     expect(deleteEvent).not.toHaveBeenCalled();
     expect(updates[0].data).toMatchObject({ lastError: 'appointment details unavailable' });
+  });
+});
+
+describe('penolakan Google tidak otomatis berarti izin dicabut', () => {
+  // Kejadian 10 Nov 2026: sambungan psikolog 34 jatuh ke "revoked". Setiap 403
+  // dibaca sebagai pencabutan, padahal Google memakai 403 juga untuk kuota dan
+  // untuk penolakan per acara.
+  const APPT2 = { ...APPT, appointmentId: 4822 };
+  const dua = async () =>
+    new Map([
+      [4821, APPT],
+      [4822, APPT2],
+    ]);
+  const baris2 = () => row({ appointmentId: 4822n });
+
+  it('batas pemakaian: sambungan dan token tidak disentuh, barisnya diundur', async () => {
+    createEvent.mockRejectedValueOnce(
+      new GoogleTransientError('create event hit a Google usage limit (403: rateLimitExceeded)'),
+    );
+    rows.push(row());
+
+    const report = await runEventSweep({ loader });
+
+    expect(report.failed).toBe(1);
+    expect(markConnection).not.toHaveBeenCalled();
+    expect(updates[0].data).toMatchObject({ lastError: expect.stringContaining('rateLimitExceeded') });
+  });
+
+  it('403 per acara hanya menggagalkan barisnya, yang lain tetap jalan', async () => {
+    createEvent.mockRejectedValueOnce(
+      new GoogleOAuthError('create event was refused (403: forbiddenForNonOrganizer)'),
+    );
+    rows.push(row(), baris2());
+
+    const report = await runEventSweep({ loader: dua });
+
+    expect(report).toMatchObject({ failed: 1, created: 1 });
+    expect(markConnection).not.toHaveBeenCalled();
+    expect(createEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('401: sambungan dicabut dan alasannya ikut disimpan', async () => {
+    createEvent.mockRejectedValueOnce(
+      new GoogleAuthRevokedError('Google rejected the access token (401)'),
+    );
+    rows.push(row(), baris2());
+
+    const report = await runEventSweep({ loader: dua });
+
+    expect(markConnection).toHaveBeenCalledWith(29, {
+      status: 'revoked',
+      reason: 'Google rejected the access token (401)',
+    });
+    // Token mati: tidak ada gunanya mencoba baris berikutnya.
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(report.failed).toBe(1);
+  });
+
+  it('403 saat membuat kalender PraktiQu: tidak dicabut, alasannya tercatat di baris', async () => {
+    connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: null };
+    createAppCalendar.mockRejectedValueOnce(
+      new GoogleOAuthError('create calendar was refused (403: insufficientPermissions)'),
+    );
+    rows.push(row());
+
+    const report = await runEventSweep({ loader });
+
+    expect(report.failed).toBe(1);
+    expect(markConnection).not.toHaveBeenCalled();
+    expect(updates[0].data).toMatchObject({
+      lastError: expect.stringContaining('insufficientPermissions'),
+    });
+  });
+
+  it('refresh token ditolak (invalid_grant): dicabut dengan alasannya', async () => {
+    const { refreshAccessToken } = await import('@/lib/google/freebusy');
+    vi.mocked(refreshAccessToken).mockRejectedValueOnce(
+      new GoogleAuthRevokedError('Google authorisation is no longer valid'),
+    );
+    rows.push(row());
+
+    await runEventSweep({ loader });
+
+    expect(markConnection).toHaveBeenCalledWith(29, {
+      status: 'revoked',
+      reason: 'Google authorisation is no longer valid',
+    });
+  });
+});
+
+describe('kalender PraktiQu yang dihapus psikolognya', () => {
+  // Layar FE bilang boleh menghapusnya. Id yang tersimpan lalu dijawab 404
+  // selamanya: createEvent ada di luar try/catch, barisnya diundur terus, dan
+  // layar tetap hijau.
+  const APPT2 = { ...APPT, appointmentId: 4822 };
+  const dua = async () =>
+    new Map([
+      [4821, APPT],
+      [4822, APPT2],
+    ]);
+
+  it('melupakan kalendernya, menyerahkan pembuatan ulang ke sapuan berikutnya', async () => {
+    createEvent.mockRejectedValueOnce(new GoogleEventGoneError('create event: event not found (404)'));
+    rows.push(row(), row({ appointmentId: 4822n }));
+
+    const report = await runEventSweep({ loader: dua });
+
+    expect(forgetAppCalendarId).toHaveBeenCalledWith(29, CAL);
+    // Baris yang kena hanya diundur sebentar, dan sambungannya tidak dicabut.
+    expect(report.failed).toBe(1);
+    expect(markConnection).not.toHaveBeenCalled();
+    const undur = new Date((updates[0].data as { nextAttemptAt: Date }).nextAttemptAt).getTime() - Date.now();
+    expect(undur).toBeLessThanOrEqual(2 * 60_000);
+    // Tidak menembak baris lain ke kalender yang sudah pasti mati.
+    expect(createEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('acara berikutnya masuk ke kalender yang baru', async () => {
+    createEvent.mockRejectedValueOnce(new GoogleEventGoneError('create event: event not found (404)'));
+    rows.push(row());
+    await runEventSweep({ loader });
+
+    // Sapuan berikutnya: id lama sudah dilupakan, jadi dibuatkan yang baru.
+    expect(connection?.appCalendarId).toBeNull();
+    createEvent.mockClear();
+    await runEventSweep({ loader });
+
+    expect(createAppCalendar).toHaveBeenCalledTimes(1);
+    expect(createEvent.mock.calls[0][0]).toMatchObject({ calendarId: 'cal-baru' });
+  });
+
+  it('tidak melupakan kalender yang baru saja dibuat di putaran yang sama', async () => {
+    // Tanpa pagar ini, kalender yang 404 sesaat setelah dibuat dilupakan dan
+    // dibuat lagi tiap sapuan: akun psikolog dipenuhi kalender "PraktiQu".
+    connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: null };
+    createEvent.mockRejectedValueOnce(new GoogleEventGoneError('create event: event not found (404)'));
+    rows.push(row());
+
+    const report = await runEventSweep({ loader });
+
+    expect(createAppCalendar).toHaveBeenCalledTimes(1);
+    expect(forgetAppCalendarId).not.toHaveBeenCalled();
+    expect(report.failed).toBe(1);
+  });
+
+  it('memperbarui acara di kalender yang hilang berujung pada pembuatan ulang, bukan macet', async () => {
+    // updateEvent → 404 → dibuat ulang → 404 lagi karena kalendernya yang hilang.
+    updateEvent.mockRejectedValueOnce(new GoogleEventGoneError('read event: event not found (404)'));
+    createEvent.mockRejectedValueOnce(new GoogleEventGoneError('create event: event not found (404)'));
+    rows.push(row({ syncedHash: 'a'.repeat(64), googleEventId: 'evt-1' }));
+
+    await runEventSweep({ loader });
+
+    expect(forgetAppCalendarId).toHaveBeenCalledWith(29, CAL);
+  });
+
+  it('membuat ulang acara yang tautannya hilang bila acaranya ternyata lenyap', async () => {
+    // Jalur "isi tautan yang kosong": acaranya ikut hilang bersama kalendernya,
+    // dan GET-nya dulu keluar dari syncOne sebagai galat — diundur selamanya.
+    const hash = fingerprintEvent(buildEventBody(APPT));
+    eventLinks.mockRejectedValueOnce(new GoogleEventGoneError('read event: event not found (404)'));
+    updateEvent.mockRejectedValueOnce(new GoogleEventGoneError('read event: event not found (404)'));
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: hash, htmlLink: null }));
+
+    const report = await runEventSweep({ loader });
+
+    expect(report.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
   });
 });
