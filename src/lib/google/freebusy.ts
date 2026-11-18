@@ -7,19 +7,11 @@
 // database. One request covers the entire date range and up to 50 calendars.
 
 import { GoogleOAuthError } from '@/lib/google/oauth-client';
+import { GoogleAuthRevokedError, raiseForAuthOrQuota } from '@/lib/google/errors';
 import type { BusyInterval } from '@/services/booking/busy-intervals';
 
-/**
- * The authorisation is gone: revoked by the person, or expired.
- *
- * Its own type because the right response is a calm "reconnect", not an error
- * banner. While the Google app is in Testing this happens to every connected
- * professional every 7 days, so treating it as a failure would paint the settings
- * page red weekly and earn a bug report each Monday.
- */
-export class GoogleAuthRevokedError extends Error {
-  readonly code = 'GOOGLE_AUTH_REVOKED';
-}
+// Re-exported: callers and tests have always imported it from here.
+export { GoogleAuthRevokedError };
 
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const FREEBUSY_ENDPOINT = 'https://www.googleapis.com/calendar/v3/freeBusy';
@@ -109,9 +101,7 @@ export async function queryFreeBusy(
   });
 
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      throw new GoogleAuthRevokedError(`Google rejected the access token (${res.status})`);
-    }
+    await raiseForAuthOrQuota(res, 'freebusy');
     throw new GoogleOAuthError(`freebusy failed (${res.status}: ${await errorCodeOf(res)})`);
   }
 

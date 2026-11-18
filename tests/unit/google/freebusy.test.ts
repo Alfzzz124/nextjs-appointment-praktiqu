@@ -14,6 +14,7 @@ import {
   GoogleAuthRevokedError,
 } from '@/lib/google/freebusy';
 import { GoogleOAuthError } from '@/lib/google/oauth-client';
+import { GoogleTransientError } from '@/lib/google/events';
 
 const CREDS = { clientId: 'cid', clientSecret: 'secret', refreshToken: 'rt' };
 const json = (body: unknown, status = 200) =>
@@ -118,6 +119,25 @@ describe('queryFreeBusy', () => {
   it('reports an expired access token as revoked so the caller can reconnect', async () => {
     const fetchImpl = json({ error: { code: 401, message: 'Invalid Credentials' } }, 401);
     await expect(queryFreeBusy(RANGE, fetchImpl)).rejects.toBeInstanceOf(GoogleAuthRevokedError);
+  });
+
+  it('treats a 403 usage limit as transient, not as a revocation', async () => {
+    const fetchImpl = json(
+      { error: { errors: [{ reason: 'rateLimitExceeded' }], message: 'Rate Limit Exceeded' } },
+      403,
+    );
+    await expect(queryFreeBusy(RANGE, fetchImpl)).rejects.toBeInstanceOf(GoogleTransientError);
+  });
+
+  it('treats any other 403 as an ordinary refusal that names the reason', async () => {
+    const fetchImpl = json(
+      { error: { errors: [{ reason: 'insufficientPermissions' }], message: 'Forbidden' } },
+      403,
+    );
+    const err = await queryFreeBusy(RANGE, fetchImpl).catch((e) => e);
+    expect(err).toBeInstanceOf(GoogleOAuthError);
+    expect(err).not.toBeInstanceOf(GoogleAuthRevokedError);
+    expect(err.message).toContain('insufficientPermissions');
   });
 
   it('raises other failures as ordinary errors', async () => {
