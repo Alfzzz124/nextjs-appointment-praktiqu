@@ -35,8 +35,14 @@ const WP_BOOTSTRAP_DB_FAILURE = new WpEndpointError(
 );
 
 describe('isRetrySafeFailure — proves the attempt did no work', () => {
-  it('accepts "WordPress never answered" (status 0)', () => {
-    expect(isRetrySafeFailure(new WpEndpointError('/appointments unreachable', 0))).toBe(true);
+  it('accepts "the request provably never left" (status 0, neverSent)', () => {
+    expect(
+      isRetrySafeFailure(new WpEndpointError('/appointments unreachable', 0, undefined, true)),
+    ).toBe(true);
+  });
+
+  it('refuses status 0 when the request may have been sent (reset after the write)', () => {
+    expect(isRetrySafeFailure(new WpEndpointError('/appointments unreachable: ECONNRESET', 0))).toBe(false);
   });
 
   it('accepts WordPress dying before plugin code ran', () => {
