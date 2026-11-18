@@ -6,6 +6,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export interface PaymentLineItem {
   name: string;
   price: number;
+  /**
+   * Harga dolar baris ini, kalau layanannya ber-harga-dolar (spec 2026-11-18 §2).
+   *
+   * Hadir pada SETIAP baris berarti order ini ditagih persis sejumlah itu: tanpa markup,
+   * tanpa biaya tetap, tanpa baris pajak. `price` di sebelahnya lalu hanya cermin yang
+   * boleh saja basi, jadi jangan dipakai memutuskan apa pun untuk order semacam itu.
+   */
+  priceUsd?: string | null;
 }
 
 export interface PaymentTaxLine {

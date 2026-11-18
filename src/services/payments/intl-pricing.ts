@@ -14,6 +14,7 @@
  * cent — Rp 90,000 at 16,500 with 10% gives 601 cents instead of 600.
  */
 import { Prisma } from '@prisma/client';
+import { idrFromUsd } from '@/repositories/wp/usd-price-marker';
 import type { PaymentMethod, WcCharge } from '@/lib/wp-endpoint';
 import type { PaymentLineItem, PaymentTaxLine } from '@/services/payments/payment.service';
 
@@ -317,6 +318,14 @@ export interface ChargeSnapshot {
   markupPercent: string;
   fixedFeeIdr: string;
   source: { fxRate: ValueSource; markupPercent: ValueSource; fixedFeeIdr: ValueSource };
+  /**
+   * Jalur mana yang menghasilkan angka ini: `usd_direct` kalau harga dolarnya ditetapkan
+   * admin, `converted` kalau rupiahnya dikonversi dengan markup dan biaya tetap. Ikut
+   * tersimpan di meta order WooCommerce, supaya riwayat bisa dibaca bertahun kemudian
+   * tanpa menebak dari angkanya. Plugin memvalidasi kunci yang dikenalnya dan meneruskan
+   * sisanya apa adanya, jadi kunci ini aman untuk versi plugin yang sekarang.
+   */
+  pricing: 'usd_direct' | 'converted';
 }
 
 export interface UsdQuote {
@@ -332,6 +341,64 @@ export interface UsdQuote {
 
 function centsToUsd(cents: Decimal): string {
   return cents.div(100).toFixed(2);
+}
+
+/**
+ * Order dolar penuh: ada barisnya, dan SETIAP baris item punya harga dolar.
+ *
+ * Satu baris saja tanpa harga dolar mengembalikan seluruh order ke jalur konversi.
+ * Menggabungkan satu baris berharga tetap dengan satu baris yang kena markup menghasilkan
+ * total yang tidak bisa dijelaskan ke siapa pun (spec 2026-11-18 §2).
+ */
+export function isUsdDirect(items: PaymentLineItem[]): boolean {
+  return items.length > 0 && items.every((i) => typeof i.priceUsd === 'string' && i.priceUsd !== '');
+}
+
+/** Total sen dari harga dolar baris-barisnya. Hanya sah saat `isUsdDirect`. */
+function usdCentsOf(items: PaymentLineItem[]): Decimal {
+  return items.reduce((sum, i) => sum.plus(new Decimal(i.priceUsd as string).mul(100)), new Decimal(0));
+}
+
+/**
+ * Jalur dolar.
+ *
+ * Rupiah tiap baris diturunkan ULANG dari dolarnya pada kurs saat ini — `item.price` boleh
+ * saja cermin `charges` yang belum distempel ulang setelah kurs berubah, dan memakainya
+ * akan mencatat `expectedIdr` yang salah di `payment_orders`.
+ */
+function usdDirectQuote(
+  items: PaymentLineItem[],
+  settings: ClinicPaymentSettings,
+  rate: Decimal,
+  rateSource: ValueSource,
+): UsdQuote | null {
+  const totalCents = usdCentsOf(items);
+  if (totalCents.lte(0)) return null;
+
+  const lines: UsdLine[] = items.map((i) => {
+    const usd = new Decimal(i.priceUsd as string);
+    return { kind: 'item' as const, name: i.name, idr: idrFromUsd(usd, rate), usd: usd.toFixed(2) };
+  });
+
+  return {
+    lines,
+    totalUsd: centsToUsd(totalCents),
+    totalCents: totalCents.toNumber(),
+    expectedIdr: lines.reduce((sum, l) => sum + l.idr, 0),
+    effectiveFxRate: rate.toString(),
+    snapshot: {
+      clinicId: settings.clinicId,
+      fxRate: rate.toString(),
+      markupPercent: settings.markupPercent.toString(),
+      fixedFeeIdr: settings.fixedFeeIdr.toString(),
+      source: {
+        fxRate: rateSource,
+        markupPercent: settings.source.markupPercent,
+        fixedFeeIdr: settings.source.fixedFeeIdr,
+      },
+      pricing: 'usd_direct',
+    },
+  };
 }
 
 /** Items plus taxes above zero — the amount that decides whether an order is free. */
@@ -358,6 +425,11 @@ export function buildUsdQuote(
   const rate = settings.rate;
   const rateSource = settings.source.fxRate;
   if (!settings.international || rate === null || rateSource === null) return null;
+
+  // Sebelum pemeriksaan order gratis versi rupiah: untuk order dolar, `price` tiap baris
+  // adalah cermin yang boleh basi atau bahkan nol, dan membacanya di sini akan
+  // memperlakukan order $55 sebagai gratis.
+  if (isUsdDirect(items)) return usdDirectQuote(items, settings, rate, rateSource);
 
   const expectedIdr = paidTotalIdr(items, taxes);
   if (expectedIdr <= 0) return null;
@@ -393,6 +465,7 @@ export function buildUsdQuote(
       markupPercent: settings.markupPercent.toString(),
       fixedFeeIdr: settings.fixedFeeIdr.toString(),
       source: { fxRate: rateSource, markupPercent: settings.source.markupPercent, fixedFeeIdr: settings.source.fixedFeeIdr },
+      pricing: 'converted',
     },
   };
 }
@@ -406,7 +479,10 @@ export type UsdGate = { ok: true; quote: UsdQuote } | { ok: false; reason: 'not_
  */
 export function gateUsdPayment(items: PaymentLineItem[], taxes: PaymentTaxLine[], settings: ClinicPaymentSettings): UsdGate {
   if (!settings.international) return { ok: false, reason: 'not_allowed' };
-  if (paidTotalIdr(items, taxes) <= 0) return { ok: false, reason: 'not_allowed' };
+  // "Gratis" punya dua arti sesuai jalurnya. Membaca rupiah untuk order dolar akan
+  // menolak order $55 yang cermin rupiahnya kebetulan nol dengan 403 yang permanen.
+  const free = isUsdDirect(items) ? usdCentsOf(items).lte(0) : paidTotalIdr(items, taxes) <= 0;
+  if (free) return { ok: false, reason: 'not_allowed' };
   if (settings.rate === null) return { ok: false, reason: 'rate_missing' };
   const quote = buildUsdQuote(items, taxes, settings);
   if (quote === null) return { ok: false, reason: 'rate_missing' };
