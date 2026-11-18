@@ -16,7 +16,19 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     googleCalendarEventSync: {
       fields: { syncedHash: Symbol('syncedHash') },
-      findMany: vi.fn(async () => rows),
+      // Menghormati `professionalId: { in }` dan `take` seperti MySQL: tanpa itu
+      // uji antrean yang tersumbat tidak punya cara untuk gagal.
+      findMany: vi.fn(
+        async (args?: { where?: { professionalId?: { in?: bigint[] } }; take?: number }) => {
+          const boleh = args?.where?.professionalId?.in?.map(String);
+          const cocok = boleh ? rows.filter((r) => boleh.includes(String(r.professionalId))) : rows;
+          return args?.take ? cocok.slice(0, args.take) : cocok;
+        },
+      ),
+      count: vi.fn(async (args?: { where?: { professionalId?: { notIn?: bigint[] } } }) => {
+        const tolak = args?.where?.professionalId?.notIn?.map(String);
+        return tolak ? rows.filter((r) => !tolak.includes(String(r.professionalId))).length : rows.length;
+      }),
       update: vi.fn(async (args: { where: unknown; data: unknown }) => {
         updates.push({ where: args.where, data: args.data });
         return {};
@@ -25,8 +37,11 @@ vi.mock('@/lib/prisma', () => ({
       upsert: vi.fn(async () => ({})),
     },
     googleCalendarConnection: {
-      findUnique: vi.fn(async () => connection),
-      findMany: vi.fn(async () => []),
+      // Hanya psikolog 29 yang punya sambungan di uji ini; yang lain tidak.
+      findUnique: vi.fn(async (args: { where: { professionalId: bigint } }) =>
+        args.where.professionalId === 29n ? connection : null,
+      ),
+      findMany: vi.fn(async () => (connection ? [{ professionalId: 29n, ...connection }] : [])),
       updateMany: vi.fn(async (args: { data: { appCalendarId?: string } }) => {
         if (connection && args.data.appCalendarId) {
           connection.appCalendarId = args.data.appCalendarId;
@@ -136,6 +151,10 @@ const WRITE_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.app.c
 const CAL = 'cal-praktiqu';
 
 beforeEach(() => {
+  // Janji uji (2026-11-04) harus masih di depan: sapuan tidak membuat acara untuk
+  // janji yang sudah lewat. Uji yang memang butuh "sudah lewat" memberi `now` sendiri.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-03T03:00:00Z'));
   rows.length = 0;
   updates.length = 0;
   connection = { status: 'active', scopeGranted: WRITE_SCOPE, appCalendarId: CAL };
@@ -568,5 +587,88 @@ describe('kalender PraktiQu yang dihapus psikolognya', () => {
 
     expect(report.created).toBe(1);
     expect(createEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('antrean tidak boleh tersumbat baris psikolog tanpa izin tulis', () => {
+  const NOW = new Date('2026-11-03T03:00:00Z');
+
+  it('lebih dari 200 baris psikolog tanpa sambungan tidak menghalangi baris psikolog tersambung', async () => {
+    // Baris psikolog lain datang LEBIH DULU di antrean: dengan `take: 200` tanpa
+    // penyaring, baris psikolog 29 tidak pernah terambil.
+    for (let i = 0; i < 205; i++) {
+      rows.push(row({ appointmentId: BigInt(7000 + i), professionalId: 31n }));
+    }
+    rows.push(row());
+
+    const report = await runEventSweep({ loader, now: NOW });
+
+    expect(report.created).toBe(1);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('baris psikolog tanpa sambungan tidak disentuh dan dihitung apa adanya', async () => {
+    rows.push(row({ professionalId: 31n }));
+
+    const report = await runEventSweep({ loader, now: NOW });
+
+    expect(updates).toEqual([]);
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(report.examined).toBe(0);
+    expect(report.skippedNoWriteScope).toBe(1);
+  });
+});
+
+describe('janji yang sudah lewat', () => {
+  // Tiga minggu setelah janji uji (2026-11-04 14:00-15:00 WIB).
+  const SESUDAH = new Date('2026-11-25T03:00:00Z');
+
+  it('tidak dibuatkan acara, barisnya ditutup supaya tidak terambil lagi', async () => {
+    rows.push(row());
+
+    const report = await runEventSweep({ loader, now: SESUDAH });
+
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(report.created).toBe(0);
+    expect(updates).toHaveLength(1);
+    const data = updates[0].data as Record<string, unknown>;
+    expect(data.syncedHash).toBe(data.desiredHash);
+    expect(data.desiredHash).not.toBe(DIRTY);
+    expect(data.googleEventId).toBeNull();
+  });
+
+  it('yang berakhir sebentar lagi masih dibuatkan acara', async () => {
+    rows.push(row());
+    // 14:30 WIB: janji (sampai 15:00) belum berakhir.
+    const report = await runEventSweep({ loader, now: new Date('2026-11-04T07:30:00Z') });
+
+    expect(report.created).toBe(1);
+  });
+
+  it('yang batal dan punya acara tetap dihapus dari kalender', async () => {
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: 'x'.repeat(64) }));
+
+    const report = await runEventSweep({ loader: loaderBatal, now: SESUDAH });
+
+    expect(report.deleted).toBe(1);
+    expect(deleteEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('yang sudah punya acara tetap boleh diperbarui', async () => {
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: 'x'.repeat(64) }));
+
+    const report = await runEventSweep({ loader, now: SESUDAH });
+
+    expect(report.updated).toBe(1);
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('acara di kalender lama dipindahkan ke yang baru hanya bila belum lewat; yang lewat cukup dihapus', async () => {
+    rows.push(row({ googleEventId: 'evt-1', syncedHash: 'x'.repeat(64), calendarId: 'cal-lama' }));
+
+    await runEventSweep({ loader, now: SESUDAH });
+
+    expect(deleteEvent).toHaveBeenCalledTimes(1);
+    expect(createEvent).not.toHaveBeenCalled();
   });
 });

@@ -244,29 +244,53 @@ export async function runEventSweep(opts: {
     throw err;
   }
 
-  const rows = (await prisma.googleCalendarEventSync.findMany({
-    where: {
-      AND: [
-        {
-          OR: [
-            // `syncedHash IS NULL` must be spelled out. A column comparison against
-            // NULL evaluates to NULL, not true, so NOT(…) is NULL too and MySQL
-            // drops the row — which would silently skip exactly the rows that have
-            // never synced once, the ones that most need the sweep.
-            { syncedHash: null },
-            {
-              NOT: {
-                desiredHash: { equals: prisma.googleCalendarEventSync.fields.syncedHash },
-              },
+  // Hanya psikolog yang sambungannya aktif dan boleh menulis. Disaring SEBELUM
+  // `take`: baris psikolog lain dicatat untuk setiap janji, dan bila ikut diambil
+  // mereka hanya dilewati tanpa diberi jeda, jadi begitu jumlahnya mencapai
+  // `limit` baris psikolog yang tersambung tidak pernah terambil lagi. Baris
+  // mereka dibiarkan utuh dan baru diproses setelah ia menyambung.
+  const connections = await prisma.googleCalendarConnection.findMany({
+    where: { status: 'active' },
+    select: { professionalId: true, scopeGranted: true },
+  });
+  const eligible = connections
+    .filter((c) => grantsWriteScope(c.scopeGranted))
+    .map((c) => c.professionalId);
+
+  // Yang tidak ikut diproses karena pemiliknya belum boleh ditulisi. Dihitung
+  // dari baris yang memang sedang menunggu, bukan seluruh tabel.
+  const due = {
+    AND: [
+      {
+        OR: [
+          // `syncedHash IS NULL` must be spelled out. A column comparison against
+          // NULL evaluates to NULL, not true, so NOT(…) is NULL too and MySQL
+          // drops the row — which would silently skip exactly the rows that have
+          // never synced once, the ones that most need the sweep.
+          { syncedHash: null },
+          {
+            NOT: {
+              desiredHash: { equals: prisma.googleCalendarEventSync.fields.syncedHash },
             },
-          ],
-        },
-        { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
-      ],
-    },
-    orderBy: [{ nextAttemptAt: 'asc' }, { updatedAt: 'asc' }],
-    take: limit,
-  })) as SyncRow[];
+          },
+        ],
+      },
+      { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+    ],
+  };
+  report.skippedNoWriteScope = await prisma.googleCalendarEventSync.count({
+    where: { professionalId: { notIn: eligible }, ...due },
+  });
+
+  const rows = (
+    eligible.length === 0
+      ? []
+      : await prisma.googleCalendarEventSync.findMany({
+          where: { professionalId: { in: eligible }, ...due },
+          orderBy: [{ nextAttemptAt: 'asc' }, { updatedAt: 'asc' }],
+          take: limit,
+        })
+  ) as SyncRow[];
 
   report.examined = rows.length;
   if (rows.length === 0) return report;
@@ -286,9 +310,8 @@ export async function runEventSweep(opts: {
       where: { professionalId: BigInt(professionalKey) },
     });
 
-    // No connection, not active, or the write scope was never granted. Not an
-    // error and not worth a retry storm: the read direction may well be working
-    // for this person, and writing simply is not switched on.
+    // Disaring di atas, tetapi sambungan bisa berubah sejak daftar itu dibaca
+    // (dicabut, atau izinnya dikurangi). Baris dilewati tanpa disentuh.
     if (
       !connection ||
       connection.status !== 'active' ||
@@ -452,6 +475,10 @@ async function syncOne(ctx: {
 
   const body = buildEventBody(appt);
   const hash = fingerprintEvent(body);
+  // Tanpa ini, psikolog yang baru menyambung (atau menyambung ulang) membuat
+  // seluruh janji tertundanya diproses sekaligus, dan klien menerima undangan
+  // (sendUpdates=all) untuk sesi yang sudah lewat.
+  const sudahLewat = endedBefore(appt, now);
 
   // Nothing about the event changed — a status flip between BOOKED and CHECK_IN,
   // say. Costs no request at all.
@@ -513,6 +540,15 @@ async function syncOne(ctx: {
     }
   }
 
+  // Janji yang sudah berakhir tidak pernah dibuatkan acara baru. Barisnya
+  // ditandai selesai tanpa memanggil Google supaya tidak terambil lagi; bila
+  // janjinya kelak dipindah ke depan, niat baru mengubah hash dan acara dibuat.
+  // Memperbarui atau menghapus acara yang sudah ada tetap jalan (cabang di atas).
+  if (sudahLewat) {
+    await markSynced(row, hash, null);
+    return 'alreadyCurrent';
+  }
+
   let created: Awaited<ReturnType<typeof createEvent>>;
   try {
     created = await createEvent({
@@ -531,6 +567,12 @@ async function syncOne(ctx: {
   }
   await markSynced(row, hash, created.id, targetCalendarId, created);
   return 'created';
+}
+
+/** Jam dinding klinik (`date` + `endTime`) dibaca sebagai WIB, yang tanpa DST. */
+function endedBefore(appt: CalendarAppointment, now: Date): boolean {
+  const end = new Date(`${appt.date}T${appt.endTime}+07:00`);
+  return !Number.isNaN(end.getTime()) && end.getTime() <= now.getTime();
 }
 
 export interface ReconcileReport {
