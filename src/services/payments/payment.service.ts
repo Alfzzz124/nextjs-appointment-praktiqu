@@ -153,10 +153,18 @@ export interface MarkPaidInput {
 }
 
 /** Guarded one-way transition pending -> paid. Returns null if already resolved (idempotent replay). */
+/**
+ * The statuses a payment can still turn into 'paid'. Not only 'pending': WooCommerce
+ * completes payment even on an order we already closed (expired, cancelled, failed), and
+ * the plugin reports it as payment.completed like any other. The money is in, so the
+ * order must say so; what it means for the booking is the side effects' call.
+ */
+const CLAIMABLE_FOR_PAYMENT = ['pending', 'expired', 'cancelled', 'failed'] as const;
+
 export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | null> {
   const order = await prisma.paymentOrder.findUnique({ where: { wcOrderId: input.wcOrderId } });
   if (!order) throw new UnknownOrderError(`No payment order for wcOrderId ${input.wcOrderId}`);
-  if (order.status === 'pending') {
+  if ((CLAIMABLE_FOR_PAYMENT as readonly string[]).includes(order.status)) {
     // A PayPal order is charged in USD, so comparing against the rupiah
     // expectedAmount would read 11.12 vs 200000 as a catastrophic mismatch and
     // leave a genuinely-paid appointment stuck in PENDING.
@@ -194,7 +202,7 @@ export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | nul
   }
 
   const result = await prisma.paymentOrder.updateMany({
-    where: { wcOrderId: input.wcOrderId, status: 'pending' },
+    where: { wcOrderId: input.wcOrderId, status: { in: [...CLAIMABLE_FOR_PAYMENT] } },
     data: {
       status: 'paid',
       transactionId: input.transactionId,
@@ -256,6 +264,7 @@ import {
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
+import { recordPaidAfterCancel } from '@/services/payments/paid-after-cancel';
 import {
   amountToCents,
   gateUsdPayment,
@@ -482,7 +491,19 @@ export async function initiatePublicPayment(
   };
 }
 
-export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
+export interface PaidSideEffectOptions {
+  /**
+   * True only for the call whose markPaid turned the order paid. The status poll and the
+   * crash self-heal re-apply side effects to any paid order, including one paid normally
+   * whose booking staff cancelled afterwards — that is not a payment after cancellation.
+   */
+  justPaid?: boolean;
+}
+
+export async function applyPaidSideEffectsPublic(
+  order: PaymentOrder,
+  opts: PaidSideEffectOptions = {},
+): Promise<void> {
   if (!order.appointmentId) return;
 
   // Confirming goes through the plugin, and it is the `payment` argument that makes the
@@ -494,7 +515,15 @@ export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<v
   // idempotent case and stops here; two callers that both get past this read are settled
   // by the plugin, which claims PENDING → BOOKED with a conditional UPDATE and mails once.
   const appt = await findSessionById(Number(order.appointmentId));
-  if (!appt || appt.status !== SESSION_STATUS.PENDING) return;
+  if (!appt) return;
+  // The money came in after the booking was cancelled. The booking is not revived — its
+  // slot may be someone else's by now — so the payment goes on the refund list instead of
+  // vanishing, as it used to.
+  if (appt.status === SESSION_STATUS.CANCELLED) {
+    if (opts.justPaid) await recordPaidAfterCancel(appt, order);
+    return;
+  }
+  if (appt.status !== SESSION_STATUS.PENDING) return;
 
   // A psychologist who approves their own bookings (spec 2026-10-19): the booking stays
   // PENDING — slot held, no confirmation yet — and joins their queue instead of being
@@ -656,7 +685,7 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
       throw err;
     }
     if (!updated) return order;
-    if (updated.source === 'public') await applyPaidSideEffectsPublic(updated);
+    if (updated.source === 'public') await applyPaidSideEffectsPublic(updated, { justPaid: true });
     else await applyPaidSideEffectsSession(updated);
     return updated;
   }
