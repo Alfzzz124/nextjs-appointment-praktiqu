@@ -20,6 +20,7 @@ import {
   readMarker,
   type OptionMarker,
 } from './duration-option-marker';
+import { formatUsd, readUsdPrice } from './usd-price-marker';
 
 const STATUS_ACTIVE = 1;
 
@@ -252,6 +253,17 @@ export type ClinicServiceRow = {
    * dashboard can hide them under their parent.
    */
   optionOf: OptionMarker | null;
+  /**
+   * Harga dolar baris ini sebagai string 2 desimal, atau null kalau harganya masih rupiah.
+   * Baris yang punya ini ditagih persis sejumlah itu (spec 2026-11-18 §2).
+   */
+  priceUsd: string | null;
+  /**
+   * Isi mentah `extra`. Diekspos karena jalur tulis harus MENGGABUNGKAN ke dalamnya —
+   * kolom yang sama memegang penanda opsi durasi dan JSON `product_id` warisan — dan
+   * membacanya ulang dari basis data berarti satu query tambahan per baris.
+   */
+  extra: string | null;
 };
 
 export type ListClinicServicesQuery = {
@@ -332,7 +344,15 @@ function toClinicService(m: MappingRow, s: CatalogueRow): ClinicServiceRow {
     isActive: m.status === STATUS_ACTIVE,
     nameAlias: m.serviceNameAlias,
     optionOf: readMarker(m.extra),
+    priceUsd: usdOf(m.extra),
+    extra: m.extra,
   };
+}
+
+/** Harga dolar baris ini sebagai string 2 desimal, atau null. */
+function usdOf(extra: string | null): string | null {
+  const d = readUsdPrice(extra);
+  return d === null ? null : formatUsd(d);
 }
 
 export async function listClinicServices(
