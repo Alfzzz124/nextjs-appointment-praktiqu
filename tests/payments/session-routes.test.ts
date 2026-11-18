@@ -337,6 +337,12 @@ describe.each([
   ['payment-success', success],
   ['payment-cancel', cancelRoute],
 ])('POST /sessions/%s', (_name, handler) => {
+  // These cases are about the status mapping, not scope: a SUPER_ADMIN is unscoped (the
+  // scope block below covers everyone else).
+  beforeEach(() => {
+    (requireRoles as any).mockResolvedValue({ actor: { id: 'super', role: 'SUPER_ADMIN', practiceId: null } });
+  });
+
   it('400 on missing billId', async () => {
     const res = await handler(req({}));
     expect(res.status).toBe(400);
@@ -353,6 +359,89 @@ describe.each([
     (svc.checkSessionPaymentStatus as any).mockRejectedValue(new (svc as any).UnknownOrderError());
     const res = await handler(req({ billId: '9' }));
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * payment-success and payment-cancel took any staff role and a bare billId, so a
+ * psychologist of clinic A read clinic B's payment status and amount (and triggered its
+ * reconciliation). Same row scope as payment-verify now; out of scope is a 404.
+ */
+describe.each([
+  ['payment-success', success],
+  ['payment-cancel', cancelRoute],
+])('POST /sessions/%s — clinic scope', (_name, handler) => {
+  const CLINIC_A = 3n, CLINIC_B = 4n;
+  const BILL_A = '101', BILL_B = '202';
+  const staffOfClinicA = [
+    { id: 'recep-a', role: 'RECEPTIONIST', practiceId: null },
+    { id: 'admin-a', role: 'CLINIC_ADMIN', practiceId: null },
+    { id: 'doc-a', role: 'PROFESSIONAL', practiceId: null },
+  ];
+
+  function billRow(id: bigint, clinicId: bigint, encounterId: bigint) {
+    return {
+      id, clinicId, encounterId, appointmentId: null, discount: '0',
+      totalAmount: '150000', actualAmount: '150000', paymentStatus: 'unpaid', createdAt: new Date(),
+    };
+  }
+
+  beforeEach(() => {
+    const wpUserIds: Record<string, bigint> = { 'recep-a': 501n, 'admin-a': 502n, 'doc-a': 601n };
+    db.user.findUnique.mockImplementation(async ({ where }: any) => (wpUserIds[where.id] ? { wpUserId: wpUserIds[where.id] } : null));
+    db.kcReceptionistClinicMapping.findFirst.mockImplementation(async ({ where }: any) => (where.receptionistId === 501n ? { clinicId: CLINIC_A } : null));
+    db.kcDoctorClinicMapping.findFirst.mockImplementation(async ({ where }: any) => (where.doctorId === 601n ? { clinicId: CLINIC_A } : null));
+    db.kcClinic.findMany.mockImplementation(async ({ where }: any) =>
+      where.clinicAdminId === 502n ? [{ id: CLINIC_A, name: 'Klinik A', status: 1 }] : []);
+    db.kcDoctorClinicMapping.findMany.mockResolvedValue([]);
+    const bills: Record<string, unknown> = { [BILL_A]: billRow(101n, CLINIC_A, 1001n), [BILL_B]: billRow(202n, CLINIC_B, 2002n) };
+    const encounters: Record<string, unknown> = {
+      '1001': { doctorId: 601n, patientId: 701n },
+      '2002': { doctorId: 602n, patientId: 702n },
+    };
+    db.kcBill.findUnique.mockImplementation(async ({ where }: any) => bills[String(where.id)] ?? null);
+    db.kcPatientEncounter.findUnique.mockImplementation(async ({ where }: any) => encounters[String(where.id)] ?? null);
+    db.kcBillItem.findMany.mockResolvedValue([]);
+    db.kcService.findMany.mockResolvedValue([]);
+    db.kcTaxData.findMany.mockResolvedValue([]);
+    (svc.checkSessionPaymentStatus as any).mockResolvedValue({ status: 'paid', expectedAmount: 150000 });
+  });
+
+  it.each(staffOfClinicA)('$role of the bill\'s clinic reads the status', async (actor) => {
+    (requireRoles as any).mockResolvedValue({ actor });
+    const res = await handler(req({ billId: BILL_A }));
+    expect(res.status).toBe(200);
+    expect(svc.checkSessionPaymentStatus).toHaveBeenCalledWith(BILL_A);
+  });
+
+  it.each(staffOfClinicA)('$role of another clinic gets 404 and nothing is reconciled', async (actor) => {
+    (requireRoles as any).mockResolvedValue({ actor });
+    const res = await handler(req({ billId: BILL_B }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).not.toHaveProperty('data');
+    expect(svc.checkSessionPaymentStatus).not.toHaveBeenCalled();
+  });
+
+  it('a professional cannot read a colleague\'s bill in the same clinic', async () => {
+    (requireRoles as any).mockResolvedValue({ actor: staffOfClinicA[2] });
+    db.kcBill.findUnique.mockResolvedValue(billRow(303n, CLINIC_A, 3003n));
+    db.kcPatientEncounter.findUnique.mockResolvedValue({ doctorId: 603n, patientId: 703n });
+    const res = await handler(req({ billId: '303' }));
+    expect(res.status).toBe(404);
+    expect(svc.checkSessionPaymentStatus).not.toHaveBeenCalled();
+  });
+
+  it('SUPER_ADMIN reads any clinic\'s bill, without a WordPress link', async () => {
+    (requireRoles as any).mockResolvedValue({ actor: { id: 'super', role: 'SUPER_ADMIN', practiceId: null } });
+    const res = await handler(req({ billId: BILL_B }));
+    expect(res.status).toBe(200);
+    expect(svc.checkSessionPaymentStatus).toHaveBeenCalledWith(BILL_B);
+  });
+
+  it('rejects a non-numeric billId before it can reach BigInt()', async () => {
+    (requireRoles as any).mockResolvedValue({ actor: staffOfClinicA[0] });
+    const res = await handler(req({ billId: 'abc' }));
+    expect(res.status).toBe(400);
   });
 });
 
