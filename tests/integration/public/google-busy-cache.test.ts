@@ -17,6 +17,7 @@ vi.mock('@/lib/google/freebusy', async (importOriginal) => ({
 import { googleBusyForRange } from '@/services/integrations/google-busy.service';
 import { saveConnection } from '@/services/integrations/google-calendar-connection.service';
 import * as gcal from '@/lib/google/freebusy';
+import { GoogleAuthRevokedError, GoogleTransientError } from '@/lib/google/errors';
 
 const PRO = 900002;
 const JAKARTA = 'Asia/Jakarta';
@@ -114,5 +115,37 @@ describe('caching', () => {
 
     await ask({ cache: false });
     expect(gcal.queryFreeBusy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('when Google refuses the read', () => {
+  const connectionRow = () =>
+    prisma.googleCalendarConnection.findUnique({ where: { professionalId: BigInt(PRO) } });
+  const failWith = (err: Error) =>
+    (gcal.queryFreeBusy as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(err);
+
+  it('keeps the connection and its token on a usage limit', async () => {
+    // Satu 403 karena kuota pernah mematikan sambungan psikolog secara permanen.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      failWith(new GoogleTransientError('freebusy hit a Google usage limit (403: rateLimitExceeded)'));
+      expect(await ask({ cache: false })).toEqual({});
+    } finally {
+      logged.mockRestore();
+    }
+    const row = await connectionRow();
+    expect(row?.status).toBe('active');
+    expect(row?.refreshTokenEncrypted).toBeTruthy();
+  });
+
+  it('revokes on a rejected token and records why', async () => {
+    failWith(new GoogleAuthRevokedError('Google rejected the access token (401)'));
+    expect(await ask({ cache: false })).toEqual({});
+
+    const row = await connectionRow();
+    expect(row?.status).toBe('revoked');
+    expect(row?.refreshTokenEncrypted).toBeNull();
+    expect(row?.lastErrorMessage).toBe('Google rejected the access token (401)');
+    expect(row?.lastErrorAt).not.toBeNull();
   });
 });
