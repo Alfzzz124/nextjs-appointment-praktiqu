@@ -5,6 +5,11 @@
 
 export const SLOT_HOLD_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+/** Sweep expired holds once per this many `create` calls. */
+export const SWEEP_EVERY_CREATES = 100;
+/** Most holds kept at once; see `create`. */
+export const MAX_HOLDS = 10_000;
+
 export interface SlotHold {
   key: string;
   professionalId: string;
@@ -16,6 +21,12 @@ export interface SlotHold {
 
 export class SlotHoldService {
   private holds = new Map<string, SlotHold>();
+  private createsSinceSweep = 0;
+
+  /** Holds currently stored, expired ones not yet swept included. */
+  get size(): number {
+    return this.holds.size;
+  }
 
   buildKey(professionalId: string, serviceId: string, date: string, startTime: string): string {
     return `${professionalId}:${serviceId}:${date}:${startTime}`;
@@ -26,6 +37,26 @@ export class SlotHoldService {
     const key = input.key ?? this.buildKey(input.professionalId, input.serviceId, input.date, input.startTime);
     const expiresAt = Date.now() + SLOT_HOLD_TTL_MS;
     const hold: SlotHold = { ...input, key, expiresAt };
+
+    // The endpoint is public, so the map is memory an anonymous caller can spend, and
+    // nothing else ever sweeps it: expired holds only left when someone read that exact
+    // key. Sweeping every N creates keeps the cost off the common path.
+    if (++this.createsSinceSweep >= SWEEP_EVERY_CREATES) {
+      this.createsSinceSweep = 0;
+      this.sweep();
+    }
+    // Delete first so a refreshed hold moves to the back (Map order is insertion order),
+    // which is what makes "front of the map" mean "oldest" below.
+    this.holds.delete(key);
+    if (this.holds.size >= MAX_HOLDS) {
+      this.sweep();
+      // All still live — a flood inside one TTL. Dropping the oldest costs a guest a
+      // 410 on a hold nobody could have kept anyway; growing without bound costs the process.
+      for (const oldest of this.holds.keys()) {
+        if (this.holds.size < MAX_HOLDS) break;
+        this.holds.delete(oldest);
+      }
+    }
     this.holds.set(key, hold);
     return hold;
   }

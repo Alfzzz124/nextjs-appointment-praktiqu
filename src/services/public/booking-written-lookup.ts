@@ -3,15 +3,13 @@
 // appointment" and "write it now". Kept out of public-booking.service so that file keeps
 // one job, and out of booking-idempotency.service so that one stays free of WordPress.
 
+import type { CreatePublicAppointmentInput } from '@/services/public/public-booking.service';
 import { findActiveAppointmentIdAt } from '@/repositories/wp/appointments.repo';
 import { findPatientByEmail } from '@/repositories/wp/patients.repo';
 
-export async function findWrittenPublicAppointment(input: {
-  professionalId: number;
-  date: string;
-  startTime: string;
-  clientEmail: string;
-}): Promise<number | null> {
+export async function findWrittenPublicAppointment(
+  input: Pick<CreatePublicAppointmentInput, 'professionalId' | 'date' | 'startTime' | 'clientEmail'>,
+): Promise<number | null> {
   // No patient for that email means the dead attempt never got as far as creating one,
   // so it cannot have written the appointment either.
   const patient = await findPatientByEmail(input.clientEmail);

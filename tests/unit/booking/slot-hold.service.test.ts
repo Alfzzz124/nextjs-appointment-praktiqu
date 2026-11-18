@@ -1,6 +1,11 @@
 // tests/unit/booking/slot-hold.service.test.ts
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SlotHoldService, SLOT_HOLD_TTL_MS } from '@/services/booking/slot-hold.service';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  SlotHoldService,
+  SLOT_HOLD_TTL_MS,
+  SWEEP_EVERY_CREATES,
+  MAX_HOLDS,
+} from '@/services/booking/slot-hold.service';
 
 describe('SlotHoldService', () => {
   let svc: SlotHoldService;
@@ -69,5 +74,34 @@ describe('SlotHoldService', () => {
   it('isAvailable returns true when no hold and no booking', async () => {
     const result = await svc.isAvailable('p1:s1:2026-06-04:14:00', async () => false);
     expect(result).toBe(true);
+  });
+});
+describe('SlotHoldService — bounded memory', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const input = (n: number) => ({
+    professionalId: String(n),
+    serviceId: '1',
+    date: '2026-06-04',
+    startTime: '10:00',
+  });
+
+  it('sweeps expired holds on its own as new ones arrive', () => {
+    vi.useFakeTimers();
+    const svc = new SlotHoldService();
+    for (let i = 0; i < 50; i++) svc.create(input(i));
+    vi.advanceTimersByTime(SLOT_HOLD_TTL_MS + 1000);
+    // Nobody calls sweep() — creating holds is what drives it.
+    for (let i = 1000; i < 1000 + SWEEP_EVERY_CREATES; i++) svc.create(input(i));
+    expect(svc.size).toBeLessThanOrEqual(SWEEP_EVERY_CREATES);
+  });
+
+  it('never holds more than MAX_HOLDS live holds, dropping the oldest', () => {
+    const svc = new SlotHoldService();
+    const first = svc.create(input(0));
+    for (let i = 1; i <= MAX_HOLDS; i++) svc.create(input(i));
+    expect(svc.size).toBeLessThanOrEqual(MAX_HOLDS);
+    expect(svc.get(first.key)).toBeNull();
+    expect(svc.get(svc.buildKey(String(MAX_HOLDS), '1', '2026-06-04', '10:00'))).not.toBeNull();
   });
 });
