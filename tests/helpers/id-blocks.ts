@@ -120,7 +120,6 @@ export const ID_BLOCKS: readonly Row[] = [
   [9_290_000, 'repositories/wp-duration-options.repo.test.ts', 'kc_services, kc_service_doctor_mapping'],
   [9_300_000, 'integration/services/duration-options-route.test.ts', 'kc_service_doctor_mapping (by doctor_id), kc_services (by name), kc_appointments, kc_appointment_service_mapping, users (durasi-opsi-test-*)'],
   [9_310_000, 'repositories/wp-services-usd.repo.test.ts', 'kc_services, kc_service_doctor_mapping'],
-  [9_320_000, 'services/practice.restamp-prices.test.ts', 'kc_services, kc_service_doctor_mapping'],
 ];
 
 export interface IdBlock {

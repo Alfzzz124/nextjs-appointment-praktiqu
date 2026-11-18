@@ -33,8 +33,8 @@ describe('planDurationOptions', () => {
 
     expect(res).toEqual({
       plan: {
-        create: [{ duration: 150, charges: '900000' }],
-        keep: [{ existing: existing[0], duration: 90, charges: '650000' }],
+        create: [{ duration: 150, charges: '900000', priceUsd: null }],
+        keep: [{ existing: existing[0], duration: 90, charges: '650000', priceUsd: null }],
         remove: [existing[1]],
       },
     });

@@ -16,8 +16,10 @@
  */
 import { prisma } from '@/lib/db';
 import { lastInsertId } from '@/lib/last-insert-id';
-import type { Prisma } from '@prisma/client';
+// Nilai, bukan sekadar tipe: `Prisma.Decimal` dipakai saat menggabungkan harga dolar.
+import { Prisma } from '@prisma/client';
 import { ACTIVE_STATUSES } from './appointments.repo';
+import { withUsdPrice } from './usd-price-marker';
 import { optionMarker, removedMarker } from './duration-option-marker';
 
 /* ------------------------------------------------------------------ */
@@ -132,6 +134,8 @@ type MappingRowInput = {
   doctorId: bigint;
   clinicId: bigint;
   charges: string;
+  /** Isi `extra` yang sudah digabung pemanggil; kosong berarti kolomnya dibiarkan NULL. */
+  extra?: string | null;
   duration: number;
   telemedService: 'yes' | 'no';
   status: 0 | 1;
@@ -142,12 +146,13 @@ type MappingRowInput = {
 async function insertMappingRow(tx: Prisma.TransactionClient, input: MappingRowInput): Promise<bigint> {
   await tx.$executeRawUnsafe(
     `INSERT INTO wp_kc_service_doctor_mapping
-       (service_id, doctor_id, clinic_id, charges, duration, telemed_service, status, is_public, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (service_id, doctor_id, clinic_id, charges, extra, duration, telemed_service, status, is_public, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     input.serviceId,
     input.doctorId,
     input.clinicId,
     input.charges,
+    input.extra ?? null,
     input.duration,
     input.telemedService,
     input.status,
@@ -173,6 +178,7 @@ export async function createServiceWithMappings(input: {
     doctorId: bigint;
     clinicId: bigint;
     charges: string;
+    extra?: string | null;
     duration: number;
     telemedService: 'yes' | 'no';
     status: 0 | 1;
@@ -197,6 +203,12 @@ export type MappingPatch = {
   /** Set when a rename repoints this mapping at a different catalogue row. */
   serviceId?: bigint;
   charges?: string;
+  /**
+   * Isi `extra` yang SUDAH digabung oleh pemanggil (usd-price-marker.ts).
+   * Kolom ini juga memegang penanda opsi durasi dan JSON `product_id` warisan, jadi nilai
+   * yang masuk ke sini tidak boleh pernah dibangun dari nol.
+   */
+  extra?: string;
   duration?: number;
   telemedService?: 'yes' | 'no';
   status?: 0 | 1;
@@ -206,6 +218,7 @@ export type MappingPatch = {
 const PATCH_COLUMNS: Array<[keyof MappingPatch, string]> = [
   ['serviceId', 'service_id'],
   ['charges', 'charges'],
+  ['extra', 'extra'],
   ['duration', 'duration'],
   ['telemedService', 'telemed_service'],
   ['status', 'status'],
@@ -248,17 +261,35 @@ export type OptionInsert = {
   doctorId: bigint;
   clinicId: bigint;
   charges: string;
+  /** Harga dolar opsi ini, kalau ada. Ditulis ke `extra` BESERTA penanda opsi durasinya. */
+  priceUsd?: string | null;
   duration: number;
   telemedService: 'yes' | 'no';
   status: 0 | 1;
   isPublic: 0 | 1;
 };
 
+/**
+ * Penanda opsi durasi plus harga dolarnya, dalam satu `extra`.
+ *
+ * `optionMarker`/`removedMarker` membangun `extra` dari nol — sah, karena baris opsi
+ * selalu baris yang kita buat sendiri. Harga dolarnya digabungkan ke situ, bukan menimpanya.
+ */
+function extraFor(marker: string, priceUsd: string | null | undefined): string {
+  if (priceUsd === null || priceUsd === undefined || priceUsd === '') return marker;
+  return withUsdPrice(marker, new Prisma.Decimal(priceUsd));
+}
+
 export type ServiceUpdateWrites = {
   parent: { mappingId: bigint; patch: MappingPatch };
   optionUpdates: Array<{ mappingId: bigint; patch: MappingPatch }>;
   optionInserts: OptionInsert[];
-  optionRemovals: Array<{ mappingId: bigint; parentMappingId: bigint }>;
+  optionRemovals: Array<{
+    mappingId: bigint;
+    parentMappingId: bigint;
+    /** Harga dolar opsi yang dihapus, dipertahankan bersama penanda "removed". */
+    priceUsd?: string | null;
+  }>;
 };
 
 /**
@@ -286,7 +317,7 @@ export async function saveServiceUpdate(w: ServiceUpdateWrites): Promise<void> {
     for (const r of w.optionRemovals) {
       await tx.$executeRawUnsafe(
         `UPDATE wp_kc_service_doctor_mapping SET status = 0, extra = ? WHERE id = ?`,
-        removedMarker(r.parentMappingId),
+        extraFor(removedMarker(r.parentMappingId), r.priceUsd),
         r.mappingId,
       );
     }
@@ -308,7 +339,7 @@ export async function saveServiceUpdate(w: ServiceUpdateWrites): Promise<void> {
         i.telemedService,
         i.status,
         i.isPublic,
-        optionMarker(i.parentMappingId),
+        extraFor(optionMarker(i.parentMappingId), i.priceUsd),
       );
     }
   }, { maxWait: 5000, timeout: 10000 });

@@ -31,6 +31,12 @@ import {
   type WantedOption,
 } from './duration-options';
 import { findServiceTypeById } from '@/repositories/wp/static-data.repo';
+import { idrFromUsd, parseUsdInput, readUsdPrice, withUsdPrice } from '@/repositories/wp/usd-price-marker';
+import {
+  resolveClinicPayment,
+  resolveClinicPaymentManyForDisplay,
+} from '@/services/payments/clinic-payment.service';
+import { buildUsdQuote, notInternational, type ClinicPaymentSettings } from '@/services/payments/intl-pricing';
 import { audit } from '@/lib/logging';
 import type { ServiceScope } from './scope';
 import type { ListServicesQuery, CreateServiceInput, UpdateServiceInput } from './validation';
@@ -45,8 +51,28 @@ export type DurationOptionSummary = {
   name: string;
   durationMinutes: number | null;
   price: number | null;
+  /** Harga dolar yang ditetapkan admin, atau null kalau harganya masih rupiah. */
+  priceUsd: string | null;
+  /** Nilai awal form saat mengonversi; selalu null begitu `priceUsd` terisi. */
+  priceUsdSuggested: string | null;
   isActive: boolean;
 };
+
+/** Mata uang yang dipakai satu klinik. FE memformat berdasarkan `code` saja. */
+export type CurrencyBlock = { code: 'USD' | 'IDR'; fxRate: string | null };
+
+/**
+ * Klinik internasional berkurs memakai dolar; sisanya rupiah.
+ *
+ * Klinik internasional TANPA kurs tetap rupiah: tanpa kurs tidak ada angka dolar yang
+ * bisa ditampilkan, dan menjanjikan USD lalu menunjukkan rupiah lebih membingungkan
+ * daripada tidak menjanjikan apa-apa.
+ */
+export function currencyBlockFor(s: ClinicPaymentSettings): CurrencyBlock {
+  return s.international && s.rate !== null
+    ? { code: 'USD', fxRate: s.rate.toString() }
+    : { code: 'IDR', fxRate: null };
+}
 
 export type ServiceSummary = {
   /** The mapping id — what `/api/v1/services/{id}` addresses. */
@@ -58,6 +84,18 @@ export type ServiceSummary = {
   category: ServiceCategory | null;
   /** The doctor's charge, which is what a client actually pays. */
   price: number | null;
+  /**
+   * Harga dolar yang ditetapkan admin. Baris yang punya ini ditagih PERSIS sejumlah itu:
+   * tanpa markup dan tanpa biaya tetap (spec 2026-11-18 §2).
+   */
+  priceUsd: string | null;
+  /**
+   * Nilai awal isian dolar saat admin mengonversi layanan yang harganya masih rupiah:
+   * harga rupiahnya lewat jalur konversi lama. Selalu null kalau `priceUsd` sudah terisi
+   * atau kliniknya bukan internasional — supaya FE tidak pernah salah mengira layanan ini
+   * sudah dikonversi.
+   */
+  priceUsdSuggested: string | null;
   durationMinutes: number | null;
   telemedService: 'yes' | 'no';
   isPublic: boolean;
@@ -97,19 +135,39 @@ function parsePrice(raw: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function toOptionSummary(o: ClinicServiceRow): DurationOptionSummary {
+/**
+ * Nilai awal isian dolar untuk baris yang harganya masih rupiah.
+ *
+ * Sengaja lewat `buildUsdQuote` jalur lama — bukan sekadar `charges / kurs` — supaya angka
+ * yang disodorkan sama persis dengan yang dilihat klien hari ini. Admin lalu membulatkannya.
+ */
+function suggestUsd(row: ClinicServiceRow, settings: ClinicPaymentSettings): string | null {
+  if (row.priceUsd !== null || !settings.international || settings.rate === null) return null;
+  const price = parsePrice(row.charges);
+  if (price === null) return null;
+  const quote = buildUsdQuote([{ name: row.name, price }], [], settings);
+  return quote === null ? null : quote.totalUsd;
+}
+
+function toOptionSummary(o: ClinicServiceRow, settings: ClinicPaymentSettings): DurationOptionSummary {
   return {
     id: Number(o.id),
     serviceId: Number(o.serviceId),
     name: o.name,
     durationMinutes: o.durationMinutes,
     price: parsePrice(o.charges),
+    priceUsd: o.priceUsd ?? null,
+    priceUsdSuggested: suggestUsd(o, settings),
     isActive: o.isActive,
   };
 }
 
 /** `options`: this row's option rows, live or removed; only live ones are reported. */
-function toSummary(row: ClinicServiceRow, options: ClinicServiceRow[] = []): ServiceSummary {
+function toSummary(
+  row: ClinicServiceRow,
+  settings: ClinicPaymentSettings,
+  options: ClinicServiceRow[] = [],
+): ServiceSummary {
   return {
     id: Number(row.id),
     serviceId: Number(row.serviceId),
@@ -118,12 +176,16 @@ function toSummary(row: ClinicServiceRow, options: ClinicServiceRow[] = []): Ser
     name: row.name,
     category: parseServiceCategory(row.category),
     price: parsePrice(row.charges),
+    priceUsd: row.priceUsd ?? null,
+    priceUsdSuggested: suggestUsd(row, settings),
     durationMinutes: row.durationMinutes,
     telemedService: row.telemedService === 'yes' ? 'yes' : 'no',
     isPublic: row.isPublic,
     isActive: row.isActive,
     durationOf: row.optionOf ? Number(row.optionOf.parentId) : null,
-    durationOptions: options.filter((o) => o.optionOf && !o.optionOf.removed).map(toOptionSummary),
+    durationOptions: options
+      .filter((o) => o.optionOf && !o.optionOf.removed)
+      .map((o) => toOptionSummary(o, settings)),
   };
 }
 
@@ -142,9 +204,15 @@ function inScope(row: ClinicServiceRow, scope: ServiceScope): boolean {
 export async function listServices(
   query: ListServicesQuery,
   scope: ServiceScope,
-): Promise<{ services: ServiceSummary[]; total: number; page: number; perPage: number }> {
+): Promise<{
+  services: ServiceSummary[];
+  total: number;
+  page: number;
+  perPage: number;
+  currency: CurrencyBlock;
+}> {
   if (scope.empty) {
-    return { services: [], total: 0, page: query.page, perPage: query.perPage };
+    return { services: [], total: 0, page: query.page, perPage: query.perPage, currency: { code: 'IDR', fxRate: null } };
   }
 
   // The scope wins over the query string. A clinic admin asking for another clinic gets
@@ -173,11 +241,27 @@ export async function listServices(
     byParent.set(key, [...(byParent.get(key) ?? []), o]);
   }
 
+  // Satu panggilan untuk semua klinik di halaman ini, bukan satu per baris. Halaman
+  // super admin bisa memuat beberapa klinik sekaligus, jadi mata uangnya dibaca per baris;
+  // blok `currency` di tingkat respons menyebut klinik yang sedang dilingkupi, dan menjadi
+  // IDR saat halamannya memuat lebih dari satu klinik — tidak ada satu jawaban yang benar.
+  const rowClinics = [...new Set(page.items.map((r) => Number(r.clinicId)))];
+  // Klinik yang dilingkupi ikut diminta walau halamannya kosong: form "Tambah layanan"
+  // membutuhkan mata uangnya justru saat klinik itu belum punya layanan sama sekali.
+  const scopedClinic = clinicId !== undefined ? Number(clinicId) : rowClinics.length === 1 ? rowClinics[0] : null;
+  const settingsByClinic = await resolveClinicPaymentManyForDisplay(
+    scopedClinic === null ? rowClinics : [...new Set([...rowClinics, scopedClinic])],
+  );
+  const settingsOf = (id: number): ClinicPaymentSettings => settingsByClinic.get(id) ?? notInternational(id);
+
   return {
-    services: page.items.map((r) => toSummary(r, r.optionOf ? [] : byParent.get(r.id.toString()) ?? [])),
+    services: page.items.map((r) =>
+      toSummary(r, settingsOf(Number(r.clinicId)), r.optionOf ? [] : byParent.get(r.id.toString()) ?? []),
+    ),
     total: page.total,
     page: page.page,
     perPage: page.perPage,
+    currency: scopedClinic === null ? { code: 'IDR', fxRate: null } : currencyBlockFor(settingsOf(scopedClinic)),
   };
 }
 
@@ -190,12 +274,17 @@ export async function listServices(
 export async function getService(
   mappingId: number,
   scope: ServiceScope,
-): Promise<ServiceSummary | null> {
+): Promise<{ service: ServiceSummary; currency: CurrencyBlock } | null> {
   if (scope.empty) return null;
 
   const row = await findMappingById(BigInt(mappingId));
   if (!row || !inScope(row, scope)) return null;
-  return toSummary(row, row.optionOf ? [] : await listOptionRowsOf([row.id]));
+  const settings = (await resolveClinicPaymentManyForDisplay([Number(row.clinicId)])).get(Number(row.clinicId))
+    ?? notInternational(Number(row.clinicId));
+  return {
+    service: toSummary(row, settings, row.optionOf ? [] : await listOptionRowsOf([row.id])),
+    currency: currencyBlockFor(settings),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -223,6 +312,59 @@ async function resolveCategory(categoryId: number): Promise<{ type: string; json
   }
   const category: ServiceCategory = { id: Number(row.id), label: row.label, value: row.value };
   return { type: row.value ?? '', json: JSON.stringify(category), category };
+}
+
+/**
+ * Harga satu baris, siap ditulis.
+ *
+ * `extra` yang `undefined` berarti **jangan sentuh kolomnya**, dan itu bukan sekadar
+ * optimasi: `extra` bisa berisi teks bebas yang bukan JSON (ada baris produksi berisi
+ * catatan admin), dan menulis ulang kolom itu untuk sekadar menyimpan harga rupiah akan
+ * menghapusnya tanpa suara.
+ */
+type PriceWrite = { charges: string; extra?: string };
+
+/**
+ * Terjemahkan `price` rupiah atau `priceUsd` menjadi kolom-kolom yang ditulis.
+ *
+ * `priceUsd` menuntut klinik internasional DENGAN kurs yang bisa dipakai. Tanpa itu simpan
+ * ditolak, bukan diam-diam jatuh ke rupiah: menyimpan angka 55 sebagai Rp 55 adalah
+ * kesalahan yang tidak akan ketahuan sampai ada yang membayar.
+ *
+ * `price` rupiah MEMBUANG harga dolar yang ada — ini jalan sadar untuk membatalkan
+ * konversi, dan satu-satunya cara mengembalikan layanan ke jalur lama.
+ */
+function priceWrite(
+  input: { price?: number; priceUsd?: string },
+  existingExtra: string | null,
+  settings: ClinicPaymentSettings,
+): PriceWrite {
+  if (input.priceUsd !== undefined) {
+    if (!settings.international) {
+      throw {
+        _tag: 'unprocessable',
+        code: 'usd_price_not_allowed',
+        message: 'This clinic is not international, so its services are priced in rupiah',
+      } satisfies ServiceCatalogError;
+    }
+    if (settings.rate === null) {
+      throw {
+        _tag: 'unprocessable',
+        code: 'fx_rate_required',
+        message: 'This clinic has no usable exchange rate, so a dollar price cannot be stored',
+      } satisfies ServiceCatalogError;
+    }
+    // Sudah lolos zod; `!` di sini hanya mempersempit tipe.
+    const usd = parseUsdInput(input.priceUsd)!;
+    return { charges: String(idrFromUsd(usd, settings.rate)), extra: withUsdPrice(existingExtra, usd) };
+  }
+  // Harga rupiah hanya menyentuh `extra` kalau memang ADA harga dolar yang harus dibuang.
+  // Kalau ada, kolomnya sudah terbukti JSON yang terbaca, jadi menggabungkan ke dalamnya aman.
+  const clearing = readUsdPrice(existingExtra) !== null;
+  return {
+    charges: String(input.price ?? 0),
+    ...(clearing ? { extra: withUsdPrice(existingExtra, null) } : {}),
+  };
 }
 
 export async function createService(
@@ -262,7 +404,9 @@ export async function createService(
     } satisfies ServiceCatalogError;
   }
 
-  const price = String(input.price);
+  // Harga dolar ditolak lebih dulu dengan 422 kalau kliniknya tidak memenuhi syarat,
+  // sebelum satu baris pun dibuat.
+  const { charges: price, extra } = priceWrite(input, null, await resolveClinicPayment(clinicId));
 
   // The catalogue is global, so an identical name+type from another clinic is reused
   // rather than duplicated — this is KiviCare's own behaviour. The reuse decision stays
@@ -281,6 +425,7 @@ export async function createService(
       doctorId,
       clinicId: clinic,
       charges: price,
+      extra,
       duration: input.duration,
       telemedService: input.telemedService,
       status: input.status,
@@ -338,8 +483,16 @@ export async function updateService(
   }
   if (existing.optionOf) throw editViaParent(existing.optionOf.parentId);
 
+  // Mata uang klinik ini, dibaca sekali: dipakai menulis harga parent dan tiap opsi, dan
+  // lagi untuk ringkasan yang dikembalikan.
+  const settings = await resolveClinicPayment(Number(existing.clinicId));
+
   const patch: MappingPatch = {};
-  if (input.price !== undefined) patch.charges = String(input.price);
+  if (input.price !== undefined || input.priceUsd !== undefined) {
+    const written = priceWrite(input, existing.extra, settings);
+    patch.charges = written.charges;
+    patch.extra = written.extra;
+  }
   if (input.duration !== undefined) patch.duration = input.duration;
   if (input.telemedService !== undefined) patch.telemedService = input.telemedService;
   if (input.status !== undefined) patch.status = input.status;
@@ -392,16 +545,25 @@ export async function updateService(
     serviceId: o.serviceId,
     durationMinutes: o.durationMinutes,
     charges: o.charges,
+    priceUsd: o.priceUsd,
+    extra: o.extra,
   }));
+  const extraById = new Map(liveRows.map((o) => [o.id.toString(), o.extra]));
   // No list sent: the options stay as they are, but still have to fit a changed parent
   // duration, and still follow a rename or a status change.
   const wanted: WantedOption[] =
     input.durationOptions !== undefined
-      ? input.durationOptions.map((o) => ({ id: o.id, duration: o.duration, charges: String(o.price) }))
+      ? input.durationOptions.map((o) => {
+          // Tiap opsi melewati aturan yang sama dengan harga parent: harga dolar menuntut
+          // klinik internasional berkurs, dan harga rupiah membuang harga dolar yang ada.
+          const written = priceWrite(o, o.id === undefined ? null : extraById.get(String(o.id)) ?? null, settings);
+          return { id: o.id, duration: o.duration, charges: written.charges, priceUsd: o.priceUsd ?? null };
+        })
       : existingOptions.map((o) => ({
           id: Number(o.mappingId),
           duration: o.durationMinutes ?? 0,
           charges: o.charges ?? '0',
+          priceUsd: o.priceUsd,
         }));
 
   const planned = planDurationOptions(existingOptions, wanted, input.duration ?? existing.durationMinutes);
@@ -483,6 +645,14 @@ export async function updateService(
     const p: MappingPatch = { ...cascade };
     if (lengthChanged(k)) p.duration = k.duration;
     if (k.charges !== (k.existing.charges ?? '0')) p.charges = k.charges;
+    // Harga dolarnya berubah (termasuk dibuang) walau rupiah turunannya kebetulan sama —
+    // mis. kurs yang sama dengan harga dolar berbeda satu sen di bawah pembulatan.
+    const nextUsd = k.priceUsd ?? null;
+    const prevUsd = k.existing.priceUsd ?? null;
+    if (nextUsd !== prevUsd) {
+      p.extra = withUsdPrice(k.existing.extra, nextUsd === null ? null : parseUsdInput(nextUsd));
+      p.charges = k.charges;
+    }
     if (repointed.has(k)) p.serviceId = await catalogueFor(k.target, k.charges);
     if (Object.keys(p).length > 0) optionUpdates.push({ mappingId: k.existing.mappingId, patch: p });
   }
@@ -495,6 +665,7 @@ export async function updateService(
       doctorId: existing.doctorId,
       clinicId: existing.clinicId,
       charges: c.charges,
+      priceUsd: c.priceUsd,
       duration: c.duration,
       telemedService: input.telemedService ?? (existing.telemedService === 'yes' ? 'yes' : 'no'),
       status: input.status ?? (existing.isActive ? 1 : 0),
@@ -502,7 +673,13 @@ export async function updateService(
     });
   }
 
-  const optionRemovals = plan.remove.map((o) => ({ mappingId: o.mappingId, parentMappingId: existing.id }));
+  // Opsi yang dihapus tetap memegang harga dolarnya: barisnya mati, tapi laporan dan
+  // janji temu lama masih menyebutnya, dan angkanya tidak boleh hilang diam-diam.
+  const optionRemovals = plan.remove.map((o) => ({
+    mappingId: o.mappingId,
+    parentMappingId: existing.id,
+    priceUsd: o.priceUsd,
+  }));
 
   // Nothing to write exactly when the caller sent nothing that changes anything; the
   // audit trail must then stay silent too, or a no-op leaves a record of a change that
@@ -532,7 +709,7 @@ export async function updateService(
   if (!refreshed) {
     throw { _tag: 'not_found', entity: 'service' } satisfies ServiceCatalogError;
   }
-  return toSummary(refreshed, await liveOptionsOf(refreshed.id));
+  return toSummary(refreshed, settings, await liveOptionsOf(refreshed.id));
 }
 
 /* ------------------------------------------------------------------ */
