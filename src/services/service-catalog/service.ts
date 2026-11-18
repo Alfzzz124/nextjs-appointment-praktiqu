@@ -132,6 +132,32 @@ async function liveOptionsOf(parentId: bigint): Promise<ClinicServiceRow[]> {
   return (await listOptionRowsOf([parentId])).filter((o) => o.optionOf && !o.optionOf.removed);
 }
 
+/**
+ * Refuses retiring a service while a future booking still points at it, counting the
+ * parent's live options too (they go with it). Shared by DELETE and by PUT status 0 —
+ * both end in the same retired mapping, so both need the same guard.
+ */
+async function assertNoUpcomingAppointments(
+  existing: ClinicServiceRow,
+  live: ClinicServiceRow[],
+): Promise<void> {
+  let blocking = await countBlockingAppointments({
+    serviceId: existing.serviceId,
+    doctorId: existing.doctorId,
+  });
+  for (const o of live) {
+    blocking += await countBlockingAppointments({ serviceId: o.serviceId, doctorId: existing.doctorId });
+  }
+  if (blocking > 0) {
+    throw {
+      _tag: 'conflict',
+      code: 'service_has_upcoming_appointments',
+      message: `${blocking} upcoming appointment(s) still use this service. Cancel or reschedule them first.`,
+      count: blocking,
+    } satisfies ServiceCatalogError;
+  }
+}
+
 /** Visible to this scope? Both dimensions must pass; `null` means unrestricted. */
 function inScope(row: ClinicServiceRow, scope: ServiceScope): boolean {
   if (scope.clinicId !== null && row.clinicId !== scope.clinicId) return false;
@@ -428,6 +454,13 @@ export async function updateService(
     } satisfies ServiceCatalogError;
   }
 
+  // PUT status 0 retires the service exactly as DELETE does (options included), so it gets
+  // the same guard — for every role. Only an active -> 0 change counts: staying at 0 or
+  // reactivating strands no booking.
+  if (input.status === 0 && existing.isActive) {
+    await assertNoUpcomingAppointments(existing, liveRows);
+  }
+
   // Option names follow the parent's name and their own duration.
   const nameNow = new Map(liveRows.map((o) => [o.id.toString(), o.name]));
   const keeps = plan.keep.map((k) => ({ ...k, target: optionName(name, k.duration) }));
@@ -568,21 +601,7 @@ export async function deleteService(
 
   // The parent's live options go with it, so their bookings block it as much as its own.
   const live = await liveOptionsOf(existing.id);
-  let blocking = await countBlockingAppointments({
-    serviceId: existing.serviceId,
-    doctorId: existing.doctorId,
-  });
-  for (const o of live) {
-    blocking += await countBlockingAppointments({ serviceId: o.serviceId, doctorId: existing.doctorId });
-  }
-  if (blocking > 0) {
-    throw {
-      _tag: 'conflict',
-      code: 'service_has_upcoming_appointments',
-      message: `${blocking} upcoming appointment(s) still use this service. Cancel or reschedule them first.`,
-      count: blocking,
-    } satisfies ServiceCatalogError;
-  }
+  await assertNoUpcomingAppointments(existing, live);
 
   // Live options keep their marker: reactivating the parent (PUT status 1) brings them back.
   // One transaction, so a failure cannot leave a retired parent with active options.

@@ -385,3 +385,83 @@ describe('updateService — duration options', () => {
     }));
   });
 });
+
+// PUT status 0 reaches the same end state as DELETE (a retired mapping), so it has to
+// pass the same upcoming-appointment guard — otherwise a PENDING booking is left naming a
+// service nobody offers, and payment fails with 422 service_not_offered.
+describe('updateService — deactivating through status', () => {
+  const live = {
+    ...row, id: 601n, serviceId: 201n, name: 'Konseling Individu (90 menit)',
+    durationMinutes: 90, optionOf: { parentId: 501n, removed: false },
+  };
+  const psychologist: ServiceScope = { clinicId: null, doctorId: 8100001n, empty: false };
+
+  beforeEach(() => {
+    write.countBlockingAppointments.mockResolvedValue(0);
+  });
+
+  it('refuses status 0 while upcoming appointments use the service, writing nothing', async () => {
+    write.countBlockingAppointments.mockResolvedValue(3);
+
+    await expect(updateService(501, { status: 0 }, clinicAdmin, 'actor-1')).rejects.toMatchObject({
+      _tag: 'conflict', code: 'service_has_upcoming_appointments', count: 3,
+    });
+    expect(write.countBlockingAppointments).toHaveBeenCalledWith({ serviceId: 101n, doctorId: 8100001n });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+    expect(logging.audit).not.toHaveBeenCalled();
+  });
+
+  it('deactivates when nothing upcoming uses the service', async () => {
+    await updateService(501, { status: 0 }, clinicAdmin, 'actor-1');
+
+    expect(parentPatch()).toEqual({ status: 0 });
+  });
+
+  it("counts a live option's upcoming bookings as blocking the parent", async () => {
+    repo.listOptionRowsOf.mockResolvedValue([live]);
+    write.countBlockingAppointments.mockImplementation(async ({ serviceId }: { serviceId: bigint }) =>
+      serviceId === 201n ? 2 : 0);
+
+    await expect(updateService(501, { status: 0 }, clinicAdmin, 'a')).rejects.toMatchObject({
+      _tag: 'conflict', code: 'service_has_upcoming_appointments', count: 2,
+    });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('holds back a psychologist deactivating their own service just the same', async () => {
+    write.countBlockingAppointments.mockResolvedValue(1);
+
+    await expect(updateService(501, { status: 0 }, psychologist, 'actor-1')).rejects.toMatchObject({
+      _tag: 'conflict', code: 'service_has_upcoming_appointments',
+    });
+    expect(write.saveServiceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not check reactivation (0 -> 1)', async () => {
+    repo.findMappingById.mockResolvedValue({ ...row, isActive: false });
+    write.countBlockingAppointments.mockResolvedValue(5);
+
+    await updateService(501, { status: 1 }, clinicAdmin, 'actor-1');
+
+    expect(write.countBlockingAppointments).not.toHaveBeenCalled();
+    expect(parentPatch()).toEqual({ status: 1 });
+  });
+
+  it('does not check an unchanged status (1 -> 1, 0 -> 0)', async () => {
+    write.countBlockingAppointments.mockResolvedValue(5);
+
+    await updateService(501, { status: 1 }, clinicAdmin, 'actor-1');
+    repo.findMappingById.mockResolvedValue({ ...row, isActive: false });
+    await updateService(501, { status: 0 }, clinicAdmin, 'actor-1');
+
+    expect(write.countBlockingAppointments).not.toHaveBeenCalled();
+  });
+
+  it('does not check an update that leaves status alone', async () => {
+    write.countBlockingAppointments.mockResolvedValue(5);
+
+    await updateService(501, { price: 300000 }, clinicAdmin, 'actor-1');
+
+    expect(write.countBlockingAppointments).not.toHaveBeenCalled();
+  });
+});

@@ -158,6 +158,20 @@ describe('PUT /api/v1/services/{id}', () => {
 
     expect((await PUT(req('PUT', { name: 'x' }), ctx('501'))).status).toBe(409);
   });
+
+  it('409s a deactivation blocked by upcoming appointments, and passes the count on', async () => {
+    svc.updateService.mockRejectedValue({
+      _tag: 'conflict',
+      code: 'service_has_upcoming_appointments',
+      message: '3 upcoming appointment(s) still use this service.',
+      count: 3,
+    });
+
+    const res = await PUT(req('PUT', { status: 0 }), ctx('501'));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'service_has_upcoming_appointments', count: 3 });
+  });
 });
 
 describe('DELETE /api/v1/services/{id}', () => {
