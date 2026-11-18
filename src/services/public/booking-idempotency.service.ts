@@ -11,6 +11,16 @@
 import { createHash } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
 
+/**
+ * How long an unfinished claim is believed to be running.
+ *
+ * Longer than the slowest legitimate write (the gateway gives up at ~8 s and the write
+ * itself is a few seconds more), so anything older was abandoned: its process was
+ * restarted or killed mid-request. Without a bound such a key answered
+ * `booking_in_progress` forever, and the retry the key exists for could never book.
+ */
+export const IN_PROGRESS_STALE_MS = 2 * 60_000;
+
 export type ClaimResult =
   /** The caller owns this key and should carry out the booking. */
   | { kind: 'claimed' }
@@ -57,24 +67,47 @@ function canonical(v: unknown): string {
 }
 
 /**
+ * Finds the appointment a request already wrote, or null. Supplied by the route, which
+ * knows what identifies the booking (professional, date, start, client email); this
+ * file only knows the key.
+ */
+export type FindWrittenAppointment = () => Promise<number | null>;
+
+/**
  * Take ownership of a key, or learn why you cannot.
  *
  * The INSERT is the lock: concurrent attempts race for the primary key and exactly
  * one wins. The loser reads the row to find out whether the winner is still working
  * or already finished.
+ *
+ * A claim older than IN_PROGRESS_STALE_MS that never finished belongs to a process that
+ * died. It is taken over — after `findWritten` confirms that process did not get as far
+ * as writing the booking, since a second write would double-book.
  */
 export async function claimIdempotencyKey(
   key: string,
   fingerprint: string,
-  // Guards the one legitimate re-read, below. Not part of the public contract.
-  attempt = 0,
+  findWritten?: FindWrittenAppointment,
+): Promise<ClaimResult> {
+  return claim(key, fingerprint, findWritten, 0);
+}
+
+async function claim(
+  key: string,
+  fingerprint: string,
+  findWritten: FindWrittenAppointment | undefined,
+  // Guards the one legitimate re-read, below.
+  attempt: number,
 ): Promise<ClaimResult> {
   // createMany+skipDuplicates rather than create-and-catch: losing the race is the
   // normal path here, and `create` would throw and have Prisma log a constraint
   // violation every time two attempts collide. On MySQL this is INSERT IGNORE, so
   // it stays one atomic statement.
+  //
+  // createdAt is set here, from the same clock the staleness test below reads, rather
+  // than left to the column default: this is what tells a live claim from a dead one.
   const { count } = await prisma.bookingIdempotencyKey.createMany({
-    data: [{ key, fingerprint }],
+    data: [{ key, fingerprint, createdAt: new Date() }],
     skipDuplicates: true,
   });
   if (count === 1) return { kind: 'claimed' };
@@ -84,14 +117,45 @@ export async function claimIdempotencyKey(
     // The holder released it between our INSERT being ignored and this read — the key is
     // free again. Retry once; looping here would spin against a pathological caller.
     if (attempt >= 1) return { kind: 'in_progress' };
-    return claimIdempotencyKey(key, fingerprint, attempt + 1);
+    return claim(key, fingerprint, findWritten, attempt + 1);
   }
 
   // Checked before the in-flight test: a mismatched body is wrong to answer either
   // way, and saying "in progress" would invite the caller to retry into the same wall.
   if (existing.fingerprint !== fingerprint) return { kind: 'fingerprint_mismatch' };
-  if (existing.appointmentId === null) return { kind: 'in_progress' };
-  return { kind: 'replay', appointmentId: existing.appointmentId };
+  if (existing.appointmentId !== null) {
+    return { kind: 'replay', appointmentId: existing.appointmentId };
+  }
+
+  const staleBefore = new Date(Date.now() - IN_PROGRESS_STALE_MS);
+  if (existing.createdAt >= staleBefore) return { kind: 'in_progress' };
+
+  // Abandoned. Did the dead attempt write the booking before it died? Not knowing is
+  // not a licence to write again, so a failed lookup leaves the key as it was.
+  let written: number | null = null;
+  if (findWritten) {
+    try {
+      written = await findWritten();
+    } catch (err) {
+      console.error('[booking-idempotency] could not check for an already-written booking', err);
+      return { kind: 'in_progress' };
+    }
+  }
+  if (written !== null) {
+    await prisma.bookingIdempotencyKey.updateMany({
+      where: { key, appointmentId: null },
+      data: { appointmentId: written, completedAt: new Date() },
+    });
+    return { kind: 'replay', appointmentId: written };
+  }
+
+  // Conditional on the claim still being the stale one, so of two simultaneous
+  // takeovers the first moves createdAt forward and the second matches nothing.
+  const { count: taken } = await prisma.bookingIdempotencyKey.updateMany({
+    where: { key, appointmentId: null, createdAt: { lt: staleBefore } },
+    data: { createdAt: new Date() },
+  });
+  return taken === 1 ? { kind: 'claimed' } : { kind: 'in_progress' };
 }
 
 /** Record which appointment this key produced, so a replay can return it. */
