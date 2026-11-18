@@ -13975,6 +13975,10 @@ components:
           description: The booking's USD figures, priced like the charge; null unless USD is offered.
           allOf:
             - $ref: '#/components/schemas/PublicUsdView'
+        meetingUrl:
+          type: string
+          nullable: true
+          description: Google Meet link of the session. Only for BOOKED or CHECK_IN appointments that have one; null otherwise (and always null on the create response).
     CreatedAppointment:
       allOf:
         - $ref: '#/components/schemas/PublicAppointmentView'
