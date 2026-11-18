@@ -37,6 +37,7 @@ import {
   fromKcStatus,
 } from '@/repositories/wp/sessions.repo';
 import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
 import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
 import {
@@ -46,7 +47,6 @@ import {
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { findApproval } from '@/services/approval/store';
-import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
