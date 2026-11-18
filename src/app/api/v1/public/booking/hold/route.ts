@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { z } from 'zod';
-import { clientIpOrNull } from '@/lib/client-ip';
+import { forwardedClientIp } from '@/lib/client-ip';
 import { createRateLimiter } from '@/lib/rate-limit';
 import { tooManyRequests } from '@/lib/problem-details';
 
@@ -17,25 +17,27 @@ const holdSchema = z.object({
 });
 
 // Every request counts, not only failures: a hold is cheap to ask for and lives 15
-// minutes, so volume itself is the abuse. The ceiling is sized for the whole platform,
-// not one browser: the Laravel FE calls this server-side for every patient, and unless
-// FE_FORWARDER_SECRET is set on both sides they all share the FE host's address
-// (src/lib/client-ip.ts), each booking taking up to six holds while it retries. 600 per
-// 15 minutes is still a hard stop for one direct caller, and the slot-hold map is capped
-// on its own, so memory does not depend on this number.
+// minutes, so volume itself is the abuse. Only an address the FE vouched for is limited
+// (src/lib/client-ip.ts). Unvouched, the address is the first X-Forwarded-For entry,
+// which any caller can set, and every patient the FE relays shares the FE host's address;
+// a lockout keyed on it would let one forger refuse every patient's booking. Generous,
+// because carrier-grade NAT puts many patients behind one public address. Memory does
+// not depend on this limit: the slot-hold map is capped on its own.
 const limiter = createRateLimiter({
   config: { lockoutAfter: 600, windowMs: 15 * 60_000, progressiveAfter: Number.MAX_SAFE_INTEGER },
 });
 
 export async function POST(req: NextRequest) {
-  const ip = clientIpOrNull(req.headers) ?? 'unknown';
-  const verdict = limiter.check(ip);
-  if (verdict.kind === 'lockout') {
-    const retryAfter = Math.ceil(verdict.retryAfterMs / 1000);
-    const p = tooManyRequests('rate_limited', retryAfter);
-    return NextResponse.json(p, { status: p.status, headers: { 'Retry-After': String(retryAfter) } });
+  const ip = forwardedClientIp(req.headers);
+  if (ip) {
+    const verdict = limiter.check(ip);
+    if (verdict.kind === 'lockout') {
+      const retryAfter = Math.ceil(verdict.retryAfterMs / 1000);
+      const p = tooManyRequests('rate_limited', retryAfter);
+      return NextResponse.json(p, { status: p.status, headers: { 'Retry-After': String(retryAfter) } });
+    }
+    limiter.recordFailure(ip);
   }
-  limiter.recordFailure(ip);
 
   try {
     // A body that is not JSON is the caller's mistake: 400 via the schema, not a 500.

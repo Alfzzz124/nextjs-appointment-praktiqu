@@ -38,8 +38,14 @@ function keyMatches(presented: string, secret: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** The IP a trusted forwarder vouched for, or `null` when there is no valid vouch. */
-function forwardedClientIp(headers: HeaderSource): string | null {
+/**
+ * The IP a trusted forwarder vouched for, or `null` when there is no valid vouch.
+ *
+ * Key a lockout on this, not on `clientIpOrNull`, when one address may stand for many
+ * people: unvouched, every patient the FE relays shares the FE host's address, and a
+ * caller who forges that address would lock all of them out.
+ */
+export function forwardedClientIp(headers: HeaderSource): string | null {
   const secret = process.env.FE_FORWARDER_SECRET?.trim();
   if (!secret || secret.length < MIN_SECRET_LENGTH) return null;
 
