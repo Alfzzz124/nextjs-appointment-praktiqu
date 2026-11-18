@@ -127,17 +127,26 @@ idr = Decimal(usd).mul(kurs).toDecimalPlaces(0, ROUND_HALF_UP).toNumber()
 ulang `charges` **setiap** layanan ber-harga-dolar klinik itu. Kalau tidak, rupiah di KiviCare —
 yang dibaca tagihan, Xendit, dan laporan — menjadi basi diam-diam.
 
-Ini dijalankan sebagai **job**, bukan inline: klinik dengan ratusan layanan berarti ratusan
-UPDATE di dalam satu permintaan PUT, dan `max_user_connections` di sana adalah 5. Job baru
-`praktiqu_restamp_clinic_prices` dengan argumen `{ clinicId }`, dijadwalkan `runAt = now` setelah
-setelan tersimpan.
+Ini dijalankan **inline tapi terbatas**, bukan sebagai job. Job Action Scheduler baru akan
+menuntut perubahan plugin: tiap hook harus lolos allow-list di
+`class-praktiqu-endpoint-jobs.php:92`, punya `add_action`, dan punya handler webhook. Itu
+membatalkan janji "plugin tidak tersentuh" di §6 hanya demi pekerjaan kosmetik.
 
-> **Perhatian job args:** skema argumen job pernah memutus SELURUH penjadwalan karena `type`
-> ditulis `array` alih-alih `object` (FIXED 2026-09-01). Skema job ini wajib `object`, dan
-> perubahannya diuji sebelum merge.
+Caranya satu pernyataan, bukan ratusan:
 
-Kegagalan job tidak membatalkan penyimpanan setelan: harga dolar sudah benar, hanya cermin
-rupiahnya yang tertinggal. Job dicoba ulang, dan tiap kegagalan dicatat.
+```sql
+UPDATE wp_kc_service_doctor_mapping
+   SET charges = CASE id WHEN ? THEN ? WHEN ? THEN ? ... END
+ WHERE id IN (?, ?, ...)
+```
+
+dipecah per 200 baris di dalam satu transaksi. Klinik dengan 500 layanan berarti tiga
+pernyataan, bukan 500 — penting karena `max_user_connections` di sana adalah 5.
+
+Kegagalan stempel ulang **tidak** membatalkan penyimpanan setelan dan tidak mengembalikan galat
+ke admin: harga dolarnya sudah benar dan alur kami sudah tidak membaca `charges`, jadi yang
+tertinggal cuma cermin untuk layar KiviCare. Kegagalannya dicatat sebagai `warn` dengan daftar
+id yang gagal.
 
 ## 2. Aturan tagih
 
@@ -230,7 +239,7 @@ harus memanggil endpoint itu, form psikolog di klinik internasional kosong mata 
 | `GET /api/v1/services`, `GET /api/v1/services/{id}` | `priceUsd: string \| null` dan `priceUsdSuggested: string \| null` (§5) per layanan dan per opsi durasi, **di samping** `price` rupiah yang tetap ada; plus blok `currency` |
 | `POST /api/v1/services` | menerima `priceUsd` sebagai alternatif `price` |
 | `PUT /api/v1/services/{id}` | sama; juga pada tiap entri `durationOptions` |
-| `PUT /api/v1/practices/{id}/payment-settings` | menjadwalkan `praktiqu_restamp_clinic_prices` saat kurs efektif berubah |
+| `PUT /api/v1/practices/{id}/payment-settings` | menstempel ulang `charges` klinik itu saat kurs efektif berubah (§1) |
 | `GET /api/v1/bills`, `/bills/{id}`, `/bills/export` | `amountUsd` di samping tiap angka rupiah, plus blok `currency` |
 | `GET /api/v1/dashboard/statistics`, `/revenue-chart`, `/recent-payments`, `/top-professionals` | sama |
 
@@ -321,8 +330,8 @@ Diurut dari yang paling bisa menggigit:
 2. **Vektor emas jalur lama bergeser.** Lima vektor di spec 2026-10-06 §2 wajib tetap hijau
    setelah `buildUsdQuote()` disentuh. *Uji:* tabel vektor yang ada dipertahankan apa adanya,
    plus tabel baru untuk jalur dolar.
-3. **Skema argumen job.** Lihat peringatan di §1. *Uji:* satu tes yang benar-benar menjadwalkan
-   `praktiqu_restamp_clinic_prices` dan membacanya kembali.
+3. **Stempel ulang membanjiri koneksi.** `max_user_connections` adalah 5. *Uji:* 450 layanan
+   ber-harga-dolar menghasilkan 3 pernyataan UPDATE, bukan 450.
 4. **Order campuran diam-diam setengah dikonversi.** *Uji:* tagihan staf dengan satu baris
    ber-harga-dolar dan satu tanpa → seluruh order memakai jalur lama.
 5. **Stempel ulang menyentuh yang bukan haknya.** Tagihan yang sudah terbit menyimpan angkanya
