@@ -324,6 +324,38 @@ export async function findConflictingAppointments(opts: {
   );
 }
 
+/**
+ * The active appointment this doctor and patient already share at exactly this start,
+ * or null. Answers "did that request get as far as writing?" for a retried booking.
+ */
+export async function findActiveAppointmentIdAt(opts: {
+  doctorId: bigint;
+  patientId: bigint;
+  date: string;
+  startTime: string;
+}): Promise<number | null> {
+  const statusPlaceholders = ACTIVE_STATUSES.map(() => '?').join(',');
+  // Raw SQL for the same reason as findConflictingAppointments: a TIME filter built by
+  // Prisma is serialised as a datetime and matches nothing.
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: bigint }>>(
+    `SELECT id
+       FROM wp_kc_appointments
+      WHERE doctor_id = ?
+        AND patient_id = ?
+        AND appointment_start_date = ?
+        AND appointment_start_time = ?
+        AND status IN (${statusPlaceholders})
+      ORDER BY id ASC
+      LIMIT 1`,
+    opts.doctorId,
+    opts.patientId,
+    assertDate(opts.date),
+    assertTime(opts.startTime),
+    ...ACTIVE_STATUSES,
+  );
+  return rows.length > 0 ? Number(rows[0].id) : null;
+}
+
 /** One side of an overlapping pair. Times are local `HH:MM:SS` on the pair's date. */
 export type OverlapSide = {
   id: number;
