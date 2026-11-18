@@ -55,10 +55,22 @@ describe('input validation', () => {
 });
 
 describe('rate limit', () => {
+  it('does not refuse a busy hour of real bookings that all arrive from one address', async () => {
+    // The Laravel FE calls this endpoint server-side for every patient. Unless
+    // FE_FORWARDER_SECRET is set on both sides (src/lib/client-ip.ts), they all share the
+    // FE host's address, and each booking may take up to six holds while it retries. A
+    // limit sized for one browser would then refuse the whole platform.
+    const ip = '198.51.100.90';
+    for (let i = 0; i < 300; i++) {
+      const res = await post({ ...GOOD, startTime: `${String(8 + (i % 12)).padStart(2, '0')}:00` }, ip);
+      expect(res.status).toBe(201);
+    }
+  });
+
   it('answers 429 with Retry-After once one address has asked too often', async () => {
     const ip = '198.51.100.77';
     let last: Response | undefined;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 700; i++) {
       last = await post({ ...GOOD, startTime: `${String(9 + (i % 8)).padStart(2, '0')}:00` }, ip);
       if (last.status === 429) break;
     }

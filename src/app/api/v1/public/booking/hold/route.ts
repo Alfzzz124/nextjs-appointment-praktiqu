@@ -17,11 +17,14 @@ const holdSchema = z.object({
 });
 
 // Every request counts, not only failures: a hold is cheap to ask for and lives 15
-// minutes, so volume itself is the abuse. 60 per 15 minutes is far above a guest
-// browsing slots; the address half is forgeable (src/lib/client-ip.ts), which is why
-// the slot-hold map is also capped on its own.
+// minutes, so volume itself is the abuse. The ceiling is sized for the whole platform,
+// not one browser: the Laravel FE calls this server-side for every patient, and unless
+// FE_FORWARDER_SECRET is set on both sides they all share the FE host's address
+// (src/lib/client-ip.ts), each booking taking up to six holds while it retries. 600 per
+// 15 minutes is still a hard stop for one direct caller, and the slot-hold map is capped
+// on its own, so memory does not depend on this number.
 const limiter = createRateLimiter({
-  config: { lockoutAfter: 60, windowMs: 15 * 60_000, progressiveAfter: Number.MAX_SAFE_INTEGER },
+  config: { lockoutAfter: 600, windowMs: 15 * 60_000, progressiveAfter: Number.MAX_SAFE_INTEGER },
 });
 
 export async function POST(req: NextRequest) {
