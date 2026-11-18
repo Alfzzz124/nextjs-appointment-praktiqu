@@ -33,6 +33,7 @@ import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service'
 import { buildDaySlots, eachDate, toMinutes } from '@/services/booking/slot-math';
 import {
   MIN_BOOKING_NOTICE_MINUTES,
+  addDaysTo,
   isTooSoon,
   localDate,
 } from '@/services/booking/booking-policy';
@@ -283,13 +284,11 @@ function nextAvailableFor(
 ): { date: string; startTime: string } | null {
   if (sessions.length === 0) return null;
 
+  // Clinic-zone today, then calendar-label steps: advancing a Date with local setters
+  // and naming it afterwards could skip or repeat a day near WIB midnight.
+  const start = localDate(from);
   for (let i = 0; i < NEXT_AVAILABLE_HORIZON_DAYS; i += 1) {
-    const d = new Date(from);
-    d.setDate(d.getDate() + i);
-    // Local calendar date, not `toISOString()`: `d` was advanced with local getters/
-    // setters, and naming it via UTC would report the previous day for any local time
-    // before the UTC offset (e.g. every night before 07:00 on this Asia/Jakarta box).
-    const date = localDate(d);
+    const date = addDaysTo(start, i);
     const day = dayOfWeekFor(date);
 
     const earliest = sessions
