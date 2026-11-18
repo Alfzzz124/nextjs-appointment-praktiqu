@@ -1,10 +1,17 @@
 // src/app/api/v1/consent-forms/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, requireRoles } from '@/lib/auth/route-guards';
+import { requireRoles } from '@/lib/auth/route-guards';
 import { forbidden } from '@/lib/problem-details';
 import { resolveKcActor } from '@/services/billing/kc-actor';
 import { KcError } from '@/lib/kc-response';
 import { PrismaClient } from '@prisma/client';
+import {
+  consentScopeFor,
+  formInScope,
+  forbiddenResponse,
+  kcErrorResponse,
+  CONSENT_STAFF_ROLES,
+} from '@/services/consent/access';
 import {
   ConsentService,
   ConsentServiceError,
@@ -15,15 +22,25 @@ const prisma = new PrismaClient();
 const service = new ConsentService(prisma);
 
 export async function GET(req: NextRequest) {
-  const gate = await requireAuth(req);
+  // A form's text and its clinic are staff business; a patient meets a form only through
+  // GET /consent-forms/{id}, once a signature request exists for them.
+  const gate = await requireRoles(req, CONSENT_STAFF_ROLES);
   if ('response' in gate) return gate.response;
 
   const { searchParams } = new URL(req.url);
   const practiceId = searchParams.get('practiceId') ?? undefined;
   const status = searchParams.get('status') ?? undefined;
   if (!practiceId) return NextResponse.json({ type: 'about:blank', title: 'Bad Request', status: 400 }, { status: 400 });
-  const forms = await service.listForms(practiceId, status);
-  return NextResponse.json({ items: forms });
+  try {
+    const scope = await consentScopeFor(gate.actor);
+    if (!formInScope(scope, practiceId)) return forbiddenResponse('Cannot list the consent forms of another clinic');
+    const forms = await service.listForms(practiceId, status);
+    return NextResponse.json({ items: forms });
+  } catch (err) {
+    const kc = kcErrorResponse(err);
+    if (kc) return kc;
+    throw err;
+  }
 }
 
 export async function POST(req: NextRequest) {
