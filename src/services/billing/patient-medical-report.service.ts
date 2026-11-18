@@ -3,6 +3,7 @@ import { KcError } from '@/lib/kc-response';
 import { prepareUnlinkBatch, unlinkReport } from '@/repositories/wp/encounter-documents.repo';
 import type { KcActor } from '@/services/billing/kc-actor';
 import type { MedReportScope } from '@/services/billing/med-report-scope';
+import { QUALIFYING_STATUSES } from '@/services/client/access-control';
 
 export interface MedReportListParams { page: number; perPage: number | 'all'; patientId?: number; search?: string; excludeIds?: number[]; }
 
@@ -27,6 +28,10 @@ function buildWhere(scope: MedReportScope | null, p: Partial<MedReportListParams
   if (scope?.clinicId !== undefined) {
     where.push('EXISTS (SELECT 1 FROM wp_kc_patient_clinic_mappings pcm WHERE pcm.patient_id = mr.patient_id AND pcm.clinic_id = ?)');
     args.push(scope.clinicId);
+  }
+  if (scope?.seenByDoctorId !== undefined) {
+    where.push(`EXISTS (SELECT 1 FROM wp_kc_appointments ap WHERE ap.patient_id = mr.patient_id AND ap.doctor_id = ? AND ap.status IN (${QUALIFYING_STATUSES.map(() => '?').join(',')}))`);
+    args.push(scope.seenByDoctorId, ...QUALIFYING_STATUSES);
   }
   if (p.patientId !== undefined) { where.push('mr.patient_id = ?'); args.push(p.patientId); }
   if (p.search) { where.push('mr.name LIKE ?'); args.push(`%${p.search}%`); }
@@ -83,10 +88,16 @@ export async function assertPatientInScope(patientId: number, kc: KcActor): Prom
     if (BigInt(patientId) !== kc.wpUserId) throw new KcError('Patient not found', 404);
     return;
   }
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT 1 FROM wp_kc_patient_clinic_mappings WHERE patient_id = ? AND clinic_id = ? LIMIT 1`,
-    patientId, kc.clinicId ?? -1n,
-  );
+  // A psychologist is bound to the clients they have seen, at any clinic (see medReportScopeFor).
+  const rows = kc.actor.role === 'PROFESSIONAL'
+    ? await prisma.$queryRawUnsafe<any[]>(
+        `SELECT 1 FROM wp_kc_appointments WHERE patient_id = ? AND doctor_id = ? AND status IN (${QUALIFYING_STATUSES.map(() => '?').join(',')}) LIMIT 1`,
+        patientId, kc.wpUserId, ...QUALIFYING_STATUSES,
+      )
+    : await prisma.$queryRawUnsafe<any[]>(
+        `SELECT 1 FROM wp_kc_patient_clinic_mappings WHERE patient_id = ? AND clinic_id = ? LIMIT 1`,
+        patientId, kc.clinicId ?? -1n,
+      );
   if (!rows[0]) throw new KcError('Patient not found', 404);
 }
 

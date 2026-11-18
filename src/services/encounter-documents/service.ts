@@ -10,9 +10,8 @@
  *
  * Authorisation happens twice on purpose. The encounter itself is scoped here, so a
  * professional cannot browse another doctor's session; the archive read is scoped by
- * `medReportScopeFor` inside `listMedReports`, which is clinic-wide. That asymmetry
- * predates this feature and is documented as D7 in the design — it is inherited
- * deliberately, not overlooked.
+ * `medReportScopeFor` inside `listMedReports`, which for a professional means the
+ * clients they have seen (any clinic) and for clinic staff the whole clinic.
  */
 import { KcError } from '@/lib/kc-response';
 import type { KcActor } from '@/services/billing/kc-actor';
