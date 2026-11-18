@@ -25,6 +25,10 @@ vi.mock('@/services/payments/clinic-payment.service', () => ({
 vi.mock('@/services/payments/public-usd.service', () => ({
   rowPaymentForDisplay: vi.fn(),
 }));
+// Meet links come from the Google sync table; this suite is about KiviCare rows only.
+vi.mock('@/services/session/meeting-url', () => ({
+  meetingUrlsFor: vi.fn().mockResolvedValue(new Map()),
+}));
 vi.mock('@/lib/logging', () => ({
   logging: {
     audit: vi.fn().mockResolvedValue(undefined),
@@ -116,6 +120,7 @@ describe('getPublicAppointmentById', () => {
       paymentMethods: ['xendit'],
       usd: null,
       approval: null,
+      meetingUrl: null, // a PENDING booking never shares a link
     });
   });
 

@@ -46,6 +46,7 @@ import {
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { findApproval } from '@/services/approval/store';
+import { meetingUrlsFor } from '@/services/session/meeting-url';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -482,6 +483,11 @@ export interface PublicAppointmentView {
   usd: PublicUsdView | null;
   /** The psychologist-approval state, when this booking waits for (or was decided by) its psychologist. */
   approval: PublicApprovalView | null;
+  /**
+   * Tautan Meet dari acara Google psikolog. Hanya untuk janji yang sudah pasti (BOOKED,
+   * CHECK_IN): janji yang belum pasti atau sudah batal tidak membagikan tautan.
+   */
+  meetingUrl: string | null;
 }
 
 export class AppointmentNotFoundError extends Error {
@@ -555,6 +561,8 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
   const row = await findSessionById(id);
   if (!row) return null;
   const { paymentMethods, usd } = await bookingPayment(row);
+  const confirmed = row.status === SESSION_STATUS.BOOKED || row.status === SESSION_STATUS.CHECK_IN;
+  const meetingUrl = confirmed ? ((await meetingUrlsFor([row.id])).get(row.id) ?? null) : null;
 
   return {
     id: row.id,
@@ -568,6 +576,7 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
     paymentMethods,
     usd,
     approval: await publicApprovalView(row),
+    meetingUrl,
   };
 }
 
