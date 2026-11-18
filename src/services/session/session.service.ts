@@ -48,6 +48,7 @@ import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo'
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { syncSessionReminders } from './reminder-schedule';
 import { APPROVAL_STATE, findApproval, findApprovals } from '@/services/approval/store';
+import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 import {
   approveAwaiting,
   closeOnCancel,
@@ -638,6 +639,8 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
   if (target === SESSION_STATUS.CANCELLED && approval?.state === APPROVAL_STATE.AWAITING) {
     await closeOnCancel(sessionId, actor.id);
   }
+  // An unpaid booking: its payment link must stop working, or the client can still pay it.
+  if (target === SESSION_STATUS.CANCELLED) await closeOpenOrdersOnCancel(sessionId);
 
   const [session] = forActor(actor, await withApprovals([toSession(updated)]));
   return session;
@@ -822,6 +825,7 @@ export async function bulkCancelSessions(ids: number[], actorId: string | null =
         resourceId: String(id),
       }),
     );
+    await closeOpenOrdersOnCancel(id);
   }
   return cancelled;
 }

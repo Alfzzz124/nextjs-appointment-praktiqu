@@ -46,6 +46,7 @@ import {
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { findApproval } from '@/services/approval/store';
+import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -604,6 +605,8 @@ export async function cancelPublicAppointment(id: number): Promise<PublicAppoint
   // A paid booking that waited for its psychologist: the client withdrew and the money is
   // in, so it joins the refund list for the clinic to settle.
   await closeOnCancel(id, null);
+  // An unpaid booking: its payment link must stop working, or the client can still pay it.
+  await closeOpenOrdersOnCancel(id);
 
   const updated = await toView(id);
   if (!updated) throw new AppointmentNotFoundError();

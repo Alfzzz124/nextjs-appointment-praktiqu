@@ -35,6 +35,9 @@ vi.mock('@/lib/logging', () => ({
   },
 }));
 
+const closeOrders = vi.hoisted(() => ({ closeOpenOrdersOnCancel: vi.fn() }));
+vi.mock('@/services/payments/close-orders-on-cancel', () => closeOrders);
+
 const approval = vi.hoisted(() => ({ closeOnCancel: vi.fn(), publicApprovalView: vi.fn(), findApproval: vi.fn() }));
 vi.mock('@/services/approval/store', async (orig) => ({
   ...(await orig<typeof import('@/services/approval/store')>()),
@@ -61,6 +64,7 @@ import {
 } from '@/services/public/public-booking.service';
 
 beforeEach(() => {
+  closeOrders.closeOpenOrdersOnCancel.mockReset().mockResolvedValue(undefined);
   approval.closeOnCancel.mockReset().mockResolvedValue(false);
   approval.publicApprovalView.mockReset().mockResolvedValue(null);
   approval.findApproval.mockReset().mockResolvedValue(null);
@@ -251,6 +255,24 @@ describe('cancelPublicAppointment', () => {
       .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
 
     expect((await cancelPublicAppointment(APPOINTMENT)).status).toBe('CANCELLED');
+  });
+});
+
+describe('cancelling closes the open payment orders', () => {
+  it('a PENDING booking: its open orders are closed after the plugin cancel', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(closeOrders.closeOpenOrdersOnCancel).toHaveBeenCalledWith(APPOINTMENT);
+  });
+
+  it('a booking that is refused as not cancellable leaves its orders alone', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.CANCELLED));
+
+    await expect(cancelPublicAppointment(APPOINTMENT)).rejects.toBeInstanceOf(NotCancellableError);
+
+    expect(closeOrders.closeOpenOrdersOnCancel).not.toHaveBeenCalled();
   });
 });
 
