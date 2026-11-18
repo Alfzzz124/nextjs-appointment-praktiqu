@@ -5,10 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActor, AuthError } from '@/lib/auth';
 import { unauthorized } from '@/lib/problem-details';
-import { prisma } from '@/lib/db';
-import { getClientStatistics } from '@/services/client/client.service';
-import { resolveKcActor } from '@/services/billing/kc-actor';
-import { findPatientById } from '@/repositories/wp/patients.repo';
+import { getClientStatistics, assertClientAccess, ClientServiceError } from '@/services/client/client.service';
 
 /** Client ids are numeric now (D2); reject anything else before it becomes NaN. */
 function parseClientId(raw: string): number | null {
@@ -33,30 +30,21 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
         { status: 400 },
       );
     }
-    // Authorise against WordPress, not the retired `clients` table: a patient is a
-    // wp_users row, and the JWT subject is a cuid in the auth mirror rather than the
-    // patient id — so self-access compares resolved WordPress ids.
-    const kc = await resolveKcActor(actor);
-    const patient = await findPatientById(BigInt(clientId));
-    if (!patient) {
-      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-    }
-
-    const isStaff = ['SUPER_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST'].includes(actor.role);
-    const isSelf = actor.role === 'CLIENT' && patient.id === kc.wpUserId;
-
-    if (!isStaff && !isSelf) {
-      return NextResponse.json(
-        { type: '/errors/forbidden', title: 'Forbidden', status: 403 },
-        { status: 403 },
-      );
-    }
+    // Same scope as GET /clients/:id (clinic, own patient, or a professional's seen
+    // clients). A role list alone let any clinic's admin read another clinic's patient.
+    await assertClientAccess(actor, clientId);
 
     const stats = await getClientStatistics(clientId);
     return NextResponse.json({ data: stats }, { status: 200 });
   } catch (err) {
     console.error('[GET /clients/:id/statistics]', err);
-        if (err instanceof AuthError) {
+    if (err instanceof ClientServiceError) {
+      return NextResponse.json(
+        { type: `/errors/${err.code ?? 'error'}`, title: err.message, status: err.status },
+        { status: err.status },
+      );
+    }
+    if (err instanceof AuthError) {
       return NextResponse.json(unauthorized('unauthorized', err.message), {
         status: err.status,
         headers: { 'Content-Type': 'application/problem+json' },
