@@ -46,6 +46,8 @@ vi.mock('@/services/payments/public-usd.service', () => ({
   rowPaymentForDisplay: vi.fn(),
 }));
 
+import { addDaysTo, localDate } from '@/services/booking/booking-policy';
+import { formatTimeInTz } from '@/lib/time';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { verifyAppointmentIdToken } from '@/lib/public/appointment-token';
 import { WpConfigError, WpEndpointError } from '@/lib/wp-endpoint';
@@ -86,9 +88,7 @@ const APPOINTMENT = 5150;
  * the minimum-notice rule the moment that rule arrived.
  */
 function tomorrow(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return addDaysTo(localDate(new Date()), 1);
 }
 
 const INPUT = {
@@ -122,11 +122,7 @@ function makeHold(date = INPUT.date, startTime = INPUT.startTime) {
 /** A local `YYYY-MM-DD` / `HH:MM` pair `minutes` from now. */
 function slotIn(minutes: number): { date: string; startTime: string } {
   const t = new Date(Date.now() + minutes * 60_000);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return {
-    date: `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`,
-    startTime: `${p(t.getHours())}:${p(t.getMinutes())}`,
-  };
+  return { date: localDate(t), startTime: formatTimeInTz(t) };
 }
 
 function primeHappyPath() {

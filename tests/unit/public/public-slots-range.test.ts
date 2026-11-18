@@ -78,7 +78,7 @@ const MONDAY_STARTS = ['09:00:00', '09:30:00', '10:00:00', '10:30:00', '11:00:00
  * started, so without one these dates would silently start emptying themselves the
  * moment the wall clock passed them.
  */
-const MONDAY_MIDNIGHT = new Date('2026-08-31T00:00:00');
+const MONDAY_MIDNIGHT = new Date('2026-08-31T00:00:00+07:00');
 
 function happyPath() {
   (doctors.findDoctorById as any).mockResolvedValue({ id: 7n, status: 1 });
@@ -218,7 +218,7 @@ describe('getPublicSlotsForRange — slots already past', () => {
   it('hides a slot closer than the minimum notice, even if it has not started', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
-      now: new Date('2026-08-31T10:15:00'),
+      now: new Date('2026-08-31T10:15:00+07:00'),
     });
     // 11:00 is 45 minutes off, inside the 60-minute notice window.
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual([]);
@@ -227,7 +227,7 @@ describe('getPublicSlotsForRange — slots already past', () => {
   it('keeps a slot sitting exactly on the notice boundary', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
-      now: new Date('2026-08-31T10:00:00'),
+      now: new Date('2026-08-31T10:00:00+07:00'),
     });
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['11:00:00']);
   });
@@ -235,7 +235,7 @@ describe('getPublicSlotsForRange — slots already past', () => {
   it('keeps the slots that are far enough ahead', async () => {
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
-      now: new Date('2026-08-31T08:59:00'),
+      now: new Date('2026-08-31T08:59:00+07:00'),
     });
     // 09:00 is a minute away and 09:30 half an hour; 10:00 is an hour and a minute.
     expect(days?.[0].slots.map((s) => s.startTime)).toEqual(['10:00:00', '10:30:00', '11:00:00']);
@@ -248,7 +248,7 @@ describe('getPublicSlotsForRange — slots already past', () => {
     ]);
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: TUESDAY,
-      now: new Date('2026-09-01T07:00:00'),
+      now: new Date('2026-09-01T07:00:00+07:00'),
     });
     expect(days?.[0].slots).toEqual([]);
     expect(days?.[1].slots).toHaveLength(MONDAY_STARTS.length);
@@ -259,7 +259,7 @@ describe('getPublicSlotsForRange — slots already past', () => {
     // belongs to the Tuesday, which would leave the whole Monday on offer.
     const days = await getPublicSlotsForRange({
       professionalId: DOCTOR_ID, serviceId: SERVICE_ID, from: MONDAY, to: MONDAY,
-      now: new Date('2026-08-31T23:30:00'),
+      now: new Date('2026-08-31T23:30:00+07:00'),
     });
     expect(days?.[0].slots).toEqual([]);
   });
