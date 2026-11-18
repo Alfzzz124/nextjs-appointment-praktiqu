@@ -7,7 +7,8 @@ const service = new CustomFieldService();
 
 export const POST = withAuth(async (req, ctx) => {
   const { actor } = ctx;
-  if (!['SUPER_ADMIN', 'CLINIC_ADMIN'].includes(actor.role)) {
+  // No clinic column: one definition serves every clinic, so only SUPER_ADMIN may change it.
+  if (actor.role !== 'SUPER_ADMIN') {
     return NextResponse.json(forbidden(), { status: 403 });
   }
   try {

@@ -19,6 +19,8 @@ import { updateEmailTemplateSchema } from '@/types/email-template';
 export const dynamic = 'force-dynamic';
 
 const ADMIN_ROLES = ['CLINIC_ADMIN', 'SUPER_ADMIN'] as const;
+// Templates have no clinic column (one row serves every clinic): writes are SUPER_ADMIN-only.
+const WRITE_ROLES = ['SUPER_ADMIN'] as const;
 
 
 export async function GET(
@@ -46,7 +48,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const gate = await requireRoles(req, ADMIN_ROLES);
+  const gate = await requireRoles(req, WRITE_ROLES);
   if ('response' in gate) return gate.response;
 
   let body: unknown;
@@ -86,7 +88,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const gate = await requireRoles(req, ADMIN_ROLES);
+  const gate = await requireRoles(req, WRITE_ROLES);
   if ('response' in gate) return gate.response;
   try {
     await deleteTemplate(params.id);
