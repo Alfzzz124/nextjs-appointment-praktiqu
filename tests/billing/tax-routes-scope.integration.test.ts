@@ -10,6 +10,7 @@ import { GET as taxGet, PUT as taxPut, DELETE as taxDelete } from '@/app/api/v1/
 import { PUT as taxStatusPut } from '@/app/api/v1/taxes/[id]/status/route';
 import { POST as taxBulkDelete } from '@/app/api/v1/taxes/bulk/delete/route';
 import { PUT as taxBulkStatus } from '@/app/api/v1/taxes/bulk/status/route';
+import { runImport } from '@/services/billing/import/engine';
 
 const { BASE } = useIdBlock('billing/tax-routes-scope.integration.test.ts');
 
@@ -239,5 +240,63 @@ describe('global taxes are SUPER_ADMIN-only to change', () => {
     const del = await taxDelete(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}`), idCtx(taxGlobalId));
     expect(del.status).toBe(200);
     expect(await exists(taxGlobalId)).toBe(false);
+  });
+});
+
+/**
+ * The CSV/JSON import (POST /import, entity "taxes") writes taxes through its own adapter
+ * and must follow the same rule. An admin with no clinic of their own resolved to clinic
+ * -1 there: a row named like a global tax overwrote that global tax's rate and status for
+ * every clinic, and a new row became a global tax.
+ */
+describe('importing tax rows follows the same rule', () => {
+  const GLOBAL_NAME = 'RouteNew import global';
+  const GLOBAL_ID = BASE + 110;
+  const admin = (clinicId: number | null) => ({
+    actor: { id: 'test-import-admin', role: 'CLINIC_ADMIN' },
+    wpUserId: BigInt(BASE + 4),
+    clinicId: clinicId === null ? null : BigInt(clinicId),
+  }) as any;
+  const superKc = { actor: { id: SUPER_SUB, role: 'SUPER_ADMIN' }, wpUserId: BigInt(BASE + 3), clinicId: null } as any;
+  const opts = (conflictStrategy: 'error' | 'skip' | 'update') => ({ conflictStrategy, dryRun: false });
+  const globalRow = () => prisma.kcTax.findUnique({ where: { id: BigInt(GLOBAL_ID) } });
+
+  beforeAll(async () => {
+    await prisma.kcTax.deleteMany({ where: { id: BigInt(GLOBAL_ID) } });
+    await seedTax({ id: GLOBAL_ID, name: GLOBAL_NAME, clinicId: -1, taxValue: '10', status: 1 });
+  });
+
+  it('an admin with no clinic cannot overwrite a global tax with a row of the same name', async () => {
+    const res = await runImport('taxes', [{ name: GLOBAL_NAME, tax_value: 99, status: 0 }], opts('update'), admin(null));
+    expect(res.updated).toBe(0);
+    expect(res.failed).toBe(1);
+    const row = await globalRow();
+    expect(row?.taxValue).toBe('10');
+    expect(row?.status).toBe(1);
+  });
+
+  it('an admin with no clinic cannot create a global tax', async () => {
+    const res = await runImport('taxes', [{ name: 'RouteNew import orphan', tax_value: 5 }], opts('error'), admin(null));
+    expect(res.failed).toBe(1);
+    expect(await prisma.kcTax.findMany({ where: { name: 'RouteNew import orphan' } })).toHaveLength(0);
+  });
+
+  it('a clinic admin imports into their own clinic and leaves a global tax of the same name alone', async () => {
+    const res = await runImport('taxes', [{ name: GLOBAL_NAME, tax_value: 7 }], opts('update'), admin(CLINIC_A));
+    expect(res.failed).toBe(0);
+    expect(res.imported).toBe(1);
+    const clinics = (await prisma.kcTax.findMany({ where: { name: GLOBAL_NAME } })).map((r) => Number(r.clinicId));
+    expect(clinics.sort((a, b) => a - b)).toEqual([-1, CLINIC_A]);
+    expect((await globalRow())?.taxValue).toBe('10');
+  });
+
+  it('SUPER_ADMIN still imports into global taxes', async () => {
+    const res = await runImport('taxes', [{ name: GLOBAL_NAME, tax_value: 3 }], opts('update'), superKc);
+    expect(res.updated).toBe(1);
+    expect((await globalRow())?.taxValue).toBe('3');
+    const created = await runImport('taxes', [{ name: 'RouteNew import super global', tax_value: 4 }], opts('error'), superKc);
+    expect(created.imported).toBe(1);
+    const rows = await prisma.kcTax.findMany({ where: { name: 'RouteNew import super global' } });
+    expect(rows.map((r) => Number(r.clinicId))).toEqual([-1]);
   });
 });
