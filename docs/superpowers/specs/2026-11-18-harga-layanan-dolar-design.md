@@ -240,8 +240,33 @@ harus memanggil endpoint itu, form psikolog di klinik internasional kosong mata 
 | `POST /api/v1/services` | menerima `priceUsd` sebagai alternatif `price` |
 | `PUT /api/v1/services/{id}` | sama; juga pada tiap entri `durationOptions` |
 | `PUT /api/v1/practices/{id}/payment-settings` | menstempel ulang `charges` klinik itu saat kurs efektif berubah (§1) |
-| `GET /api/v1/bills`, `/bills/{id}`, `/bills/export` | `amountUsd` di samping tiap angka rupiah, plus blok `currency` |
+| `GET /api/v1/bills` | blok `currency` saja — lihat di bawah |
 | `GET /api/v1/dashboard/statistics`, `/revenue-chart`, `/recent-payments`, `/top-professionals` | sama |
+
+**Layar uang hanya mendapat kursnya, bukan angka dolarnya** (keputusan user, 2026-11-19).
+
+Rencana awal memberi pasangan `*Usd` untuk setiap angka rupiah di lima endpoint itu. Yang
+dipakai lebih sempit: endpoint-endpoint itu membawa blok `currency`, dan pembantu `uang()`
+di FE yang memformat.
+
+Alasannya: prinsip "FE tidak menghitung kurs" ada untuk melindungi angka yang **ditagih**,
+dan tidak satu pun angka di layar-layar itu adalah angka yang ditagih. Harga layanan — yang
+betul-betul ditagih — tetap dihitung backend dan dikirim sebagai `priceUsd`. Pendapatan
+bulan lalu yang dikonversi dengan kurs hari ini memang perkiraan, dan ditandai `≈`.
+
+Blok itu ditaruh **di dalam `data`**, bukan sejajar dengannya. `PraktiquApi::unwrap()` di
+Laravel FE membuang segala sesuatu selain `data` begitu amplopnya punya `status` atau
+`message`, jadi ruas di tingkat amplop tidak akan pernah sampai ke halaman.
+
+Karena itu hanya endpoint yang payload-nya objek yang membawanya: `statistics` dan `bills`.
+Grafik pendapatan, pembayaran terakhir, dan psikolog teratas mengirim larik — menyelipkan
+ruas ke sana akan mengubah bentuknya dan memutus klien yang sudah ada. Halaman toh hanya
+butuh SATU mata uang, dan mengambilnya dari `statistics` (atau `bills` kalau statistiknya
+disembunyikan karena kebocoran cakupan).
+
+Mata uangnya dibaca dari klinik yang sedang dilihat pengguna (`KcActor.clinicId`). Tanpa
+satu klinik — SUPER_ADMIN yang melihat semuanya — jawabannya rupiah: angka lintas-klinik
+tidak punya satu kurs yang benar.
 
 ### Validasi `priceUsd`
 
@@ -271,8 +296,8 @@ melihat. `kode` diambil dari blok `currency` yang dipasang sekali per permintaan
 | Form tambah/ubah layanan (`dashboard.blade.php:3957`) | `Harga (Rp)`, `step="1000"` | `Harga (USD)`, `step="0.01"`, `min="0"`, awalan `$`; di bawahnya "Klien membayar **$55.00** · ≈ Rp 907.500" |
 | Kartu layanan (`:3730`) | `Rp425.000` | `$55.00` besar, `≈ Rp 907.500` kecil |
 | Dropdown booking manual (`:5653`) | `'Rp' + s.price` | `$55.00` |
-| Tabel Billing (`mapBill`, `self::rp`/`self::money`) | rupiah | dolar utama, rupiah kecil |
-| Statistik pendapatan + 4 tabel laporan (`rupiah()` di `:1210`, `:4471`, `:4499`, `:4518`, `:4551`) | rupiah | `≈ $…` |
+| Tabel Billing (`mapBill`, `self::rp`/`self::money`) | rupiah | `≈ $…`, dikonversi FE dari blok `currency` |
+| Statistik pendapatan + 4 tabel laporan (`rupiah()` di `:1210`, `:4471`, `:4499`, `:4518`, `:4551`) | rupiah | `≈ $…`, sama |
 | Setelan pembayaran klinik (`klinik-pembayaran.blade.php`) | markup & biaya tetap polos | diberi label "berlaku untuk layanan yang harganya masih rupiah" |
 | Halaman booking publik (`booking.blade.php`) | sudah USD | tidak berubah; totalnya kini persis |
 
