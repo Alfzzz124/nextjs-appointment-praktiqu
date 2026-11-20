@@ -60,6 +60,7 @@ function mapping(over: Partial<WpDoctorService>): WpDoctorService {
     telemedService: null,
     nameAlias: 'couplefamilysessionbahasaindonesia',
     durationOf: null,
+    priceUsd: null,
     ...over,
   };
 }

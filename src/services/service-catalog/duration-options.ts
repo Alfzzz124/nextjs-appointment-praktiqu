@@ -31,14 +31,23 @@ export type ExistingOption = {
   serviceId: bigint;
   durationMinutes: number | null;
   charges: string | null;
+  /** Harga dolar baris ini, atau null kalau harganya masih rupiah. */
+  priceUsd?: string | null;
+  /** Isi mentah `extra`, supaya penulisan harga dolar bisa menggabungkan ke dalamnya. */
+  extra?: string | null;
 };
 
 /** One wanted option. `id` names an existing option's mapping; absent means a new one. */
-export type WantedOption = { id?: number; duration: number; charges: string };
+/**
+ * Satu opsi yang diinginkan. `id` menyebut mapping opsi yang sudah ada; tanpa itu berarti
+ * opsi baru. `charges` selalu rupiah — untuk opsi ber-harga-dolar ia sudah diturunkan dari
+ * `priceUsd` oleh pemanggil, jadi yang di sini tinggal membandingkan dan menyalin.
+ */
+export type WantedOption = { id?: number; duration: number; charges: string; priceUsd?: string | null };
 
 export type OptionPlan = {
-  create: Array<{ duration: number; charges: string }>;
-  keep: Array<{ existing: ExistingOption; duration: number; charges: string }>;
+  create: Array<{ duration: number; charges: string; priceUsd: string | null }>;
+  keep: Array<{ existing: ExistingOption; duration: number; charges: string; priceUsd: string | null }>;
   remove: ExistingOption[];
 };
 
@@ -94,10 +103,10 @@ export function planDurationOptions(
 
   return {
     plan: {
-      create: wanted.filter((w) => w.id === undefined).map((w) => ({ duration: w.duration, charges: w.charges })),
+      create: wanted.filter((w) => w.id === undefined).map((w) => ({ duration: w.duration, charges: w.charges, priceUsd: w.priceUsd ?? null })),
       keep: wanted
         .filter((w) => w.id !== undefined)
-        .map((w) => ({ existing: byId.get(String(w.id))!, duration: w.duration, charges: w.charges })),
+        .map((w) => ({ existing: byId.get(String(w.id))!, duration: w.duration, charges: w.charges, priceUsd: w.priceUsd ?? null })),
       remove: existing.filter((o) => !seen.has(o.mappingId.toString())),
     },
   };

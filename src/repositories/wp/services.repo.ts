@@ -20,6 +20,7 @@ import {
   readMarker,
   type OptionMarker,
 } from './duration-option-marker';
+import { formatUsd, readUsdPrice } from './usd-price-marker';
 
 const STATUS_ACTIVE = 1;
 
@@ -46,6 +47,13 @@ export type WpDoctorService = {
   category: string | null;
   /** The doctor's charge; overrides the service's base price. */
   charges: string | null;
+  /**
+   * Harga dolar yang ditetapkan admin, atau null kalau harganya masih rupiah.
+   *
+   * Kalau ada, INILAH harga yang berlaku: `charges` tinggal cermin yang boleh tertinggal
+   * di belakang kurs, dan rupiahnya diturunkan ulang dari sini saat order dibangun.
+   */
+  priceUsd: string | null;
   durationMinutes: number | null;
   isPublic: boolean;
   isActive: boolean;
@@ -203,6 +211,7 @@ export async function listServicesForDoctor(opts: {
         type: service.type,
         category: service.category,
         charges: m.charges,
+        priceUsd: usdOf(m.extra),
         durationMinutes: m.duration ?? null,
         isPublic: m.isPublic === 1,
         isActive: m.status === STATUS_ACTIVE,
@@ -252,6 +261,17 @@ export type ClinicServiceRow = {
    * dashboard can hide them under their parent.
    */
   optionOf: OptionMarker | null;
+  /**
+   * Harga dolar baris ini sebagai string 2 desimal, atau null kalau harganya masih rupiah.
+   * Baris yang punya ini ditagih persis sejumlah itu (spec 2026-11-18 §2).
+   */
+  priceUsd: string | null;
+  /**
+   * Isi mentah `extra`. Diekspos karena jalur tulis harus MENGGABUNGKAN ke dalamnya —
+   * kolom yang sama memegang penanda opsi durasi dan JSON `product_id` warisan — dan
+   * membacanya ulang dari basis data berarti satu query tambahan per baris.
+   */
+  extra: string | null;
 };
 
 export type ListClinicServicesQuery = {
@@ -332,7 +352,15 @@ function toClinicService(m: MappingRow, s: CatalogueRow): ClinicServiceRow {
     isActive: m.status === STATUS_ACTIVE,
     nameAlias: m.serviceNameAlias,
     optionOf: readMarker(m.extra),
+    priceUsd: usdOf(m.extra),
+    extra: m.extra,
   };
+}
+
+/** Harga dolar baris ini sebagai string 2 desimal, atau null. */
+function usdOf(extra: string | null): string | null {
+  const d = readUsdPrice(extra);
+  return d === null ? null : formatUsd(d);
 }
 
 export async function listClinicServices(

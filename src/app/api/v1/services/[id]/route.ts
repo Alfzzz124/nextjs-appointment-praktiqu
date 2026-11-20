@@ -68,12 +68,14 @@ export const GET = withAuth(async (req: NextRequest, ctx: RouteParams) => {
   const scoped = await scopeForRequest(actor);
   if ('response' in scoped) return scoped.response;
 
-  const service = await getService(id, scoped.scope);
-  if (!service) {
+  const found = await getService(id, scoped.scope);
+  if (!found) {
     return NextResponse.json(notFound('service_not_found', 'Service not found'), { status: 404 });
   }
 
-  return NextResponse.json(service);
+  // Tetap datar: `currency` ditambahkan di samping ruas layanan, bukan membungkusnya.
+  // Klien lama membaca `id`, `price` dan seterusnya di tingkat atas.
+  return NextResponse.json({ ...found.service, currency: found.currency });
 });
 
 export const PUT = withAuth(async (req: NextRequest, ctx: RouteParams) => {

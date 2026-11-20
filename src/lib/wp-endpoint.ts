@@ -207,10 +207,17 @@ export async function wpRequestJson<T>(
 }
 
 export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWcOrderResult> {
+  // `items` yang datang ke sini bisa membawa `priceUsd` — ruas internal yang dipakai
+  // memutuskan jalur tagih di sisi kami. Ia TIDAK ikut ke plugin: badan permintaan ini
+  // harus tetap sama persis dengan yang sudah diterima versi plugin yang terpasang.
+  const body = {
+    ...input,
+    items: input.items.map((i) => ({ name: i.name, price: i.price })),
+  };
   const res = await wpFetch(`${WP_PAYMENTS_BASE}/order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-PraktiQU-Service-Token': serviceToken() },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   }, '/payments/order');
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);

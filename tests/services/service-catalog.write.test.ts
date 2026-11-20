@@ -194,7 +194,7 @@ describe('insertMapping', () => {
 
     const [sql, ...args] = db.$executeRawUnsafe.mock.calls[0];
     expect(sql).toContain('INSERT INTO wp_kc_service_doctor_mapping');
-    expect(args).toEqual([101n, 8100001n, 3n, '250000', 60, 'no', 1, 1]);
+    expect(args).toEqual([101n, 8100001n, 3n, '250000', null, 60, 'no', 1, 1]);
     expectPlaceholdersMatchArgs(sql, args);
   });
 });
@@ -244,7 +244,7 @@ describe('createServiceWithMappings', () => {
     expect(db.$executeRawUnsafe).toHaveBeenCalledTimes(1);
     const [sql, ...args] = db.$executeRawUnsafe.mock.calls[0];
     expect(sql).toContain('INSERT INTO wp_kc_service_doctor_mapping');
-    expect(args).toEqual([909n, 8100001n, 3n, '250000', 60, 'no', 1, 1]);
+    expect(args).toEqual([909n, 8100001n, 3n, '250000', null, 60, 'no', 1, 1]);
   });
 
   it('inserts the catalogue row, then each mapping in order, on the create path', async () => {

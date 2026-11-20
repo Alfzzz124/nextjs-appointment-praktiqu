@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth';
+import { currencyForActor } from '@/services/billing/actor-currency';
 import { kcOk, kcHandle, kcFail } from '@/lib/kc-response';
 import { assertCan, assertBillingEnabled, billScopeFor } from '@/services/billing/kc-permissions';
 import { resolveKcActor } from '@/services/billing/kc-actor';
@@ -15,7 +16,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) =>
     const parsed = billListQuerySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
     if (!parsed.success) return kcFail('Invalid query', 400);
     const data = await listBills(parsed.data as any, billScopeFor(kc));
-    return kcOk(data, 'Bills retrieved successfully');
+    return kcOk({ ...data, currency: await currencyForActor(kc) }, 'Bills retrieved successfully');
   }),
 );
 

@@ -43,6 +43,7 @@ import {
   resolveClinicPaymentManyForDisplay,
 } from '@/services/payments/clinic-payment.service';
 import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { rupiahFor } from '@/services/payments/payment.service';
 import {
   notInternational,
   type ClinicPaymentSettings,
@@ -369,11 +370,21 @@ export async function getPublicProfessionalServices(
     // The catalogue name. Not `nameAlias`: that column holds the category slug — see
     // WpDoctorService.nameAlias.
     const name = s.name;
+    const settings = payment.get(clinicId) ?? notInternational(clinicId);
     // The doctor's charge, not the catalogue list price — that is what a patient pays.
-    const price = s.charges ?? '0';
+    // Untuk layanan ber-harga-dolar rupiahnya diturunkan dari dolarnya, bukan dibaca dari
+    // `charges`: kalau tidak, kartu layanan menampilkan rupiah lama di bawah dolar baru.
+    const price = String(rupiahFor(s.charges, s.priceUsd ?? null, settings));
     const { paymentMethods, usd } = await rowPaymentForDisplay(
-      { clinicId, doctorId: professionalId, serviceId: Number(s.serviceId), name, price },
-      payment.get(clinicId) ?? notInternational(clinicId),
+      {
+        clinicId,
+        doctorId: professionalId,
+        serviceId: Number(s.serviceId),
+        name,
+        price,
+        priceUsd: s.priceUsd ?? null,
+      },
+      settings,
     );
     services.push({
       id: Number(s.serviceId),
