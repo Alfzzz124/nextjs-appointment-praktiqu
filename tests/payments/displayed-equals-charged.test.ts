@@ -259,10 +259,9 @@ async function catalogueUsd() {
 
 /** What the patient sees on the booking confirmation straight after booking. */
 async function createdUsd() {
-  const key = slotHoldService.buildKey(String(DOCTOR), String(SERVICE), tomorrow(), '10:00');
-  slotHoldService.create({
-    professionalId: String(DOCTOR), serviceId: String(SERVICE), date: tomorrow(), startTime: '10:00', key,
-  });
+  const key = slotHoldService.create({
+    professionalId: String(DOCTOR), serviceId: String(SERVICE), date: tomorrow(), startTime: '10:00',
+  }).key;
   const created = await createPublicAppointment({
     professionalId: DOCTOR, serviceId: SERVICE, date: tomorrow(), startTime: '10:00',
     clientName: 'Budi Test', clientEmail: 'budi@test.local', clientMobile: '08120001111', holdKey: key,

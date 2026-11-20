@@ -1,14 +1,20 @@
 // src/services/booking/slot-hold.service.ts
-// In-memory 15-minute slot hold mechanism for public booking.
-// Key format: `${professionalId}:${serviceId}:${date}:${startTime}`
-// For MVP — Redis can be substituted later.
+// 15-minute slot holds for public booking, as signed tokens rather than server memory.
+//
+// A hold used to be an entry in a Map inside one Node process. The API runs several
+// worker processes, so a hold taken on one worker was missing on the worker that
+// received the booking: the guest was answered 410 hold_expired ("Slot no longer
+// available") for a free slot, and the FE retried up to six times hoping to land on the
+// right worker (audit M-6). Two holds on the same slot also shared one key, so one
+// booking's consume() erased the other guest's hold. A token that any worker can verify
+// has neither problem, and leaves nothing in memory for an anonymous caller to grow.
+//
+// A hold reserves nothing: slot lists never read holds, and the write path checks
+// clashes itself. It only proves that the caller asked for a slot in the last 15 minutes.
+
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const SLOT_HOLD_TTL_MS = 15 * 60 * 1000; // 15 minutes
-
-/** Sweep expired holds once per this many `create` calls. */
-export const SWEEP_EVERY_CREATES = 100;
-/** Most holds kept at once; see `create`. */
-export const MAX_HOLDS = 10_000;
 
 export interface SlotHold {
   key: string;
@@ -19,99 +25,106 @@ export interface SlotHold {
   expiresAt: number; // epoch ms
 }
 
+/** Token version prefix. A different shape from every other token signed with AUTH_SECRET. */
+const VERSION = 'h1';
+
+/** Mixed into every signature, so no other token signed with AUTH_SECRET verifies as a hold. */
+const DOMAIN = 'praktiqu-slot-hold';
+
+/** Read per call, not at import: importing this module must not break a build without env. */
+function secret(): string {
+  const s = process.env.AUTH_SECRET;
+  if (!s && process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET must be set in production');
+  }
+  return s ?? 'dev-secret-change-me';
+}
+
+function signatureOf(payload: string): string {
+  return createHmac('sha256', secret()).update(`${DOMAIN}.${payload}`).digest('base64url');
+}
+
+type Payload = { p: string; s: string; d: string; t: string; e: number };
+
+function isPayload(v: unknown): v is Payload {
+  const o = v as Record<string, unknown> | null;
+  return (
+    !!o &&
+    typeof o.p === 'string' &&
+    typeof o.s === 'string' &&
+    typeof o.d === 'string' &&
+    typeof o.t === 'string' &&
+    typeof o.e === 'number' &&
+    Number.isFinite(o.e)
+  );
+}
+
 export class SlotHoldService {
-  private holds = new Map<string, SlotHold>();
-  private createsSinceSweep = 0;
-
-  /** Holds currently stored, expired ones not yet swept included. */
-  get size(): number {
-    return this.holds.size;
-  }
-
-  buildKey(professionalId: string, serviceId: string, date: string, startTime: string): string {
-    return `${professionalId}:${serviceId}:${date}:${startTime}`;
-  }
-
-  /** Create or refresh a hold. Returns the new hold. */
-  create(input: Omit<SlotHold, 'expiresAt' | 'key'> & { key?: string }): SlotHold {
-    const key = input.key ?? this.buildKey(input.professionalId, input.serviceId, input.date, input.startTime);
+  /** Mint a hold for a slot. Returns it with its token as `key`. */
+  create(input: Omit<SlotHold, 'expiresAt' | 'key'>): SlotHold {
     const expiresAt = Date.now() + SLOT_HOLD_TTL_MS;
-    const hold: SlotHold = { ...input, key, expiresAt };
-
-    // The endpoint is public, so the map is memory an anonymous caller can spend, and
-    // nothing else ever sweeps it: expired holds only left when someone read that exact
-    // key. Sweeping every N creates keeps the cost off the common path.
-    if (++this.createsSinceSweep >= SWEEP_EVERY_CREATES) {
-      this.createsSinceSweep = 0;
-      this.sweep();
-    }
-    // Delete first so a refreshed hold moves to the back (Map order is insertion order),
-    // which is what makes "front of the map" mean "oldest" below.
-    this.holds.delete(key);
-    if (this.holds.size >= MAX_HOLDS) {
-      this.sweep();
-      // All still live — a flood inside one TTL. Dropping the oldest costs a guest a
-      // 410 on a hold nobody could have kept anyway; growing without bound costs the process.
-      for (const oldest of this.holds.keys()) {
-        if (this.holds.size < MAX_HOLDS) break;
-        this.holds.delete(oldest);
-      }
-    }
-    this.holds.set(key, hold);
-    return hold;
+    const body: Payload = {
+      p: input.professionalId,
+      s: input.serviceId,
+      d: input.date,
+      t: input.startTime,
+      e: expiresAt,
+    };
+    const payload = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
+    const key = `${VERSION}.${payload}.${signatureOf(payload)}`;
+    return {
+      key,
+      professionalId: input.professionalId,
+      serviceId: input.serviceId,
+      date: input.date,
+      startTime: input.startTime,
+      expiresAt,
+    };
   }
 
-  /** Returns the hold if it exists and is unexpired. Otherwise null. */
+  /** The hold a token stands for, if its signature is ours and it has not expired. */
   get(key: string): SlotHold | null {
-    const hold = this.holds.get(key);
-    if (!hold) return null;
-    if (Date.now() >= hold.expiresAt) {
-      this.holds.delete(key);
+    if (typeof key !== 'string') return null;
+    const parts = key.split('.');
+    if (parts.length !== 3 || parts[0] !== VERSION) return null;
+    const [, payload, sig] = parts;
+    if (!payload || !sig) return null;
+
+    const expected = Buffer.from(signatureOf(payload));
+    const given = Buffer.from(sig);
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+
+    let body: unknown;
+    try {
+      body = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    } catch {
       return null;
     }
-    return hold;
+    if (!isPayload(body) || Date.now() >= body.e) return null;
+
+    return {
+      key,
+      professionalId: body.p,
+      serviceId: body.s,
+      date: body.d,
+      startTime: body.t,
+      expiresAt: body.e,
+    };
   }
 
-  /** Returns hold and time-remaining in seconds. */
+  /** Returns the hold and the time remaining in seconds. */
   getWithRemaining(key: string): { hold: SlotHold; remainingSec: number } | null {
     const hold = this.get(key);
     if (!hold) return null;
     return { hold, remainingSec: Math.max(0, Math.floor((hold.expiresAt - Date.now()) / 1000)) };
   }
 
-  /** Consume (delete) the hold. Returns true if it existed. */
-  consume(key: string): boolean {
-    return this.holds.delete(key);
-  }
-
-  /** Sweep all expired holds. Returns the count removed. */
-  sweep(): number {
-    const now = Date.now();
-    let removed = 0;
-    for (const [key, hold] of this.holds) {
-      if (now >= hold.expiresAt) {
-        this.holds.delete(key);
-        removed++;
-      }
-    }
-    return removed;
-  }
-
-  /** Returns true if the slot is still available (no active hold AND no existing booking). */
-  async isAvailable(
-    key: string,
-    bookingExists: () => Promise<boolean>,
-  ): Promise<boolean> {
-    if (this.get(key)) return false;
-    return !(await bookingExists());
-  }
+  /**
+   * Nothing to release: a token is not stored anywhere, and it stays valid until it
+   * expires. Reusing one cannot double-book, because the write path checks clashes on
+   * every attempt. Kept so the booking service's callers need not change in this commit.
+   */
+  consume(_key: string): void {}
 }
 
-const globalForBooking = globalThis as unknown as { __slotHoldService?: SlotHoldService };
-
-export const slotHoldService: SlotHoldService =
-  globalForBooking.__slotHoldService ?? new SlotHoldService();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForBooking.__slotHoldService = slotHoldService;
-}
+export const slotHoldService = new SlotHoldService();

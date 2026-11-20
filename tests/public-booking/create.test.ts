@@ -103,20 +103,12 @@ const INPUT = {
 };
 
 function makeHold(date = INPUT.date, startTime = INPUT.startTime) {
-  const key = slotHoldService.buildKey(
-    String(INPUT.professionalId),
-    String(INPUT.serviceId),
-    date,
-    startTime,
-  );
-  slotHoldService.create({
+  return slotHoldService.create({
     professionalId: String(INPUT.professionalId),
     serviceId: String(INPUT.serviceId),
     date,
     startTime,
-    key,
-  });
-  return key;
+  }).key;
 }
 
 /** A local `YYYY-MM-DD` / `HH:MM` pair `minutes` from now. */
@@ -220,8 +212,6 @@ describe('createPublicAppointment', () => {
     expect(args.endTime).toBe('11:00:00');
     // Left at the default so KiviCare withholds the "booked" email until confirmed.
     expect(args.status).toBeUndefined();
-
-    expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
   it('only offers services the professional has marked public', async () => {
@@ -345,9 +335,6 @@ describe('createPublicAppointment', () => {
     await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
       SlotConflictError,
     );
-    // The hold is stale either way; keeping it would block the guest from picking
-    // another time for the rest of its TTL.
-    expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
   it('allows a booking that ends exactly when a Google block starts', async () => {
@@ -367,7 +354,7 @@ describe('createPublicAppointment', () => {
     await expect(createPublicAppointment({ ...INPUT, holdKey })).resolves.toBeTruthy();
   });
 
-  it('throws SlotConflictError and releases the hold when the slot is taken', async () => {
+  it('throws SlotConflictError when the slot is taken', async () => {
     vi.mocked(findConflictingAppointments).mockResolvedValue([{ id: 99n }] as never);
     const holdKey = makeHold();
 
@@ -375,15 +362,13 @@ describe('createPublicAppointment', () => {
       SlotConflictError,
     );
     expect(createAppointment).not.toHaveBeenCalled();
-    // Released, not kept: a stale hold would lock the guest out of every other time.
-    expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
   // The check above and the plugin's write are two requests; another booking can land
   // between them. The plugin re-checks under the professional's schedule lock and
   // answers 409 praktiqu_schedule_conflict. That is the same "pick another time" as
   // above, not an upstream refusal the guest can do nothing about.
-  it('treats a slot the plugin finds taken as SlotConflictError and releases the hold', async () => {
+  it('treats a slot the plugin finds taken as SlotConflictError', async () => {
     vi.mocked(createAppointment).mockRejectedValue(
       new WpEndpointError('/appointments failed 409: That slot is already booked.', 409, 'praktiqu_schedule_conflict'),
     );
@@ -392,7 +377,6 @@ describe('createPublicAppointment', () => {
     await expect(createPublicAppointment({ ...INPUT, holdKey })).rejects.toBeInstanceOf(
       SlotConflictError,
     );
-    expect(slotHoldService.get(holdKey)).toBeNull();
   });
 
   it('reuses a returning guest instead of creating a second patient', async () => {
@@ -440,8 +424,6 @@ describe('createPublicAppointment', () => {
     expect(vi.mocked(createAppointment).mock.calls[0][0].patientId).toBe(PATIENT);
     // Not a fallback to minting a second account for an address we already matched.
     expect(createPatient).not.toHaveBeenCalled();
-    // Consumed, like any completed booking — the guest must not be told to try again.
-    expect(slotHoldService.get(holdKey)).toBeNull();
     // Swallowed, not silent: the clinic just lost a row from its patient list.
     expect(logged).toHaveBeenCalled();
 

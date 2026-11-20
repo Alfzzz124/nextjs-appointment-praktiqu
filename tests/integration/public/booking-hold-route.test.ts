@@ -5,7 +5,7 @@
  * string" and no rate limit, so an anonymous caller could grow the in-memory hold map
  * without bound with arbitrary keys.
  */
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/v1/public/booking/hold/route';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
@@ -51,15 +51,12 @@ afterAll(() => {
   else process.env.FE_FORWARDER_SECRET = savedSecret;
 });
 
-beforeEach(() => {
-  slotHoldService.sweep();
-});
-
 describe('input validation', () => {
-  it('accepts a well-formed hold', async () => {
+  it('accepts a well-formed hold and answers a token that stands for that slot', async () => {
     const res = await post(GOOD);
     expect(res.status).toBe(201);
-    expect(await res.json()).toMatchObject({ holdKey: '7:3:2026-09-20:09:00' });
+    const { holdKey, expiresAt } = await res.json();
+    expect(slotHoldService.get(holdKey)).toMatchObject({ ...GOOD, expiresAt });
   });
 
   it.each([
@@ -68,11 +65,9 @@ describe('input validation', () => {
     ['a date that is not YYYY-MM-DD', { ...GOOD, date: '20-09-2026' }],
     ['a time that is not HH:MM', { ...GOOD, startTime: '9am' }],
     ['an absurdly long id', { ...GOOD, professionalId: '1'.repeat(500) }],
-  ])('answers 400 for %s, and stores nothing', async (_label, body) => {
-    const before = slotHoldService.size;
+  ])('answers 400 for %s', async (_label, body) => {
     const res = await post(body);
     expect(res.status).toBe(400);
-    expect(slotHoldService.size).toBe(before);
   });
 
   it('answers 400 rather than 500 for a body that is not JSON', async () => {
