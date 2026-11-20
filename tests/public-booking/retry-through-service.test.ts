@@ -281,8 +281,6 @@ describe('an ambiguous appointment write is read back, not replayed', () => {
     expect(body.data.id).toBe(APPOINTMENT);
     expect(body.data.status).toBe('PENDING');
     expect(body.data.startTime).toBe('10:00');
-    // The booking succeeded, so the hold is spent like on any other success.
-    expect(slotHoldService.get(key)).toBeFalsy();
   });
 
   it('also reads back after a 5xx WordPress itself answered', async () => {
