@@ -10,7 +10,7 @@
  */
 import type { PaymentMethod } from '@/lib/wp-endpoint';
 import { logging } from '@/lib/logging';
-import { computePublicAmount } from '@/services/payments/payment.service';
+import { computePublicAmount, rupiahFor } from '@/services/payments/payment.service';
 import {
   XENDIT_ONLY,
   buildUsdQuote,
@@ -24,16 +24,27 @@ export interface RowPayment {
   usd: PublicUsdView | null;
 }
 
-export async function rowPaymentFor(
-  args: { clinicId: number; doctorId: number; serviceId: number; name: string; price: number | string },
-  settings: ClinicPaymentSettings,
-): Promise<RowPayment> {
+export interface RowPaymentArgs {
+  clinicId: number;
+  doctorId: number;
+  serviceId: number;
+  name: string;
+  price: number | string;
+  /** Harga dolar layanan ini, kalau ada. Rupiahnya lalu diturunkan ulang dari sini. */
+  priceUsd?: string | null;
+}
+
+export async function rowPaymentFor(args: RowPaymentArgs, settings: ClinicPaymentSettings): Promise<RowPayment> {
   // No tax query for the common case: a clinic that cannot take PayPal shows rupiah.
   if (!settings.methods.includes('paypal')) return { paymentMethods: [...XENDIT_ONLY], usd: null };
 
+  const priceUsd = args.priceUsd ?? null;
   const { items, taxes } = await computePublicAmount({
     name: args.name,
-    price: args.price,
+    // Sama seperti jalur tagih: rupiah layanan ber-harga-dolar diturunkan dari dolarnya,
+    // bukan dibaca dari `charges`, supaya yang ditampilkan sama dengan yang ditagih.
+    price: rupiahFor(typeof args.price === 'string' ? args.price : String(args.price), priceUsd, settings),
+    priceUsd,
     serviceId: args.serviceId,
     clinicId: args.clinicId,
     doctorId: args.doctorId,
@@ -49,10 +60,7 @@ export async function rowPaymentFor(
  * rule 5). Used where the row is shown, never where it is charged: a booking that is
  * already written must not answer an error because its USD preview could not be built.
  */
-export async function rowPaymentForDisplay(
-  args: { clinicId: number; doctorId: number; serviceId: number; name: string; price: number | string },
-  settings: ClinicPaymentSettings,
-): Promise<RowPayment> {
+export async function rowPaymentForDisplay(args: RowPaymentArgs, settings: ClinicPaymentSettings): Promise<RowPayment> {
   try {
     return await rowPaymentFor(args, settings);
   } catch (err) {

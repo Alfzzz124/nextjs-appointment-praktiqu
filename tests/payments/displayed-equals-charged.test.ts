@@ -162,6 +162,7 @@ const MAPPING = {
   isActive: true,
   telemedService: null,
   durationOf: null,
+  priceUsd: null,
 };
 
 function tomorrow(): string {

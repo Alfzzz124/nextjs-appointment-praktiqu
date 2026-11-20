@@ -142,6 +142,7 @@ function primeHappyPath() {
       nameAlias: null,
       category: null,
       durationOf: null,
+      priceUsd: null,
     },
   ]);
 
@@ -270,6 +271,7 @@ describe('createPublicAppointment', () => {
         nameAlias: null,
         category: null,
         durationOf: null,
+        priceUsd: null,
       });
       vi.mocked(listServicesForDoctor).mockImplementation(async (opts) =>
         [mapping(CLINIC), mapping(OTHER_CLINIC)].filter(
@@ -614,7 +616,7 @@ describe('createPublicAppointment — payment fields', () => {
 
     expect(resolveClinicPaymentForDisplay).toHaveBeenCalledWith(CLINIC);
     expect(rowPaymentForDisplay).toHaveBeenCalledWith(
-      { clinicId: CLINIC, doctorId: DOCTOR, serviceId: SERVICE, name: 'Konseling Individu', price: '350000' },
+      { clinicId: CLINIC, doctorId: DOCTOR, serviceId: SERVICE, name: 'Konseling Individu', price: '350000', priceUsd: null },
       settings,
     );
     expect(result.paymentMethods).toEqual(['xendit', 'paypal', 'card']);

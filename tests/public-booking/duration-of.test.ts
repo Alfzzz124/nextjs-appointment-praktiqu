@@ -46,7 +46,7 @@ function mapping(over: Partial<WpDoctorService>): WpDoctorService {
     mappingId: 501n, serviceId: 101n, doctorId: BigInt(DOCTOR), clinicId: 4n,
     name: 'Konseling Individu', type: 'konseling', category: null, charges: '425000',
     durationMinutes: 60, isPublic: true, isActive: true, telemedService: null, nameAlias: null,
-    durationOf: null, ...over,
+    durationOf: null, priceUsd: null, ...over,
   };
 }
 

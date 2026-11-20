@@ -165,7 +165,7 @@ describe('public appointment view — payment fields', () => {
 
     expect(listServicesForDoctor).toHaveBeenCalledWith({ doctorId: 29n, clinicId: 3n });
     expect(rowPaymentForDisplay).toHaveBeenCalledWith(
-      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Consultation', price: '350000' },
+      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Consultation', price: '350000', priceUsd: null },
       INTL,
     );
     expect(view).toMatchObject({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
