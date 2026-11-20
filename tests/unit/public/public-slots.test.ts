@@ -100,7 +100,7 @@ describe('getPublicSlots', () => {
       serviceId: SERVICE_ID,
       date: MONDAY,
       clinicId: CLINIC_ID,
-      now: new Date('2026-08-31T00:00:00'),
+      now: new Date('2026-08-31T00:00:00+07:00'),
     });
     expect(slots?.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
   });
@@ -111,7 +111,7 @@ describe('getPublicSlots', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T00:00:00'),
+      now: new Date('2026-08-31T00:00:00+07:00'),
     });
     expect(slots).toBeNull();
   });
@@ -122,7 +122,7 @@ describe('getPublicSlots', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T00:00:00'),
+      now: new Date('2026-08-31T00:00:00+07:00'),
     });
     expect(slots).toBeNull();
   });
@@ -143,7 +143,7 @@ describe('getPublicSlots — slots already past', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T08:59:00'),
+      now: new Date('2026-08-31T08:59:00+07:00'),
     });
     expect(slots?.map((s) => s.startTime)).toEqual(['10:00:00', '10:30:00', '11:00:00']);
   });
@@ -155,7 +155,7 @@ describe('getPublicSlots — slots already past', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T10:15:00'),
+      now: new Date('2026-08-31T10:15:00+07:00'),
     });
     expect(slots?.map((s) => s.startTime)).toEqual([]);
   });
@@ -167,7 +167,7 @@ describe('getPublicSlots — slots already past', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T10:00:00'),
+      now: new Date('2026-08-31T10:00:00+07:00'),
     });
     expect(slots?.map((s) => s.startTime)).toEqual(['11:00:00']);
   });
@@ -180,7 +180,7 @@ describe('getPublicSlots — slots already past', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-30T23:30:00'),
+      now: new Date('2026-08-30T23:30:00+07:00'),
     });
     expect(slots?.map((s) => s.startTime)).toEqual(MONDAY_STARTS);
   });
@@ -191,7 +191,7 @@ describe('getPublicSlots — slots already past', () => {
       professionalId: DOCTOR_ID,
       serviceId: SERVICE_ID,
       date: MONDAY,
-      now: new Date('2026-08-31T23:30:00'),
+      now: new Date('2026-08-31T23:30:00+07:00'),
     });
     expect(slots).not.toBeNull();
     expect(slots).toEqual([]);

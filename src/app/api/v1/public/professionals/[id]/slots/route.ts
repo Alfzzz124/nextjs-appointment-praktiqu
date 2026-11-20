@@ -1,6 +1,7 @@
 // Bookable slots for a professional, from wp_kc_clinic_sessions minus real bookings.
 import { NextRequest, NextResponse } from 'next/server';
 import { getPublicSlots } from '@/services/public/public-catalog.service';
+import { localDate } from '@/services/booking/booking-policy';
 import { badRequest, notFound } from '@/lib/problem-details';
 
 export const dynamic = 'force-dynamic';
@@ -9,7 +10,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const { searchParams } = new URL(req.url);
-  const date = searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
+  // Today in the clinic zone. toISOString() is the UTC date, still yesterday until 07:00
+  // WIB, and every slot of yesterday is past.
+  const date = searchParams.get('date') ?? localDate(new Date());
   const serviceId = Number(searchParams.get('serviceId'));
 
   const professionalId = Number(params.id);

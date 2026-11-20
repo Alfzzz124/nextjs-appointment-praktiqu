@@ -7,6 +7,7 @@ import {
   getPublicProfessionalSummary,
   getPublicSlotsForRange,
 } from '@/services/public/public-catalog.service';
+import { localDate, addDaysTo } from '@/services/booking/booking-policy';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -17,11 +18,6 @@ const DAYS_AHEAD = 14;
 /** `HH:MM:SS` → `HH:MM`, the shape SlotPicker renders and the hold API expects. */
 function hhmm(time: string): string {
   return time.slice(0, 5);
-}
-
-/** Local calendar date as `YYYY-MM-DD` — never via an ISO-string conversion, which shifts to UTC. */
-function localDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** A usable row id. `Number('abc')` is NaN, and `BigInt(NaN)` throws. */
@@ -53,11 +49,10 @@ export default async function BookStep3Page({
   // reported as a missing service, which is what the old try/catch here did.
   if (!isValidId(professionalId) || !isValidId(serviceId)) return notFoundCard();
 
-  const today = new Date();
-  const from = localDate(today);
-  const last = new Date(today);
-  last.setDate(last.getDate() + DAYS_AHEAD - 1);
-  const to = localDate(last);
+  // In the clinic zone, as the slot readers judge "past". The process-local getters this
+  // page used are a day behind from 00:00 to 07:00 WIB on a UTC server.
+  const from = localDate(new Date());
+  const to = addDaysTo(from, DAYS_AHEAD - 1);
 
   const [professional, services, days] = await Promise.all([
     getPublicProfessionalSummary(professionalId),
