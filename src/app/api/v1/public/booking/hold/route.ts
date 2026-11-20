@@ -43,18 +43,12 @@ export async function POST(req: NextRequest) {
     // A body that is not JSON is the caller's mistake: 400 via the schema, not a 500.
     const body = await req.json().catch(() => ({}));
     const parsed = holdSchema.parse(body);
-    const key = slotHoldService.buildKey(
-      parsed.professionalId,
-      parsed.serviceId,
-      parsed.date,
-      parsed.startTime,
-    );
+    // A signed token, valid on every worker process (see slot-hold.service.ts).
     const hold = slotHoldService.create({
       professionalId: parsed.professionalId,
       serviceId: parsed.serviceId,
       date: parsed.date,
       startTime: parsed.startTime,
-      key,
     });
     return NextResponse.json({ holdKey: hold.key, expiresAt: hold.expiresAt }, { status: 201 });
   } catch (err: any) {

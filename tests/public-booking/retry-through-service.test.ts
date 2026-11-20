@@ -88,20 +88,12 @@ function wpBootstrapDbFailure(): WpEndpointError {
 
 let ip = 0;
 function makeHold(): string {
-  const key = slotHoldService.buildKey(
-    String(DOCTOR),
-    String(SERVICE),
-    BASE.date,
-    BASE.startTime,
-  );
-  slotHoldService.create({
+  return slotHoldService.create({
     professionalId: String(DOCTOR),
     serviceId: String(SERVICE),
     date: BASE.date,
     startTime: BASE.startTime,
-    key,
-  });
-  return key;
+  }).key;
 }
 
 function post(holdKey: string): Promise<Response> {
