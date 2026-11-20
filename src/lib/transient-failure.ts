@@ -92,8 +92,10 @@ export function isRetrySafeFailure(err: unknown): boolean {
   if (err instanceof WpConfigError) return false;
 
   if (err instanceof WpEndpointError) {
-    // Status 0: `wpFetch` never got the request there, so nothing ran.
-    if (err.status === 0) return true;
+    // Status 0 is only proof of no work when `wpFetch` saw the connect itself fail. A
+    // reset or timeout after the request left may follow a completed insert, and a
+    // replay would then book twice (or collide with its own row).
+    if (err.status === 0) return err.neverSent;
     return WP_BOOTSTRAP_DB_FAILURE.test(err.message);
   }
 

@@ -44,6 +44,7 @@ vi.mock('@/repositories/wp/appointments.write', () => ({
 import { POST } from '@/app/api/v1/public/appointments/route';
 import { slotHoldService } from '@/services/booking/slot-hold.service';
 import { WpEndpointError } from '@/lib/wp-endpoint';
+import { writeRereadConfig } from '@/services/public/public-booking.service';
 import { findDoctorById } from '@/repositories/wp/doctors.repo';
 import { listServicesForDoctor } from '@/repositories/wp/services.repo';
 import { findPatientByEmail } from '@/repositories/wp/patients.repo';
@@ -163,8 +164,31 @@ function bookedRow() {
   } as never;
 }
 
+/** Connection dropped after the request left: WordPress may or may not have written. */
+function resetAfterSend(): WpEndpointError {
+  return new WpEndpointError('/appointments unreachable: ECONNRESET', 0);
+}
+
+/** What the re-read sees when the plugin did insert before the connection died. */
+function writtenRow(patientId = PATIENT) {
+  return {
+    id: BigInt(APPOINTMENT),
+    clinicId: BigInt(CLINIC),
+    doctorId: BigInt(DOCTOR),
+    patientId: BigInt(patientId),
+    startDate: BASE.date,
+    startTime: '10:00:00',
+    endDate: BASE.date,
+    endTime: '11:00:00',
+    status: STATUS.PENDING,
+  } as never;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // The real wait is for WordPress to finish a write it may still be committing; the
+  // mocks have nothing to wait for.
+  writeRereadConfig.delayMs = 0;
   primeReads();
 });
 
@@ -232,7 +256,7 @@ describe('auto-retry survives the service’s own error wrapping', () => {
     let calls = 0;
     vi.mocked(createPatient).mockImplementation(async () => {
       calls += 1;
-      if (calls < 2) throw new WpEndpointError('/patients unreachable: ECONNREFUSED', 0);
+      if (calls < 2) throw new WpEndpointError('/patients unreachable: ECONNREFUSED', 0, undefined, true);
       return { id: PATIENT } as never;
     });
     vi.mocked(createAppointment).mockResolvedValue(bookedRow());
@@ -241,5 +265,98 @@ describe('auto-retry survives the service’s own error wrapping', () => {
 
     expect(res.status).toBe(201);
     expect(calls).toBe(2);
+  });
+});
+
+describe('an ambiguous appointment write is read back, not replayed', () => {
+  it('returns the appointment when the connection dropped after the plugin wrote it', async () => {
+    let calls = 0;
+    vi.mocked(createAppointment).mockImplementation(async () => {
+      calls += 1;
+      throw resetAfterSend();
+    });
+    // First call is the pre-write clash check; the second is the read-back.
+    vi.mocked(findConflictingAppointments)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([writtenRow()]);
+    const key = makeHold();
+
+    const res = await post(key);
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(calls).toBe(1);
+    expect(body.data.id).toBe(APPOINTMENT);
+    expect(body.data.status).toBe('PENDING');
+    expect(body.data.startTime).toBe('10:00');
+    // The booking succeeded, so the hold is spent like on any other success.
+    expect(slotHoldService.get(key)).toBeFalsy();
+  });
+
+  it('also reads back after a 5xx WordPress itself answered', async () => {
+    const calls = vi.mocked(createAppointment).mockRejectedValue(
+      new WpEndpointError('/appointments failed 502: bad gateway', 502),
+    );
+    vi.mocked(findConflictingAppointments)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([writtenRow()]);
+
+    const res = await post(makeHold());
+
+    expect(res.status).toBe(201);
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not fooled by another patient’s booking in the same window', async () => {
+    const calls = vi.mocked(createAppointment).mockRejectedValue(resetAfterSend());
+    vi.mocked(findConflictingAppointments)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([writtenRow(PATIENT + 1)]);
+
+    const res = await post(makeHold());
+
+    expect(res.status).toBe(503);
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replay, and answers upstream_write_failed, when nothing was written', async () => {
+    const calls = vi.mocked(createAppointment).mockRejectedValue(resetAfterSend());
+    // Pre-check and read-back both find an empty slot.
+    vi.mocked(findConflictingAppointments).mockResolvedValue([]);
+
+    const res = await post(makeHold());
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.code).toBe('upstream_write_failed');
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the original failure when the read-back itself fails', async () => {
+    const calls = vi.mocked(createAppointment).mockRejectedValue(resetAfterSend());
+    vi.mocked(findConflictingAppointments)
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('db down'));
+
+    const res = await post(makeHold());
+
+    expect(res.status).toBe(503);
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('still replays a connection refused, which provably never reached WordPress', async () => {
+    let calls = 0;
+    vi.mocked(createAppointment).mockImplementation(async () => {
+      calls += 1;
+      if (calls < 3) throw new WpEndpointError('/appointments unreachable: ECONNREFUSED', 0, undefined, true);
+      return bookedRow();
+    });
+
+    const res = await post(makeHold());
+
+    expect(res.status).toBe(201);
+    expect(calls).toBe(3);
+    // No read-back was needed: one pre-write clash check per attempt, nothing more.
+    expect(findConflictingAppointments).toHaveBeenCalledTimes(3);
   });
 });
