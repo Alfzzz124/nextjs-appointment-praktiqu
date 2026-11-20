@@ -19,6 +19,7 @@ import { idBlock } from '../helpers/id-blocks';
 
 const { listClients, getClient, ClientServiceError } = await import('@/services/client/client.service');
 const { GET: customFieldsGet } = await import('@/app/api/v1/clients/[id]/custom-fields/route');
+const { GET: statisticsGet } = await import('@/app/api/v1/clients/[id]/statistics/route');
 
 const { BASE, END } = idBlock('complete-in-progress/clients-professional-scope.test.ts');
 const CLINIC = BigInt(BASE + 900);
@@ -85,7 +86,7 @@ async function seedAppointment(id: number, doctorId: number, patientId: number, 
   });
 }
 
-async function linkAuthUser(cuid: string, wpUserId: number, role: 'CLIENT' | 'CLINIC_ADMIN' | 'PROFESSIONAL') {
+async function linkAuthUser(cuid: string, wpUserId: number, role: 'CLIENT' | 'CLINIC_ADMIN' | 'PROFESSIONAL' | 'SUPER_ADMIN') {
   await prisma.user.create({
     data: {
       id: cuid,
@@ -138,6 +139,12 @@ beforeAll(async () => {
   await linkAuthUser('pro-scope-test-doctor', DOCTOR, 'PROFESSIONAL');
   await linkAuthUser('pro-scope-test-admin', BASE + 800, 'CLINIC_ADMIN');
   await linkAuthUser('pro-scope-test-patient', COLLEAGUES, 'CLIENT');
+  // An admin of a DIFFERENT clinic, and a super admin, for the statistics scope tests.
+  await linkAuthUser('pro-scope-test-outsider', BASE + 801, 'CLINIC_ADMIN');
+  await linkAuthUser('pro-scope-test-super', BASE + 802, 'SUPER_ADMIN');
+  await prisma.kcDoctorClinicMapping.create({
+    data: { id: BigInt(BASE + 13), doctorId: BigInt(BASE + 801), clinicId: CLINIC + 1n, createdAt: new Date() },
+  });
   // The admin owns CLINIC; resolveKcActor falls back to kcClinic.clinicAdminId.
   await prisma.kcDoctorClinicMapping.create({
     data: { id: BigInt(BASE + 12), doctorId: BigInt(BASE + 800), clinicId: CLINIC, createdAt: new Date() },
@@ -223,5 +230,35 @@ describe('GET /clients/:id/custom-fields — scoped like the client itself', () 
 
   it('does not refuse the professional’s own patient', async () => {
     expect((await get('pro-scope-test-doctor', 'PROFESSIONAL', SEEN)).status).not.toBe(403);
+  });
+});
+
+describe('GET /clients/:id/statistics — scoped like the client itself', () => {
+  const get = async (sub: string, role: string, id: number) =>
+    statisticsGet(
+      new NextRequest(`http://localhost/api/v1/clients/${id}/statistics`, {
+        headers: { authorization: `Bearer ${await makeToken(role, sub)}` },
+      }),
+      { params: Promise.resolve({ id: String(id) }) },
+    );
+
+  it('refuses a clinic admin of another clinic', async () => {
+    expect((await get('pro-scope-test-outsider', 'CLINIC_ADMIN', SEEN)).status).toBe(403);
+  });
+
+  it('still answers the clinic admin whose clinic the patient belongs to', async () => {
+    expect((await get('pro-scope-test-admin', 'CLINIC_ADMIN', SEEN)).status).toBe(200);
+  });
+
+  it('still answers a super admin', async () => {
+    expect((await get('pro-scope-test-super', 'SUPER_ADMIN', SEEN)).status).toBe(200);
+  });
+
+  it('answers a professional for their own patient', async () => {
+    expect((await get('pro-scope-test-doctor', 'PROFESSIONAL', SEEN)).status).toBe(200);
+  });
+
+  it('refuses a professional for a colleague’s patient', async () => {
+    expect((await get('pro-scope-test-doctor', 'PROFESSIONAL', COLLEAGUES)).status).toBe(403);
   });
 });

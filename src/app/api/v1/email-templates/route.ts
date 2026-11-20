@@ -21,6 +21,8 @@ import { z } from 'zod';
 export const dynamic = 'force-dynamic';
 
 const ADMIN_ROLES = ['CLINIC_ADMIN', 'SUPER_ADMIN'] as const;
+// Templates have no clinic column (one row serves every clinic): writes are SUPER_ADMIN-only.
+const WRITE_ROLES = ['SUPER_ADMIN'] as const;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const gate = await requireRoles(req, ADMIN_ROLES);
@@ -33,7 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const gate = await requireRoles(req, ADMIN_ROLES);
+  const gate = await requireRoles(req, WRITE_ROLES);
   if ('response' in gate) return gate.response;
 
   let body: unknown;
