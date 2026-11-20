@@ -25,6 +25,10 @@ vi.mock('@/services/payments/clinic-payment.service', () => ({
 vi.mock('@/services/payments/public-usd.service', () => ({
   rowPaymentForDisplay: vi.fn(),
 }));
+// Meet links come from the Google sync table; this suite is about KiviCare rows only.
+vi.mock('@/services/session/meeting-url', () => ({
+  meetingUrlsFor: vi.fn().mockResolvedValue(new Map()),
+}));
 vi.mock('@/lib/logging', () => ({
   logging: {
     audit: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +38,9 @@ vi.mock('@/lib/logging', () => ({
     warn: vi.fn().mockResolvedValue(undefined),
   },
 }));
+
+const closeOrders = vi.hoisted(() => ({ closeOpenOrdersOnCancel: vi.fn() }));
+vi.mock('@/services/payments/close-orders-on-cancel', () => closeOrders);
 
 const approval = vi.hoisted(() => ({ closeOnCancel: vi.fn(), publicApprovalView: vi.fn(), findApproval: vi.fn() }));
 vi.mock('@/services/approval/store', async (orig) => ({
@@ -61,6 +68,7 @@ import {
 } from '@/services/public/public-booking.service';
 
 beforeEach(() => {
+  closeOrders.closeOpenOrdersOnCancel.mockReset().mockResolvedValue(undefined);
   approval.closeOnCancel.mockReset().mockResolvedValue(false);
   approval.publicApprovalView.mockReset().mockResolvedValue(null);
   approval.findApproval.mockReset().mockResolvedValue(null);
@@ -116,6 +124,7 @@ describe('getPublicAppointmentById', () => {
       paymentMethods: ['xendit'],
       usd: null,
       approval: null,
+      meetingUrl: null, // a PENDING booking never shares a link
     });
   });
 
@@ -165,7 +174,7 @@ describe('public appointment view — payment fields', () => {
 
     expect(listServicesForDoctor).toHaveBeenCalledWith({ doctorId: 29n, clinicId: 3n });
     expect(rowPaymentForDisplay).toHaveBeenCalledWith(
-      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Consultation', price: '350000' },
+      { clinicId: 3, doctorId: 29, serviceId: 7, name: 'Consultation', price: '350000', priceUsd: null },
       INTL,
     );
     expect(view).toMatchObject({ paymentMethods: ['xendit', 'paypal', 'card'], usd });
@@ -251,6 +260,24 @@ describe('cancelPublicAppointment', () => {
       .mockResolvedValueOnce(row(SESSION_STATUS.CANCELLED));
 
     expect((await cancelPublicAppointment(APPOINTMENT)).status).toBe('CANCELLED');
+  });
+});
+
+describe('cancelling closes the open payment orders', () => {
+  it('a PENDING booking: its open orders are closed after the plugin cancel', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.PENDING));
+
+    await cancelPublicAppointment(APPOINTMENT);
+
+    expect(closeOrders.closeOpenOrdersOnCancel).toHaveBeenCalledWith(APPOINTMENT);
+  });
+
+  it('a booking that is refused as not cancellable leaves its orders alone', async () => {
+    vi.mocked(findSessionById).mockResolvedValue(row(SESSION_STATUS.CANCELLED));
+
+    await expect(cancelPublicAppointment(APPOINTMENT)).rejects.toBeInstanceOf(NotCancellableError);
+
+    expect(closeOrders.closeOpenOrdersOnCancel).not.toHaveBeenCalled();
   });
 });
 

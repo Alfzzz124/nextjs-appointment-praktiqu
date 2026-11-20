@@ -153,6 +153,43 @@ export async function cancelApproved(appointmentId: number, now: Date): Promise<
   return count === 1;
 }
 
+export type NewRefundNeeded = Omit<NewApproval, 'paymentOrderId'> & { paymentOrderId: string };
+
+/**
+ * A payment arrived for a booking that was already cancelled: the money is in and there is
+ * no session, so the refund is owed. True only for the call that makes it owed — a replayed
+ * webhook or poll gets false, which is what keeps the mail and the audit row to one.
+ *
+ * No record yet: one is created as CANCELLED, never AWAITING, so it stays out of the
+ * psychologist's queue and the reconcile sweep and shows only on the refund list. A record
+ * that owes nothing (an approval cancelled underneath) starts owing; one that already owes
+ * it, or has been refunded, is left alone.
+ */
+export async function recordRefundNeeded(input: NewRefundNeeded): Promise<boolean> {
+  try {
+    await prisma.sessionApproval.create({
+      data: {
+        appointmentId: BigInt(input.appointmentId),
+        doctorWpUserId: BigInt(input.doctorWpUserId),
+        clinicId: BigInt(input.clinicId),
+        paymentOrderId: input.paymentOrderId,
+        state: APPROVAL_STATE.CANCELLED,
+        requestedAt: input.now,
+        decidedAt: input.now,
+        refundStatus: REFUND_STATUS.NEEDED,
+      },
+    });
+    return true;
+  } catch (err) {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+  }
+  const { count } = await prisma.sessionApproval.updateMany({
+    where: { appointmentId: BigInt(input.appointmentId), refundStatus: REFUND_STATUS.NONE },
+    data: { refundStatus: REFUND_STATUS.NEEDED },
+  });
+  return count === 1;
+}
+
 /** NEEDED → DONE. False when the refund was not needed, or already marked. */
 export async function markRefundDone(
   appointmentId: number,

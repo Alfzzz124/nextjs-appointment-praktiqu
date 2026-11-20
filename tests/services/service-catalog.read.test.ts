@@ -146,7 +146,7 @@ describe('listServices', () => {
   it('returns an empty page for an empty scope without touching the database', async () => {
     const res = await listServices({ page: 2, perPage: 20 } as any, nothing);
 
-    expect(res).toEqual({ services: [], total: 0, page: 2, perPage: 20 });
+    expect(res).toEqual({ services: [], total: 0, page: 2, perPage: 20, currency: { code: 'IDR', fxRate: null } });
     expect(repo.listClinicServices).not.toHaveBeenCalled();
   });
 });
@@ -155,7 +155,7 @@ describe('getService', () => {
   it('returns the mapping when it is in scope', async () => {
     repo.findMappingById.mockResolvedValue(row);
 
-    expect((await getService(501, clinicAdmin))?.id).toBe(501);
+    expect((await getService(501, clinicAdmin))?.service.id).toBe(501);
   });
 
   it('returns null for a mapping in another clinic — the route turns this into a 404', async () => {
@@ -201,7 +201,7 @@ describe('duration options in summaries', () => {
     expect(repo.listOptionRowsOf).toHaveBeenCalledWith([501n]);
     expect(res.services[0].durationOf).toBeNull();
     expect(res.services[0].durationOptions).toEqual([
-      { id: 601, serviceId: 201, name: 'Konseling Individu (90 menit)', durationMinutes: 90, price: 600000, isActive: true },
+      { id: 601, serviceId: 201, name: 'Konseling Individu (90 menit)', durationMinutes: 90, price: 600000, priceUsd: null, priceUsdSuggested: null, isActive: true },
     ]);
     expect(res.services[1].durationOf).toBe(501);
     expect(res.services[1].durationOptions).toEqual([]);
@@ -210,15 +210,15 @@ describe('duration options in summaries', () => {
   it('getService on an option reports its parent and no options of its own', async () => {
     repo.findMappingById.mockResolvedValue(option);
 
-    const svc = await getService(601, superAdmin);
+    const svc = (await getService(601, superAdmin))!.service;
 
-    expect(svc!.durationOf).toBe(501);
-    expect(svc!.durationOptions).toEqual([]);
+    expect(svc.durationOf).toBe(501);
+    expect(svc.durationOptions).toEqual([]);
     expect(repo.listOptionRowsOf).not.toHaveBeenCalled();
   });
 
   it('a removed option still reports its parent', async () => {
     repo.findMappingById.mockResolvedValue(removed);
-    expect((await getService(602, superAdmin))!.durationOf).toBe(501);
+    expect((await getService(602, superAdmin))!.service.durationOf).toBe(501);
   });
 });

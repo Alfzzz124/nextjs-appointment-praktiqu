@@ -4,11 +4,12 @@
 // apply the same rule, and `public-catalog.service.ts` already imports from
 // `public-booking.service.ts`, so putting it there would close a cycle.
 //
-// Pure — no database, no I/O. Local clinic time throughout, like the slot maths it
-// sits next to: slot times are local wall-clock strings and `now` is read through
-// local getters, so no UTC conversion enters the arithmetic.
+// Pure — no database, no I/O. Clinic wall-clock time throughout, like the slot maths
+// it sits next to: slot times are wall-clock strings and `now` is read in the clinic
+// zone (default WIB) via Intl, so the result never depends on the process TZ.
 
 import { toMinutes } from '@/services/booking/slot-math';
+import { DEFAULT_TIMEZONE } from '@/lib/time';
 
 /**
  * How far ahead a public booking has to be made.
@@ -27,21 +28,60 @@ function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
-/** Local calendar date of an instant. Never via toISOString, which shifts to UTC. */
-export function localDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
+/**
+ * Wall-clock parts of an instant in a zone. Read through Intl with an explicit
+ * timeZone rather than local getters: the process zone is whatever the host sets
+ * (UTC on a container, WIB on the dev box), and "now" has to mean the clinic's now
+ * either way. A zone that moved "now" by 7 hours let slots from this morning stay
+ * bookable and switched the minimum-notice rule off.
+ */
+function zonedParts(d: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    minutes: Number(get('hour')) * 60 + Number(get('minute')),
+  };
 }
 
-/** Minutes past local midnight for an instant, the basis the slot maths uses. */
-function localMinutes(d: Date): number {
-  return d.getHours() * 60 + d.getMinutes();
+/** Calendar date of an instant in the clinic zone. Never via toISOString (UTC). */
+export function localDate(d: Date, timeZone: string = DEFAULT_TIMEZONE): string {
+  return zonedParts(d, timeZone).date;
+}
+
+/**
+ * `YYYY-MM-DD` plus a number of days. Stepped in UTC because these are calendar
+ * labels, not instants: advancing a Date with local setters would skip or repeat a
+ * day near midnight or a DST change of the process zone.
+ */
+export function addDaysTo(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Minutes past clinic-zone midnight for an instant, the basis the slot maths uses. */
+function localMinutes(d: Date, timeZone: string): number {
+  return zonedParts(d, timeZone).minutes;
 }
 
 /** Minutes from `now` until a slot starts. Negative once it has begun. */
-export function minutesUntil(date: string, startTime: string, now: Date): number {
-  return daysBetween(localDate(now), date) * 1440 + toMinutes(startTime) - localMinutes(now);
+export function minutesUntil(
+  date: string,
+  startTime: string,
+  now: Date,
+  timeZone: string = DEFAULT_TIMEZONE,
+): number {
+  const { date: today, minutes } = zonedParts(now, timeZone);
+  return daysBetween(today, date) * 1440 + toMinutes(startTime) - minutes;
 }
 
 /**
@@ -67,8 +107,9 @@ export function isTooSoon(
   startTime: string,
   now: Date,
   noticeMinutes: number = MIN_BOOKING_NOTICE_MINUTES,
+  timeZone: string = DEFAULT_TIMEZONE,
 ): boolean {
-  const until = minutesUntil(date, startTime, now);
+  const until = minutesUntil(date, startTime, now, timeZone);
   if (until <= 0) return true;
   return until < noticeMinutes;
 }

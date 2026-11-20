@@ -18,14 +18,46 @@ const priceSchema = z.number().min(0, 'Price cannot be negative');
 const idSchema = z.number().int().positive();
 
 /**
+ * Harga dolar: STRING desimal polos, maksimal 2 desimal, 0–100.000.
+ *
+ * String dan bukan angka supaya format masukan dan format penyimpanan punya satu aturan
+ * (`usd-price-marker.ts`), dan supaya `55.10` tidak pulang sebagai `55.1`. Notasi ilmiah,
+ * tanda, dan titik menggantung ditolak — `Number()` menerimanya dan akan menyimpan angka
+ * yang tidak pernah diketik siapa pun.
+ */
+const priceUsdSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{1,6}(\.\d{1,2})?$/, 'priceUsd must be a plain amount with at most 2 decimals')
+  .refine((v) => Number(v) <= 100_000, 'priceUsd must be from 0 to 100000');
+
+/**
+ * `price` rupiah dan `priceUsd` saling eksklusif. Menerima keduanya berarti menebak mana
+ * yang menang, dan tebakan itu menjadi harga yang dibayar klien.
+ */
+function onePrice(required: boolean) {
+  return (v: { price?: number; priceUsd?: string }, ctx: z.RefinementCtx) => {
+    if (v.price !== undefined && v.priceUsd !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['priceUsd'], message: 'Send price or priceUsd, not both' });
+    }
+    if (required && v.price === undefined && v.priceUsd === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['price'], message: 'price or priceUsd is required' });
+    }
+  };
+}
+
+/**
  * One duration option in a PUT. Same bounds as the service's own duration and price.
  * `id` is the option's mapping id; absent means "create".
  */
-export const durationOptionInputSchema = z.object({
-  id: idSchema.optional(),
-  duration: durationSchema,
-  price: priceSchema,
-});
+export const durationOptionInputSchema = z
+  .object({
+    id: idSchema.optional(),
+    duration: durationSchema,
+    price: priceSchema.optional(),
+    priceUsd: priceUsdSchema.optional(),
+  })
+  .superRefine(onePrice(true));
 
 /**
  * `.strip()` is the default, and it is load-bearing here: `maxClients` has no column
@@ -35,7 +67,9 @@ export const durationOptionInputSchema = z.object({
 export const createServiceSchema = z.object({
   name: nameSchema,
   categoryId: idSchema,
-  price: priceSchema,
+  price: priceSchema.optional(),
+  /** Hanya untuk klinik internasional berkurs; lihat `priceWrite` di service.ts. */
+  priceUsd: priceUsdSchema.optional(),
   duration: durationSchema,
   doctorIds: z.array(idSchema).min(1, 'At least one professional is required'),
   /**
@@ -46,7 +80,7 @@ export const createServiceSchema = z.object({
   telemedService: z.enum(['yes', 'no']).default('no'),
   status: flag.default(1),
   isPublic: flag.default(1),
-});
+}).superRefine(onePrice(true));
 
 /**
  * `doctorIds` and `clinicId` are absent on purpose. Moving a service to another
@@ -58,6 +92,11 @@ export const updateServiceSchema = z
     name: nameSchema.optional(),
     categoryId: idSchema.optional(),
     price: priceSchema.optional(),
+    /**
+     * Mengirim `price` rupiah ke layanan yang sudah ber-harga-dolar MEMBUANG harga
+     * dolarnya — jalan sadar untuk membatalkan konversi.
+     */
+    priceUsd: priceUsdSchema.optional(),
     duration: durationSchema.optional(),
     telemedService: z.enum(['yes', 'no']).optional(),
     status: flag.optional(),
@@ -68,6 +107,7 @@ export const updateServiceSchema = z
      */
     durationOptions: z.array(durationOptionInputSchema).max(50).optional(),
   })
+  .superRefine(onePrice(false))
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' });
 
 /**

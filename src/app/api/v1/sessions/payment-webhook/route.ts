@@ -57,7 +57,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     if (event === 'payment.completed') {
-      await markPaid({
+      const claimed = await markPaid({
         wcOrderId,
         amountPaid: amountPaid ?? 0,
         currency,
@@ -72,7 +72,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // functions) is the only way to self-heal the second case.
       const current = await getPaymentOrderByWcOrderId(wcOrderId);
       if (current?.status === 'paid') {
-        if (current.source === 'public') await applyPaidSideEffectsPublic(current);
+        // `claimed` is non-null only for the delivery that turned the order paid; the
+        // side effects need that to tell a payment after cancellation from a replay.
+        if (current.source === 'public') await applyPaidSideEffectsPublic(current, { justPaid: claimed !== null });
         else await applyPaidSideEffectsSession(current);
       }
     } else if (event === 'payment.failed') {

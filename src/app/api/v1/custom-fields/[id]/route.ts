@@ -53,7 +53,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  // No clinic column: one definition serves every clinic, so only SUPER_ADMIN may change it.
+  const gate = await requireRoles(req, ['SUPER_ADMIN']);
   if ('response' in gate) return gate.response;
 
   // Field ids are wp_kc_custom_fields.id integers; a non-numeric segment is a 404
@@ -89,7 +90,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const gate = await requireRoles(_req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  // No clinic column: one definition serves every clinic, so only SUPER_ADMIN may change it.
+  const gate = await requireRoles(_req, ['SUPER_ADMIN']);
   if ('response' in gate) return gate.response;
 
   // Field ids are wp_kc_custom_fields.id integers; a non-numeric segment is a 404

@@ -119,6 +119,8 @@ export const ID_BLOCKS: readonly Row[] = [
   [9_280_000, 'integration/integrations/event-sync-reconcile.test.ts', 'google_calendar_event_sync, google_calendar_connections, kc_appointments (by doctor_id)'],
   [9_290_000, 'repositories/wp-duration-options.repo.test.ts', 'kc_services, kc_service_doctor_mapping'],
   [9_300_000, 'integration/services/duration-options-route.test.ts', 'kc_service_doctor_mapping (by doctor_id), kc_services (by name), kc_appointments, kc_appointment_service_mapping, users (durasi-opsi-test-*)'],
+  [9_310_000, 'repositories/wp-services-usd.repo.test.ts', 'kc_services, kc_service_doctor_mapping'],
+  [9_320_000, 'services/practice.restamp-prices.test.ts', 'kc_service_doctor_mapping'],
   [9_390_000, 'billing/patient-medical-report-professional-scope.test.ts', 'cleanup()'],
 ];
 

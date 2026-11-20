@@ -101,3 +101,72 @@ describe('wpFetch — WordPress unreachable', () => {
     await expect(getWcOrderStatus(42)).rejects.toMatchObject({ status: 0 });
   });
 });
+
+/** undici hangs a Node errno off `cause.code`; the message alone is not what we classify on. */
+function failureWithCode(code: string): TypeError {
+  return Object.assign(new TypeError('fetch failed'), {
+    cause: Object.assign(new Error(`connect ${code}`), { code }),
+  });
+}
+
+describe('wpFetch — did the request reach WordPress?', () => {
+  // Retrying is only safe when nothing was sent. These are the codes where the TCP/DNS
+  // step failed before a single byte of the request left.
+  it.each([
+    'ECONNREFUSED',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'UND_ERR_CONNECT_TIMEOUT',
+  ])('%s is provably never sent', async (code) => {
+    globalThis.fetch = vi.fn().mockRejectedValue(failureWithCode(code)) as never;
+
+    await expect(wpRequestJson('/appointments', { method: 'POST', body: {} }))
+      .rejects.toMatchObject({ status: 0, neverSent: true });
+  });
+
+  // The connection can drop after the plugin already inserted the row.
+  it.each([
+    'ECONNRESET',
+    'UND_ERR_SOCKET',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_BODY_TIMEOUT',
+    'EPIPE',
+    'SOME_CODE_WE_NEVER_SAW',
+  ])('%s may have been sent', async (code) => {
+    globalThis.fetch = vi.fn().mockRejectedValue(failureWithCode(code)) as never;
+
+    await expect(wpRequestJson('/appointments', { method: 'POST', body: {} }))
+      .rejects.toMatchObject({ status: 0, neverSent: false });
+  });
+
+  it('treats a failure with no recognisable cause as possibly sent', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed')) as never;
+
+    await expect(wpRequestJson('/appointments', { method: 'POST', body: {} }))
+      .rejects.toMatchObject({ status: 0, neverSent: false });
+  });
+
+  it('reads an AggregateError (happy eyeballs) only when every address refused', async () => {
+    const refused = Object.assign(new Error('x'), { code: 'ECONNREFUSED' });
+    const reset = Object.assign(new Error('y'), { code: 'ECONNRESET' });
+    const aggregate = (errors: Error[]) =>
+      Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error("aggregate"), { errors }) });
+
+    globalThis.fetch = vi.fn().mockRejectedValue(aggregate([refused, refused])) as never;
+    await expect(wpRequestJson('/appointments', { method: 'POST', body: {} }))
+      .rejects.toMatchObject({ neverSent: true });
+
+    globalThis.fetch = vi.fn().mockRejectedValue(aggregate([refused, reset])) as never;
+    await expect(wpRequestJson('/appointments', { method: 'POST', body: {} }))
+      .rejects.toMatchObject({ neverSent: false });
+  });
+
+  it('an error that carries an HTTP status means WordPress answered, never "not sent"', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 502 })) as never;
+
+    await expect(wpRequestJson('/appointments', { method: 'POST', body: {} }))
+      .rejects.toMatchObject({ status: 502, neverSent: false });
+  });
+});

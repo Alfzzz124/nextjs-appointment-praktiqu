@@ -16,6 +16,10 @@ import { prisma } from '@/lib/db';
 import { logging } from '@/lib/logging';
 import { WpEndpointError, putClinicPaymentSettings, type PaymentMethod } from '@/lib/wp-endpoint';
 import { readRawPaymentOptions } from '@/repositories/wp/clinic-payment-settings.repo';
+import { restampClinicPrices } from '@/services/practice/restamp-prices';
+import { Prisma } from '@prisma/client';
+
+const Decimal = Prisma.Decimal;
 import {
   FEE_MAX,
   MARKUP_MAX,
@@ -245,6 +249,25 @@ export async function updatePaymentSettings(
   } catch (err) {
     if (err instanceof WpEndpointError && err.code === 'fx_rate_required') throw new FxRateRequiredError(FX_RATE_REQUIRED);
     throw err;
+  }
+
+  // Cermin rupiah untuk layar KiviCare. Dilakukan hanya saat kurs efektifnya benar-benar
+  // berubah — mengubah markup saja tidak menggeser satu pun harga dolar.
+  //
+  // Kegagalannya TIDAK menggagalkan penyimpanan: harga dolarnya sudah benar dan alur kami
+  // sudah tidak membaca `charges`, jadi yang tertinggal cuma cerminnya.
+  const before = resolveSettings(clinicId, parseStoredOption(raw.byClinic.get(clinicId)), globals);
+  const nextRate = isUsableRate(next.fxRate) ? new Decimal(String(next.fxRate)) : globals.fxRate !== null && isUsableRate(globals.fxRate) ? new Decimal(String(globals.fxRate)) : null;
+  if (next.international && nextRate !== null && (before.rate === null || !before.rate.equals(nextRate))) {
+    try {
+      await restampClinicPrices(clinicId, nextRate);
+    } catch (err) {
+      await logging.warn('Rupiah mirror not restamped after a rate change', {
+        resource: 'clinic',
+        resourceId: String(clinicId),
+        metadata: { fxRate: nextRate.toString(), error: err instanceof Error ? err.message : String(err) },
+      });
+    }
   }
 
   // userId is the caller's users.id (a cuid): log_entries.userId is a foreign key to

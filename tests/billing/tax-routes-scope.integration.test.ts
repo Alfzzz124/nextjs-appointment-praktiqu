@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/db';
 import { assertTestDb, seedClinicAdmin, seedTax, cleanup, useIdBlock } from './fixtures';
+
+import { POST as taxCreate } from '@/app/api/v1/taxes/route';
 
 import { GET as taxGet, PUT as taxPut, DELETE as taxDelete } from '@/app/api/v1/taxes/[id]/route';
 import { PUT as taxStatusPut } from '@/app/api/v1/taxes/[id]/status/route';
 import { POST as taxBulkDelete } from '@/app/api/v1/taxes/bulk/delete/route';
 import { PUT as taxBulkStatus } from '@/app/api/v1/taxes/bulk/status/route';
+import { runImport } from '@/services/billing/import/engine';
 
 const { BASE } = useIdBlock('billing/tax-routes-scope.integration.test.ts');
 
@@ -26,7 +30,8 @@ function reqWith(jwt: string, url: string, init: RequestInit = {}) {
 }
 
 const CLINIC_A = BASE + 1, CLINIC_B = BASE + 2;
-let taxAId: number, taxBId: number;
+let taxAId: number, taxBId: number, taxGlobalId: number;
+const SUPER_SUB = 'test-super-tax-routes';
 
 beforeAll(async () => {
   assertTestDb();
@@ -35,8 +40,20 @@ beforeAll(async () => {
   await seedClinicAdmin({ userId: CLINIC_B, clinicId: CLINIC_B });
   taxAId = Number((await seedTax({ id: BASE + 101, name: 'Route Tax A', clinicId: CLINIC_A })).id);
   taxBId = Number((await seedTax({ id: BASE + 102, name: 'Route Tax B', clinicId: CLINIC_B })).id);
+  taxGlobalId = Number((await seedTax({ id: BASE + 103, name: 'Route Tax Global', clinicId: -1 })).id);
+  await prisma.user.deleteMany({ where: { id: SUPER_SUB } });
+  await prisma.user.create({
+    data: {
+      id: SUPER_SUB, email: 'super-tax-routes@test.local', username: 'super-tax-routes',
+      firstName: 'S', lastName: 'A', displayName: 'Super', role: 'SUPER_ADMIN', wpUserId: BigInt(BASE + 3), status: 1,
+    },
+  });
 });
-afterAll(cleanup);
+afterAll(async () => {
+  await prisma.kcTax.deleteMany({ where: { name: { startsWith: 'RouteNew' } } });
+  await prisma.user.deleteMany({ where: { id: SUPER_SUB } });
+  await cleanup();
+});
 
 describe('GET/PUT/DELETE /taxes/:id', () => {
   it('clinic A gets 404 for clinic B\'s tax', async () => {
@@ -99,5 +116,187 @@ describe('bulk /taxes/bulk/delete and /taxes/bulk/status', () => {
     }), { params: {} } as any);
     const json = await res.json();
     expect(json.message).toContain('0 taxes status updated');
+  });
+});
+
+/**
+ * A global tax (clinic -1) applies to every clinic's bills, so a clinic admin may not
+ * create, move, change or delete one — only SUPER_ADMIN may. Reading stays open to all.
+ */
+describe('POST /taxes — clinic scope', () => {
+  const post = async (sub: string, role: string, body: Record<string, unknown>) =>
+    taxCreate(reqWith(await token(role, sub), 'http://localhost/api/v1/taxes', {
+      method: 'POST', body: JSON.stringify({ rateValue: 11, ...body }),
+    }), { params: {} } as any);
+  const rowsNamed = (name: string) => prisma.kcTax.findMany({ where: { name } });
+
+  it('a clinic admin who names no clinic creates a tax for their own clinic only', async () => {
+    const res = await post(`test-admin-${CLINIC_A}`, 'CLINIC_ADMIN', { name: 'RouteNew default' });
+    expect(res.status).toBe(200);
+    expect((await rowsNamed('RouteNew default')).map((r) => Number(r.clinicId))).toEqual([CLINIC_A]);
+  });
+
+  it('refuses a clinic admin creating a global tax (clinic -1)', async () => {
+    const res = await post(`test-admin-${CLINIC_A}`, 'CLINIC_ADMIN', { name: 'RouteNew global', clinic: -1 });
+    expect(res.status).toBe(403);
+    expect(await rowsNamed('RouteNew global')).toHaveLength(0);
+  });
+
+  it('refuses a clinic admin creating a tax for another clinic', async () => {
+    const res = await post(`test-admin-${CLINIC_A}`, 'CLINIC_ADMIN', { name: 'RouteNew other', clinic: CLINIC_B });
+    expect(res.status).toBe(403);
+    expect(await rowsNamed('RouteNew other')).toHaveLength(0);
+  });
+
+  it('lets a clinic admin name their own clinic explicitly', async () => {
+    const res = await post(`test-admin-${CLINIC_A}`, 'CLINIC_ADMIN', { name: 'RouteNew own', clinic: CLINIC_A });
+    expect(res.status).toBe(200);
+  });
+
+  it('lets SUPER_ADMIN create a global tax and a tax for any clinic', async () => {
+    expect((await post(SUPER_SUB, 'SUPER_ADMIN', { name: 'RouteNew super global' })).status).toBe(200);
+    expect((await post(SUPER_SUB, 'SUPER_ADMIN', { name: 'RouteNew super b', clinic: CLINIC_B })).status).toBe(200);
+    expect((await rowsNamed('RouteNew super global')).map((r) => Number(r.clinicId))).toEqual([-1]);
+  });
+});
+
+describe('global taxes are SUPER_ADMIN-only to change', () => {
+  const idCtx = (id: number) => ({ params: { id: String(id) } } as any);
+  const exists = async (id: number) => (await prisma.kcTax.findUnique({ where: { id: BigInt(id) } })) !== null;
+
+  it('a clinic admin can still read a global tax', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    const res = await taxGet(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}`), idCtx(taxGlobalId));
+    expect((await res.json()).status).toBe(true);
+  });
+
+  it('refuses a clinic admin changing a global tax', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    const res = await taxPut(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}`, {
+      method: 'PUT', body: JSON.stringify({ rateValue: 1 }),
+    }), idCtx(taxGlobalId));
+    expect(res.status).toBe(403);
+  });
+
+  it('refuses a clinic admin deleting a global tax', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    const res = await taxDelete(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}`), idCtx(taxGlobalId));
+    expect(res.status).toBe(403);
+    expect(await exists(taxGlobalId)).toBe(true);
+  });
+
+  it('refuses a clinic admin switching a global tax off', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    const res = await taxStatusPut(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}/status`, {
+      method: 'PUT', body: JSON.stringify({ status: 0 }),
+    }), idCtx(taxGlobalId));
+    expect(res.status).toBe(403);
+    expect((await prisma.kcTax.findUnique({ where: { id: BigInt(taxGlobalId) } }))?.status).toBe(1);
+  });
+
+  it('bulk delete and bulk status leave a global tax alone for a clinic admin', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    const del = await taxBulkDelete(reqWith(jwt, 'http://localhost/api/v1/taxes/bulk/delete', {
+      method: 'POST', body: JSON.stringify({ ids: [taxGlobalId] }),
+    }), { params: {} } as any);
+    expect((await del.json()).message).toContain('0 taxes deleted');
+    const st = await taxBulkStatus(reqWith(jwt, 'http://localhost/api/v1/taxes/bulk/status', {
+      method: 'PUT', body: JSON.stringify({ ids: [taxGlobalId], status: 0 }),
+    }), { params: {} } as any);
+    expect((await st.json()).message).toContain('0 taxes status updated');
+    const row = await prisma.kcTax.findUnique({ where: { id: BigInt(taxGlobalId) } });
+    expect(row?.status).toBe(1);
+  });
+
+  it('refuses a clinic admin moving their own tax to another clinic or to global', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    for (const clinic of [CLINIC_B, -1]) {
+      const res = await taxPut(reqWith(jwt, `http://localhost/api/v1/taxes/${taxAId}`, {
+        method: 'PUT', body: JSON.stringify({ clinic }),
+      }), idCtx(taxAId));
+      expect(res.status).toBe(403);
+    }
+    expect(Number((await prisma.kcTax.findUnique({ where: { id: BigInt(taxAId) } }))?.clinicId)).toBe(CLINIC_A);
+  });
+
+  it('still lets a clinic admin edit their own tax', async () => {
+    const jwt = await token('CLINIC_ADMIN', `test-admin-${CLINIC_A}`);
+    const res = await taxPut(reqWith(jwt, `http://localhost/api/v1/taxes/${taxAId}`, {
+      method: 'PUT', body: JSON.stringify({ rateValue: 12, clinic: CLINIC_A }),
+    }), idCtx(taxAId));
+    expect(res.status).toBe(200);
+  });
+
+  it('lets SUPER_ADMIN change a global tax, switch it off and delete it', async () => {
+    const jwt = await token('SUPER_ADMIN', SUPER_SUB);
+    const put = await taxPut(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}`, {
+      method: 'PUT', body: JSON.stringify({ rateValue: 8 }),
+    }), idCtx(taxGlobalId));
+    expect(put.status).toBe(200);
+    const st = await taxStatusPut(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}/status`, {
+      method: 'PUT', body: JSON.stringify({ status: 0 }),
+    }), idCtx(taxGlobalId));
+    expect(st.status).toBe(200);
+    const del = await taxDelete(reqWith(jwt, `http://localhost/api/v1/taxes/${taxGlobalId}`), idCtx(taxGlobalId));
+    expect(del.status).toBe(200);
+    expect(await exists(taxGlobalId)).toBe(false);
+  });
+});
+
+/**
+ * The CSV/JSON import (POST /import, entity "taxes") writes taxes through its own adapter
+ * and must follow the same rule. An admin with no clinic of their own resolved to clinic
+ * -1 there: a row named like a global tax overwrote that global tax's rate and status for
+ * every clinic, and a new row became a global tax.
+ */
+describe('importing tax rows follows the same rule', () => {
+  const GLOBAL_NAME = 'RouteNew import global';
+  const GLOBAL_ID = BASE + 110;
+  const admin = (clinicId: number | null) => ({
+    actor: { id: 'test-import-admin', role: 'CLINIC_ADMIN' },
+    wpUserId: BigInt(BASE + 4),
+    clinicId: clinicId === null ? null : BigInt(clinicId),
+  }) as any;
+  const superKc = { actor: { id: SUPER_SUB, role: 'SUPER_ADMIN' }, wpUserId: BigInt(BASE + 3), clinicId: null } as any;
+  const opts = (conflictStrategy: 'error' | 'skip' | 'update') => ({ conflictStrategy, dryRun: false });
+  const globalRow = () => prisma.kcTax.findUnique({ where: { id: BigInt(GLOBAL_ID) } });
+
+  beforeAll(async () => {
+    await prisma.kcTax.deleteMany({ where: { id: BigInt(GLOBAL_ID) } });
+    await seedTax({ id: GLOBAL_ID, name: GLOBAL_NAME, clinicId: -1, taxValue: '10', status: 1 });
+  });
+
+  it('an admin with no clinic cannot overwrite a global tax with a row of the same name', async () => {
+    const res = await runImport('taxes', [{ name: GLOBAL_NAME, tax_value: 99, status: 0 }], opts('update'), admin(null));
+    expect(res.updated).toBe(0);
+    expect(res.failed).toBe(1);
+    const row = await globalRow();
+    expect(row?.taxValue).toBe('10');
+    expect(row?.status).toBe(1);
+  });
+
+  it('an admin with no clinic cannot create a global tax', async () => {
+    const res = await runImport('taxes', [{ name: 'RouteNew import orphan', tax_value: 5 }], opts('error'), admin(null));
+    expect(res.failed).toBe(1);
+    expect(await prisma.kcTax.findMany({ where: { name: 'RouteNew import orphan' } })).toHaveLength(0);
+  });
+
+  it('a clinic admin imports into their own clinic and leaves a global tax of the same name alone', async () => {
+    const res = await runImport('taxes', [{ name: GLOBAL_NAME, tax_value: 7 }], opts('update'), admin(CLINIC_A));
+    expect(res.failed).toBe(0);
+    expect(res.imported).toBe(1);
+    const clinics = (await prisma.kcTax.findMany({ where: { name: GLOBAL_NAME } })).map((r) => Number(r.clinicId));
+    expect(clinics.sort((a, b) => a - b)).toEqual([-1, CLINIC_A]);
+    expect((await globalRow())?.taxValue).toBe('10');
+  });
+
+  it('SUPER_ADMIN still imports into global taxes', async () => {
+    const res = await runImport('taxes', [{ name: GLOBAL_NAME, tax_value: 3 }], opts('update'), superKc);
+    expect(res.updated).toBe(1);
+    expect((await globalRow())?.taxValue).toBe('3');
+    const created = await runImport('taxes', [{ name: 'RouteNew import super global', tax_value: 4 }], opts('error'), superKc);
+    expect(created.imported).toBe(1);
+    const rows = await prisma.kcTax.findMany({ where: { name: 'RouteNew import super global' } });
+    expect(rows.map((r) => Number(r.clinicId))).toEqual([-1]);
   });
 });

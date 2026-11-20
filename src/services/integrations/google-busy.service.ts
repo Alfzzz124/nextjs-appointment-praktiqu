@@ -165,7 +165,7 @@ export async function googleBusyForRange(opts: {
       // for every professional weekly. Recorded as `revoked` so the settings page
       // can ask them to reconnect without alarming them, and so we stop calling
       // Google on every page render until they do.
-      await markConnection(opts.professionalId, { status: 'revoked' });
+      await markConnection(opts.professionalId, { status: 'revoked', reason: err.message });
       return {};
     }
 

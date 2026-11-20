@@ -1,11 +1,21 @@
 import { calculateTax } from '@/services/billing/bill.service';
 import type { BillDetail, BillScope } from '@/services/billing/bill.service';
 import { toNum } from '@/lib/kc-num';
+import { Prisma } from '@prisma/client';
+import { idrFromUsd } from '@/repositories/wp/usd-price-marker';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface PaymentLineItem {
   name: string;
   price: number;
+  /**
+   * Harga dolar baris ini, kalau layanannya ber-harga-dolar (spec 2026-11-18 §2).
+   *
+   * Hadir pada SETIAP baris berarti order ini ditagih persis sejumlah itu: tanpa markup,
+   * tanpa biaya tetap, tanpa baris pajak. `price` di sebelahnya lalu hanya cermin yang
+   * boleh saja basi, jadi jangan dipakai memutuskan apa pun untuk order semacam itu.
+   */
+  priceUsd?: string | null;
 }
 
 export interface PaymentTaxLine {
@@ -33,9 +43,29 @@ function toRupiah(n: number): number {
  * taxes only. With one id space the scope ids pass straight through. Callers that
  * genuinely have no clinic still get the global set.
  */
+/**
+ * Rupiah yang berlaku untuk satu baris layanan.
+ *
+ * Untuk layanan ber-harga-dolar ia DITURUNKAN ULANG dari dolarnya pada kurs saat ini,
+ * bukan dibaca dari `charges`: cermin rupiah itu baru ditulis ulang saat setelan klinik
+ * disimpan, jadi di antara perubahan kurs dan penulisan itu ia bisa tertinggal.
+ */
+export function rupiahFor(
+  charges: string | null,
+  priceUsd: string | null,
+  settings: { rate: Prisma.Decimal | null } | null,
+): number {
+  if (priceUsd !== null && settings?.rate != null) {
+    return idrFromUsd(new Prisma.Decimal(priceUsd), settings.rate);
+  }
+  return toNum(charges ?? 0);
+}
+
 export async function computePublicAmount(service: {
   name: string;
   price: number | string;
+  /** Harga dolar layanan ini, diteruskan apa adanya ke baris itemnya. */
+  priceUsd?: string | null;
   /** `wp_kc_services.id` — lets a service-scoped tax match. */
   serviceId?: number;
   clinicId?: number;
@@ -52,7 +82,15 @@ export async function computePublicAmount(service: {
   const taxes: PaymentTaxLine[] = calculated_taxes.map((t) => ({ name: t.tax_name, amount: toRupiah(t.tax_amount) }));
   return {
     expectedAmount: toRupiah(price + total_tax),
-    items: [{ name: service.name, price: toRupiah(price) }],
+    // Kuncinya hanya muncul kalau layanannya memang ber-harga-dolar: baris layanan rupiah
+    // tetap berbentuk persis seperti sebelumnya, di dalam kode maupun di kawat.
+    items: [
+      {
+        name: service.name,
+        price: toRupiah(price),
+        ...(service.priceUsd ? { priceUsd: service.priceUsd } : {}),
+      },
+    ],
     taxes,
   };
 }
@@ -153,10 +191,18 @@ export interface MarkPaidInput {
 }
 
 /** Guarded one-way transition pending -> paid. Returns null if already resolved (idempotent replay). */
+/**
+ * The statuses a payment can still turn into 'paid'. Not only 'pending': WooCommerce
+ * completes payment even on an order we already closed (expired, cancelled, failed), and
+ * the plugin reports it as payment.completed like any other. The money is in, so the
+ * order must say so; what it means for the booking is the side effects' call.
+ */
+const CLAIMABLE_FOR_PAYMENT = ['pending', 'expired', 'cancelled', 'failed'] as const;
+
 export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | null> {
   const order = await prisma.paymentOrder.findUnique({ where: { wcOrderId: input.wcOrderId } });
   if (!order) throw new UnknownOrderError(`No payment order for wcOrderId ${input.wcOrderId}`);
-  if (order.status === 'pending') {
+  if ((CLAIMABLE_FOR_PAYMENT as readonly string[]).includes(order.status)) {
     // A PayPal order is charged in USD, so comparing against the rupiah
     // expectedAmount would read 11.12 vs 200000 as a catastrophic mismatch and
     // leave a genuinely-paid appointment stuck in PENDING.
@@ -194,7 +240,7 @@ export async function markPaid(input: MarkPaidInput): Promise<PaymentOrder | nul
   }
 
   const result = await prisma.paymentOrder.updateMany({
-    where: { wcOrderId: input.wcOrderId, status: 'pending' },
+    where: { wcOrderId: input.wcOrderId, status: { in: [...CLAIMABLE_FOR_PAYMENT] } },
     data: {
       status: 'paid',
       transactionId: input.transactionId,
@@ -256,6 +302,7 @@ import {
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { resolveClinicPayment } from '@/services/payments/clinic-payment.service';
+import { recordPaidAfterCancel } from '@/services/payments/paid-after-cancel';
 import {
   amountToCents,
   gateUsdPayment,
@@ -387,10 +434,42 @@ async function assertChargedAsQuoted(wcOrder: CreateWcOrderResult, quote: UsdQuo
  * quote of a discounted bill would overcharge without any error. A clinic id of 0 or
  * null is not international.
  */
+/**
+ * Pasangkan harga dolar layanan ke baris-baris tagihan.
+ *
+ * Sisi rupiah tagihan sudah terbit dan tidak disentuh: yang dicari di sini hanya apakah
+ * tiap baris menunjuk layanan yang harganya ditetapkan dalam dolar. Harga satu baris
+ * adalah harga dolar layanan dikali kuantitasnya — tagihan staf boleh berisi 2 sesi.
+ *
+ * Satu baris saja yang layanannya tidak ber-harga-dolar membuat SELURUH tagihan kembali
+ * ke jalur konversi (`isUsdDirect`), jadi tidak ada tagihan yang setengah dikonversi.
+ */
+async function withBillUsdPrices(bill: BillDetail, items: PaymentLineItem[]): Promise<PaymentLineItem[]> {
+  const doctorId = bill.doctor?.id;
+  const clinicId = bill.clinic?.id;
+  if (!doctorId || !clinicId) return items;
+
+  const offered = await listServicesForDoctor({ doctorId: BigInt(doctorId), clinicId: BigInt(clinicId) });
+  const usdByService = new Map<number, string>();
+  for (const s of offered) {
+    if (s.priceUsd != null) usdByService.set(Number(s.serviceId), s.priceUsd);
+  }
+  if (usdByService.size === 0) return items;
+
+  // `items` dibangun dari `bill.serviceItems` dengan urutan yang sama, satu lawan satu.
+  return items.map((item, i) => {
+    const raw = bill.serviceItems[i];
+    const unit = usdByService.get(Number(raw?.serviceId ?? 0));
+    if (unit === undefined) return item;
+    const qty = Number(raw?.quantity ?? 1) || 1;
+    return { ...item, priceUsd: new Prisma.Decimal(unit).mul(qty).toFixed(2) };
+  });
+}
+
 async function gateSessionUsdCharge(bill: BillDetail, items: PaymentLineItem[], taxes: PaymentTaxLine[]): Promise<UsdCharge> {
   if (bill.discount > 0) throw new DiscountNotSupportedError(`Bill ${bill.id} has a discount; pay it with Xendit`);
   const settings = bill.clinic?.id ? await resolveClinicPayment(bill.clinic.id) : notInternational(0);
-  return gateUsdCharge(items, taxes, settings);
+  return gateUsdCharge(await withBillUsdPrices(bill, items), taxes, settings);
 }
 
 export async function initiatePublicPayment(
@@ -433,16 +512,23 @@ export async function initiatePublicPayment(
     );
   }
 
+  // Layanan ber-harga-dolar butuh setelan kliniknya APA PUN metodenya: rupiahnya
+  // diturunkan dari kurs, jadi klien Xendit pun tidak bisa dihargai tanpa membacanya.
+  // Layanan rupiah pada pembayaran Xendit tetap tidak membacanya sama sekali — satu
+  // galat basis data di sana tidak boleh menggagalkan pembayaran yang tidak memerlukannya.
+  const priceUsd = mapping.priceUsd ?? null;
+  const settings = method !== 'xendit' || priceUsd !== null ? await resolveClinicPayment(appt.clinicId) : null;
+
   const { expectedAmount, items, taxes } = await computePublicAmount({
     name: mapping.name,
-    price: toNum(mapping.charges ?? 0),
+    price: rupiahFor(mapping.charges, priceUsd, settings),
+    priceUsd,
     serviceId,
     clinicId: appt.clinicId,
     doctorId: appt.professionalId,
   });
 
-  const usd: UsdCharge | null =
-    method === 'xendit' ? null : gateUsdCharge(items, taxes, await resolveClinicPayment(appt.clinicId));
+  const usd: UsdCharge | null = method === 'xendit' || settings === null ? null : gateUsdCharge(items, taxes, settings);
 
   const token = signAppointmentToken(appointmentId);
   const wcOrder = await createWcOrder({
@@ -482,7 +568,19 @@ export async function initiatePublicPayment(
   };
 }
 
-export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<void> {
+export interface PaidSideEffectOptions {
+  /**
+   * True only for the call whose markPaid turned the order paid. The status poll and the
+   * crash self-heal re-apply side effects to any paid order, including one paid normally
+   * whose booking staff cancelled afterwards — that is not a payment after cancellation.
+   */
+  justPaid?: boolean;
+}
+
+export async function applyPaidSideEffectsPublic(
+  order: PaymentOrder,
+  opts: PaidSideEffectOptions = {},
+): Promise<void> {
   if (!order.appointmentId) return;
 
   // Confirming goes through the plugin, and it is the `payment` argument that makes the
@@ -494,7 +592,15 @@ export async function applyPaidSideEffectsPublic(order: PaymentOrder): Promise<v
   // idempotent case and stops here; two callers that both get past this read are settled
   // by the plugin, which claims PENDING → BOOKED with a conditional UPDATE and mails once.
   const appt = await findSessionById(Number(order.appointmentId));
-  if (!appt || appt.status !== SESSION_STATUS.PENDING) return;
+  if (!appt) return;
+  // The money came in after the booking was cancelled. The booking is not revived — its
+  // slot may be someone else's by now — so the payment goes on the refund list instead of
+  // vanishing, as it used to.
+  if (appt.status === SESSION_STATUS.CANCELLED) {
+    if (opts.justPaid) await recordPaidAfterCancel(appt, order);
+    return;
+  }
+  if (appt.status !== SESSION_STATUS.PENDING) return;
 
   // A psychologist who approves their own bookings (spec 2026-10-19): the booking stays
   // PENDING — slot held, no confirmation yet — and joins their queue instead of being
@@ -656,7 +762,7 @@ async function reconcileIfStale(order: PaymentOrder): Promise<PaymentOrder> {
       throw err;
     }
     if (!updated) return order;
-    if (updated.source === 'public') await applyPaidSideEffectsPublic(updated);
+    if (updated.source === 'public') await applyPaidSideEffectsPublic(updated, { justPaid: true });
     else await applyPaidSideEffectsSession(updated);
     return updated;
   }

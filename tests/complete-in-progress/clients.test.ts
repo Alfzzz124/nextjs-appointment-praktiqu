@@ -133,6 +133,7 @@ async function wipe() {
     END,
   );
   await prisma.kcAppointment.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
+  await prisma.kcDoctorClinicMapping.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
   await prisma.kcUserMeta.deleteMany({ where: { userId: { gte: BigInt(BASE), lt: BigInt(END) } } });
   await prisma.kcUser.deleteMany({ where: { id: { gte: BigInt(BASE), lt: BigInt(END) } } });
   await prisma.user.deleteMany({ where: { id: { startsWith: 'clients-test-' } } });
@@ -147,6 +148,10 @@ beforeAll(async () => {
   await linkAuthUser('clients-test-other', BASE + 2, 'CLIENT');
   await linkAuthUser('clients-test-admin', BASE + 800, 'CLINIC_ADMIN');
   await linkAuthUser('clients-test-super', BASE + 801, 'SUPER_ADMIN');
+  // The statistics route now scopes an admin to their clinic, so this one needs a clinic.
+  await prisma.kcDoctorClinicMapping.create({
+    data: { id: BigInt(BASE + 10), doctorId: BigInt(BASE + 800), clinicId: CLINIC, createdAt: new Date() },
+  });
 });
 
 afterAll(async () => {
@@ -247,7 +252,7 @@ describe('GET /clients/:id/statistics — CLIENT self-access auth', () => {
     expect(res.status).toBe(403);
   });
 
-  it('returns 200 for CLINIC_ADMIN accessing any client', async () => {
+  it('returns 200 for the CLINIC_ADMIN of the clinic the client belongs to', async () => {
     const jwt = await makeToken('CLINIC_ADMIN', 'clients-test-admin');
     const res = await statisticsGet(makeReq(jwt, BASE + 1), {
       params: Promise.resolve({ id: String(BASE + 1) }),

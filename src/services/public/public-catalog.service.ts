@@ -33,6 +33,7 @@ import { collectBlockedRanges } from '@/services/booking/blocked-ranges.service'
 import { buildDaySlots, eachDate, toMinutes } from '@/services/booking/slot-math';
 import {
   MIN_BOOKING_NOTICE_MINUTES,
+  addDaysTo,
   isTooSoon,
   localDate,
 } from '@/services/booking/booking-policy';
@@ -42,6 +43,7 @@ import {
   resolveClinicPaymentManyForDisplay,
 } from '@/services/payments/clinic-payment.service';
 import { rowPaymentForDisplay } from '@/services/payments/public-usd.service';
+import { rupiahFor } from '@/services/payments/payment.service';
 import {
   notInternational,
   type ClinicPaymentSettings,
@@ -283,13 +285,11 @@ function nextAvailableFor(
 ): { date: string; startTime: string } | null {
   if (sessions.length === 0) return null;
 
+  // Clinic-zone today, then calendar-label steps: advancing a Date with local setters
+  // and naming it afterwards could skip or repeat a day near WIB midnight.
+  const start = localDate(from);
   for (let i = 0; i < NEXT_AVAILABLE_HORIZON_DAYS; i += 1) {
-    const d = new Date(from);
-    d.setDate(d.getDate() + i);
-    // Local calendar date, not `toISOString()`: `d` was advanced with local getters/
-    // setters, and naming it via UTC would report the previous day for any local time
-    // before the UTC offset (e.g. every night before 07:00 on this Asia/Jakarta box).
-    const date = localDate(d);
+    const date = addDaysTo(start, i);
     const day = dayOfWeekFor(date);
 
     const earliest = sessions
@@ -370,11 +370,21 @@ export async function getPublicProfessionalServices(
     // The catalogue name. Not `nameAlias`: that column holds the category slug — see
     // WpDoctorService.nameAlias.
     const name = s.name;
+    const settings = payment.get(clinicId) ?? notInternational(clinicId);
     // The doctor's charge, not the catalogue list price — that is what a patient pays.
-    const price = s.charges ?? '0';
+    // Untuk layanan ber-harga-dolar rupiahnya diturunkan dari dolarnya, bukan dibaca dari
+    // `charges`: kalau tidak, kartu layanan menampilkan rupiah lama di bawah dolar baru.
+    const price = String(rupiahFor(s.charges, s.priceUsd ?? null, settings));
     const { paymentMethods, usd } = await rowPaymentForDisplay(
-      { clinicId, doctorId: professionalId, serviceId: Number(s.serviceId), name, price },
-      payment.get(clinicId) ?? notInternational(clinicId),
+      {
+        clinicId,
+        doctorId: professionalId,
+        serviceId: Number(s.serviceId),
+        name,
+        price,
+        priceUsd: s.priceUsd ?? null,
+      },
+      settings,
     );
     services.push({
       id: Number(s.serviceId),

@@ -69,12 +69,39 @@ describe('createEvent', () => {
 });
 
 describe('error classification', () => {
-  it('treats 401 and 403 as a dead authorisation', async () => {
-    for (const status of [401, 403]) {
-      const fetchImpl = replies([{ error: 'nope' }, status] as [unknown, number]);
+  it('treats 401 as a dead authorisation', async () => {
+    const fetchImpl = replies([{ error: 'nope' }, 401] as [unknown, number]);
+    await expect(createEvent({ ...CALL, body: BODY, fetchImpl })).rejects.toBeInstanceOf(
+      GoogleAuthRevokedError,
+    );
+  });
+
+  // 403 is Google's all-purpose "no": the same status carries quota, per-event and
+  // scope refusals. Reading every one as "the person revoked us" deleted the refresh
+  // token over a rate limit. Only 401 means the credential itself is dead.
+  it('treats a 403 usage limit as worth retrying, not as a revocation', async () => {
+    const limits: unknown[] = [
+      { error: { errors: [{ reason: 'rateLimitExceeded' }], message: 'Rate Limit Exceeded' } },
+      { error: { errors: [{ reason: 'userRateLimitExceeded' }], message: 'User Rate Limit Exceeded' } },
+      { error: { errors: [{ reason: 'quotaExceeded' }], message: 'Calendar usage limits exceeded.' } },
+      { error: { message: 'Calendar usage limits exceeded.' } },
+    ];
+    for (const body of limits) {
+      const fetchImpl = replies([body, 403]);
       await expect(createEvent({ ...CALL, body: BODY, fetchImpl })).rejects.toBeInstanceOf(
-        GoogleAuthRevokedError,
+        GoogleTransientError,
       );
+    }
+  });
+
+  it('treats any other 403 as a refusal of this request, naming Google\'s reason', async () => {
+    for (const reason of ['forbiddenForNonOrganizer', 'insufficientPermissions']) {
+      const fetchImpl = replies([{ error: { errors: [{ reason }], message: 'Forbidden' } }, 403]);
+      const err = await createEvent({ ...CALL, body: BODY, fetchImpl }).catch((e) => e);
+      expect(err).toBeInstanceOf(GoogleOAuthError);
+      expect(err).not.toBeInstanceOf(GoogleAuthRevokedError);
+      expect(err).not.toBeInstanceOf(GoogleTransientError);
+      expect(err.message).toContain(reason);
     }
   });
 

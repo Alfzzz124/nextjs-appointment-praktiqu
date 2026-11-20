@@ -29,6 +29,7 @@ import {
   releaseIdempotencyKey,
   bookingFingerprintOf,
 } from '@/services/public/booking-idempotency.service';
+import { findWrittenPublicAppointment } from '@/services/public/booking-written-lookup';
 import { isTransientBackendFailure, TRANSIENT_RETRY_AFTER_SECONDS } from '@/lib/transient-failure';
 import { withRetry } from '@/lib/retry';
 import { isStaffRequest, scheduleUnpaidBookingCancel } from '@/services/public/unpaid-booking';
@@ -69,7 +70,13 @@ export async function POST(req: NextRequest) {
   const idempotencyKey = req.headers.get('Idempotency-Key')?.trim() || null;
 
   if (idempotencyKey) {
-    const claim = await claimIdempotencyKey(idempotencyKey, bookingFingerprintOf(parsed.data));
+    // The lookup only runs for a key a dead process left in flight (see
+    // claimIdempotencyKey); a normal request never pays for it.
+    const claim = await claimIdempotencyKey(
+      idempotencyKey,
+      bookingFingerprintOf(parsed.data),
+      () => findWrittenPublicAppointment(parsed.data),
+    );
 
     if (claim.kind === 'replay') {
       const existing = await getPublicAppointmentById(claim.appointmentId);
@@ -115,28 +122,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let appointment: Awaited<ReturnType<typeof createPublicAppointment>>;
   try {
     // Replayed on its own when the attempt provably wrote nothing — a full connection
     // pool is not something to make the guest press a button about. Only
     // `isRetrySafeFailure` gets replayed; the write is not idempotent.
-    const appointment = await withRetry(() => createPublicAppointment(parsed.data));
-    if (idempotencyKey) await completeIdempotencyKey(idempotencyKey, appointment.id);
-    limiter.recordSuccess(key);
-    // A guest who never reaches checkout would otherwise hold this slot forever: the
-    // only other release is the payment auto-cancel, scheduled when a payment starts.
-    // Staff bookings are exempt; they are marked paid by hand later. Neither call
-    // throws, which matters here: the booking exists, and the catch below would answer
-    // 500 and free the Idempotency-Key for a retry that books twice. Only a request that
-    // created something gets here, so a replay does not schedule a second release.
-    //
-    // Not awaited: scheduling is a WordPress round trip (an Action Scheduler insert) on
-    // an endpoint that already takes seconds, and the guest gains nothing by waiting for
-    // it. The app runs as a long-lived Node server, so the promise completes after the
-    // response; both calls catch and log their own failures.
-    void (async () => {
-      if (!(await isStaffRequest(req))) await scheduleUnpaidBookingCancel(appointment.id);
-    })().catch((err) => console.error('[public/appointments] unpaid-release scheduling failed', err));
-    return NextResponse.json({ data: appointment }, { status: 201 });
+    appointment = await withRetry(() => createPublicAppointment(parsed.data));
   } catch (err) {
     // Hand the key back so an honest retry can claim it. This rests on the same
     // assumption `withRetry` already makes: a throwing createPublicAppointment
@@ -262,5 +253,51 @@ export async function POST(req: NextRequest) {
       { type: 'about:blank', title: 'Internal Server Error', status: 500 },
       { status: 500 },
     );
+  }
+
+  /* --------------------------------------------------------------------------- *
+   * The appointment exists. Nothing below may turn the answer into a failure: the
+   * catch above says "nothing was saved, try again", and a retry would collide with
+   * the guest's own booking and leave it orphaned, with no auto-cancel.
+   * --------------------------------------------------------------------------- */
+  if (idempotencyKey) {
+    // Not released on failure, unlike the catch above: the booking is written, and a
+    // free key would let a retry write it again. An unfinished key is taken over by
+    // claimIdempotencyKey once it goes stale, after checking whether the booking landed.
+    await completeKeyBestEffort(idempotencyKey, appointment.id);
+  }
+  limiter.recordSuccess(key);
+  // A guest who never reaches checkout would otherwise hold this slot forever: the
+  // only other release is the payment auto-cancel, scheduled when a payment starts.
+  // Staff bookings are exempt; they are marked paid by hand later. Neither call
+  // throws, which matters here: the booking exists, and answering 500 would free
+  // the Idempotency-Key for a retry that books twice. Only a request that
+  // created something gets here, so a replay does not schedule a second release.
+  //
+  // Not awaited: scheduling is a WordPress round trip (an Action Scheduler insert) on
+  // an endpoint that already takes seconds, and the guest gains nothing by waiting for
+  // it. The app runs as a long-lived Node server, so the promise completes after the
+  // response; both calls catch and log their own failures.
+  void (async () => {
+    if (!(await isStaffRequest(req))) await scheduleUnpaidBookingCancel(appointment.id);
+  })().catch((err) => console.error('[public/appointments] unpaid-release scheduling failed', err));
+  return NextResponse.json({ data: appointment }, { status: 201 });
+}
+
+/** Record the booking on its key. One more try for a transient blip, then log and move on. */
+async function completeKeyBestEffort(idempotencyKey: string, appointmentId: number): Promise<void> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await completeIdempotencyKey(idempotencyKey, appointmentId);
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.error(
+          '[public/appointments] booking written but its Idempotency-Key was not completed',
+          { appointmentId },
+          err,
+        );
+      }
+    }
   }
 }

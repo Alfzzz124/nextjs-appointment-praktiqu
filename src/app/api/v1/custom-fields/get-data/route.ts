@@ -5,10 +5,11 @@ import {
   type ModuleType,
 } from '@/services/custom-fields/service';
 import { withAuth } from '@/lib/auth';
+import { assertEntityAccess, entityAccessProblem } from '@/services/custom-fields/access';
 
 const service = new CustomFieldService();
 
-export const GET = withAuth(async (req, _ctx) => {
+export const GET = withAuth(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
   const entityType = searchParams.get('entityType');
   const entityIdRaw = searchParams.get('entityId');
@@ -39,6 +40,16 @@ export const GET = withAuth(async (req, _ctx) => {
       { type: 'about:blank', title: 'entityId must be a positive integer', status: 400 },
       { status: 400 },
     );
+  }
+
+  // Without this, any signed-in account could read the values of any client, appointment
+  // or encounter.
+  try {
+    await assertEntityAccess(ctx.actor, entityType as ModuleType, entityId, 'read');
+  } catch (err) {
+    const problem = entityAccessProblem(err);
+    if (problem) return problem;
+    throw err;
   }
 
   const items = await service.getValues(entityType as ModuleType, entityId);
