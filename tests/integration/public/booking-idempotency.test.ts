@@ -6,7 +6,7 @@
  * the database's behaviour, not ours. A mocked repository would only replay the
  * assumption being tested.
  */
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { prisma } from '@/lib/prisma';
 import { assertTestDb } from '../../billing/fixtures';
 import {
@@ -15,6 +15,7 @@ import {
   releaseIdempotencyKey,
   fingerprintOf,
   bookingFingerprintOf,
+  IN_PROGRESS_STALE_MS,
 } from '@/services/public/booking-idempotency.service';
 
 const KEY = 'test-idem-0001';
@@ -75,6 +76,87 @@ describe('claimIdempotencyKey', () => {
     await completeIdempotencyKey(KEY, 4242);
     const other = await claimIdempotencyKey(OTHER_KEY, fingerprintOf(BODY));
     expect(other).toEqual({ kind: 'claimed' });
+  });
+});
+
+/** A key whose first attempt died mid-request: claimed `ageMs` ago, never completed. */
+async function seedClaim(key: string, ageMs: number) {
+  await prisma.bookingIdempotencyKey.create({
+    data: { key, fingerprint: fingerprintOf(BODY), createdAt: new Date(Date.now() - ageMs) },
+  });
+}
+
+describe('claimIdempotencyKey — abandoned claims', () => {
+  const OLD = IN_PROGRESS_STALE_MS + 30_000;
+
+  it('lets an old in-flight claim be taken over: its process is long gone', async () => {
+    await seedClaim(KEY, OLD);
+    const r = await claimIdempotencyKey(KEY, fingerprintOf(BODY));
+    expect(r).toEqual({ kind: 'claimed' });
+  });
+
+  it('keeps a recent in-flight claim: the first attempt may still be writing', async () => {
+    await seedClaim(KEY, IN_PROGRESS_STALE_MS - 30_000);
+    const r = await claimIdempotencyKey(KEY, fingerprintOf(BODY));
+    expect(r).toEqual({ kind: 'in_progress' });
+  });
+
+  it('restarts the clock on takeover, so the next retry waits instead of double-claiming', async () => {
+    await seedClaim(KEY, OLD);
+    expect(await claimIdempotencyKey(KEY, fingerprintOf(BODY))).toEqual({ kind: 'claimed' });
+    expect(await claimIdempotencyKey(KEY, fingerprintOf(BODY))).toEqual({ kind: 'in_progress' });
+  });
+
+  it('lets exactly one of two simultaneous takeovers win', async () => {
+    await seedClaim(KEY, OLD);
+    const results = await Promise.all([
+      claimIdempotencyKey(KEY, fingerprintOf(BODY)),
+      claimIdempotencyKey(KEY, fingerprintOf(BODY)),
+    ]);
+    expect(results.filter((r) => r.kind === 'claimed')).toHaveLength(1);
+    expect(results.filter((r) => r.kind === 'in_progress')).toHaveLength(1);
+  });
+
+  it('answers a replay, and writes nothing, when the dead attempt had already booked', async () => {
+    await seedClaim(KEY, OLD);
+    const findWritten = async () => 777;
+    const r = await claimIdempotencyKey(KEY, fingerprintOf(BODY), findWritten);
+    expect(r).toEqual({ kind: 'replay', appointmentId: 777 });
+    // The key is finished with that booking, so later retries replay without the lookup.
+    expect(await claimIdempotencyKey(KEY, fingerprintOf(BODY))).toEqual({
+      kind: 'replay',
+      appointmentId: 777,
+    });
+  });
+
+  it('takes over when the lookup finds nothing written', async () => {
+    await seedClaim(KEY, OLD);
+    const r = await claimIdempotencyKey(KEY, fingerprintOf(BODY), async () => null);
+    expect(r).toEqual({ kind: 'claimed' });
+  });
+
+  it('does not rewrite blind when the lookup itself fails', async () => {
+    await seedClaim(KEY, OLD);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const r = await claimIdempotencyKey(KEY, fingerprintOf(BODY), async () => {
+        throw new Error('pool exhausted');
+      });
+      expect(r).toEqual({ kind: 'in_progress' });
+      expect(logged).toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('does not consult the lookup for a recent claim', async () => {
+    await seedClaim(KEY, 1_000);
+    let called = false;
+    await claimIdempotencyKey(KEY, fingerprintOf(BODY), async () => {
+      called = true;
+      return 1;
+    });
+    expect(called).toBe(false);
   });
 });
 
