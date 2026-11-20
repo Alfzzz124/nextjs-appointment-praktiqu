@@ -47,6 +47,7 @@ import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.r
 import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { syncSessionReminders } from './reminder-schedule';
+import { withMeetingUrls } from './meeting-url';
 import { APPROVAL_STATE, findApproval, findApprovals } from '@/services/approval/store';
 import {
   approveAwaiting,
@@ -111,6 +112,11 @@ export interface SessionWithRelations extends Session {
    * Staff get the whole view; a client only the public one (`forActor`).
    */
   approval?: ApprovalView | PublicApprovalView | null;
+  /**
+   * Tautan Meet dari acara Google janji ini (`google_calendar_event_sync.hangoutLink`);
+   * null bila tidak ada. Hanya diisi oleh GET /sessions dan GET /sessions/{id}.
+   */
+  meetingUrl?: string | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -408,7 +414,10 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
 
 export async function getSession(actor: Actor, id: number): Promise<SessionWithRelations> {
   const kc = await resolveKcActor(actor);
-  const [session] = forActor(actor, await withApprovals([toSession(await loadForActor(kc, id))]));
+  const [session] = forActor(
+    actor,
+    await withMeetingUrls(await withApprovals([toSession(await loadForActor(kc, id))])),
+  );
   return session;
 }
 
@@ -457,7 +466,7 @@ export async function listSessions(
   const { items, total } = await listSessionRows(query);
 
   return {
-    data: forActor(actor, await withApprovals(items.map(toSession))),
+    data: forActor(actor, await withMeetingUrls(await withApprovals(items.map(toSession)))),
     pagination: {
       currentPage: page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
