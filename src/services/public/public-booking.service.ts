@@ -37,6 +37,7 @@ import {
   fromKcStatus,
 } from '@/repositories/wp/sessions.repo';
 import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
 import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
 import {
@@ -681,6 +682,8 @@ export async function cancelPublicAppointment(id: number): Promise<PublicAppoint
   // A paid booking that waited for its psychologist: the client withdrew and the money is
   // in, so it joins the refund list for the clinic to settle.
   await closeOnCancel(id, null);
+  // An unpaid booking: its payment link must stop working, or the client can still pay it.
+  await closeOpenOrdersOnCancel(id);
 
   const updated = await toView(id);
   if (!updated) throw new AppointmentNotFoundError();

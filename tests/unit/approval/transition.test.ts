@@ -31,6 +31,9 @@ const writes = vi.hoisted(() => ({
 }));
 vi.mock('@/repositories/wp/appointments.write', () => writes);
 
+const closeOrders = vi.hoisted(() => ({ closeOpenOrdersOnCancel: vi.fn() }));
+vi.mock('@/services/payments/close-orders-on-cancel', () => closeOrders);
+
 const kcActor = vi.hoisted(() => ({ resolveKcActor: vi.fn() }));
 vi.mock('@/services/billing/kc-actor', () => kcActor);
 
@@ -140,6 +143,7 @@ beforeEach(() => {
   repo.setSessionStatusDirect.mockResolvedValue(true);
   writes.setAppointmentStatus.mockResolvedValue({ id: 7, status: 1, cancelled: false });
   writes.cancelAppointment.mockResolvedValue({ id: 7, status: 0, cancelled: true });
+  closeOrders.closeOpenOrdersOnCancel.mockResolvedValue(undefined);
   approvalStore.findApproval.mockResolvedValue(null);
   approvalStore.findApprovals.mockResolvedValue(new Map());
   settings.requiresApproval.mockResolvedValue(false);
@@ -347,6 +351,32 @@ describe('invalidatePendingForOffDay', () => {
 
     expect(repo.setSessionStatusDirect).toHaveBeenCalledTimes(1);
     expect(repo.setSessionStatusDirect).toHaveBeenCalledWith(8, SESSION_STATUS.CANCELLED);
+  });
+});
+
+describe('cancelling closes the open payment orders', () => {
+  it('a staff cancel of a PENDING booking closes its orders', async () => {
+    actAs(RESEPSIONIS, 21n);
+
+    await transitionSession({ actor: RESEPSIONIS as never, sessionId: 7, target: SESSION_STATUS.CANCELLED });
+
+    expect(closeOrders.closeOpenOrdersOnCancel).toHaveBeenCalledWith(7);
+  });
+
+  it('a transition that is not a cancel leaves the orders alone', async () => {
+    actAs(ADMIN, 24n);
+
+    await transitionSession({ actor: ADMIN as never, sessionId: 7, target: SESSION_STATUS.BOOKED });
+
+    expect(closeOrders.closeOpenOrdersOnCancel).not.toHaveBeenCalled();
+  });
+
+  it('a bulk cancel closes the orders of each booking it cancelled, not of one that failed', async () => {
+    writes.cancelAppointment.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('plugin')).mockResolvedValueOnce({});
+
+    await bulkCancelSessions([7, 8, 9], 'u_admin');
+
+    expect(closeOrders.closeOpenOrdersOnCancel.mock.calls).toEqual([[7], [9]]);
   });
 });
 
