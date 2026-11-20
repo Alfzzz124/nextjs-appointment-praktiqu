@@ -190,6 +190,7 @@ describe('wp-endpoint — international charge and WordPress error codes', () =>
       snapshot: {
         clinicId: 4, fxRate: '18000', markupPercent: '10', fixedFeeIdr: '25000',
         source: { fxRate: 'clinic', markupPercent: 'clinic', fixedFeeIdr: 'clinic' },
+        pricing: 'converted',
       },
     });
   });

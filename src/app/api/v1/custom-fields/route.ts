@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const gate = await requireRoles(req, ['SUPER_ADMIN', 'CLINIC_ADMIN']);
+  // No clinic column: one definition serves every clinic, so only SUPER_ADMIN may change it.
+  const gate = await requireRoles(req, ['SUPER_ADMIN']);
   if ('response' in gate) return gate.response;
 
   try {

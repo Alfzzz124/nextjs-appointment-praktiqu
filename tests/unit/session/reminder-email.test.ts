@@ -81,4 +81,33 @@ describe('buildSessionReminderEmail', () => {
     expect(mail.html).toContain('&lt;img src=x onerror=alert(1)&gt;Ada');
     expect(mail.text).toContain(namaJahat);
   });
+  describe('tautan sesi online', () => {
+    const MEET = 'https://meet.google.com/abc-defg-hij';
+
+    it.each(['email_24h', 'email_1h'] as const)('memuat baris Link sesi online (%s) bila ada tautan', (offset) => {
+      for (const recipient of ['client', 'professional'] as const) {
+        const mail = buildSessionReminderEmail({ ...base, offset, recipient, meetingUrl: MEET });
+
+        expect(mail.text).toContain(`Link sesi online: ${MEET}`);
+        expect(mail.html).toContain(`<a href="${MEET}">${MEET}</a>`);
+      }
+    });
+
+    it('tidak memuat barisnya bila tidak ada tautan', () => {
+      for (const meetingUrl of [undefined, null]) {
+        const mail = buildSessionReminderEmail({ ...base, offset: 'email_24h', recipient: 'client', meetingUrl });
+
+        expect(mail.text).not.toContain('Link sesi online');
+        expect(mail.html).not.toContain('Link sesi online');
+      }
+    });
+
+    it('meng-escape tautan di html', () => {
+      const mail = buildSessionReminderEmail({
+        ...base, offset: 'email_24h', recipient: 'client', meetingUrl: 'https://x.test/?a=1&b="2"',
+      });
+
+      expect(mail.html).toContain('a=1&amp;b=&quot;2&quot;');
+    });
+  });
 });

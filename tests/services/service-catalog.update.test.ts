@@ -269,7 +269,7 @@ describe('updateService — duration options', () => {
     }));
     expect(saved().optionInserts).toEqual([{
       parentMappingId: 501n, serviceId: 909n, doctorId: 8100001n, clinicId: 3n,
-      charges: '600000', duration: 90, telemedService: 'no', status: 1, isPublic: 1,
+      charges: '600000', priceUsd: null, duration: 90, telemedService: 'no', status: 1, isPublic: 1,
     }]);
   });
 

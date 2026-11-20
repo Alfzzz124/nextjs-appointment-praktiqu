@@ -81,6 +81,9 @@ describe('buildUsdQuote — worked example (rate 18,000, markup 10%, fee Rp 25,0
         markupPercent: '10',
         fixedFeeIdr: '25000',
         source: { fxRate: 'clinic', markupPercent: 'clinic', fixedFeeIdr: 'clinic' },
+        // Ruas baru sejak 2026-11-18. Angka uangnya di atas tidak bergeser sedikit pun;
+        // yang bertambah hanya label jalur mana yang menghasilkannya.
+        pricing: 'converted',
       },
     });
   });

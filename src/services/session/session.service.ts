@@ -47,7 +47,9 @@ import { PROFESSIONAL_STATUS, findDoctorById } from '@/repositories/wp/doctors.r
 import { CLIENT_STATUS, findPatientById } from '@/repositories/wp/patients.repo';
 import { isOffOn, listClinicOffDays, listDoctorOffDays } from '@/repositories/wp/off-days.repo';
 import { syncSessionReminders } from './reminder-schedule';
+import { withMeetingUrls } from './meeting-url';
 import { APPROVAL_STATE, findApproval, findApprovals } from '@/services/approval/store';
+import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 import {
   approveAwaiting,
   closeOnCancel,
@@ -111,6 +113,11 @@ export interface SessionWithRelations extends Session {
    * Staff get the whole view; a client only the public one (`forActor`).
    */
   approval?: ApprovalView | PublicApprovalView | null;
+  /**
+   * Tautan Meet dari acara Google janji ini (`google_calendar_event_sync.hangoutLink`);
+   * null bila tidak ada. Hanya diisi oleh GET /sessions dan GET /sessions/{id}.
+   */
+  meetingUrl?: string | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -408,7 +415,10 @@ export async function createSession(args: CreateArgs): Promise<SessionWithRelati
 
 export async function getSession(actor: Actor, id: number): Promise<SessionWithRelations> {
   const kc = await resolveKcActor(actor);
-  const [session] = forActor(actor, await withApprovals([toSession(await loadForActor(kc, id))]));
+  const [session] = forActor(
+    actor,
+    await withMeetingUrls(await withApprovals([toSession(await loadForActor(kc, id))])),
+  );
   return session;
 }
 
@@ -457,7 +467,7 @@ export async function listSessions(
   const { items, total } = await listSessionRows(query);
 
   return {
-    data: forActor(actor, await withApprovals(items.map(toSession))),
+    data: forActor(actor, await withMeetingUrls(await withApprovals(items.map(toSession)))),
     pagination: {
       currentPage: page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -638,6 +648,8 @@ export async function transitionSession(args: TransitionArgs): Promise<SessionWi
   if (target === SESSION_STATUS.CANCELLED && approval?.state === APPROVAL_STATE.AWAITING) {
     await closeOnCancel(sessionId, actor.id);
   }
+  // An unpaid booking: its payment link must stop working, or the client can still pay it.
+  if (target === SESSION_STATUS.CANCELLED) await closeOpenOrdersOnCancel(sessionId);
 
   const [session] = forActor(actor, await withApprovals([toSession(updated)]));
   return session;
@@ -822,6 +834,7 @@ export async function bulkCancelSessions(ids: number[], actorId: string | null =
         resourceId: String(id),
       }),
     );
+    await closeOpenOrdersOnCancel(id);
   }
   return cancelled;
 }

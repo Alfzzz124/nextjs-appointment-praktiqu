@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth';
+import { currencyForActor } from '@/services/billing/actor-currency';
 import { kcHandle, kcOk, kcFail } from '@/lib/kc-response';
 import { assertCan } from '@/services/billing/kc-permissions';
 import { resolveKcActor } from '@/services/billing/kc-actor';
@@ -13,5 +14,6 @@ export const GET = withAuth(async (req: NextRequest, ctx) => kcHandle(async () =
   const kc = await resolveKcActor(actor);
   const parsed = dashboardQuerySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return kcFail('Invalid query', 400);
-  return kcOk(await getStatistics(parsed.data as any, dashboardScopeFor(kc)), 'Dashboard statistics');
+  const stats = await getStatistics(parsed.data as any, dashboardScopeFor(kc));
+  return kcOk({ ...stats, currency: await currencyForActor(kc) }, 'Dashboard statistics');
 }));

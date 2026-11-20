@@ -80,8 +80,20 @@ const WP_PAYMENTS_BASE = `${WP_ENDPOINT}/wp-json/praktiqu/v1/payments`;
 const WP_MEDIA_URL = `${WP_ENDPOINT}/wp-json/praktiqu/v1/media`;
 
 export class WpEndpointError extends Error {
-  /** `code` is WordPress's own error code (`charge_mismatch`, `gateway_missing`, …) when the body had one. */
-  constructor(message: string, public status: number, public code?: string) {
+  /**
+   * `code` is WordPress's own error code (`charge_mismatch`, `gateway_missing`, …) when the body had one.
+   *
+   * `neverSent` is true only for a status-0 failure where the request provably never left
+   * (connect refused, DNS failure, ...). Anything else, including a reset after the request
+   * went out, may have run on the WordPress side. An error with an HTTP status is WordPress
+   * answering, so it is never "not sent".
+   */
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+    public neverSent: boolean = false,
+  ) {
     super(message);
     this.name = 'WpEndpointError';
   }
@@ -132,6 +144,30 @@ export class WpConfigError extends WpEndpointError {
 }
 
 /**
+ * Node errno / undici codes raised while *connecting*, before any byte of the request is
+ * written. Everything else (ECONNRESET, UND_ERR_SOCKET, headers/body timeouts, codes we
+ * have never seen) can happen after the request went out, so it counts as maybe-sent.
+ */
+const NEVER_SENT_CODES: ReadonlySet<string> = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
+
+/** True only when `cause` proves the connection was never established. */
+function causeNeverSent(cause: unknown): boolean {
+  const code = (cause as { code?: unknown } | null | undefined)?.code;
+  if (typeof code === 'string') return NEVER_SENT_CODES.has(code);
+  // Happy-eyeballs connects raise an AggregateError with one error per address; every
+  // address must have failed to connect, or one of them may have carried the request.
+  const errors = (cause as { errors?: unknown } | null | undefined)?.errors;
+  return Array.isArray(errors) && errors.length > 0 && errors.every(causeNeverSent);
+}
+
+/**
  * `fetch`, with "WordPress never answered" turned into a `WpEndpointError` of status 0.
  *
  * Undici throws a plain `TypeError` when the request never reaches WordPress at all —
@@ -157,7 +193,7 @@ async function wpFetch(url: string, init: RequestInit, label: string): Promise<R
     // moving the whole compilation target.
     const cause = (err as { cause?: unknown })?.cause;
     const detail = cause instanceof Error ? `: ${cause.message}` : '';
-    throw new WpEndpointError(`${label} unreachable${detail}`, 0);
+    throw new WpEndpointError(`${label} unreachable${detail}`, 0, undefined, causeNeverSent(cause));
   }
 }
 
@@ -207,10 +243,17 @@ export async function wpRequestJson<T>(
 }
 
 export async function createWcOrder(input: CreateWcOrderInput): Promise<CreateWcOrderResult> {
+  // `items` yang datang ke sini bisa membawa `priceUsd` — ruas internal yang dipakai
+  // memutuskan jalur tagih di sisi kami. Ia TIDAK ikut ke plugin: badan permintaan ini
+  // harus tetap sama persis dengan yang sudah diterima versi plugin yang terpasang.
+  const body = {
+    ...input,
+    items: input.items.map((i) => ({ name: i.name, price: i.price })),
+  };
   const res = await wpFetch(`${WP_PAYMENTS_BASE}/order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-PraktiQU-Service-Token': serviceToken() },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   }, '/payments/order');
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);

@@ -807,6 +807,7 @@ describe('initiatePublicPayment — international gate (paypal/card)', () => {
       snapshot: {
         clinicId: CLINIC, fxRate: '18000', markupPercent: '10', fixedFeeIdr: '25000',
         source: { fxRate: 'clinic', markupPercent: 'clinic', fixedFeeIdr: 'clinic' },
+        pricing: 'converted',
       },
     });
     expect(db.paymentOrder.create).toHaveBeenCalledWith(expect.objectContaining({

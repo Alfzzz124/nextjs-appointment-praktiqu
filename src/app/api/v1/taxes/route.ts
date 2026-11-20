@@ -26,9 +26,15 @@ export const POST = withAuth(async (req: NextRequest, ctx) =>
     assertCan(actor, 'tax_manage');
     const kc = await resolveKcActor(actor);
     const body = await req.json().catch(() => ({}));
+    // The schema defaults an omitted clinic to -1 (global). For a clinic-scoped admin that
+    // default means "my clinic"; an explicit -1 or another clinic is refused by createTax.
+    const scope = taxScopeFor(kc);
+    if (scope && body && typeof body === 'object' && (body as any).clinic === undefined) {
+      (body as any).clinic = Number(scope.clinicId);
+    }
     const parsed = taxCreateSchema.safeParse(body);
     if (!parsed.success) return kcFail(parsed.error.issues[0]?.message ?? 'Invalid input', 400);
-    const data = await createTax(parsed.data as any, Number(kc.wpUserId));
+    const data = await createTax(parsed.data as any, Number(kc.wpUserId), scope);
     return kcOk(data, `Tax created successfully${data.skipped_count ? ` (${data.skipped_count} skipped as duplicates)` : ''}`);
   }),
 );

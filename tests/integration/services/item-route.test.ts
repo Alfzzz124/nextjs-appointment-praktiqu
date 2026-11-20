@@ -53,7 +53,7 @@ beforeEach(() => {
   });
   scope.canWrite.mockReturnValue(true);
   scope.canEdit.mockReturnValue(true);
-  svc.getService.mockResolvedValue(summary);
+  svc.getService.mockResolvedValue({ service: summary, currency: { code: 'IDR', fxRate: null } });
   svc.updateService.mockResolvedValue(summary);
   svc.deleteService.mockResolvedValue({ ok: true });
 });
@@ -63,7 +63,7 @@ describe('GET /api/v1/services/{id}', () => {
     const res = await GET(req(), ctx('501'));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ id: 501 });
+    expect(await res.json()).toMatchObject({ id: 501, currency: { code: 'IDR', fxRate: null } });
   });
 
   it('404s when the service is missing or out of scope', async () => {

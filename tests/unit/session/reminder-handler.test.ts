@@ -28,6 +28,9 @@ const log = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/logging', () => log);
 
+const meet = vi.hoisted(() => ({ meetingUrlsFor: vi.fn() }));
+vi.mock('@/services/session/meeting-url', () => meet);
+
 vi.mock('@/lib/jobs/webhook-handler', () => ({ registerJobHandler: vi.fn() }));
 
 import { handleSessionReminder } from '@/services/session/reminder-handler';
@@ -62,6 +65,7 @@ beforeEach(() => {
   email.sendEmail.mockReset().mockResolvedValue({ ok: true, messageId: 'm1' });
   log.logging.audit.mockReset();
   log.logging.warn.mockReset();
+  meet.meetingUrlsFor.mockReset().mockResolvedValue(new Map());
 });
 
 describe('handleSessionReminder — jalur normal', () => {
@@ -108,6 +112,31 @@ describe('handleSessionReminder — jalur normal', () => {
     expect(email.sendEmail).toHaveBeenCalledTimes(2);
     const tujuan = email.sendEmail.mock.calls.map((c) => c[0].to);
     expect(tujuan).toEqual(['ada@contoh.test', 'pamela@klinik.test']);
+  });
+});
+
+describe('handleSessionReminder — tautan sesi online', () => {
+  it('menyertakan tautan Meet janji itu di email klien dan profesional', async () => {
+    repo.findSessionById.mockResolvedValue(row());
+    meet.meetingUrlsFor.mockResolvedValue(new Map([[7, 'https://meet.google.com/abc-defg-hij']]));
+
+    await handleSessionReminder({ sessionId: 7, channel: 'email_1h' }, SEBELUM);
+
+    expect(meet.meetingUrlsFor).toHaveBeenCalledWith([7]);
+    expect(email.sendEmail).toHaveBeenCalledTimes(2);
+    for (const call of email.sendEmail.mock.calls) {
+      expect(call[0].text).toContain('Link sesi online: https://meet.google.com/abc-defg-hij');
+    }
+  });
+
+  it('tidak menambah baris tautan bila janji tak punya tautan', async () => {
+    repo.findSessionById.mockResolvedValue(row());
+
+    await handleSessionReminder({ sessionId: 7, channel: 'email_24h' }, SEBELUM);
+
+    for (const call of email.sendEmail.mock.calls) {
+      expect(call[0].text).not.toContain('Link sesi online');
+    }
   });
 });
 

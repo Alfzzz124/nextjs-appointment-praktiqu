@@ -15,6 +15,7 @@ import {
   ACTIVE_STATUSES,
   APPOINTMENT_STATUS,
   findAppointmentById,
+  findActiveAppointmentIdAt,
   findConflictingAppointments,
   listAppointments,
 } from '@/repositories/wp/appointments.repo';
@@ -159,6 +160,28 @@ describe('wp appointments repository', () => {
 
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.total).toBe(4);
+  });
+
+  describe('findActiveAppointmentIdAt', () => {
+    // BASE+1: BOOKED, DOCTOR + PATIENT, 2026-08-03 09:00. BASE+3: CANCELLED at 13:00.
+    const at = (over: Partial<Parameters<typeof findActiveAppointmentIdAt>[0]> = {}) =>
+      findActiveAppointmentIdAt({
+        doctorId: DOCTOR, patientId: PATIENT, date: '2026-08-03', startTime: '09:00:00', ...over,
+      });
+
+    it('finds the active appointment this doctor and patient share at that start', async () => {
+      expect(await at()).toBe(BASE + 1);
+    });
+
+    it('does not count a cancelled appointment as written', async () => {
+      expect(await at({ startTime: '13:00:00' })).toBeNull();
+    });
+
+    it('is specific to the patient, the doctor and the start time', async () => {
+      expect(await at({ patientId: BigInt(BASE + 31) })).toBeNull();
+      expect(await at({ doctorId: BigInt(BASE + 22) })).toBeNull();
+      expect(await at({ startTime: '09:30:00' })).toBeNull();
+    });
   });
 
   describe('conflict detection', () => {
