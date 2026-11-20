@@ -192,3 +192,39 @@ describe('markPaid — currency-aware amount check', () => {
     ).resolves.not.toThrow();
   });
 });
+
+describe('markPaid — a payment that lands on an order already closed', () => {
+  // WooCommerce completes payment even on a cancelled order, and the plugin reports it as
+  // payment.completed like any other. Closing the order when its booking is cancelled
+  // (close-orders-on-cancel) makes that the usual shape of a payment after cancellation,
+  // so the order must become 'paid' — the money is in — instead of staying 'expired'.
+  it.each(['expired', 'cancelled', 'failed'])('claims a late payment on a %s order', async (status) => {
+    mockPrisma.paymentOrder.findUnique
+      .mockResolvedValueOnce({ wcOrderId: 42, expectedAmount: 100000, status })
+      .mockResolvedValueOnce({ wcOrderId: 42, expectedAmount: 100000, status: 'paid' });
+    mockPrisma.paymentOrder.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const claimed = await markPaid({ wcOrderId: 42, amountPaid: 100000, transactionId: 'tx', webhookPayload: {} });
+
+    expect(claimed?.status).toBe('paid');
+    expect(mockPrisma.paymentOrder.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { wcOrderId: 42, status: { in: ['pending', 'expired', 'cancelled', 'failed'] } } }),
+    );
+  });
+
+  it('still checks the amount of a late payment', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValueOnce({ wcOrderId: 42, expectedAmount: 100000, status: 'expired' });
+
+    await expect(
+      markPaid({ wcOrderId: 42, amountPaid: 5000, transactionId: 'tx', webhookPayload: {} }),
+    ).rejects.toThrow(AmountMismatchError);
+    expect(mockPrisma.paymentOrder.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('a replay on an order already paid still claims nothing', async () => {
+    mockPrisma.paymentOrder.findUnique.mockResolvedValueOnce({ wcOrderId: 42, expectedAmount: 100000, status: 'paid' });
+    mockPrisma.paymentOrder.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    expect(await markPaid({ wcOrderId: 42, amountPaid: 100000, transactionId: 'tx', webhookPayload: {} })).toBeNull();
+  });
+});

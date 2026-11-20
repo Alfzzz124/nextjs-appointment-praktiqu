@@ -67,6 +67,14 @@ export class ConsentService {
     });
   }
 
+  /** Just enough to decide who may touch a form, without loading its signatures. */
+  async getFormPractice(id: string) {
+    return this.prisma.consentForm.findUnique({
+      where: { id },
+      select: { id: true, practiceId: true },
+    });
+  }
+
   async createForm(data: ConsentFormCreate) {
     const parsed = consentFormCreateSchema.parse(data);
 
@@ -153,9 +161,13 @@ export class ConsentService {
     await this.prisma.consentForm.delete({ where: { id } });
   }
 
-  async bulkSetConsentFormStatus(ids: string[], status: string): Promise<number> {
+  /**
+   * `practiceId` confines the update to one clinic: an id that belongs to another clinic
+   * simply matches nothing, so it is neither changed nor confirmed to exist.
+   */
+  async bulkSetConsentFormStatus(ids: string[], status: string, practiceId?: string): Promise<number> {
     const result = await this.prisma.consentForm.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, ...(practiceId !== undefined ? { practiceId } : {}) },
       data: { status: status as any },
     });
     return result.count;

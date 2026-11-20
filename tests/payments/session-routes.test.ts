@@ -285,7 +285,24 @@ describe('POST /sessions/payment-webhook', () => {
     (svc.markPaid as any).mockResolvedValue({ wcOrderId: 42, source: 'public', status: 'paid' });
     const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.completed', wcOrderId: 42, amountPaid: 100000, transactionId: 'tx' }), 'ok'));
     expect(res.status).toBe(200);
-    expect(svc.applyPaidSideEffectsPublic).toHaveBeenCalled();
+    // This delivery is the one that turned the order paid: only it may tell the side
+    // effects that the money just arrived (a payment after cancellation is judged on that).
+    expect(svc.applyPaidSideEffectsPublic).toHaveBeenCalledWith(
+      { wcOrderId: 42, source: 'public', status: 'paid' },
+      { justPaid: true },
+    );
+  });
+
+  it('a replay of an already-paid public order applies side effects without justPaid', async () => {
+    (svc.verifyPaymentWebhookSignature as any).mockReturnValue(true);
+    (svc.getPaymentOrderByWcOrderId as any).mockResolvedValue({ wcOrderId: 42, source: 'public', status: 'paid' });
+    (svc.markPaid as any).mockResolvedValue(null);
+    const res = await webhook(webhookReq(JSON.stringify({ event: 'payment.completed', wcOrderId: 42, amountPaid: 100000, transactionId: 'tx' }), 'ok'));
+    expect(res.status).toBe(200);
+    expect(svc.applyPaidSideEffectsPublic).toHaveBeenCalledWith(
+      { wcOrderId: 42, source: 'public', status: 'paid' },
+      { justPaid: false },
+    );
   });
 
   it('200 + still applies side effects when markPaid returns null (replay of an already-paid order)', async () => {

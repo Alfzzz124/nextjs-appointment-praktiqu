@@ -21,6 +21,7 @@ import { findSessionById, SESSION_STATUS } from '@/repositories/wp/sessions.repo
 import { sendEmail } from '@/lib/email';
 import { logging } from '@/lib/logging';
 import { registerJobHandler } from '@/lib/jobs/webhook-handler';
+import { meetingUrlsFor } from './meeting-url';
 import {
   buildSessionReminderEmail,
   type ReminderOffset,
@@ -99,6 +100,9 @@ export async function handleSessionReminder(
     { recipient: 'professional', to: row.professionalEmail },
   ];
 
+  // Satu kali baca untuk kedua penerima; null bila janji tak punya tautan.
+  const meetingUrl = (await meetingUrlsFor([sessionId])).get(sessionId) ?? null;
+
   const sent: ReminderRecipient[] = [];
   const skipped: ReminderRecipient[] = [];
 
@@ -114,6 +118,7 @@ export async function handleSessionReminder(
       professionalName: row.professionalName,
       startsAtUtc: startsAt,
       timezone: row.timezone,
+      meetingUrl,
     });
     // sendEmail tidak pernah melempar — ia membalas { ok: false } dan sudah mencatat
     // kegagalannya lewat audit.emailDeliveryFailed.

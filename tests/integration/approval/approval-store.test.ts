@@ -21,6 +21,7 @@ import {
   listUnsettled,
   markEscalated,
   markRefundDone,
+  recordRefundNeeded,
   paymentOrdersByIds,
   revertDecision,
   touchReminder,
@@ -288,6 +289,72 @@ describe('listApprovals / countApprovals', () => {
   it('counts within the scope', async () => {
     expect(await countApprovals({ clinicId: CLINIC_1 })).toEqual({ awaiting: 1, refundNeeded: 1 });
     expect(await countApprovals({ doctorWpUserId: DOCTOR_B })).toEqual({ awaiting: 1, refundNeeded: 0 });
+  });
+});
+
+describe('recordRefundNeeded', () => {
+  const input = (id: number, now = T0) => ({
+    appointmentId: id,
+    doctorWpUserId: DOCTOR_A,
+    clinicId: CLINIC_1,
+    paymentOrderId: `po_${id}`,
+    now,
+  });
+
+  it('a payment on a booking with no record creates one that only the refund list shows', async () => {
+    expect(await recordRefundNeeded(input(BASE + 140))).toBe(true);
+
+    expect(await findApproval(BASE + 140)).toMatchObject({
+      appointmentId: BASE + 140,
+      doctorWpUserId: DOCTOR_A,
+      clinicId: CLINIC_1,
+      paymentOrderId: `po_${BASE + 140}`,
+      // Not AWAITING: it must never reach the psychologist's queue or the reconcile sweep.
+      state: 'CANCELLED',
+      refundStatus: 'NEEDED',
+      decidedAt: T0,
+      decidedBy: null,
+    });
+    const listed = async (filter: Parameters<typeof listApprovals>[0]) =>
+      ours((await listApprovals(filter, { clinicId: CLINIC_1 }, 1, 100)).items.map((a) => a.appointmentId));
+    expect(await listed('REFUND_NEEDED')).toEqual([BASE + 140]);
+    expect(await listed('AWAITING')).toEqual([]);
+    expect(ours((await listUnsettled({ clinicId: CLINIC_1 })).map((a) => a.appointmentId))).toEqual([]);
+    expect(await countApprovals({ clinicId: CLINIC_1 })).toEqual({ awaiting: 0, refundNeeded: 1 });
+  });
+
+  it('a repeat (webhook replay, status poll) changes nothing and says so', async () => {
+    expect(await recordRefundNeeded(input(BASE + 141))).toBe(true);
+    expect(await recordRefundNeeded(input(BASE + 141, new Date(T0.getTime() + HOUR)))).toBe(false);
+
+    expect((await findApproval(BASE + 141))?.decidedAt).toEqual(T0);
+  });
+
+  it('a record that already owes the refund is left as it is', async () => {
+    await awaiting(BASE + 142);
+    await claimDecision(BASE + 142, { state: 'CANCELLED', decidedBy: USER, decidedAt: T0 });
+
+    expect(await recordRefundNeeded(input(BASE + 142))).toBe(false);
+
+    expect(await findApproval(BASE + 142)).toMatchObject({ decidedBy: USER, paymentOrderId: null, refundStatus: 'NEEDED' });
+  });
+
+  it('a record with nothing owed (an approval that was cancelled underneath) now owes it', async () => {
+    await awaiting(BASE + 143);
+    await claimDecision(BASE + 143, { state: 'APPROVED', decidedBy: USER, decidedAt: T0 });
+
+    expect(await recordRefundNeeded(input(BASE + 143))).toBe(true);
+
+    expect(await findApproval(BASE + 143)).toMatchObject({ state: 'APPROVED', refundStatus: 'NEEDED' });
+  });
+
+  it('a refund already made is never reopened', async () => {
+    expect(await recordRefundNeeded(input(BASE + 144))).toBe(true);
+    await markRefundDone(BASE + 144, USER, 'transfer', T0);
+
+    expect(await recordRefundNeeded(input(BASE + 144))).toBe(false);
+
+    expect(await findApproval(BASE + 144)).toMatchObject({ refundStatus: 'DONE', refundedBy: USER });
   });
 });
 

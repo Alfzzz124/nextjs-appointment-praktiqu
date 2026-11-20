@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/route-guards';
+import { assertEntityAccess, entityAccessProblem } from '@/services/custom-fields/access';
 import {
   CustomFieldService,
   CustomFieldError,
@@ -36,9 +37,13 @@ export async function GET(
   }
 
   try {
+    // Same visibility rule as GET /sessions/:id.
+    await assertEntityAccess(gate.actor, 'appointment', entityId, 'read');
     const result = await service.getValuesWithFields('appointment', entityId);
     return NextResponse.json({ items: result });
   } catch (err) {
+    const denied = entityAccessProblem(err);
+    if (denied) return denied;
     if (err instanceof CustomFieldError) {
       return NextResponse.json(
         { type: 'about:blank', title: err.message, status: err.status, code: err.code },
@@ -68,11 +73,15 @@ export async function PUT(
   }
 
   try {
+    // Staff only, on a session the actor may open.
+    await assertEntityAccess(gate.actor, 'appointment', entityId, 'write');
     const body = await req.json();
     const parsed = customFieldBulkValuesSchema.parse(body);
     const result = await service.setBulkValues('appointment', entityId, parsed);
     return NextResponse.json(result);
   } catch (err: unknown) {
+    const denied = entityAccessProblem(err);
+    if (denied) return denied;
     if (err instanceof CustomFieldError) {
       return NextResponse.json(
         { type: 'about:blank', title: err.message, status: err.status, code: err.code },

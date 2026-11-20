@@ -27,6 +27,8 @@ export interface SessionReminderEmailInput {
   startsAtUtc: Date;
   /** Zona waktu klinik, mis. 'Asia/Jakarta'. */
   timezone: string;
+  /** Tautan Meet janji ini bila ada; tanpa itu baris 'Link sesi online' tidak ditulis. */
+  meetingUrl?: string | null;
 }
 
 export interface BuiltEmail {
@@ -82,7 +84,11 @@ export function buildSessionReminderEmail(input: SessionReminderEmailInput): Bui
 <ul>
   <li>Tanggal: ${tanggal}</li>
   <li>Waktu: ${jam}</li>
-  <li>Bersama ${peranLawan}: ${escapeHtml(lawan)}</li>
+  <li>Bersama ${peranLawan}: ${escapeHtml(lawan)}</li>${
+    input.meetingUrl
+      ? `\n  <li>Link sesi online: <a href="${escapeHtml(input.meetingUrl)}">${escapeHtml(input.meetingUrl)}</a></li>`
+      : ''
+  }
 </ul>
 <p>Kalau Anda perlu mengubah jadwal, hubungi klinik sesegera mungkin.</p>`;
 
@@ -92,7 +98,7 @@ Ini pengingat bahwa sesi Anda berlangsung ${kapan}.
 
 Tanggal: ${tanggal}
 Waktu: ${jam}
-Bersama ${peranLawan}: ${lawan}
+Bersama ${peranLawan}: ${lawan}${input.meetingUrl ? `\nLink sesi online: ${input.meetingUrl}` : ''}
 
 Kalau Anda perlu mengubah jadwal, hubungi klinik sesegera mungkin.`;
 

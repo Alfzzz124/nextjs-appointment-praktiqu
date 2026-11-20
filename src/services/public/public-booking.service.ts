@@ -37,6 +37,7 @@ import {
   fromKcStatus,
 } from '@/repositories/wp/sessions.repo';
 import { resolveClinicPaymentForDisplay } from '@/services/payments/clinic-payment.service';
+import { closeOpenOrdersOnCancel } from '@/services/payments/close-orders-on-cancel';
 import { rowPaymentForDisplay, type RowPayment } from '@/services/payments/public-usd.service';
 import { XENDIT_ONLY, type PublicUsdView } from '@/services/payments/intl-pricing';
 import {
@@ -46,6 +47,7 @@ import {
   type PublicApprovalView,
 } from '@/services/approval/service';
 import { findApproval } from '@/services/approval/store';
+import { meetingUrlsFor } from '@/services/session/meeting-url';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The booking widget posts `HH:MM`; `HH:MM:SS` is accepted for API callers. */
@@ -137,6 +139,7 @@ export class UpstreamWriteError extends WpEndpointError {
     message: string,
     readonly upstreamStatus: number,
     readonly operation: 'create_patient' | 'update_patient' | 'create_appointment',
+    neverSent = false,
   ) {
     // Extends `WpEndpointError`, and passes the upstream status up as `status`, so that
     // wrapping a failure does not hide what it was.
@@ -151,7 +154,9 @@ export class UpstreamWriteError extends WpEndpointError {
     // `upstreamStatus` is kept as its own field rather than folded into `status`: the
     // route's taxonomy reads it by name, and it says plainly which side the number came
     // from.
-    super(message, upstreamStatus);
+    //
+    // `neverSent` rides along for the same reason: the gate reads it off the wrapper.
+    super(message, upstreamStatus, undefined, neverSent);
     this.name = 'UpstreamWriteError';
   }
 }
@@ -163,7 +168,7 @@ function asUpstreamWriteError(
 ): unknown {
   if (err instanceof WpConfigError) return err;
   if (err instanceof WpEndpointError) {
-    return new UpstreamWriteError(err.message, err.status, operation);
+    return new UpstreamWriteError(err.message, err.status, operation, err.neverSent);
   }
   return err;
 }
@@ -311,6 +316,50 @@ async function resolvePatient(
   }
 }
 
+/**
+ * How long to wait before reading back an appointment whose create failed ambiguously.
+ * The plugin may still be committing (or running its hooks) behind the dropped
+ * connection. A mutable object so tests can zero it.
+ */
+export const writeRereadConfig = { delayMs: 1500 };
+
+/**
+ * After an ambiguous failure of the appointment write, look for the row it may have
+ * written. Returns it in the shape `createAppointment` returns, or null.
+ *
+ * The clash check ran just before the write and found nothing, so a live appointment of
+ * this patient at this start time can only be the one our own request created. Never
+ * throws: a failed read-back leaves the original error to stand.
+ */
+async function findWrittenAppointment(args: {
+  doctorId: number;
+  patientId: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+}): Promise<{ id: number; status: number } | null> {
+  try {
+    if (writeRereadConfig.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, writeRereadConfig.delayMs));
+    }
+    const rows = await findConflictingAppointments({
+      doctorId: BigInt(args.doctorId),
+      date: args.date,
+      startTime: args.startTime,
+      endTime: args.endTime,
+    });
+    const mine = rows.find(
+      (r) =>
+        Number(r.patientId) === args.patientId &&
+        (r.startTime ?? '').slice(0, 5) === args.startTime.slice(0, 5),
+    );
+    return mine ? { id: Number(mine.id), status: mine.status } : null;
+  } catch (readErr) {
+    console.error('[public/appointments] read-back after ambiguous write failed', readErr);
+    return null;
+  }
+}
+
 export async function createPublicAppointment(
   input: CreatePublicAppointmentInput,
 ): Promise<CreatedAppointment> {
@@ -425,9 +474,28 @@ export async function createPublicAppointment(
       slotHoldService.consume(input.holdKey);
       throw new SlotConflictError('Slot no longer available');
     }
-    // The hold is deliberately NOT consumed: nothing was written, so the slot is
-    // still the guest's to take on the retry the route is about to invite.
-    throw asUpstreamWriteError(err, 'create_appointment');
+    // The plugin may have inserted the row before the connection dropped, or before it
+    // answered 5xx. Replaying would then collide with our own row and read as "slot just
+    // taken" while leaving a PENDING appointment behind, so check before giving up.
+    const maybeWritten =
+      err instanceof WpEndpointError &&
+      !(err instanceof WpConfigError) &&
+      (err.status >= 500 || (err.status === 0 && !err.neverSent));
+    const recovered = maybeWritten
+      ? await findWrittenAppointment({
+          doctorId: input.professionalId,
+          patientId,
+          date: input.date,
+          startTime,
+          endTime,
+        })
+      : null;
+    if (!recovered) {
+      // The hold is deliberately NOT consumed: nothing was written, so the slot is
+      // still the guest's to take on the retry the route is about to invite.
+      throw asUpstreamWriteError(err, 'create_appointment');
+    }
+    created = recovered;
   }
 
   slotHoldService.consume(input.holdKey);
@@ -483,6 +551,11 @@ export interface PublicAppointmentView {
   usd: PublicUsdView | null;
   /** The psychologist-approval state, when this booking waits for (or was decided by) its psychologist. */
   approval: PublicApprovalView | null;
+  /**
+   * Tautan Meet dari acara Google psikolog. Hanya untuk janji yang sudah pasti (BOOKED,
+   * CHECK_IN): janji yang belum pasti atau sudah batal tidak membagikan tautan.
+   */
+  meetingUrl: string | null;
 }
 
 export class AppointmentNotFoundError extends Error {
@@ -557,6 +630,8 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
   const row = await findSessionById(id);
   if (!row) return null;
   const { paymentMethods, usd } = await bookingPayment(row);
+  const confirmed = row.status === SESSION_STATUS.BOOKED || row.status === SESSION_STATUS.CHECK_IN;
+  const meetingUrl = confirmed ? ((await meetingUrlsFor([row.id])).get(row.id) ?? null) : null;
 
   return {
     id: row.id,
@@ -570,6 +645,7 @@ async function toView(id: number): Promise<PublicAppointmentView | null> {
     paymentMethods,
     usd,
     approval: await publicApprovalView(row),
+    meetingUrl,
   };
 }
 
@@ -606,6 +682,8 @@ export async function cancelPublicAppointment(id: number): Promise<PublicAppoint
   // A paid booking that waited for its psychologist: the client withdrew and the money is
   // in, so it joins the refund list for the clinic to settle.
   await closeOnCancel(id, null);
+  // An unpaid booking: its payment link must stop working, or the client can still pay it.
+  await closeOpenOrdersOnCancel(id);
 
   const updated = await toView(id);
   if (!updated) throw new AppointmentNotFoundError();
