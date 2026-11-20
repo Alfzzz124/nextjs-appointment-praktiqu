@@ -39,6 +39,7 @@ import {
   markConnection,
   getRefreshToken,
   getOrCreateAppCalendarId,
+  forgetAppCalendarId,
 } from '@/services/integrations/google-calendar-connection.service';
 import { CLINIC_TIME_ZONE } from '@/services/integrations/google-event-payload';
 
@@ -56,6 +57,23 @@ export const DIRTY = 'dirty'.padEnd(64, '-');
 const MAX_BACKOFF_MINUTES = 6 * 60;
 /** A row we must not touch again soon: the event belongs to someone else. */
 const PARKED_MINUTES = 24 * 60;
+
+/**
+ * How long the row that discovered a deleted calendar waits. Short on purpose: the
+ * calendar is forgotten at the same moment, so the next sweep makes a new one and
+ * the row has nothing left to wait for.
+ */
+const CALENDAR_RECREATE_MINUTES = 1;
+
+/**
+ * Creating an event answered "not found": the calendar it was aimed at is gone.
+ *
+ * Not `GoogleEventGoneError` itself, because that one means an EVENT is missing and
+ * every caller treats it as "recreate it" or "already deleted".
+ */
+class AppCalendarGoneError extends Error {
+  readonly code = 'APP_CALENDAR_GONE';
+}
 
 export interface SweepReport {
   examined: number;
@@ -226,29 +244,53 @@ export async function runEventSweep(opts: {
     throw err;
   }
 
-  const rows = (await prisma.googleCalendarEventSync.findMany({
-    where: {
-      AND: [
-        {
-          OR: [
-            // `syncedHash IS NULL` must be spelled out. A column comparison against
-            // NULL evaluates to NULL, not true, so NOT(…) is NULL too and MySQL
-            // drops the row — which would silently skip exactly the rows that have
-            // never synced once, the ones that most need the sweep.
-            { syncedHash: null },
-            {
-              NOT: {
-                desiredHash: { equals: prisma.googleCalendarEventSync.fields.syncedHash },
-              },
+  // Hanya psikolog yang sambungannya aktif dan boleh menulis. Disaring SEBELUM
+  // `take`: baris psikolog lain dicatat untuk setiap janji, dan bila ikut diambil
+  // mereka hanya dilewati tanpa diberi jeda, jadi begitu jumlahnya mencapai
+  // `limit` baris psikolog yang tersambung tidak pernah terambil lagi. Baris
+  // mereka dibiarkan utuh dan baru diproses setelah ia menyambung.
+  const connections = await prisma.googleCalendarConnection.findMany({
+    where: { status: 'active' },
+    select: { professionalId: true, scopeGranted: true },
+  });
+  const eligible = connections
+    .filter((c) => grantsWriteScope(c.scopeGranted))
+    .map((c) => c.professionalId);
+
+  // Yang tidak ikut diproses karena pemiliknya belum boleh ditulisi. Dihitung
+  // dari baris yang memang sedang menunggu, bukan seluruh tabel.
+  const due = {
+    AND: [
+      {
+        OR: [
+          // `syncedHash IS NULL` must be spelled out. A column comparison against
+          // NULL evaluates to NULL, not true, so NOT(…) is NULL too and MySQL
+          // drops the row — which would silently skip exactly the rows that have
+          // never synced once, the ones that most need the sweep.
+          { syncedHash: null },
+          {
+            NOT: {
+              desiredHash: { equals: prisma.googleCalendarEventSync.fields.syncedHash },
             },
-          ],
-        },
-        { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
-      ],
-    },
-    orderBy: [{ nextAttemptAt: 'asc' }, { updatedAt: 'asc' }],
-    take: limit,
-  })) as SyncRow[];
+          },
+        ],
+      },
+      { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+    ],
+  };
+  report.skippedNoWriteScope = await prisma.googleCalendarEventSync.count({
+    where: { professionalId: { notIn: eligible }, ...due },
+  });
+
+  const rows = (
+    eligible.length === 0
+      ? []
+      : await prisma.googleCalendarEventSync.findMany({
+          where: { professionalId: { in: eligible }, ...due },
+          orderBy: [{ nextAttemptAt: 'asc' }, { updatedAt: 'asc' }],
+          take: limit,
+        })
+  ) as SyncRow[];
 
   report.examined = rows.length;
   if (rows.length === 0) return report;
@@ -268,9 +310,8 @@ export async function runEventSweep(opts: {
       where: { professionalId: BigInt(professionalKey) },
     });
 
-    // No connection, not active, or the write scope was never granted. Not an
-    // error and not worth a retry storm: the read direction may well be working
-    // for this person, and writing simply is not switched on.
+    // Disaring di atas, tetapi sambungan bisa berubah sejak daftar itu dibaca
+    // (dicabut, atau izinnya dikurangi). Baris dilewati tanpa disentuh.
     if (
       !connection ||
       connection.status !== 'active' ||
@@ -286,7 +327,7 @@ export async function runEventSweep(opts: {
       accessToken = await refreshAccessToken({ ...config, refreshToken }, opts.fetchImpl);
     } catch (err) {
       if (err instanceof GoogleAuthRevokedError) {
-        await markConnection(professionalId, { status: 'revoked' });
+        await markConnection(professionalId, { status: 'revoked', reason: err.message });
       }
       report.failed += professionalRows.length;
       continue;
@@ -296,17 +337,27 @@ export async function runEventSweep(opts: {
     // `calendar.app.created` inilah satu-satunya kalender yang boleh kita
     // sentuh — kalender aslinya tidak terjangkau, bukan sekadar tidak disentuh.
     let targetCalendarId: string;
+    // Dibuat di putaran ini? Lihat penanganan AppCalendarGoneError di bawah.
+    let calendarJustCreated = false;
     try {
-      targetCalendarId = await getOrCreateAppCalendarId(professionalId, () =>
-        createAppCalendar({
+      targetCalendarId = await getOrCreateAppCalendarId(professionalId, async () => {
+        const id = await createAppCalendar({
           accessToken,
           timeZone: CLINIC_TIME_ZONE,
           fetchImpl: opts.fetchImpl,
-        }),
-      );
+        });
+        calendarJustCreated = true;
+        return id;
+      });
     } catch (err) {
       if (err instanceof GoogleAuthRevokedError) {
-        await markConnection(professionalId, { status: 'revoked' });
+        await markConnection(professionalId, { status: 'revoked', reason: err.message });
+      } else {
+        // Ditolak Google tanpa pencabutan (mis. 403 insufficientPermissions).
+        // Dicatat pada barisnya, karena tidak ada tempat lain yang menyimpan
+        // sebabnya, dan diundur supaya tidak mengetuk Google tiap sapuan.
+        const message = err instanceof Error ? err.message : String(err);
+        for (const row of professionalRows) await markFailed(row, now, message);
       }
       report.failed += professionalRows.length;
       continue;
@@ -331,10 +382,27 @@ export async function runEventSweep(opts: {
         report[outcome] += 1;
       } catch (err) {
         if (err instanceof GoogleAuthRevokedError) {
-          await markConnection(professionalId, { status: 'revoked' });
+          await markConnection(professionalId, { status: 'revoked', reason: err.message });
           authDied = true;
           report.failed += 1;
           continue;
+        }
+        if (err instanceof AppCalendarGoneError) {
+          // Psikolog menghapus kalender "PraktiQu"-nya. Id-nya dilupakan supaya
+          // sapuan BERIKUTNYA membuat yang baru; tidak dibuat ulang di sini agar
+          // tidak ada percobaan bersarang, dan baris lain tidak ditembakkan ke
+          // kalender yang pasti mati. Kalender yang baru dibuat putaran ini tidak
+          // dilupakan: 404 sesaat setelah dibuat bukan "dihapus orang", dan
+          // melupakannya membuat kalender baru tiap sapuan.
+          if (!calendarJustCreated) await forgetAppCalendarId(professionalId, targetCalendarId);
+          await markFailed(
+            row,
+            now,
+            err.message,
+            calendarJustCreated ? undefined : CALENDAR_RECREATE_MINUTES,
+          );
+          report.failed += 1;
+          break;
         }
         const notOurs = err instanceof GoogleEventNotOursError;
         await markFailed(
@@ -407,6 +475,10 @@ async function syncOne(ctx: {
 
   const body = buildEventBody(appt);
   const hash = fingerprintEvent(body);
+  // Tanpa ini, psikolog yang baru menyambung (atau menyambung ulang) membuat
+  // seluruh janji tertundanya diproses sekaligus, dan klien menerima undangan
+  // (sendUpdates=all) untuk sesi yang sudah lewat.
+  const sudahLewat = endedBefore(appt, now);
 
   // Nothing about the event changed — a status flip between BOOKED and CHECK_IN,
   // say. Costs no request at all.
@@ -417,17 +489,25 @@ async function syncOne(ctx: {
   // again for that row.
   if (hash === row.syncedHash && row.googleEventId) {
     if (row.htmlLink === null) {
-      const tautan = await eventLinks({
-        ...call,
-        eventId: row.googleEventId,
-        expectMarker: marker,
-        wantedConference: Boolean(body.conferenceData),
-      });
-      await markSynced(row, hash, row.googleEventId, undefined, tautan);
+      try {
+        const tautan = await eventLinks({
+          ...call,
+          eventId: row.googleEventId,
+          expectMarker: marker,
+          wantedConference: Boolean(body.conferenceData),
+        });
+        await markSynced(row, hash, row.googleEventId, undefined, tautan);
+        return 'alreadyCurrent';
+      } catch (err) {
+        // Acaranya sudah lenyap (mis. bersama kalendernya). Dibiarkan keluar,
+        // barisnya diundur selamanya tanpa pernah dibuat ulang; jatuh ke bawah
+        // supaya diperlakukan seperti acara yang dihapus tangan.
+        if (!(err instanceof GoogleEventGoneError)) throw err;
+      }
     } else {
       await markSynced(row, hash, row.googleEventId);
+      return 'alreadyCurrent';
     }
-    return 'alreadyCurrent';
   }
 
   if (row.googleEventId && row.calendarId === targetCalendarId) {
@@ -460,14 +540,39 @@ async function syncOne(ctx: {
     }
   }
 
-  const created = await createEvent({
-    accessToken,
-    calendarId: targetCalendarId,
-    fetchImpl,
-    body,
-  });
+  // Janji yang sudah berakhir tidak pernah dibuatkan acara baru. Barisnya
+  // ditandai selesai tanpa memanggil Google supaya tidak terambil lagi; bila
+  // janjinya kelak dipindah ke depan, niat baru mengubah hash dan acara dibuat.
+  // Memperbarui atau menghapus acara yang sudah ada tetap jalan (cabang di atas).
+  if (sudahLewat) {
+    await markSynced(row, hash, null);
+    return 'alreadyCurrent';
+  }
+
+  let created: Awaited<ReturnType<typeof createEvent>>;
+  try {
+    created = await createEvent({
+      accessToken,
+      calendarId: targetCalendarId,
+      fetchImpl,
+      body,
+    });
+  } catch (err) {
+    // Membuat acara tidak punya "acara" yang bisa hilang: 404/410 di sini berarti
+    // kalender tujuannya yang tidak ada lagi.
+    if (err instanceof GoogleEventGoneError) {
+      throw new AppCalendarGoneError(`PraktiQu calendar ${targetCalendarId} is gone: ${err.message}`);
+    }
+    throw err;
+  }
   await markSynced(row, hash, created.id, targetCalendarId, created);
   return 'created';
+}
+
+/** Jam dinding klinik (`date` + `endTime`) dibaca sebagai WIB, yang tanpa DST. */
+function endedBefore(appt: CalendarAppointment, now: Date): boolean {
+  const end = new Date(`${appt.date}T${appt.endTime}+07:00`);
+  return !Number.isNaN(end.getTime()) && end.getTime() <= now.getTime();
 }
 
 export interface ReconcileReport {

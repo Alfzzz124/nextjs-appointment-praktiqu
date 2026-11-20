@@ -5,7 +5,10 @@
 // rule: we only ever touch events that carry our own marker. See `MARKER_KEY`.
 
 import { GoogleOAuthError } from '@/lib/google/oauth-client';
-import { GoogleAuthRevokedError } from '@/lib/google/freebusy';
+import { GoogleTransientError, raiseForAuthOrQuota } from '@/lib/google/errors';
+
+// Re-exported: callers and tests have always imported it from here.
+export { GoogleTransientError };
 
 const EVENTS_ENDPOINT = 'https://www.googleapis.com/calendar/v3/calendars';
 const CALENDARS_ENDPOINT = 'https://www.googleapis.com/calendar/v3/calendars';
@@ -18,11 +21,6 @@ const CALENDARS_ENDPOINT = 'https://www.googleapis.com/calendar/v3/calendars';
  * only to the OAuth client that wrote them.
  */
 export const MARKER_KEY = 'praktiqu_appointment_id';
-
-/** Google is unhappy now but may not be in a minute: 429, 5xx, network. */
-export class GoogleTransientError extends Error {
-  readonly code = 'GOOGLE_TRANSIENT';
-}
 
 /** The event is not there. Deleting wanted that; updating did not. */
 export class GoogleEventGoneError extends Error {
@@ -89,14 +87,12 @@ async function errorCodeOf(res: Response): Promise<string> {
 
 /** Turn a failed response into the error that says what to do about it. */
 async function raiseFor(res: Response, what: string): Promise<never> {
+  await raiseForAuthOrQuota(res, what);
   const code = await errorCodeOf(res);
-  if (res.status === 401 || res.status === 403) {
-    throw new GoogleAuthRevokedError(`Google rejected the access token (${res.status})`);
-  }
   if (res.status === 404 || res.status === 410) {
     throw new GoogleEventGoneError(`${what}: event not found (${res.status})`);
   }
-  if (res.status === 429 || res.status >= 500) {
+  if (res.status >= 500) {
     throw new GoogleTransientError(`${what} failed (${res.status}: ${code})`);
   }
   throw new GoogleOAuthError(`${what} failed (${res.status}: ${code})`);

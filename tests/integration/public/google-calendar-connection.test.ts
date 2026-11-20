@@ -15,6 +15,7 @@ import {
   getRefreshToken,
   markConnection,
   disconnectCalendar,
+  forgetAppCalendarId,
   ConnectionUnusableError,
 } from '@/services/integrations/google-calendar-connection.service';
 
@@ -158,6 +159,60 @@ describe('token access', () => {
       where: { professionalId: BigInt(PRO) },
     });
     expect(row?.refreshTokenEncrypted).toBeNull();
+  });
+});
+
+describe('revocation leaves a trace', () => {
+  // Sambungan psikolog 34 jatuh ke "revoked" pada 10 Nov tanpa seorang pun bisa
+  // bilang mengapa: penandaan itu mengosongkan lastErrorMessage dan lastErrorAt.
+  it('keeps the reason and the time instead of blanking them', async () => {
+    await connect();
+    await markConnection(PRO, { status: 'revoked', reason: 'Google rejected the access token (401)' });
+    const row = await prisma.googleCalendarConnection.findUnique({
+      where: { professionalId: BigInt(PRO) },
+    });
+    expect(row?.status).toBe('revoked');
+    expect(row?.refreshTokenEncrypted).toBeNull();
+    expect(row?.lastErrorMessage).toBe('Google rejected the access token (401)');
+    expect(row?.lastErrorAt).not.toBeNull();
+  });
+
+  it('is cleared again once the person reconnects', async () => {
+    await connect();
+    await markConnection(PRO, { status: 'revoked', reason: 'Google rejected the access token (401)' });
+    await connect();
+    const row = await prisma.googleCalendarConnection.findUnique({
+      where: { professionalId: BigInt(PRO) },
+    });
+    expect(row?.lastErrorMessage).toBeNull();
+    expect(row?.lastErrorAt).toBeNull();
+  });
+});
+
+describe('forgetAppCalendarId', () => {
+  const setCal = (id: string | null) =>
+    prisma.googleCalendarConnection.update({
+      where: { professionalId: BigInt(PRO) },
+      data: { appCalendarId: id },
+    });
+  const calOf = async () =>
+    (await prisma.googleCalendarConnection.findUnique({ where: { professionalId: BigInt(PRO) } }))
+      ?.appCalendarId;
+
+  it('forgets the calendar that turned out to be gone', async () => {
+    await connect();
+    await setCal('cal-hilang');
+    await forgetAppCalendarId(PRO, 'cal-hilang');
+    expect(await calOf()).toBeNull();
+  });
+
+  it('leaves a newer calendar alone', async () => {
+    // Another run may already have replaced the dead one; clobbering that would
+    // orphan a calendar the person can see.
+    await connect();
+    await setCal('cal-baru');
+    await forgetAppCalendarId(PRO, 'cal-hilang');
+    expect(await calOf()).toBe('cal-baru');
   });
 });
 

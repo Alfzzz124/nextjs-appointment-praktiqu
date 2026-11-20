@@ -25,8 +25,12 @@ export class ConnectionUnusableError extends Error {
  */
 export type ConnectionMark =
   | { status: 'active' }
-  /** Not an error. While the Google app is in Testing this happens every 7 days. */
-  | { status: 'revoked' }
+  /**
+   * Not an error. While the Google app is in Testing this happens every 7 days.
+   * `reason` is kept: the next person asking why a connection died has nothing
+   * else to go on, and the settings page does not show it for this state.
+   */
+  | { status: 'revoked'; reason?: string }
   | { status: 'error'; message: string };
 
 export interface ConnectionStatusView {
@@ -123,8 +127,8 @@ export async function markConnection(
           {
             status: 'revoked',
             refreshTokenEncrypted: null,
-            lastErrorAt: null,
-            lastErrorMessage: null,
+            lastErrorAt: now,
+            lastErrorMessage: mark.reason?.slice(0, 500) ?? null,
           }
         : { status: 'active', lastErrorAt: null, lastErrorMessage: null };
 
@@ -235,4 +239,21 @@ export async function getOrCreateAppCalendarId(
     data: { appCalendarId: id },
   });
   return id;
+}
+
+/**
+ * Forget the "PraktiQu" calendar because Google says it is gone.
+ *
+ * The psychologist is allowed to delete it, and the id stored here would then
+ * answer 404 forever. Conditional on the id that failed: if another run already
+ * replaced it, the new one must not be thrown away too.
+ */
+export async function forgetAppCalendarId(
+  professionalId: number,
+  calendarId: string,
+): Promise<void> {
+  await prisma.googleCalendarConnection.updateMany({
+    where: { professionalId: BigInt(professionalId), appCalendarId: calendarId },
+    data: { appCalendarId: null },
+  });
 }
